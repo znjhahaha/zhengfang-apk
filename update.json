@@ -1,0 +1,7 @@
+{
+    "versionCode": 20,
+    "versionName": "1.0.19",
+    "releaseNotes": "稳定性与交互优化\n• 新增交互锁机制，加载中禁止展开课程，避免参数异常\n• 展开课程时显示明确的加载状态和错误提示\n• 获取详情失败后可重新点击重试，不再锁死\n\n数据显示优化\n• 修复教学班名称(jxbmc)不显示的问题\n• 优化缓存机制，确保刷新时参数正确重置\n• 增强日志输出，便于问题定位",
+    "downloadUrl": "https://gitee.com/znj12345/zhengfang/releases/download/v1.0.19/app-release.apk",
+    "forceUpdate": true
+}

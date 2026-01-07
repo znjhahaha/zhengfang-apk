@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>正方教务抢课助手 - 使用教程</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #7B5EA7;
+            font-size: 28px;
+            margin-bottom: 10px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #7B5EA7;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            color: #7B5EA7;
+            font-size: 22px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-left: 15px;
+            border-left: 4px solid #7B5EA7;
+        }
+
+        h3 {
+            color: #555;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .step {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            background: #7B5EA7;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .step-title {
+            font-weight: bold;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .step-content {
+            margin-top: 10px;
+            padding-left: 38px;
+        }
+
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .image-container img {
+            max-width: 300px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        .image-caption {
+            color: #888;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .highlight {
+            background: linear-gradient(120deg, #E8D5F2 0%, #E8D5F2 100%);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .warning {
+            background: #FFF3E0;
+            border-left: 4px solid #FF9800;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .warning-title {
+            font-weight: bold;
+            color: #E65100;
+            margin-bottom: 10px;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #888;
+            font-size: 14px;
+        }
+
+        .two-images {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .two-images .image-container {
+            flex: 1;
+            min-width: 250px;
+            max-width: 350px;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                padding: 20px;
+            }
+
+            .step {
+                break-inside: avoid;
+            }
+
+            h2 {
+                break-after: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📱 正方教务抢课助手</h1>
+        <p class="subtitle">使用教程 · 智能选课 · 一键抢课</p>
+
+        <!-- 一、登录设置 -->
+        <h2>一、登录设置</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-title">选择学校</span>
+            <div class="step-content">
+                <p>打开 APP 后，在登录页<span class="highlight">选择你的学校</span>。如果列表中没有你的学校，点击【+ 添加新学校】。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/07_登录页.jpg" alt="登录页">
+            <p class="image-caption">登录页 - 选择学校</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-title">添加新学校（可选）</span>
+            <div class="step-content">
+                <p>粘贴你学校教务系统的 URL，点击【自动识别】即可自动填充学校信息。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/09_添加学校.jpg" alt="添加学校">
+            <p class="image-caption">添加新学校 - 智能识别 URL</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <span class="step-title">获取 Cookie</span>
+            <div class="step-content">
+                <p>点击【在线获取 COOKIE】按钮，APP 内置浏览器会自动打开。搜索并进入你学校的教务系统，<span class="highlight">正常登录后</span>点击底部【获取当前页面
+                    Cookie】按钮即可完成登录。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/08_浏览器获取Cookie.jpg" alt="内置浏览器">
+            <p class="image-caption">内置浏览器 - 一键获取 Cookie</p>
+        </div>
+
+        <!-- 二、查看课表 -->
+        <h2>二、查看课表</h2>
+
+        <p>登录成功后，点击底部导航栏【课表】标签，即可查看本学期完整课表。支持按周切换，直观展示每日课程安排。</p>
+
+        <div class="image-container">
+            <img src="pic/03_课表.jpg" alt="课表页">
+            <p class="image-caption">课表页 - 周视图</p>
+        </div>
+
+        <!-- 三、查看成绩 -->
+        <h2>三、查看成绩</h2>
+
+        <p>点击底部导航栏【成绩】标签，可查看：</p>
+        <ul>
+            <li><strong>总体绩点（GPA）</strong> - 一目了然</li>
+            <li><strong>成绩分布</strong> - 优、良、中、及各多少门</li>
+            <li><strong>课程明细</strong> - 每门课具体成绩和学分</li>
+        </ul>
+
+        <div class="image-container">
+            <img src="pic/06_成绩查询.jpg" alt="成绩页">
+            <p class="image-caption">成绩查询 - GPA 与课程明细</p>
+        </div>
+
+        <!-- 四、选课/抢课 -->
+        <h2>四、选课 / 抢课</h2>
+
+        <!-- 模式介绍 -->
+        <h3>🔧 两种抢课模式</h3>
+
+        <p>APP 提供两种抢课模式，适合不同场景：</p>
+
+        <div class="step" style="background: #E8F5E9; border-left: 4px solid #4CAF50;">
+            <span class="step-title" style="color: #2E7D32;">🎯 精确模式</span>
+            <div class="step-content" style="padding-left: 0; margin-top: 15px;">
+                <p><strong>原理：</strong>直接使用教学班的唯一 ID（classId）进行选课，一步到位。</p>
+                <p><strong>优点：</strong>速度快、成功率高、不会选错班。</p>
+                <p><strong>适用场景：</strong></p>
+                <ul>
+                    <li>从【课程列表】点击【+ 队列】添加的课程（自动获取 classId）</li>
+                    <li>明确知道要选哪个教学班</li>
+                    <li>抢热门课、名额紧张时优先使用</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="step" style="background: #E3F2FD; border-left: 4px solid #2196F3;">
+            <span class="step-title" style="color: #1565C0;">🧠 智能模式</span>
+            <div class="step-content" style="padding-left: 0; margin-top: 15px;">
+                <p><strong>原理：</strong>根据你输入的课程名、老师名、上课时间等关键词，自动搜索匹配合适的教学班。</p>
+                <p><strong>优点：</strong>无需提前知道 classId，灵活方便。</p>
+                <p><strong>适用场景：</strong></p>
+                <ul>
+                    <li>手动输入课程信息（只知道课程名和老师）</li>
+                    <li>选课系统未开放时提前添加课程</li>
+                    <li>想选"周一上午"的任意班级</li>
+                </ul>
+                <p style="color: #1565C0; margin-top: 10px;"><strong>💡 提示：</strong>智能模式支持多种时间格式，如"周一
+                    1-2节"、"星期一第1-2节"均可识别。</p>
+            </div>
+        </div>
+
+        <div class="warning" style="background: #FFF8E1; border-left-color: #FFC107;">
+            <p class="warning-title" style="color: #F57F17;">📌 如何选择模式？</p>
+            <ul>
+                <li><strong>能看到课程列表 →</strong> 用【+ 队列】添加，自动使用精确模式</li>
+                <li><strong>选课未开放、提前准备 →</strong> 手动添加课程，使用智能模式</li>
+                <li><strong>热门课程抢名额 →</strong> 优先精确模式，速度更快</li>
+            </ul>
+        </div>
+
+        <h3>方式一：从课程列表添加到队列</h3>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-title">浏览可选课程</span>
+            <div class="step-content">
+                <p>点击底部【课程】标签，切换到【可选】页面，浏览所有可选课程。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-title">选择教学班</span>
+            <div class="step-content">
+                <p>展开目标课程，查看各教学班的老师、时间、剩余名额。点击<span class="highlight">【+ 队列】</span>将课程加入抢课队列。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/01_课程列表.jpg" alt="课程列表">
+            <p class="image-caption">课程列表 - 添加到抢课队列</p>
+        </div>
+
+        <h3>方式二：定时抢课（推荐）</h3>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-title">设置开始时间</span>
+            <div class="step-content">
+                <p>切换到【抢课】→【定时抢课】标签，设置选课系统开放的时间。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-title">添加目标课程</span>
+            <div class="step-content">
+                <p>在抢课队列中添加想抢的课程（支持多门），可选择<span class="highlight">智能模式</span>或<span class="highlight">精确模式</span>。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <span class="step-title">启动定时任务</span>
+            <div class="step-content">
+                <p>点击【添加定时任务】，APP 会在指定时间自动开始抢课，无需手动操作。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/02_定时抢课.jpg" alt="定时抢课">
+            <p class="image-caption">定时抢课 - 设置时间与队列</p>
+        </div>
+
+        <h3>方式三：立即抢课</h3>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-title">设置目标课程</span>
+            <div class="step-content">
+                <p>切换到【抢课】→【立即抢课】标签。在课程页点击 🎯 按钮将课程设为目标。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-title">配置参数</span>
+            <div class="step-content">
+                <p>设置请求间隔（建议 1500ms）和最大重试次数。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <span class="step-title">开始抢课</span>
+            <div class="step-content">
+                <p>点击【启动抢课】，APP 会持续尝试选课直到成功或达到最大次数。运行日志会实时显示进度。</p>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <img src="pic/10_立即抢课.jpg" alt="立即抢课">
+            <p class="image-caption">立即抢课 - 运行日志实时反馈</p>
+        </div>
+
+        <!-- 五、已选课程管理 -->
+        <h2>五、已选课程管理</h2>
+
+        <p>在【课程】页切换到【已选】标签，可以：</p>
+        <ul>
+            <li>查看已选课程总数和详细信息</li>
+            <li>点击【退课】按钮退选不想要的课程</li>
+            <li>系统会弹出<span class="highlight">二次确认</span>，防止误操作</li>
+        </ul>
+
+        <div class="two-images">
+            <div class="image-container">
+                <img src="pic/04_已选课程.jpg" alt="已选课程">
+                <p class="image-caption">已选课程列表</p>
+            </div>
+            <div class="image-container">
+                <img src="pic/05_退课确认.jpg" alt="退课确认">
+                <p class="image-caption">退课二次确认</p>
+            </div>
+        </div>
+
+        <!-- 注意事项 -->
+        <div class="warning">
+            <p class="warning-title">⚠️ 注意事项</p>
+            <ul>
+                <li>抢课前请确保 Cookie 有效（如失效请重新获取）</li>
+                <li>建议提前 1-2 分钟设置好定时任务</li>
+                <li>抢课期间请保持网络稳定</li>
+                <li>如遇"时间冲突"等提示，请检查现有课表</li>
+                <li>请合理使用，避免给服务器造成过大压力</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>🎉 有问题随时私信咨询，祝选课顺利！</p>
+            <p style="margin-top: 10px;">正方教务抢课助手 v1.0</p>
+        </div>
+    </div>
+</body>
+
+</html>

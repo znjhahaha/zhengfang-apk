@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_courses"
+        android:title="课程信息"
+        android:icon="@android:drawable/ic_menu_agenda" />
+        
+    <item
+        android:id="@+id/nav_schedule"
+        android:title="我的课表"
+        android:icon="@android:drawable/ic_menu_today" />
+
+    <item
+        android:id="@+id/nav_grab"
+        android:title="抢课Pro+"
+        android:icon="@android:drawable/ic_menu_compass" />
+
+    <item
+        android:id="@+id/nav_grades"
+        android:title="成绩查询"
+        android:icon="@android:drawable/ic_menu_sort_by_size" />
+
+    <item
+        android:id="@+id/nav_settings"
+        android:title="设置"
+        android:icon="@android:drawable/ic_menu_preferences" />
+</menu>

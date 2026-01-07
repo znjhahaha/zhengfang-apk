@@ -1,0 +1,271 @@
+package com.tyust.course.ui.route
+
+import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import com.tyust.course.LoginActivity
+import com.tyust.course.manager.UserManager
+import com.tyust.course.ui.screen.SettingsScreen
+import com.tyust.course.update.UpdateManager
+import com.tyust.course.update.UpdateDialog
+import com.tyust.course.announcement.AnnouncementHistoryScreen
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsRoute() {
+    val context = LocalContext.current
+    
+    var studentName by remember { mutableStateOf("") }
+    var studentId by remember { mutableStateOf("") }
+    var schoolName by remember { mutableStateOf("") }
+    
+    // UI States
+    var showSchoolDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    
+    // Update States
+    val updateManager = remember { UpdateManager.getInstance(context) }
+    var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableIntStateOf(0) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    val currentVersion = remember { updateManager.getCurrentVersionName() }
+
+    // If history is showing, show the history screen
+    if (showHistory) {
+        AnnouncementHistoryScreen(onBack = { showHistory = false })
+        return
+    }
+    
+    LaunchedEffect(Unit) {
+        val name = UserManager.getInstance().studentName
+        val id = UserManager.getInstance().studentId
+        val school = UserManager.getInstance().currentSchool
+
+        studentName = name ?: "同学"
+        studentId = id ?: "--"
+        schoolName = school?.name ?: "未选择"
+    }
+    
+    fun performLogout() {
+        UserManager.getInstance().clearLoginState()
+        val intent = Intent(context, LoginActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        context.startActivity(intent)
+        // If context is not activity, clean task might need validation but usually safe
+    }
+    
+    fun checkForUpdate() {
+        isCheckingUpdate = true
+        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+        
+        updateManager.checkForUpdate { info ->
+            isCheckingUpdate = false
+            if (info != null) {
+                updateInfo = info
+                showUpdateDialog = true
+            } else {
+                Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    fun startDownload() {
+        val info = updateInfo ?: return
+        isDownloading = true
+        downloadProgress = 0
+        
+        updateManager.downloadApk(
+            downloadUrl = info.downloadUrl,
+            onProgress = { progress ->
+                downloadProgress = progress
+            },
+            onComplete = { file ->
+                isDownloading = false
+                if (file != null && file.exists()) {
+                    updateManager.installApk(file)
+                    showUpdateDialog = false
+                } else {
+                    Toast.makeText(context, "下载失败，请重试", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+    
+    // Update Dialog
+    if (showUpdateDialog && updateInfo != null) {
+        UpdateDialog(
+            updateInfo = updateInfo!!,
+            currentVersion = currentVersion,
+            onDismiss = { 
+                showUpdateDialog = false 
+                updateInfo = null
+            },
+            onUpdate = { startDownload() },
+            downloadProgress = downloadProgress,
+            isDownloading = isDownloading
+        )
+    }
+    
+    SettingsScreen(
+        studentName = studentName,
+        studentId = studentId,
+        schoolName = schoolName,
+        currentVersion = currentVersion,
+        onSchoolSelect = { showSchoolDialog = true },
+        onAnnouncementHistory = { showHistory = true },
+        onCookieConfig = { performLogout() }, // Just logout effectively for re-config
+        onClearCache = { showClearCacheDialog = true },
+        onCheckUpdate = { checkForUpdate() },
+        onAbout = { showAboutDialog = true },
+        onLogout = { showLogoutDialog = true }
+    )
+    
+    // Dialogs
+    if (showLogoutDialog) {
+        SimpleConfirmDialog(
+            title = "退出登录",
+            text = "确定要退出登录吗？",
+            onConfirm = { 
+                performLogout() 
+                showLogoutDialog = false
+            },
+            onDismiss = { showLogoutDialog = false }
+        )
+    }
+    
+    if (showClearCacheDialog) {
+        SimpleConfirmDialog(
+            title = "清除缓存",
+            text = "确定要清除所有本地缓存数据吗？",
+            onConfirm = { 
+                Toast.makeText(context, "缓存已清除", Toast.LENGTH_SHORT).show()
+                showClearCacheDialog = false
+            },
+            onDismiss = { showClearCacheDialog = false }
+        )
+    }
+    
+    if (showAboutDialog) {
+         SimpleConfirmDialog(
+            title = "关于",
+            text = "正方教务工具 Android版\n\n版本: 1.0.0\n\n功能特性:\n• 课程信息查询\n• 智能抢课Pro+\n• 课表查看\n• 成绩查询\n\n本应用仅供学习交流使用",
+            onConfirm = { showAboutDialog = false },
+            onDismiss = { showAboutDialog = false },
+            confirmText = "确定",
+            showCancel = false
+        )
+    }
+    
+    if (showSchoolDialog) {
+        var animateTrigger by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { animateTrigger = true }
+
+        fun dismiss() {
+            animateTrigger = false
+        }
+
+        if (!animateTrigger) {
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(300)
+                showSchoolDialog = false
+            }
+        }
+
+        Dialog(onDismissRequest = { dismiss() }) {
+             androidx.compose.animation.AnimatedVisibility(
+                visible = animateTrigger,
+                enter = androidx.compose.animation.scaleIn(animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                )) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+                exit = androidx.compose.animation.scaleOut(animationSpec = androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
+            ) {
+                 Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "选择学校",
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        
+                        val schools = remember { UserManager.getInstance().supportedSchools }
+                        LazyColumn {
+                            items(schools) { school ->
+                                Text(
+                                    text = school.name,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            UserManager.getInstance().clearLoginState()
+                                            UserManager.getInstance().currentSchool = school
+                                            Toast.makeText(context, "已切换到: ${school.name}", Toast.LENGTH_SHORT).show()
+                                            performLogout()
+                                            dismiss()
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
+                        
+                        TextButton(
+                            onClick = { dismiss() },
+                            modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
+                        ) {
+                            Text("取消")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SimpleConfirmDialog(
+    title: String, 
+    text: String, 
+    onConfirm: () -> Unit, 
+    onDismiss: () -> Unit,
+    confirmText: String = "确定",
+    showCancel: Boolean = true
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(confirmText) }
+        },
+        dismissButton = if (showCancel) {
+            { TextButton(onClick = onDismiss) { Text("取消") } }
+        } else null
+    )
+}

@@ -1,0 +1,726 @@
+package com.tyust.course.ui.screen
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.tyust.course.ui.theme.PrimaryPurple
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+fun GrabProScreen(
+    isRunning: Boolean,
+    successCount: Int,
+    failCount: Int,
+    retryCount: Int,
+    targetCourseName: String?,
+    targetCourseTeacher: String?,
+    logText: String,
+    interval: String,
+    onIntervalChange: (String) -> Unit,
+    maxRetry: String,
+    onMaxRetryChange: (String) -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onClearLog: () -> Unit,
+    // 🔧 清除目标课程
+    onClearTargetCourse: (() -> Unit)? = null,
+    // Scheduled grab parameters
+    schoolName: String = "",
+    courseKeywords: String = "",
+    onCourseKeywordsChange: ((String) -> Unit)? = null,
+    scheduledDateTime: String = "",
+    onScheduledDateTimeChange: ((String) -> Unit)? = null,
+    isScheduledMode: Boolean = false,
+    onScheduledModeChange: ((Boolean) -> Unit)? = null,
+    onScheduledStart: (() -> Unit)? = null,
+    hasScheduledTask: Boolean = false,
+    scheduledTaskInfo: String = "",
+    onCancelScheduledTask: (() -> Unit)? = null,
+    onPickDateTime: (() -> Unit)? = null,
+    // Queue parameters
+    queue: List<com.tyust.course.model.Course> = emptyList(),
+    queueVersion: Int = 0,  // 🔧 版本号，用于强制 UI 重组
+    currentQueueIndex: Int = 0,
+    queueItemStatuses: Map<String, GrabQueueItemStatus> = emptyMap(),
+    isParallelMode: Boolean = false,
+    onParallelModeChange: ((Boolean) -> Unit)? = null,
+    onQueueMoveItem: ((Int, Int) -> Unit)? = null,
+    onQueueRemoveItem: ((Int) -> Unit)? = null,
+    onQueueToggleMode: ((Int) -> Unit)? = null,  // 🔧 切换精确/智能模式
+    onQueueToggleAllMode: ((Boolean) -> Unit)? = null, // 🔧 一键设置模式
+    isExactModeGlobal: Boolean = true, // 🔧 全局模式状态
+    onQueueClear: (() -> Unit)? = null,
+    onAddCourse: (() -> Unit)? = null,
+    // Warning dialog control
+    showScheduleWarning: Boolean = true,
+    onDismissWarningForever: (() -> Unit)? = null,
+    showQueueModeLabels: Boolean = true // 🔧 控制是否显示精确/智能模式标签
+) {
+    val scrollState = rememberLazyListState()
+    val context = LocalContext.current
+    
+    var localScheduledMode by remember { mutableStateOf(isScheduledMode) }
+    var localKeywords by remember { mutableStateOf(courseKeywords) }
+    var localDateTime by remember { mutableStateOf(scheduledDateTime) }
+    var showWarningDialog by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(scheduledDateTime) { localDateTime = scheduledDateTime }
+    LaunchedEffect(courseKeywords) { localKeywords = courseKeywords }
+    LaunchedEffect(isScheduledMode) { localScheduledMode = isScheduledMode }
+    
+    if (showWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showWarningDialog = false },
+            title = { Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9800))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("定时抢课注意事项")
+            } },
+            text = {
+                Column {
+                    Text("系统限制说明：", fontWeight = FontWeight.Bold)
+                    Text("• 安卓系统可能会杀后台\n• 锁屏可能导致闹钟延迟\n• 建议保持屏幕常亮", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("建议操作：", fontWeight = FontWeight.Bold, color = PrimaryPurple)
+                    Text("• 加入电池优化白名单\n• 抢课前手动打开App确保存活", fontSize = 14.sp)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        showWarningDialog = false
+                        localScheduledMode = true
+                        onScheduledModeChange?.invoke(true)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                ) { Text("我已知晓") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        showWarningDialog = false
+                        localScheduledMode = true
+                        onScheduledModeChange?.invoke(true)
+                        onDismissWarningForever?.invoke()
+                    }) { Text("不再提示", color = Color.Gray) }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { showWarningDialog = false }) { Text("取消") }
+                }
+            }
+        )
+    }
+    
+    Scaffold(
+        floatingActionButton = {
+            // 使用 AnimatedVisibility 为 FAB 添加动画
+            AnimatedVisibility(
+                visible = localScheduledMode && !hasScheduledTask,
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut()
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = { onScheduledStart?.invoke() },
+                    containerColor = PrimaryPurple,
+                    contentColor = Color.White,
+                    icon = { Icon(Icons.Default.AlarmAdd, contentDescription = null) },
+                    text = { Text("添加定时任务") },
+                    expanded = scrollState.isScrollInProgress.not()
+                )
+            }
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF5F5F7)) // iOS style background color
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            state = scrollState
+        ) {
+            // 1. Status Header
+            item {
+                StatusHeader(isRunning, hasScheduledTask)
+            }
+
+            // 2. Statistics Cards
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "成功",
+                        value = successCount.toString(),
+                        icon = Icons.Default.CheckCircle,
+                        color = Color(0xFF4CAF50)
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "失败",
+                        value = failCount.toString(),
+                        icon = Icons.Default.Cancel,
+                        color = Color(0xFFF44336)
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "尝试",
+                        value = retryCount.toString(),
+                        icon = Icons.Default.Refresh,
+                        color = Color(0xFF2196F3)
+                    )
+                }
+            }
+
+            // 3. Mode Switcher
+            item {
+                ModeSwitcherCard(
+                    isScheduledMode = localScheduledMode,
+                    onModeChange = { newMode ->
+                        if (newMode && !localScheduledMode && showScheduleWarning) {
+                            showWarningDialog = true
+                        } else {
+                            localScheduledMode = newMode
+                            onScheduledModeChange?.invoke(newMode)
+                        }
+                    }
+                )
+            }
+
+            // 4. Main Content Area (Animated Switch)
+            item {
+                AnimatedContent(
+                    targetState = localScheduledMode,
+                    transitionSpec = {
+                        fadeIn() + slideInVertically { height -> height / 10 } with
+                        fadeOut() + slideOutVertically { height -> -height / 10 }
+                    },
+                    label = "ModeSwitch"
+                ) { isScheduled ->
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        if (isScheduled) {
+                            ScheduledTaskForm(
+                                schoolName = schoolName,
+                                dateTime = localDateTime,
+                                onDateTimeClick = { onPickDateTime?.invoke() },
+                                hasTask = hasScheduledTask,
+                                taskInfo = scheduledTaskInfo,
+                                onCancelTask = {
+                                    localScheduledMode = false
+                                    onCancelScheduledTask?.invoke()
+                                },
+                                queueSize = queue.size,
+                                isRunning = isRunning,  // 🔧 传入抢课状态
+                                onStop = onStop  // 🔧 传入停止回调
+                            )
+                        } else {
+                            ImmediateGrabForm(
+                                targetCourseName = targetCourseName,
+                                targetCourseTeacher = targetCourseTeacher,
+                                interval = interval,
+                                onIntervalChange = onIntervalChange,
+                                maxRetry = maxRetry,
+                                onMaxRetryChange = onMaxRetryChange,
+                                isRunning = isRunning,
+                                onStart = {
+                                    // 🔧 检查是否有手动添加的课程 (classId 为空)
+                                    val manualCourses = queue.filter { it.classId.isNullOrEmpty() }
+                                    if (manualCourses.isNotEmpty()) {
+                                        Toast.makeText(context, "⚠️ 包含 ${manualCourses.size} 门手动添加课程，捡漏模式不支持", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        onStart()
+                                    }
+                                },
+                                onStop = onStop,
+                                onClearTargetCourse = onClearTargetCourse,
+                                queueSize = queue.size // 🔧 传递队列大小
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // 5. Grab Queue Header (Always visible in this layout)
+            if (localScheduledMode || queue.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                         GrabQueueHeader(
+                            queueSize = queue.size,
+                            isParallelMode = isParallelMode,
+                            onParallelModeChange = { onParallelModeChange?.invoke(it) },
+                            onClearQueue = { onQueueClear?.invoke() },
+                            isRunning = isRunning,
+                            showMode = showQueueModeLabels, // 🔧 传递显示控制
+                            isExactModeGlobal = isExactModeGlobal, // 🔧 传递全局模式状态
+                            onToggleAllMode = onQueueToggleAllMode, // 🔧 传递一键设置回调
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+                
+                // 6. Queue Items (Using extension function for items)
+                grabQueueItems(
+                    queue = queue,
+                    currentIndex = currentQueueIndex,
+                    itemStatuses = queueItemStatuses,
+                    isRunning = isRunning,
+                    isParallelMode = isParallelMode,
+                    queueVersion = queueVersion, // 🔧 传递版本号强制重组
+                    onMoveItem = { from, to -> onQueueMoveItem?.invoke(from, to) },
+                    onRemoveItem = { onQueueRemoveItem?.invoke(it) },
+                    onAddCourse = { onAddCourse?.invoke() },
+                    onToggleMode = { onQueueToggleMode?.invoke(it) },  // 🔧 传递模式切换回调
+                    showMode = showQueueModeLabels // 🔧 传递显示控制参数
+                )
+            }
+
+            // 7. Log Console
+            item {
+                LogConsole(logText, onClearLog)
+            }
+            
+            item {
+                Spacer(modifier = Modifier.height(60.dp)) // Bottom padding for FAB
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusHeader(isRunning: Boolean, hasScheduledTask: Boolean) {
+    val (bgColor, icon, text, subtext) = when {
+        hasScheduledTask -> Quadruple(
+            Color(0xFFE65100), Icons.Outlined.Timer, "定时任务等待中", "将在预定时间自动启动"
+        )
+        isRunning -> Quadruple(
+            Color(0xFF2E7D32), Icons.Default.Autorenew, "抢课服务运行中", "保持后台运行以持续抢课"
+        )
+        else -> Quadruple(
+            Color(0xFF424242), Icons.Default.Speed, "服务已就绪", "配置参数后开始抢课"
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(text, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(subtext, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+            }
+        }
+    }
+}
+
+@Composable
+fun StatCard(modifier: Modifier = Modifier, title: String, value: String, icon: ImageVector, color: Color) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, contentDescription = null, tint = color.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
+            Text(title, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun ModeSwitcherCard(isScheduledMode: Boolean, onModeChange: (Boolean) -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TabButton(
+                text = "捡漏",
+                selected = !isScheduledMode,
+                icon = Icons.Default.FlashOn,
+                onClick = { onModeChange(false) },
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            TabButton(
+                text = "定时",
+                selected = isScheduledMode,
+                icon = Icons.Default.Schedule,
+                onClick = { onModeChange(true) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+fun TabButton(text: String, selected: Boolean, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val bgColor = if (selected) PrimaryPurple else Color.Transparent
+    val contentColor = if (selected) Color.White else Color.Gray
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(44.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = bgColor, contentColor = contentColor),
+        shape = RoundedCornerShape(12.dp),
+        elevation = if (selected) ButtonDefaults.buttonElevation(defaultElevation = 2.dp) else ButtonDefaults.buttonElevation(0.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text)
+    }
+}
+
+@Composable
+fun ImmediateGrabForm(
+    targetCourseName: String?,
+    targetCourseTeacher: String?,
+    interval: String,
+    onIntervalChange: (String) -> Unit,
+    maxRetry: String,
+    onMaxRetryChange: (String) -> Unit,
+    isRunning: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onClearTargetCourse: (() -> Unit)? = null, // 🔧 清除目标课程
+    queueSize: Int = 0 // 🔧 新增：队列大小
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Target Course Info
+            Text("目标课程", style = MaterialTheme.typography.labelMedium, color = PrimaryPurple, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF3E5F5), RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Book, contentDescription = null, tint = PrimaryPurple, modifier = Modifier.size(32.dp))
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    if (targetCourseName != null) {
+                        Text(targetCourseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text("教师: ${targetCourseTeacher ?: "未知"}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                    } else if (queueSize > 0) {
+                        Text("已就绪: 队列抢课模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = PrimaryPurple)
+                        Text("共 ${queueSize} 门课程待尝试", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    } else {
+                        Text("未选择课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("请在\"课程\"页面长按选择，或在下方添加队列", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
+                }
+                // 🔧 清除按钮（仅当有目标课程时显示）
+                if (targetCourseName != null && onClearTargetCourse != null) {
+                    IconButton(onClick = { onClearTargetCourse() }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "清除目标课程",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // Settings
+            Text("参数配置", style = MaterialTheme.typography.labelMedium, color = Color.Gray, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = interval,
+                    onValueChange = onIntervalChange,
+                    label = { Text("间隔 (ms)") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = maxRetry,
+                    onValueChange = onMaxRetryChange,
+                    label = { Text("最大重试") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Action Buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    enabled = !isRunning && (targetCourseName != null || queueSize > 0)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("启动", fontSize = 16.sp)
+                }
+                
+                Button(
+                    onClick = onStop,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                    enabled = isRunning
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("停止", fontSize = 16.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ScheduledTaskForm(
+    schoolName: String,
+    dateTime: String,
+    onDateTimeClick: () -> Unit,
+    hasTask: Boolean,
+    taskInfo: String,
+    onCancelTask: () -> Unit,
+    queueSize: Int = 0,
+    isRunning: Boolean = false,  // 🔧 新增：是否正在抢课
+    onStop: (() -> Unit)? = null  // 🔧 新增：停止抢课回调
+) {
+    if (hasTask) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = if (isRunning) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)),
+            elevation = CardDefaults.cardElevation(4.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) Color(0xFF4CAF50) else Color(0xFFFF9800))
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (isRunning) Icons.Default.PlayCircle else Icons.Default.AlarmOn, 
+                        contentDescription = null, 
+                        tint = if (isRunning) Color(0xFF2E7D32) else Color(0xFFE65100)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        if (isRunning) "正在抢课中..." else "任务已计划", 
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.Bold, 
+                        color = if (isRunning) Color(0xFF2E7D32) else Color(0xFFE65100)
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(taskInfo, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5D4037))
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 🔧 当正在抢课时，显示红色的"停止抢课"按钮
+                if (isRunning && onStop != null) {
+                    Button(
+                        onClick = onStop,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("停止抢课", color = Color.White)
+                    }
+                } else {
+                    // 未运行时显示"取消任务"按钮
+                    OutlinedButton(
+                        onClick = onCancelTask,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD84315))
+                    ) {
+                        Text("取消任务")
+                    }
+                }
+            }
+        }
+    } else {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // School
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Domain, contentDescription = null, tint = PrimaryPurple)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(schoolName.ifEmpty { "未登录" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                }
+                Divider(modifier = Modifier.padding(vertical = 12.dp).alpha(0.1f))
+                
+                // Queue status hint
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        if (queueSize > 0) Icons.Default.CheckCircle else Icons.Default.Info,
+                        contentDescription = null,
+                        tint = if (queueSize > 0) Color(0xFF4CAF50) else Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (queueSize > 0) "队列中有 $queueSize 门课程待抢" else "请在下方队列中添加课程",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (queueSize > 0) Color(0xFF4CAF50) else Color.Gray
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // DateTime Input
+                Text("开始时间", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dateTime,
+                    onValueChange = {},
+                    placeholder = { Text("选择启动时间") },
+                    modifier = Modifier.fillMaxWidth().clickable { onDateTimeClick() },
+                    shape = RoundedCornerShape(12.dp),
+                    readOnly = true,
+                    enabled = false,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    leadingIcon = { Icon(Icons.Default.Event, contentDescription = null) },
+                    trailingIcon = { 
+                        IconButton(onClick = onDateTimeClick) {
+                            Icon(Icons.Default.EditCalendar, contentDescription = null, tint = PrimaryPurple)
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LogConsole(logText: String, onClearLog: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), // Dark theme for console
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF2D2D2D))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Terminal, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("运行日志", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                IconButton(onClick = onClearLog, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                }
+            }
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(12.dp)
+            ) {
+                val scroll = rememberScrollState()
+                LaunchedEffect(logText) { scroll.animateScrollTo(scroll.maxValue) }
+                
+                Text(
+                    text = logText.ifEmpty { "> 等待任务指令...\n" },
+                    color = Color(0xFF00E676), // Terminal green
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.verticalScroll(scroll)
+                )
+            }
+        }
+    }
+}
+
+data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+

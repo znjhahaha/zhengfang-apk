@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <!-- Modern Brand Colors (Based on Web) -->
+    <color name="primary">#7C3AED</color> <!-- Violet-600 -->
+    <color name="primary_dark">#5B21B6</color> <!-- Violet-800 -->
+    <color name="primary_light">#A78BFA</color> <!-- Violet-400 -->
+    <color name="secondary">#10B981</color> <!-- Emerald-500 -->
+    <color name="background">#F3F4F6</color> <!-- Gray-100 -->
+    <color name="surface">#FFFFFF</color>
+    <color name="error">#EF4444</color> <!-- Red-500 -->
+    <color name="text_primary">#1F2937</color> <!-- Gray-800 -->
+    <color name="text_secondary">#6B7280</color> <!-- Gray-500 -->
+    <color name="border">#E5E7EB</color> <!-- Gray-200 -->
+    <color name="divider">#E0E0E0</color>
+</resources>

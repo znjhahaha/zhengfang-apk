@@ -1,0 +1,157 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// ============ 自动版本号迭代 ============
+def versionPropsFile = file('version.properties')
+def versionProps = new Properties()
+
+if (versionPropsFile.exists()) {
+    versionProps.load(new FileInputStream(versionPropsFile))
+} else {
+    versionProps['VERSION_CODE'] = '1'
+    versionProps['VERSION_NAME'] = '1.0.0'
+}
+
+def code = versionProps['VERSION_CODE'].toInteger()
+def name = versionProps['VERSION_NAME']
+
+// 在配置阶段就递增版本号（这样 defaultConfig 能获取到正确的值）
+// 只在 Release 构建时递增，Debug 不递增
+def isReleaseTask = gradle.startParameter.taskNames.any { taskName ->
+    def lower = taskName.toLowerCase()
+    (lower.contains('release') && (lower.contains('assemble') || lower.contains('bundle')))
+}
+
+if (isReleaseTask) {
+    code++
+    // 自动递增 versionName 的 patch 版本 (1.0.x)
+    def parts = name.split('\\.')
+    if (parts.length >= 3) {
+        parts[2] = (parts[2].toInteger() + 1).toString()
+        name = parts.join('.')
+    }
+    versionProps['VERSION_CODE'] = code.toString()
+    versionProps['VERSION_NAME'] = name
+    versionProps.store(versionPropsFile.newWriter(), 'Auto-incremented on build')
+    println "📦 版本号已更新: versionCode=$code, versionName=$name"
+}
+
+android {
+    namespace 'com.tyust.course'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tyust.course"
+        minSdk 24
+        targetSdk 34
+        versionCode code
+        versionName name
+    }
+
+    signingConfigs {
+        release {
+            // Use environment variables or local.properties for security
+            // For now, using a simple keystore that will be generated
+            storeFile file('release-key.jks')
+            storePassword 'course123'
+            keyAlias 'course'
+            keyPassword 'course123'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    
+    buildFeatures {
+        compose true
+    }
+    
+    composeOptions {
+        kotlinCompilerExtensionVersion = '1.5.8'
+    }
+}
+
+dependencies {
+    // Core AndroidX
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    
+    // Jetpack Compose BOM (Bill of Materials)
+    def composeBom = platform('androidx.compose:compose-bom:2024.02.00')
+    implementation composeBom
+    
+    // Compose UI
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.foundation:foundation'
+    
+    // Compose Navigation
+    implementation 'androidx.navigation:navigation-compose:2.7.7'
+    
+    // Compose Debug Tools
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+    
+    // Legacy Material (for transition period)
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // Networking
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+    
+    // HTML Parsing
+    implementation 'org.jsoup:jsoup:1.15.3'
+    implementation 'com.squareup.okio:okio:3.6.0'
+    
+    // Async (Coroutines for Compose)
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+    
+    // Modern UI & Animations
+    implementation 'com.airbnb.android:lottie-compose:6.3.0'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    
+    // Fragments (for gradual migration)
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
+    
+    // CircleImageView for avatar (legacy)
+    implementation 'de.hdodenhof:circleimageview:3.1.0'
+    
+    // GridLayout for schedule (legacy)
+    implementation 'androidx.gridlayout:gridlayout:1.0.0'
+    
+    // Coil for image loading in Compose
+    implementation 'io.coil-kt:coil-compose:2.5.0'
+
+    // Accompanist (Swipe Refresh)
+    implementation "com.google.accompanist:accompanist-swiperefresh:0.34.0"
+}
+

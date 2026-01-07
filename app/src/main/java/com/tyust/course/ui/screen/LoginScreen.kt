@@ -1,0 +1,687 @@
+package com.tyust.course.ui.screen
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.tyust.course.ui.theme.*
+
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import com.tyust.course.model.SchoolConfig
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LoginScreen(
+    schools: List<SchoolConfig>,
+    onSchoolSelected: (SchoolConfig) -> Unit,
+    onLoginClick: (cookie: String) -> Unit,
+    onOpenWebView: () -> Unit = {},
+    onSchoolAdded: () -> Unit = {},
+    onDemoMode: () -> Unit = {},
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    cookieValue: String = ""
+) {
+    var cookie by remember { mutableStateOf(cookieValue) }
+    
+    // Update cookie when external value changes
+    LaunchedEffect(cookieValue) {
+        if (cookieValue.isNotEmpty()) {
+            cookie = cookieValue
+        }
+    }
+    var showPassword by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(false) }
+    var showEditSchoolDialog by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        visible = true
+    }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        PrimaryPurple,
+                        PrimaryPurpleDark
+                    )
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // App Icon
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn() + slideInVertically { -100 }
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Surface(
+                        modifier = Modifier.size(100.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.School,
+                                contentDescription = "School Icon",
+                                modifier = Modifier.size(60.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "抢课助手",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "智能选课 · 一键抢课",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(48.dp))
+            
+            // Login Card
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn() + slideInVertically { 100 }
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Title with Settings Button
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Cookie 登录",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                            
+                            // Settings button in top-right corner
+                            IconButton(
+                                onClick = { showEditSchoolDialog = true },
+                                modifier = Modifier.align(Alignment.CenterEnd)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "编辑学校配置",
+                                    tint = PrimaryPurple.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text(
+                            text = "请从浏览器复制登录后的Cookie",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        // School Selector
+                        Text(
+                            text = "选择学校",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PrimaryPurple,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        var expanded by remember { mutableStateOf(false) }
+                        var selectedSchool by remember { mutableStateOf<SchoolConfig?>(null) }
+                        var showAddSchoolDialog by remember { mutableStateOf(false) }
+                        
+                        // Initialize selected school
+                        LaunchedEffect(schools) {
+                            if (schools.isNotEmpty() && selectedSchool == null) {
+                                selectedSchool = schools[0]
+                                onSchoolSelected(schools[0])
+                            }
+                        }
+
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = selectedSchool?.name ?: "请选择学校",
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryPurple,
+                                    unfocusedBorderColor = PrimaryPurple.copy(alpha = 0.5f)
+                                )
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                schools.forEach { school ->
+                                    DropdownMenuItem(
+                                        text = { Text(school.name) },
+                                        onClick = {
+                                            selectedSchool = school
+                                            onSchoolSelected(school)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                                // Add "Add School" as last menu item
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text(
+                                            text = "+ 添加新学校",
+                                            color = PrimaryPurple,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    },
+                                    onClick = {
+                                        expanded = false
+                                        showAddSchoolDialog = true
+                                    }
+                                )
+                            }
+                        }
+                        
+                        // Add School Dialog
+                        if (showAddSchoolDialog) {
+                            AddSchoolDialog(
+                                onDismiss = { showAddSchoolDialog = false },
+                                onConfirm = { name, urlData, protocol ->
+                                    // Parse domain and basePath from "domain|basePath" format
+                                    val parts = urlData.split("|")
+                                    val domain = parts[0].trim()
+                                    val basePath = if (parts.size > 1) parts[1] else "/jwglxt"
+                                    
+                                    // Validate domain format
+                                    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9]$")
+                                    val isValidDomain = domain.length >= 2 && domainPattern.matches(domain)
+                                    
+                                    if (isValidDomain) {
+                                        showAddSchoolDialog = false
+                                        val schoolId = "custom_${System.currentTimeMillis()}"
+                                        val schoolName = if (name.isNotBlank()) name else domain.split(".").firstOrNull()?.uppercase() ?: domain
+                                        val newSchool = SchoolConfig(schoolId, schoolName, domain, protocol).apply {
+                                            this.basePath = basePath
+                                        }
+                                        com.tyust.course.manager.UserManager.getInstance().addCustomSchool(newSchool)
+                                        // Notify parent to refresh list
+                                        onSchoolAdded()
+                                        // Select the new school
+                                        selectedSchool = newSchool
+                                        onSchoolSelected(newSchool)
+                                    }
+                                }
+                            )
+                        }
+                        
+                        // Edit School Config Dialog
+                        if (showEditSchoolDialog && selectedSchool != null) {
+                            EditSchoolConfigDialog(
+                                school = selectedSchool!!,
+                                onDismiss = { showEditSchoolDialog = false },
+                                onSave = { updatedSchool ->
+                                    showEditSchoolDialog = false
+                                    // Update in UserManager
+                                    com.tyust.course.manager.UserManager.getInstance().updateSchoolConfig(updatedSchool)
+                                    // Refresh
+                                    selectedSchool = updatedSchool
+                                    onSchoolSelected(updatedSchool)
+                                    onSchoolAdded() // Trigger refresh
+                                }
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        // Cookie Input
+                        OutlinedTextField(
+                            value = cookie,
+                            onValueChange = { cookie = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Cookie") },
+                            placeholder = { Text("粘贴Cookie字符串...") },
+                            visualTransformation = if (showPassword) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                            trailingIcon = {
+                                IconButton(onClick = { showPassword = !showPassword }) {
+                                    Icon(
+                                        imageVector = if (showPassword) {
+                                            Icons.Default.VisibilityOff
+                                        } else {
+                                            Icons.Default.Visibility
+                                        },
+                                        contentDescription = if (showPassword) "隐藏" else "显示"
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = false,
+                            maxLines = 4,
+                            isError = errorMessage != null
+                        )
+                        
+                        // Error Message
+                        if (errorMessage != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        // Login Button
+                        Button(
+                            onClick = { onLoginClick(cookie) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            enabled = cookie.isNotBlank() && !isLoading,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryPurple
+                            )
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = "登录",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // WebView Cookie Button
+                        OutlinedButton(
+                            onClick = { onOpenWebView() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = PrimaryPurple
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInBrowser,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "在线获取 Cookie",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Help Text
+                        Text(
+                            text = "💡 点击上方按钮，在内置浏览器中登录教务系统，一键获取 Cookie",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Demo Mode Button
+                        TextButton(
+                            onClick = { onDemoMode() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "🎮 演示模式 (无需登录)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Version Text
+            Text(
+                text = "Version 2.0 • Jetpack Compose",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddSchoolDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, url: String, protocol: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var urlInput by remember { mutableStateOf("") }
+    var domain by remember { mutableStateOf("") }
+    var basePath by remember { mutableStateOf("/jwglxt") }
+    var protocol by remember { mutableStateOf("https") }
+    var protocolExpanded by remember { mutableStateOf(false) }
+    
+    // Smart URL parsing function
+    fun parseUrl(url: String) {
+        if (url.isBlank()) return
+        
+        var cleanUrl = url.trim()
+        
+        // Extract protocol
+        when {
+            cleanUrl.startsWith("https://") -> {
+                protocol = "https"
+                cleanUrl = cleanUrl.removePrefix("https://")
+            }
+            cleanUrl.startsWith("http://") -> {
+                protocol = "http"
+                cleanUrl = cleanUrl.removePrefix("http://")
+            }
+        }
+        
+        // Extract domain
+        val pathStart = cleanUrl.indexOf('/')
+        if (pathStart > 0) {
+            domain = cleanUrl.substring(0, pathStart)
+            val pathPart = cleanUrl.substring(pathStart)
+            
+            // Find base path - look for common patterns
+            val commonPaths = listOf("/jwglxt", "/jwxt", "/jwxs", "/jw")
+            var foundPath = false
+            
+            for (commonPath in commonPaths) {
+                if (pathPart.startsWith(commonPath + "/") || pathPart == commonPath) {
+                    basePath = commonPath
+                    foundPath = true
+                    break
+                }
+            }
+            
+            // If no common path found, check if it starts directly with module paths
+            // This means basePath should be empty
+            if (!foundPath) {
+                val directPaths = listOf("/xtgl/", "/xsxk/", "/kbcx/", "/cjcx/", "/xsxy/")
+                for (directPath in directPaths) {
+                    if (pathPart.startsWith(directPath)) {
+                        basePath = ""  // No base path, modules are at root
+                        foundPath = true
+                        break
+                    }
+                }
+            }
+            
+            // If still not found, try to extract the first path segment
+            if (!foundPath && pathPart.length > 1) {
+                val secondSlash = pathPart.indexOf('/', 1)
+                if (secondSlash > 1) {
+                    val firstSegment = pathPart.substring(0, secondSlash)
+                    // Check if it looks like a module path or a base path
+                    val modulePatterns = listOf("xtgl", "xsxk", "kbcx", "cjcx", "xsxy")
+                    val segmentName = firstSegment.removePrefix("/")
+                    if (modulePatterns.any { segmentName.startsWith(it) }) {
+                        basePath = ""  // Direct module access
+                    } else {
+                        basePath = firstSegment
+                    }
+                }
+            }
+        } else {
+            domain = cleanUrl.split("?")[0]
+        }
+    }
+    
+    // Domain validation
+    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9]$")
+    val isValidDomain = domain.length >= 2 && domainPattern.matches(domain) && domain.contains(".")
+    val showError = urlInput.isNotBlank() && domain.isNotBlank() && !isValidDomain
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加学校", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                // Smart URL input section
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Text(
+                            text = "🪄 智能识别",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PrimaryPurple,
+                            fontWeight = FontWeight.Medium
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        OutlinedTextField(
+                            value = urlInput,
+                            onValueChange = { urlInput = it },
+                            label = { Text("粘贴教务系统 URL") },
+                            placeholder = { Text("http://jwxt.xxx.edu.cn/...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Button(
+                            onClick = { parseUrl(urlInput) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                            enabled = urlInput.isNotBlank()
+                        ) {
+                            Text("自动识别")
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // School Name Input
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("学校名称 (可选)") },
+                    placeholder = { Text("例如: XX大学") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Domain Input
+                OutlinedTextField(
+                    value = domain,
+                    onValueChange = { domain = it },
+                    label = { Text("教务系统域名") },
+                    placeholder = { Text("jwxt.example.edu.cn") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    isError = showError,
+                    supportingText = if (showError) {
+                        { Text("请输入有效域名", color = MaterialTheme.colorScheme.error) }
+                    } else null
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Base Path Input
+                OutlinedTextField(
+                    value = basePath,
+                    onValueChange = { basePath = it },
+                    label = { Text("基础路径") },
+                    placeholder = { Text("/jwglxt 或留空") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    supportingText = { Text("如 /jwglxt、/jwxt 或留空") }
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Protocol Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = protocolExpanded,
+                    onExpandedChange = { protocolExpanded = !protocolExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = protocol.uppercase(),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("协议") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = protocolExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryPurple,
+                            unfocusedBorderColor = PrimaryPurple.copy(alpha = 0.5f)
+                        )
+                    )
+                    
+                    ExposedDropdownMenu(
+                        expanded = protocolExpanded,
+                        onDismissRequest = { protocolExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("HTTPS (推荐)") },
+                            onClick = {
+                                protocol = "https"
+                                protocolExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("HTTP") },
+                            onClick = {
+                                protocol = "http"
+                                protocolExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { 
+                    // Pass domain with basePath encoded
+                    onConfirm(name, "$domain|$basePath", protocol) 
+                },
+                enabled = isValidDomain,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+            ) {
+                Text("添加")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
