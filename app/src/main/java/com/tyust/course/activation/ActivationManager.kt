@@ -23,12 +23,14 @@ object ActivationManager {
     private const val KEY_EXPIRE_DATE = "expire_date"
     private const val KEY_LAST_CHECK = "last_check"
     private const val KEY_DEVICE_ID = "device_id"
+    private const val KEY_MAX_STUDENTS = "max_students"
+    private const val KEY_IS_SUPER = "is_super"
     
     // 白名单 JSON 地址（Gitee Raw）
     private const val WHITELIST_URL = "https://gitee.com/znj12345/zhengfang/raw/main/whitelist.json"
     
-    // 缓存有效期（7天内不重复请求）
-    private const val CACHE_VALID_DAYS = 7
+    // 缓存有效期（1天内不重复请求）
+    private const val CACHE_VALID_DAYS = 1
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -44,24 +46,30 @@ object ActivationManager {
      * 返回 true = 已激活，false = 未激活
      */
     suspend fun checkActivation(context: Context): Boolean {
+        // 🔒 签名校验已禁用（开发测试中）
+        // if (!com.tyust.course.utils.SignatureUtils.verifySignature(context)) {
+        //     Log.e(TAG, "❌ 签名校验失败，疑似二次打包，激活被拒绝")
+        //     return false
+        // }
+        
         val deviceId = DeviceUtils.getDeviceId(context)
         val prefs = getPrefs(context)
         
         // 保存设备 ID 供界面显示
         prefs.edit().putString(KEY_DEVICE_ID, deviceId).apply()
         
-        // 检查本地缓存是否有效
-        if (isCacheValid(prefs, deviceId)) {
-            Log.d(TAG, "使用本地缓存，设备已激活")
-            return true
-        }
+        // ⚠️ 已禁用缓存，每次都联网获取最新配置
+        // if (isCacheValid(prefs, deviceId)) {
+        //     Log.d(TAG, "使用本地缓存，设备已激活")
+        //     return true
+        // }
         
         // 联网验证
         return try {
             val result = verifyOnline(context, deviceId)
             if (result.first) {
                 // 激活成功，保存到本地
-                saveActivation(prefs, deviceId, result.second)
+                saveActivation(prefs, deviceId, result.second, result.third)
             }
             result.first
         } catch (e: Exception) {
@@ -100,9 +108,9 @@ object ActivationManager {
     
     /**
      * 联网验证设备 ID
-     * 返回 Pair<是否激活, 过期日期>
+     * 返回 Triple<是否激活, 过期日期, 最大学生数>
      */
-    private suspend fun verifyOnline(context: Context, deviceId: String): Pair<Boolean, String?> {
+    private suspend fun verifyOnline(context: Context, deviceId: String): Triple<Boolean, String?, Int> {
         return withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url(WHITELIST_URL)
@@ -121,8 +129,9 @@ object ActivationManager {
     
     /**
      * 解析白名单 JSON，查找设备 ID
+     * 返回 Triple<是否激活, 过期日期, 最大学生数>
      */
-    private fun parseWhitelist(json: String, deviceId: String): Pair<Boolean, String?> {
+    private fun parseWhitelist(json: String, deviceId: String): Triple<Boolean, String?, Int> {
         val root = JSONObject(json)
         val devices = root.getJSONArray("devices")
         
@@ -136,16 +145,20 @@ object ActivationManager {
                 // 检查是否过期
                 if (expire != null && isExpired(expire)) {
                     Log.d(TAG, "设备 $deviceId 已过期: $expire")
-                    return Pair(false, expire)
+                    return Triple(false, expire, 0)
                 }
                 
-                Log.d(TAG, "设备 $deviceId 验证通过，过期时间: $expire")
-                return Pair(true, expire)
+                // 读取超级账户和最大学生数
+                val isSuper = device.optBoolean("is_super", false)
+                val maxStudents = if (isSuper) 0 else device.optInt("max_students", 2)
+                
+                Log.d(TAG, "设备 $deviceId 验证通过，过期: $expire, 超级: $isSuper, 最大学生数: $maxStudents")
+                return Triple(true, expire, maxStudents)
             }
         }
         
         Log.d(TAG, "设备 $deviceId 不在白名单中")
-        return Pair(false, null)
+        return Triple(false, null, 0)
     }
     
     /**
@@ -164,12 +177,13 @@ object ActivationManager {
     /**
      * 保存激活状态到本地
      */
-    private fun saveActivation(prefs: SharedPreferences, deviceId: String, expireDate: String?) {
+    private fun saveActivation(prefs: SharedPreferences, deviceId: String, expireDate: String?, maxStudents: Int) {
         prefs.edit()
             .putBoolean(KEY_IS_ACTIVATED, true)
             .putString(KEY_DEVICE_ID, deviceId)
             .putString(KEY_EXPIRE_DATE, expireDate)
             .putLong(KEY_LAST_CHECK, System.currentTimeMillis())
+            .putInt(KEY_MAX_STUDENTS, maxStudents)
             .apply()
     }
     
@@ -200,5 +214,12 @@ object ActivationManager {
      */
     fun clearActivation(context: Context) {
         getPrefs(context).edit().clear().apply()
+    }
+    
+    /**
+     * 获取最大允许学生数（0 表示无限制/超级账户）
+     */
+    fun getMaxStudents(context: Context): Int {
+        return getPrefs(context).getInt(KEY_MAX_STUDENTS, 2)
     }
 }

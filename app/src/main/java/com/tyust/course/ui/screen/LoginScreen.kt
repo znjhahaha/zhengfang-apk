@@ -46,7 +46,14 @@ fun LoginScreen(
     onDemoMode: () -> Unit = {},
     isLoading: Boolean = false,
     errorMessage: String? = null,
-    cookieValue: String = ""
+    cookieValue: String = "",
+    // New parameters for binding dialog
+    showBindingDialog: Boolean = false,
+    bindingStudentName: String = "",
+    bindingMaxStudents: Int = 0,
+    bindingUsedNames: Set<String> = emptySet(),
+    onConfirmBinding: () -> Unit = {},
+    onCancelBinding: () -> Unit = {}
 ) {
     var cookie by remember { mutableStateOf(cookieValue) }
     
@@ -439,6 +446,153 @@ fun LoginScreen(
             )
         }
     }
+
+    // Student Binding Confirmation Dialog
+    if (showBindingDialog) {
+        BindingConfirmationDialog(
+            studentName = bindingStudentName,
+            maxStudents = bindingMaxStudents,
+            usedNames = bindingUsedNames,
+            onConfirm = onConfirmBinding,
+            onDismiss = onCancelBinding
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BindingConfirmationDialog(
+    studentName: String,
+    maxStudents: Int,
+    usedNames: Set<String>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        ),
+        modifier = Modifier.padding(16.dp),
+        content = {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Header Icon
+                    Surface(
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = PrimaryPurple.copy(alpha = 0.1f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.School,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = PrimaryPurple
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "🔐 确认绑定账号",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "检测到新账号：「$studentName」",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PrimaryPurple,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Info Card
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "📊 绑定配额：",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${usedNames.size} / $maxStudents",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (usedNames.size >= maxStudents) ErrorRed else SuccessGreen
+                                )
+                            }
+                            
+                            if (usedNames.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "👥 已绑定：${usedNames.joinToString("、")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Text(
+                        text = "⚠️ 确认后此账号将与本设备永久绑定，完成后将占用 1 个名额，无法撤销。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(32.dp))
+                    
+                    // Action Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                        ) {
+                            Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        
+                        Button(
+                            onClick = onConfirm,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                        ) {
+                            Text("确认绑定", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

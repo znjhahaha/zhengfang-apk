@@ -1,14 +1,21 @@
+# Gradle
 *.iml
-.gradle
-/local.properties
-/.idea/
-.DS_Store
+.gradle/
 build/
 app/build/
-/captures
-.externalNativeBuild
-.cxx
+
+# IDE
+/.idea/
+*.iml
+.DS_Store
+
+# Android
+/local.properties
 local.properties
+/captures
+captures/
+.externalNativeBuild/
+.cxx/
 *.apk
 *.ap_
 *.dex
@@ -16,8 +23,43 @@ local.properties
 bin/
 gen/
 out/
-captures/
-.externalNativeBuild/
-.cxx/
+
+# Firebase
 .google_services.json
 google-services.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.spec
+
+# PyInstaller
+dist/
+
+# Logs
+*.log
+build_error.txt
+build_output.log
+signature_report.txt
+
+# Whitelist (sensitive)
+whitelist.json
+
+# Other
+*.bak
+*.tmp
+*.swp
+
+# Documentation & Tools (not needed in repo)
+api.md
+CHANGELOG.md
+使用教程.html
+add_device.py
+pic/
+paper.md
+log.txt
+update.json
+announcement.json

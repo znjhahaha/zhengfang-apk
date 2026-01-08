@@ -12,12 +12,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.LoginScreen
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.utils.CourseParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
@@ -33,6 +37,13 @@ class LoginActivity : ComponentActivity() {
     private var errorMessage by mutableStateOf<String?>(null)
     private var cookieFromWebView by mutableStateOf("")
     private var isAutoValidating by mutableStateOf(false)
+
+    // Binding Dialog State
+    private var showBindingDialog by mutableStateOf(false)
+    private var bindingStudentName by mutableStateOf("")
+    private var bindingMaxStudents by mutableStateOf(0)
+    private var bindingUsedNames by mutableStateOf<Set<String>>(emptySet())
+    private var pendingCookie by mutableStateOf("")
 
     // WebView result launcher
     private val webViewLauncher = registerForActivityResult(
@@ -53,8 +64,19 @@ class LoginActivity : ComponentActivity() {
         // Initialize UserManager with context for SharedPreferences
         UserManager.getInstance().init(this)
         
-        // 检查是否有保存的有效登录状态
-        checkSavedLoginState()
+        // 🔄 每次启动 App 都同步云端激活配置（获取最新的 max_students）
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
+                }
+                Log.d(TAG, "已同步云端配置")
+            } catch (e: Exception) {
+                Log.w(TAG, "启动同步失败: ${e.message}")
+            }
+            // 检查是否有保存的有效登录状态
+            checkSavedLoginState()
+        }
         
         setContent {
             CourseSelectorTheme {
@@ -89,7 +111,20 @@ class LoginActivity : ComponentActivity() {
                     },
                     isLoading = isLoading || isAutoValidating,
                     errorMessage = if (isAutoValidating) "正在验证登录状态..." else errorMessage,
-                    cookieValue = cookieFromWebView
+                    cookieValue = cookieFromWebView,
+                    showBindingDialog = showBindingDialog,
+                    bindingStudentName = bindingStudentName,
+                    bindingMaxStudents = bindingMaxStudents,
+                    bindingUsedNames = bindingUsedNames,
+                    onConfirmBinding = {
+                        showBindingDialog = false
+                        com.tyust.course.manager.StudentLimitManager.recordStudentName(this@LoginActivity, bindingStudentName)
+                        proceedToMain(UserManager.getInstance(), bindingStudentName, pendingCookie)
+                    },
+                    onCancelBinding = {
+                        showBindingDialog = false
+                        errorMessage = "已取消，账号未绑定"
+                    }
                 )
             }
         }
@@ -171,6 +206,23 @@ class LoginActivity : ComponentActivity() {
         isLoading = true
         errorMessage = null
 
+        // 🔄 先同步云端激活配置（获取最新的 max_students）
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
+                }
+                Log.d(TAG, "激活配置已同步，max_students=${com.tyust.course.activation.ActivationManager.getMaxStudents(this@LoginActivity)}")
+            } catch (e: Exception) {
+                Log.w(TAG, "激活配置同步失败: ${e.message}")
+            }
+            
+            // 同步完成后继续登录流程
+            performLoginValidation(currentSchool, cookieStr)
+        }
+    }
+    
+    private fun performLoginValidation(currentSchool: SchoolConfig, cookieStr: String) {
         // 1. Set Cookie
         CourseApiClient.getInstance().setCookie(currentSchool.baseUrl, cookieStr.trim())
 
@@ -193,6 +245,7 @@ class LoginActivity : ComponentActivity() {
                         html.contains("请先登录")
 
                 val name = CourseParser.parseStudentName(html)
+                val studentId = CourseParser.parseStudentId(html)
                 val hasWelcomeSign = html.contains("欢迎您") ||
                         html.contains("退出") ||
                         html.contains("xsxxwh") ||
@@ -204,21 +257,46 @@ class LoginActivity : ComponentActivity() {
                     isLoading = false
                     if (success) {
                         val userManager = UserManager.getInstance()
-                        userManager.isLoggedIn = true
-                        userManager.studentName = name ?: "同学"
+                        val studentNameParsed = name ?: "同学"
+                        val studentIdParsed = studentId ?: ""
                         
-                        // 保存 Cookie 用于下次自动登录
-                        userManager.saveCookie(cookieStr.trim())
-                        Log.d(TAG, "Cookie 已保存，下次可自动登录")
+                        // 保存信息
+                        userManager.studentName = studentNameParsed
+                        if (studentIdParsed.isNotEmpty()) {
+                            userManager.studentId = studentIdParsed
+                        }
                         
-                        Toast.makeText(
-                            this@LoginActivity,
-                            "登录成功！欢迎 ${name ?: "同学"}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        val maxStudents = com.tyust.course.activation.ActivationManager.getMaxStudents(this@LoginActivity)
+                        val usedNames = com.tyust.course.manager.StudentLimitManager.getUsedStudentNames(this@LoginActivity)
                         
-                        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
-                        finish()
+                        // 检查是否是已绑定的学生（直接放行）
+                        if (usedNames.contains(studentNameParsed)) {
+                            // 已绑定的学生，直接进入
+                            proceedToMain(userManager, studentNameParsed, cookieStr)
+                            return@runOnUiThread
+                        }
+                        
+                        // 超级账户无需绑定确认，直接进入
+                        if (maxStudents <= 0) {
+                            Log.d(TAG, "超级账户，无需绑定确认")
+                            com.tyust.course.manager.StudentLimitManager.recordStudentName(this@LoginActivity, studentNameParsed)
+                            proceedToMain(userManager, studentNameParsed, cookieStr)
+                            return@runOnUiThread
+                        }
+                        
+                        // 检查是否超过限制
+                        if (usedNames.size >= maxStudents) {
+                            errorMessage = "⚠️ 该设备已绑定 ${usedNames.size} 个账号\n已达上限（最多 $maxStudents 个）\n\n已绑定账号：${usedNames.joinToString("、")}"
+                            return@runOnUiThread
+                        }
+                        
+                        // 新学生，设置状态以显示 Compose 弹窗
+                        bindingStudentName = studentNameParsed
+                        bindingMaxStudents = maxStudents
+                        bindingUsedNames = usedNames
+                        pendingCookie = cookieStr
+                        showBindingDialog = true
+
                     } else {
                         errorMessage = if (isLoginPage) {
                             "Cookie 已过期或无效，请重新获取"
@@ -229,5 +307,26 @@ class LoginActivity : ComponentActivity() {
                 }
             }
         })
+    }
+    
+    /**
+     * 登录成功后进入主界面
+     */
+    private fun proceedToMain(userManager: UserManager, studentName: String, cookieStr: String) {
+        userManager.isLoggedIn = true
+        userManager.studentName = studentName
+        
+        // 保存 Cookie 用于下次自动登录
+        userManager.saveCookie(cookieStr.trim())
+        Log.d(TAG, "Cookie 已保存，下次可自动登录")
+        
+        Toast.makeText(
+            this@LoginActivity,
+            "登录成功！欢迎 $studentName",
+            Toast.LENGTH_SHORT
+        ).show()
+        
+        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+        finish()
     }
 }

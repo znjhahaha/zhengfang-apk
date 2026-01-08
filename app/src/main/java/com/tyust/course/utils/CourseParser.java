@@ -76,6 +76,48 @@ public class CourseParser {
         }
     }
 
+    // 从学生信息页面解析学号
+    public static String parseStudentId(String html) {
+        try {
+            Document doc = Jsoup.parse(html);
+
+            // 方法1: 查找input[name="xh"]
+            Element idInput = doc.selectFirst("input[name=\"xh\"]");
+            if (idInput != null) {
+                String value = idInput.attr("value");
+                if (value != null && !value.trim().isEmpty()) {
+                    Log.d(TAG, "Found ID from input[name=xh]: " + value);
+                    return value.trim();
+                }
+            }
+
+            // 方法2: 查找特定的学号容器
+            String[] selectors = {
+                    "span[name=\"xh\"]",
+                    "div[name=\"xh\"]",
+                    ".student-id",
+                    "#xh",
+                    ".user-id"
+            };
+
+            for (String selector : selectors) {
+                Element el = doc.selectFirst(selector);
+                if (el != null) {
+                    String text = el.text().trim();
+                    if (!text.isEmpty()) {
+                        Log.d(TAG, "Found ID from " + selector + ": " + text);
+                        return text;
+                    }
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing student ID: " + e.getMessage());
+            return null;
+        }
+    }
+
     // 从选课页面解析隐藏参数
     public static java.util.Map<String, String> parseCourseParams(String html) {
         java.util.Map<String, String> params = new java.util.HashMap<>();

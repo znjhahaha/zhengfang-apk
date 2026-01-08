@@ -3,6 +3,7 @@ package com.tyust.course.fragment
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +24,8 @@ class SettingsFragment : Fragment() {
     private var studentName by mutableStateOf("")
     private var studentId by mutableStateOf("")
     private var schoolName by mutableStateOf("")
+    private var isSuper by mutableStateOf(false)
+    private var quotaInfo by mutableStateOf("")
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -43,7 +46,10 @@ class SettingsFragment : Fragment() {
                     onClearCache = { handleClearCache() },
                     onCheckUpdate = { /* Not used in fragment, handled by SettingsRoute */ },
                     onAbout = { handleAbout() },
-                    onLogout = { handleLogout() }
+                    onLogout = { handleLogout() },
+                    onQuotaClick = { showQuotaDetails() },
+                    isSuper = isSuper,
+                    quotaInfo = quotaInfo
                 )
             }
         }
@@ -60,8 +66,71 @@ class SettingsFragment : Fragment() {
         val school = UserManager.getInstance().currentSchool
 
         studentName = name ?: "同学"
-        studentId = id ?: "--"
+        studentId = if (id.isNullOrEmpty()) "" else id
         schoolName = school?.name ?: "未选择"
+        
+        // 获取配额信息 - 使用多种方式尝试获取 Context
+        val ctx = context ?: activity?.applicationContext ?: view?.context
+        if (ctx != null) {
+            try {
+                val maxStudents = com.tyust.course.activation.ActivationManager.getMaxStudents(ctx)
+                isSuper = maxStudents <= 0
+                if (isSuper) {
+                    quotaInfo = "无限制"
+                } else {
+                    val usedCount = com.tyust.course.manager.StudentLimitManager.getUsedCount(ctx)
+                    quotaInfo = "$usedCount / $maxStudents"
+                }
+                Log.d("SettingsFragment", "配额加载成功: isSuper=$isSuper, quota=$quotaInfo, maxStudents=$maxStudents")
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "配额加载失败: ${e.message}")
+                quotaInfo = "加载失败"
+            }
+        } else {
+            Log.w("SettingsFragment", "Context 为空，无法加载配额")
+            quotaInfo = "0 / 2" // 默认配额
+        }
+        
+        Log.d("SettingsFragment", "Updated UI: name=$studentName, id=$studentId, isSuper=$isSuper, quota=$quotaInfo")
+    }
+
+    private fun showQuotaDetails() {
+        val ctx = context ?: activity ?: view?.context
+        if (ctx == null) {
+            Log.e("SettingsFragment", "showQuotaDetails: 无法获取 Context")
+            return
+        }
+        
+        val maxStudents = com.tyust.course.activation.ActivationManager.getMaxStudents(ctx)
+        val usedNames = com.tyust.course.manager.StudentLimitManager.getUsedStudentNames(ctx)
+        val isSuperUser = maxStudents <= 0
+        
+        val message = buildString {
+            append("📊 设备绑定详情\n\n")
+            if (isSuperUser) {
+                append("✨ 身份：超级用户\n")
+                append("📈 配额：无限制\n")
+            } else {
+                append("📈 配额：${usedNames.size} / $maxStudents\n")
+            }
+            append("━━━━━━━━━━━━━━━\n")
+            if (usedNames.isNotEmpty()) {
+                append("👥 已绑定账号：\n")
+                usedNames.forEachIndexed { index, name ->
+                    append("${index + 1}. $name\n")
+                }
+            } else {
+                append("ℹ️ 暂未绑定任何账号\n")
+            }
+            append("━━━━━━━━━━━━━━━\n\n")
+            append("💡 说明：激活名额一旦绑定无法自行解绑。如需更换请联系管理员。")
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle("当前账号配额")
+            .setMessage(message)
+            .setPositiveButton("我知道了", null)
+            .show()
     }
 
     private fun handleCookieConfig() {

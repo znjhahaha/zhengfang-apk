@@ -47,7 +47,10 @@ fun SettingsScreen(
     onClearCache: () -> Unit,
     onCheckUpdate: () -> Unit,
     onAbout: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onQuotaClick: () -> Unit = {},
+    isSuper: Boolean = false,
+    quotaInfo: String = ""
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -67,7 +70,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             // User Header Card
-            SettingsHeader(studentName, studentId, schoolName)
+            SettingsHeader(studentName, studentId, schoolName, isSuper, quotaInfo)
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -91,6 +94,13 @@ fun SettingsScreen(
                 title = "重新配置Cookie",
                 subtitle = "更换登录凭证",
                 onClick = onCookieConfig
+            )
+            SettingsItem(
+                icon = Icons.Outlined.AssignmentInd,
+                title = "当前账号配额",
+                subtitle = if (isSuper) "超级用户 (无限绑定)" else if (quotaInfo.isNotEmpty()) "已绑定 $quotaInfo" else "正在获取...",
+                iconColor = if (isSuper) Color(0xFFFFD700) else PrimaryPurple,
+                onClick = onQuotaClick
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -146,7 +156,7 @@ fun SettingsScreen(
 }
 
 @Composable
-fun SettingsHeader(name: String, id: String, school: String) {
+fun SettingsHeader(name: String, id: String, school: String, isSuper: Boolean = false, quotaInfo: String = "") {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
@@ -206,10 +216,44 @@ fun SettingsHeader(name: String, id: String, school: String) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "学号: $id",
+                            text = "设备ID: ${id.ifBlank { "未获取" }}",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
+                        
+                        // Quota / Super Status
+                        if (isSuper || quotaInfo.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (isSuper) {
+                                Surface(
+                                    color = Color(0xFFFFD700),
+                                    shape = RoundedCornerShape(8.dp),
+                                    shadowElevation = 2.dp
+                                ) {
+                                    Text(
+                                        text = " 👑 超级用户 ",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF5C4033),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            } else {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                                ) {
+                                    Text(
+                                        text = " 📊 配额: $quotaInfo ",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

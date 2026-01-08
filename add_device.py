@@ -132,6 +132,20 @@ class WhitelistTab:
             font=('微软雅黑', 9, 'bold'), bg='#4CAF50', fg='white', relief='flat', padx=10, cursor='hand2')
         add_btn.grid(row=0, column=6, padx=8, pady=3)
         
+        # 第二行：学生数限制设置
+        row2 = tk.Frame(add_frame, bg='#f5f5f5')
+        row2.pack(fill=tk.X, pady=(5, 0))
+        
+        tk.Label(row2, text="学生数:", font=('微软雅黑', 9), bg='#f5f5f5').pack(side=tk.LEFT, padx=3)
+        self.max_students_var = tk.StringVar(value="2")
+        self.max_students_spin = ttk.Spinbox(row2, from_=1, to=10, width=5, textvariable=self.max_students_var, font=('微软雅黑', 9))
+        self.max_students_spin.pack(side=tk.LEFT, padx=3)
+        
+        self.is_super_var = tk.BooleanVar(value=False)
+        super_cb = tk.Checkbutton(row2, text="超级账户(无限制)", variable=self.is_super_var,
+            font=('微软雅黑', 9), bg='#f5f5f5', activebackground='#f5f5f5', command=self.on_super_toggle)
+        super_cb.pack(side=tk.LEFT, padx=10)
+        
         # 快捷按钮
         quick_frame = tk.Frame(add_frame, bg='#f5f5f5')
         quick_frame.pack(fill=tk.X, pady=(3, 0))
@@ -145,16 +159,18 @@ class WhitelistTab:
         list_frame = tk.Frame(self.parent, bg='#f5f5f5')
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
-        columns = ('id', 'expire', 'status', 'note')
+        columns = ('id', 'expire', 'status', 'max_stu', 'note')
         self.tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=10)
         self.tree.heading('id', text='设备ID')
         self.tree.heading('expire', text='过期日期')
         self.tree.heading('status', text='状态')
+        self.tree.heading('max_stu', text='学生数')
         self.tree.heading('note', text='备注')
         self.tree.column('id', width=100, anchor='center')
         self.tree.column('expire', width=90, anchor='center')
         self.tree.column('status', width=70, anchor='center')
-        self.tree.column('note', width=150, anchor='w')
+        self.tree.column('max_stu', width=60, anchor='center')
+        self.tree.column('note', width=120, anchor='w')
         
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -165,6 +181,8 @@ class WhitelistTab:
         btn_frame = tk.Frame(self.parent, bg='#f5f5f5')
         btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
         
+        tk.Button(btn_frame, text="✏️ 编辑", command=self.edit_device,
+            font=('微软雅黑', 9), bg='#FF9800', fg='white', relief='flat', padx=10, cursor='hand2').pack(side=tk.LEFT, padx=3)
         tk.Button(btn_frame, text="🗑️ 删除", command=self.delete_device,
             font=('微软雅黑', 9), bg='#f44336', fg='white', relief='flat', padx=10, cursor='hand2').pack(side=tk.LEFT, padx=3)
         tk.Button(btn_frame, text="🔄 刷新", command=self.load_from_gitee,
@@ -176,6 +194,13 @@ class WhitelistTab:
     def set_expire_days(self, days):
         self.expire_entry.delete(0, tk.END)
         self.expire_entry.insert(0, (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d"))
+    
+    def on_super_toggle(self):
+        """当超级账户勾选时禁用学生数输入框"""
+        if self.is_super_var.get():
+            self.max_students_spin.config(state='disabled')
+        else:
+            self.max_students_spin.config(state='normal')
     
     def load_from_gitee(self):
         self.status_callback("⏳ 正在从 Gitee 加载白名单...", '#FF9800')
@@ -209,6 +234,8 @@ class WhitelistTab:
             device_id = str(device.get("id", ""))
             expire = device.get("expire", "永久")
             note = device.get("note", "")
+            is_super = device.get("is_super", False)
+            max_students = device.get("max_students", 2)
             
             is_expired = False
             if expire != "永久":
@@ -217,12 +244,14 @@ class WhitelistTab:
                 except: pass
             
             status = "❌ 过期" if is_expired else "✅ 有效"
+            max_stu_str = "∞" if is_super else str(max_students)
+            
             if is_expired:
                 expired += 1
-                self.tree.insert('', tk.END, values=(device_id, expire, status, note), tags=('expired',))
+                self.tree.insert('', tk.END, values=(device_id, expire, status, max_stu_str, note), tags=('expired',))
             else:
                 active += 1
-                self.tree.insert('', tk.END, values=(device_id, expire, status, note))
+                self.tree.insert('', tk.END, values=(device_id, expire, status, max_stu_str, note))
         
         self.tree.tag_configure('expired', foreground='#999')
         self.stats_label.config(text=f"共 {active + expired} 个 | ✅ {active} | ❌ {expired}")
@@ -231,6 +260,8 @@ class WhitelistTab:
         device_id = self.device_id_entry.get().strip().upper()
         expire = self.expire_entry.get().strip()
         note = self.note_entry.get().strip()
+        is_super = self.is_super_var.get()
+        max_students = int(self.max_students_var.get()) if not is_super else 0
         
         if not device_id or not expire:
             messagebox.showwarning("提示", "请填写设备ID和过期日期")
@@ -241,12 +272,21 @@ class WhitelistTab:
                 if messagebox.askyesno("提示", f"设备 {device_id} 已存在，是否更新？"):
                     device["expire"] = expire
                     device["note"] = note
+                    device["is_super"] = is_super
+                    device["max_students"] = max_students
                     if self.save_to_gitee():
                         self.refresh_table()
                         self.clear_inputs()
                 return
         
-        self.whitelist_data.setdefault("devices", []).append({"id": device_id, "expire": expire, "note": note})
+        new_device = {
+            "id": device_id,
+            "expire": expire,
+            "note": note,
+            "is_super": is_super,
+            "max_students": max_students
+        }
+        self.whitelist_data.setdefault("devices", []).append(new_device)
         if self.save_to_gitee():
             self.refresh_table()
             self.clear_inputs()
@@ -270,6 +310,50 @@ class WhitelistTab:
     def clear_inputs(self):
         self.device_id_entry.delete(0, tk.END)
         self.note_entry.delete(0, tk.END)
+    
+    def edit_device(self):
+        """编辑选中设备的权限和学生数"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择要编辑的设备")
+            return
+        
+        device_id = str(self.tree.item(selected[0])['values'][0])
+        
+        # 查找设备数据
+        target_device = None
+        for device in self.whitelist_data.get("devices", []):
+            if str(device["id"]).upper() == device_id.upper():
+                target_device = device
+                break
+        
+        if not target_device:
+            messagebox.showerror("错误", f"未找到设备 {device_id}")
+            return
+        
+        # 将数据填充到表单
+        self.device_id_entry.delete(0, tk.END)
+        self.device_id_entry.insert(0, device_id)
+        
+        self.expire_entry.delete(0, tk.END)
+        self.expire_entry.insert(0, target_device.get("expire", ""))
+        
+        self.note_entry.delete(0, tk.END)
+        self.note_entry.insert(0, target_device.get("note", ""))
+        
+        is_super = target_device.get("is_super", False)
+        max_students = target_device.get("max_students", 2)
+        
+        self.is_super_var.set(is_super)
+        self.max_students_var.set(str(max_students))
+        
+        # 更新输入框状态
+        if is_super:
+            self.max_students_spin.config(state='disabled')
+        else:
+            self.max_students_spin.config(state='normal')
+        
+        messagebox.showinfo("提示", f"已加载设备 {device_id} 的信息\n修改后点击「添加」按钮保存")
 
 
 class AnnouncementTab:

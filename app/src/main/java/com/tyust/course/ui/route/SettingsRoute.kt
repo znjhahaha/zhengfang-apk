@@ -27,6 +27,8 @@ import com.tyust.course.ui.screen.SettingsScreen
 import com.tyust.course.update.UpdateManager
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.announcement.AnnouncementHistoryScreen
+import com.tyust.course.activation.ActivationManager
+import com.tyust.course.manager.StudentLimitManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,7 +36,7 @@ fun SettingsRoute() {
     val context = LocalContext.current
     
     var studentName by remember { mutableStateOf("") }
-    var studentId by remember { mutableStateOf("") }
+    var deviceId by remember { mutableStateOf("") }
     var schoolName by remember { mutableStateOf("") }
     
     // UI States
@@ -43,6 +45,12 @@ fun SettingsRoute() {
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showQuotaDialog by remember { mutableStateOf(false) }
+    
+    // Quota States
+    var isSuper by remember { mutableStateOf(false) }
+    var quotaInfo by remember { mutableStateOf("") }
+    var quotaDialogMessage by remember { mutableStateOf("") }
     
     // Update States
     val updateManager = remember { UpdateManager.getInstance(context) }
@@ -61,12 +69,44 @@ fun SettingsRoute() {
     
     LaunchedEffect(Unit) {
         val name = UserManager.getInstance().studentName
-        val id = UserManager.getInstance().studentId
         val school = UserManager.getInstance().currentSchool
 
         studentName = name ?: "同学"
-        studentId = id ?: "--"
+        deviceId = ActivationManager.getSavedDeviceId(context)
         schoolName = school?.name ?: "未选择"
+        
+        // Load quota info
+        val maxStudents = ActivationManager.getMaxStudents(context)
+        isSuper = maxStudents <= 0
+        if (isSuper) {
+            quotaInfo = "无限制"
+        } else {
+            val usedCount = StudentLimitManager.getUsedCount(context)
+            quotaInfo = "$usedCount / $maxStudents"
+        }
+        
+        // Prepare quota dialog message
+        val usedNames = StudentLimitManager.getUsedStudentNames(context)
+        quotaDialogMessage = buildString {
+            append("📊 设备绑定详情\n\n")
+            if (isSuper) {
+                append("✨ 身份：超级用户\n")
+                append("📈 配额：无限制\n")
+            } else {
+                append("📈 配额：${usedNames.size} / $maxStudents\n")
+            }
+            append("━━━━━━━━━━━━━━━\n")
+            if (usedNames.isNotEmpty()) {
+                append("👥 已绑定账号：\n")
+                usedNames.forEachIndexed { index, n ->
+                    append("${index + 1}. $n\n")
+                }
+            } else {
+                append("ℹ️ 暂未绑定任何账号\n")
+            }
+            append("━━━━━━━━━━━━━━━\n\n")
+            append("💡 说明：激活名额一旦绑定无法自行解绑。")
+        }
     }
     
     fun performLogout() {
@@ -132,16 +172,19 @@ fun SettingsRoute() {
     
     SettingsScreen(
         studentName = studentName,
-        studentId = studentId,
+        studentId = deviceId,
         schoolName = schoolName,
         currentVersion = currentVersion,
         onSchoolSelect = { showSchoolDialog = true },
         onAnnouncementHistory = { showHistory = true },
-        onCookieConfig = { performLogout() }, // Just logout effectively for re-config
+        onCookieConfig = { performLogout() },
         onClearCache = { showClearCacheDialog = true },
         onCheckUpdate = { checkForUpdate() },
         onAbout = { showAboutDialog = true },
-        onLogout = { showLogoutDialog = true }
+        onLogout = { showLogoutDialog = true },
+        onQuotaClick = { showQuotaDialog = true },
+        isSuper = isSuper,
+        quotaInfo = quotaInfo
     )
     
     // Dialogs
@@ -170,12 +213,23 @@ fun SettingsRoute() {
     }
     
     if (showAboutDialog) {
-         SimpleConfirmDialog(
+          SimpleConfirmDialog(
             title = "关于",
             text = "正方教务工具 Android版\n\n版本: 1.0.0\n\n功能特性:\n• 课程信息查询\n• 智能抢课Pro+\n• 课表查看\n• 成绩查询\n\n本应用仅供学习交流使用",
             onConfirm = { showAboutDialog = false },
             onDismiss = { showAboutDialog = false },
             confirmText = "确定",
+            showCancel = false
+        )
+    }
+    
+    if (showQuotaDialog) {
+        SimpleConfirmDialog(
+            title = "当前账号配额",
+            text = quotaDialogMessage,
+            onConfirm = { showQuotaDialog = false },
+            onDismiss = { showQuotaDialog = false },
+            confirmText = "我知道了",
             showCancel = false
         )
     }
