@@ -28,6 +28,14 @@ out/
 .google_services.json
 google-services.json
 
+# Keystore (sensitive)
+*.jks
+*.keystore
+release-key.jks
+
+# Proguard
+proguard-rules.pro
+
 # Python
 __pycache__/
 *.py[cod]
