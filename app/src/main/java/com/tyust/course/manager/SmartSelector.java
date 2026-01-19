@@ -40,6 +40,14 @@ public class SmartSelector {
     private ArrayList<Course> courseQueue = new ArrayList<>();
     private int currentQueueIndex = 0;
 
+    // 🔧 模糊匹配捡漏模式
+    private String fuzzyMatchCourseId = null; // 监控的课程类别ID (courseId)
+    private String fuzzyMatchCourseName = null; // 课程名称（用于显示）
+    private String fuzzyMatchXkkzId = null; // 选课控制ID（请求详情必需）
+    private String fuzzyMatchKklxdm = null; // 课程类型代码（01=专业课, 10=公选课等）
+    private boolean fuzzyMatchEnabled = false; // 是否启用模糊匹配模式
+    private java.util.Map<String, Integer> lastSelectedSnapshot = new java.util.HashMap<>(); // 上次人数快照
+
     // Configurable settings
     private int interval = 1500; // ms
     private int maxRetry = 100;
@@ -894,6 +902,197 @@ public class SmartSelector {
         Log.d(TAG, msg);
         if (listener != null) {
             handler.post(() -> listener.onUpdate(msg));
+        }
+    }
+
+    // ============ 模糊匹配捡漏模式 ============
+
+    /**
+     * 设置模糊匹配目标课程类别
+     * 
+     * @param courseId   课程ID (kch_id)
+     * @param courseName 课程名称（用于显示）
+     */
+    public void setFuzzyMatchTarget(String courseId, String courseName) {
+        setFuzzyMatchTarget(courseId, courseName, null);
+    }
+
+    /**
+     * 设置模糊匹配目标课程类别（包含选课控制ID）
+     * 
+     * @param courseId   课程ID (kch_id)
+     * @param courseName 课程名称（用于显示）
+     * @param xkkzId     选课控制ID (xkkz_id)，可为null
+     */
+    public void setFuzzyMatchTarget(String courseId, String courseName, String xkkzId) {
+        setFuzzyMatchTarget(courseId, courseName, xkkzId, null);
+    }
+
+    /**
+     * 设置模糊匹配目标课程类别（完整参数）
+     * 
+     * @param courseId   课程ID (kch_id)
+     * @param courseName 课程名称（用于显示）
+     * @param xkkzId     选课控制ID (xkkz_id)
+     * @param kklxdm     课程类型代码 (01=专业课, 10=公选课等)
+     */
+    public void setFuzzyMatchTarget(String courseId, String courseName, String xkkzId, String kklxdm) {
+        this.fuzzyMatchCourseId = courseId;
+        this.fuzzyMatchCourseName = courseName;
+        this.fuzzyMatchXkkzId = xkkzId;
+        this.fuzzyMatchKklxdm = kklxdm;
+        this.lastSelectedSnapshot.clear(); // 清空旧快照
+        Log.d(TAG,
+                "🔍 设置模糊匹配目标: " + courseName + " (id=" + courseId + ", xkkz_id=" + xkkzId + ", kklxdm=" + kklxdm + ")");
+
+        // 持久化保存
+        if (appContext != null) {
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putString("fuzzy_match_course_id", courseId)
+                    .putString("fuzzy_match_course_name", courseName);
+            if (xkkzId != null) {
+                editor.putString("fuzzy_match_xkkz_id", xkkzId);
+            } else {
+                editor.remove("fuzzy_match_xkkz_id");
+            }
+            if (kklxdm != null) {
+                editor.putString("fuzzy_match_kklxdm", kklxdm);
+            } else {
+                editor.remove("fuzzy_match_kklxdm");
+            }
+            editor.apply();
+        }
+    }
+
+    /**
+     * 获取模糊匹配目标课程ID
+     */
+    public String getFuzzyMatchCourseId() {
+        return fuzzyMatchCourseId;
+    }
+
+    /**
+     * 获取模糊匹配目标课程名称
+     */
+    public String getFuzzyMatchCourseName() {
+        return fuzzyMatchCourseName;
+    }
+
+    /**
+     * 获取模糊匹配目标选课控制ID
+     */
+    public String getFuzzyMatchXkkzId() {
+        return fuzzyMatchXkkzId;
+    }
+
+    /**
+     * 获取模糊匹配目标课程类型代码
+     */
+    public String getFuzzyMatchKklxdm() {
+        return fuzzyMatchKklxdm;
+    }
+
+    /**
+     * 清除模糊匹配目标
+     */
+    public void clearFuzzyMatchTarget() {
+        this.fuzzyMatchCourseId = null;
+        this.fuzzyMatchCourseName = null;
+        this.fuzzyMatchXkkzId = null;
+        this.fuzzyMatchKklxdm = null;
+        this.lastSelectedSnapshot.clear();
+        this.fuzzyMatchEnabled = false;
+        Log.d(TAG, "🔍 已清除模糊匹配目标");
+
+        if (appContext != null) {
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit()
+                    .remove("fuzzy_match_course_id")
+                    .remove("fuzzy_match_course_name")
+                    .remove("fuzzy_match_xkkz_id")
+                    .remove("fuzzy_match_kklxdm")
+                    .apply();
+        }
+    }
+
+    /**
+     * 设置模糊匹配模式启用状态
+     */
+    public void setFuzzyMatchEnabled(boolean enabled) {
+        this.fuzzyMatchEnabled = enabled;
+        if (!enabled) {
+            lastSelectedSnapshot.clear();
+        }
+        Log.d(TAG, "🔍 模糊匹配模式: " + (enabled ? "已启用" : "已禁用"));
+    }
+
+    /**
+     * 获取模糊匹配模式启用状态
+     */
+    public boolean isFuzzyMatchEnabled() {
+        return fuzzyMatchEnabled;
+    }
+
+    /**
+     * 更新人数快照并检测是否有空位
+     * 
+     * @param classId         教学班ID
+     * @param currentSelected 当前已选人数
+     * @param capacity        容量
+     * @return 如果有空位（selected < capacity）返回true
+     */
+    public boolean updateSnapshotAndCheckChange(String classId, int currentSelected, int capacity) {
+        if (classId == null || classId.isEmpty())
+            return false;
+
+        Integer lastSelected = lastSelectedSnapshot.get(classId);
+        lastSelectedSnapshot.put(classId, currentSelected);
+
+        // 🔧 只要有空位就返回 true（不再要求人数变化）
+        if (currentSelected < capacity) {
+            if (lastSelected == null) {
+                // 第一次检测到有空位
+                Log.d(TAG, "🎯 发现有空位! classId=" + classId +
+                        ", 当前: " + currentSelected + "/" + capacity +
+                        ", 空位: " + (capacity - currentSelected));
+            } else if (currentSelected < lastSelected) {
+                // 有人退课
+                Log.d(TAG, "🎯 检测到名额释放! classId=" + classId +
+                        ", 人数: " + lastSelected + " -> " + currentSelected +
+                        ", 空位: " + (capacity - currentSelected));
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 获取当前快照
+     */
+    public java.util.Map<String, Integer> getLastSelectedSnapshot() {
+        return new java.util.HashMap<>(lastSelectedSnapshot);
+    }
+
+    /**
+     * 恢复模糊匹配设置
+     */
+    public void restoreFuzzyMatchSettings() {
+        if (appContext == null)
+            return;
+        try {
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            fuzzyMatchCourseId = prefs.getString("fuzzy_match_course_id", null);
+            fuzzyMatchCourseName = prefs.getString("fuzzy_match_course_name", null);
+            fuzzyMatchXkkzId = prefs.getString("fuzzy_match_xkkz_id", null);
+            fuzzyMatchKklxdm = prefs.getString("fuzzy_match_kklxdm", null);
+            if (fuzzyMatchCourseId != null) {
+                Log.d(TAG, "✅ 模糊匹配目标已恢复: " + fuzzyMatchCourseName + " (xkkz_id=" + fuzzyMatchXkkzId + ", kklxdm="
+                        + fuzzyMatchKklxdm + ")");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "恢复模糊匹配设置失败: " + e.getMessage());
         }
     }
 }

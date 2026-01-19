@@ -69,6 +69,8 @@ fun CourseListScreen(
     onAddToQueue: (Course) -> Unit = {},
     // 🔧 设置为目标课程（长按触发）
     onSetTargetCourse: (Course) -> Unit = {},
+    // 🔧 设置模糊匹配监控目标 (courseId, courseName, xkkzId, kklxdm)
+    onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null,
     // 🔧 状态由外部管理
     isMultiSelectMode: Boolean = false,
     selectedClassIds: Set<String> = emptySet(),
@@ -192,7 +194,8 @@ fun CourseListScreen(
                             onCourseSelect = onCourseSelect,
                             onAutoGrab = onAutoGrab,
                             onAddToQueue = onAddToQueue,
-                            onSetTargetCourse = onSetTargetCourse
+                            onSetTargetCourse = onSetTargetCourse,
+                            onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
                         )
                     }
                 }
@@ -218,7 +221,8 @@ fun CourseGroupItem(
     onCourseSelect: (Course) -> Unit,
     onAutoGrab: (Course) -> Unit,
     onAddToQueue: (Course) -> Unit = {}, // 🔧 加入队列
-    onSetTargetCourse: (Course) -> Unit = {} // 🔧 设置为目标课程
+    onSetTargetCourse: (Course) -> Unit = {}, // 🔧 设置为目标课程
+    onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null // 🔧 设置模糊匹配目标 (courseId, courseName, xkkzId, kklxdm)
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val firstCourse = classes.firstOrNull()
@@ -310,6 +314,30 @@ fun CourseGroupItem(
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+                }
+                
+                // 🔧 监控按钮（模糊匹配模式）
+                if (onSetFuzzyMatchTarget != null && !hasSelected) {
+                    Surface(
+                        onClick = { 
+                            // 传递 courseId, courseName, xkkz_id, kklxdm
+                            val xkkzId = firstCourse?._xkkz_id
+                            val kklxdm = firstCourse?.kklxdm
+                            onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
+                            android.widget.Toast.makeText(context, "🔍 已设为监控目标: $courseName", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.padding(end = 8.dp),
+                        color = Color(0xFFFF9800),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "监控",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
                     }
                 }
                 

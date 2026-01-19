@@ -47,6 +47,18 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // 初始化 UserManager（确保自定义学校和登录状态被加载）
+        UserManager.getInstance().init(this)
+        
+        // 恢复 Cookie 到 CourseApiClient（关键！）
+        val userManager = UserManager.getInstance()
+        if (userManager.hasSavedCookie() && userManager.currentSchool != null) {
+            com.tyust.course.network.CourseApiClient.getInstance().setCookie(
+                userManager.currentSchool.baseUrl,
+                userManager.savedCookie
+            )
+        }
+        
         // 初始化 SmartSelector 持久化
         SmartSelector.getInstance().init(this)
 

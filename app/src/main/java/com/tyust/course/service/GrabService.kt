@@ -37,6 +37,7 @@ class GrabService : Service() {
         const val ACTION_START = "com.tyust.course.action.START_GRAB"
         const val ACTION_START_KEYWORD = "com.tyust.course.action.START_GRAB_KEYWORD"  // 关键词模式
         const val ACTION_START_QUEUE = "com.tyust.course.action.START_GRAB_QUEUE"      // 🔧 新增：直接队列模式
+        const val ACTION_START_FUZZY_MATCH = "com.tyust.course.action.START_FUZZY_MATCH" // 🔧 模糊匹配模式
         const val ACTION_STOP = "com.tyust.course.action.STOP_GRAB"
         
         // Extra keys
@@ -89,6 +90,10 @@ class GrabService : Service() {
     private var isQueueMode = false
     private var currentQueueIndex = 0
     private var totalQueueSuccess = 0
+    
+    // 🔧 模糊匹配捡漏模式
+    private var isFuzzyMatchMode = false
+    private var fuzzyMatchPollingCount = 0  // 轮询计数
     
     // 🔧 课程缓存（供智能模式复用，避免重复请求）
     private var cachedAllCourses: List<Course> = emptyList()
@@ -175,6 +180,39 @@ class GrabService : Service() {
                 totalQueueSuccess = 0
                 
                 startNextQueueItem()
+            }
+            ACTION_START_FUZZY_MATCH -> {
+                // 🔧 模糊匹配捡漏模式：监控课程类别人数变化
+                interval = intent.getIntExtra(EXTRA_INTERVAL, 2000) // 默认2秒间隔
+                maxRetry = intent.getIntExtra(EXTRA_MAX_RETRY, 999) // 模糊匹配模式默认持续监控
+                currentSchool = UserManager.getInstance().currentSchool
+                
+                SmartSelector.getInstance().init(this)
+                SmartSelector.getInstance().restoreFuzzyMatchSettings()
+                
+                val fuzzyTargetId = SmartSelector.getInstance().fuzzyMatchCourseId
+                val fuzzyTargetName = SmartSelector.getInstance().fuzzyMatchCourseName
+                
+                if (currentSchool == null || fuzzyTargetId.isNullOrEmpty()) {
+                    Log.e(TAG, "未登录或未设置模糊匹配目标")
+                    broadcastLog("❌ 未登录或未设置监控目标")
+                    stopSelf()
+                    return START_STICKY
+                }
+                
+                // 🔧 先从 SmartSelector 复制 courseParams
+                courseParams = SmartSelector.getInstance().courseParams
+                
+                startForeground(NOTIFICATION_ID, createNotification("模糊匹配：监控 $fuzzyTargetName"))
+                broadcastLog("🔍 启动模糊匹配模式: $fuzzyTargetName")
+                broadcastLog("📊 每 ${interval}ms 轮询一次，检测人数变化")
+                
+                isFuzzyMatchMode = true
+                fuzzyMatchPollingCount = 0
+                isRunning = true
+                
+                // 🔧 先获取隐藏参数，再启动模糊匹配轮询
+                fetchHiddenParamsAndStartFuzzyMatch(currentSchool!!)
             }
             ACTION_STOP -> {
                 stopGrabbing()
@@ -2201,6 +2239,333 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             .replace(" ", "")
             .replace("{", "")
             .replace("}", "")
+    }
+
+    // ============ 模糊匹配捡漏模式 ============
+
+    /**
+     * 获取隐藏参数并启动模糊匹配轮询
+     */
+    private fun fetchHiddenParamsAndStartFuzzyMatch(school: SchoolConfig) {
+        broadcastLog("📌 正在获取选课参数...")
+        
+        Thread {
+            val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school)
+            val hiddenParams = parseHiddenParams(hiddenHtml ?: "")
+            
+            Log.d(TAG, "模糊匹配: 获取隐藏参数完成，共 ${hiddenParams.size} 个")
+            
+            // 合并到 courseParams
+            if (hiddenParams.isNotEmpty()) {
+                val merged = (courseParams ?: emptyMap()).toMutableMap()
+                hiddenParams.forEach { (key, value) ->
+                    if (value.isNotEmpty() && merged[key].isNullOrEmpty()) {
+                        merged[key] = value
+                    }
+                }
+                courseParams = merged
+            }
+            
+            handler.post {
+                broadcastLog("✅ 参数就绪 (共 ${courseParams?.size ?: 0} 个)，开始轮询...")
+                startFuzzyMatchPolling()
+            }
+        }.start()
+    }
+
+    /**
+     * 启动模糊匹配轮询
+     * 持续获取目标课程类别的详情，比较人数变化
+     */
+    private fun startFuzzyMatchPolling() {
+        if (!isRunning || !isFuzzyMatchMode) return
+        
+        val school = currentSchool ?: return
+        val targetCourseId = SmartSelector.getInstance().fuzzyMatchCourseId ?: return
+        val targetCourseName = SmartSelector.getInstance().fuzzyMatchCourseName ?: "未知课程"
+        
+        fuzzyMatchPollingCount++
+        
+        // 达到最大轮询次数时停止
+        if (fuzzyMatchPollingCount > maxRetry) {
+            broadcastLog("⏹ 模糊匹配已达最大轮询次数 ($maxRetry)，停止监控")
+            stopGrabbing()
+            return
+        }
+        
+        // 更新通知
+        if (fuzzyMatchPollingCount % 10 == 0) {
+            updateNotification("模糊匹配: 已轮询 $fuzzyMatchPollingCount 次")
+            broadcastLog("📊 轮询中... ($fuzzyMatchPollingCount/$maxRetry)")
+        }
+        
+        // 构建详情请求参数
+        val postBody = buildFuzzyMatchDetailsBody(targetCourseId)
+        
+        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, postBody, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "模糊匹配获取详情失败: ${e.message}")
+                // 失败后继续轮询
+                handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong())
+            }
+            
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string() ?: ""
+                
+                // 🔧 调试日志：输出响应内容（前100字符）
+                Log.d(TAG, "模糊匹配响应: ${body.take(200)}")
+                
+                // 🔧 检查是否返回 "0"（课程不可查询）
+                if (body.trim() == "0" || body.trim() == "null") {
+                    Log.w(TAG, "模糊匹配: 服务器返回 '$body'，课程可能不在当前选课批次内")
+                    broadcastLog("⚠️ 无法获取课程详情，可能不在当前选课批次")
+                    // 继续轮询，但间隔稍长
+                    handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong() * 2)
+                    return
+                }
+                
+                try {
+                    val classes = JSONArray(body)
+                    
+                    // 🔧 如果是第一次，输出日志
+                    if (fuzzyMatchPollingCount == 1) {
+                        broadcastLog("📋 发现 ${classes.length()} 个教学班")
+                    }
+                    
+                    var foundVacancy = false
+                    var vacancyCourse: Course? = null
+                    
+                    for (i in 0 until classes.length()) {
+                        val item = classes.getJSONObject(i)
+                        val classId = item.optString("jxb_id", "")
+                        val doJxbId = item.optString("do_jxb_id", "")
+                        val currentSelected = item.optInt("yxzrs", 0)
+                        val capacity = item.optInt("jxbrl", 0)
+                        val teacher = item.optString("jsxm", "")
+                        val time = item.optString("sksj", "")
+                        
+                        if (classId.isEmpty()) continue
+                        
+                        // 检查人数变化
+                        val hasVacancy = SmartSelector.getInstance()
+                            .updateSnapshotAndCheckChange(classId, currentSelected, capacity)
+                        
+                        if (hasVacancy && !foundVacancy) {
+                            foundVacancy = true
+                            // 构建课程对象用于抢课
+                            vacancyCourse = Course().apply {
+                                name = targetCourseName
+                                courseId = targetCourseId
+                                this.classId = classId
+                                this.doJxbId = doJxbId
+                                this.teacher = teacher
+                                this.time = time
+                                this.capacity = capacity
+                                this.selected = currentSelected
+                            }
+                            
+                            broadcastLog("🎯 检测到 $targetCourseName [$teacher] 有人退课!")
+                            broadcastLog("   人数变化，剩余 ${capacity - currentSelected} 个名额，立即抢课!")
+                        }
+                    }
+                    
+                    if (foundVacancy && vacancyCourse != null) {
+                        // 发现空位，立即抢课
+                        isFuzzyMatchMode = false // 暂停轮询
+                        targetCourse = vacancyCourse
+                        executeFuzzyMatchSelection(school, vacancyCourse)
+                    } else {
+                        // 继续轮询
+                        handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong())
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "模糊匹配解析失败: ${e.message}")
+                    // 继续轮询
+                    handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong())
+                }
+            }
+        })
+    }
+    
+    /**
+     * 构建模糊匹配详情请求体（完整参数，参考 fetchSelectionDetails）
+     */
+    private fun buildFuzzyMatchDetailsBody(courseId: String): String {
+        val xkkzId = SmartSelector.getInstance().fuzzyMatchXkkzId ?: courseParams?.get("xkkz_id") ?: ""
+        val njdm_id = courseParams?.get("njdm_id") ?: "2024"
+        val zyh_id = courseParams?.get("zyh_id") ?: ""
+        // 🔧 优先使用保存的 kklxdm（课程类型代码）
+        val kklxdm = SmartSelector.getInstance().fuzzyMatchKklxdm ?: courseParams?.get("kklxdm") ?: "01"
+        val rwlx = courseParams?.get("rwlx") ?: "1"
+        val xklc = courseParams?.get("xklc") ?: "2"
+        
+        // 辅助函数：从 courseParams 获取参数（支持后缀）
+        fun getParam(baseName: String): String {
+            courseParams?.get(baseName)?.takeIf { it.isNotEmpty() }?.let { return it }
+            for (i in 1..5) {
+                courseParams?.get("${baseName}_$i")?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
+            return ""
+        }
+        
+        val formData = mutableMapOf<String, String>()
+        formData["rwlx"] = rwlx
+        formData["xkly"] = courseParams?.get("xkly") ?: "0"
+        formData["bklx_id"] = courseParams?.get("bklx_id") ?: "0"
+        formData["sfkkjyxdxnxq"] = courseParams?.get("sfkkjyxdxnxq") ?: "0"
+        formData["kzkcgs"] = courseParams?.get("kzkcgs") ?: "0"
+        formData["xqh_id"] = getParam("xqh_id").ifEmpty { "1" }
+        formData["jg_id"] = getParam("jg_id").ifEmpty { "05" }
+        formData["zyh_id"] = zyh_id
+        formData["zyfx_id"] = getParam("zyfx_id").ifEmpty { "wfx" }
+        formData["txbsfrl"] = courseParams?.get("txbsfrl") ?: "0"
+        formData["njdm_id"] = njdm_id
+        formData["bh_id"] = getParam("bh_id")
+        formData["xbm"] = getParam("xbm").ifEmpty { "1" }
+        formData["xslbdm"] = getParam("xslbdm").ifEmpty { "421" }
+        formData["mzm"] = getParam("mzm").ifEmpty { "01" }
+        formData["xz"] = getParam("xz").ifEmpty { "4" }
+        formData["ccdm"] = getParam("ccdm").ifEmpty { "3" }
+        formData["xsbj"] = getParam("xsbj").ifEmpty { "0" }
+        formData["sfkknj"] = courseParams?.get("sfkknj") ?: "0"
+        formData["gnjkxdnj"] = courseParams?.get("gnjkxdnj") ?: "0"
+        formData["sfkkzy"] = courseParams?.get("sfkkzy") ?: "0"
+        formData["kzybkxy"] = courseParams?.get("kzybkxy") ?: "0"
+        formData["sfznkx"] = courseParams?.get("sfznkx") ?: "0"
+        formData["zdkxms"] = courseParams?.get("zdkxms") ?: "0"
+        formData["sfkxq"] = courseParams?.get("sfkxq") ?: "0"
+        formData["sfkcfx"] = courseParams?.get("sfkcfx") ?: "0"
+        formData["bbhzxjxb"] = courseParams?.get("bbhzxjxb") ?: "0"
+        formData["kkbk"] = courseParams?.get("kkbk") ?: "0"
+        formData["kkbkdj"] = courseParams?.get("kkbkdj") ?: "0"
+        formData["bklbkcj"] = courseParams?.get("bklbkcj") ?: "0"
+        formData["xkxnm"] = getParam("xkxnm").ifEmpty { "2025" }
+        formData["xkxqm"] = getParam("xkxqm").ifEmpty { "12" }
+        formData["xkxskcgskg"] = courseParams?.get("xkxskcgskg") ?: "0"
+        formData["rlkz"] = courseParams?.get("rlkz") ?: "0"
+        formData["cdrlkz"] = courseParams?.get("cdrlkz") ?: "0"
+        formData["rlzlkz"] = courseParams?.get("rlzlkz") ?: "1"
+        formData["kklxdm"] = kklxdm
+        formData["kch_id"] = courseId
+        formData["jxbzcxskg"] = courseParams?.get("jxbzcxskg") ?: "0"
+        formData["xklc"] = xklc
+        formData["xkkz_id"] = xkkzId
+        formData["cxbj"] = courseParams?.get("cxbj") ?: "0"
+        formData["fxbj"] = courseParams?.get("fxbj") ?: "0"
+        
+        val body = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
+        Log.d(TAG, "模糊匹配详情请求参数数量: ${formData.size}")
+        return body
+    }
+    
+    /**
+     * 执行模糊匹配抢课
+     */
+    private fun executeFuzzyMatchSelection(school: SchoolConfig, course: Course) {
+        broadcastLog("🚀 开始抢课: ${course.name} [${course.teacher}]")
+        successCount = 0
+        failCount = 0
+        retryCount = 0
+        
+        // 使用现有的选课流程
+        targetCourse = course
+        // 🔧 注意：不要覆盖 courseParams，保持之前获取的隐藏参数
+        
+        // 直接尝试选课
+        executeDirectSelection(school, course)
+    }
+    
+    /**
+     * 直接发送选课请求（供模糊匹配模式使用）
+     */
+    private fun executeDirectSelection(school: SchoolConfig, course: Course) {
+        if (!isRunning) return
+        
+        retryCount++
+        if (retryCount > 10) { // 模糊匹配抢课最多尝试10次
+            broadcastLog("⚠️ 抢课失败次数过多，恢复监控")
+            isFuzzyMatchMode = true
+            // 🔧 恢复监控时重新获取隐藏参数
+            handler.postDelayed({ fetchHiddenParamsAndStartFuzzyMatch(school) }, interval.toLong())
+            return
+        }
+        
+        val postBody = StringBuilder()
+        
+        // 添加基础参数
+        courseParams?.forEach { (key, value) ->
+            if (postBody.isNotEmpty()) postBody.append("&")
+            postBody.append("$key=$value")
+        }
+        
+        // 添加课程参数
+        if (postBody.isNotEmpty()) postBody.append("&")
+        val jxbIds = course.doJxbId?.takeIf { it.isNotEmpty() } ?: course.classId
+        postBody.append("jxb_ids=$jxbIds")
+        postBody.append("&kch_id=${course.courseId}")
+        postBody.append("&kcmc=${course.name ?: ""}")
+        postBody.append("&rwlx=1")
+        postBody.append("&rlkz=0")
+        postBody.append("&rlzlkz=1")
+        postBody.append("&sxbj=0")
+        postBody.append("&xxkbj=0")
+        postBody.append("&qz=0")
+        
+        CourseApiClient.getInstance().selectCourse(school, postBody.toString(), object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                failCount++
+                broadcastLog("⚠️ 请求失败: ${e.message} [$retryCount/10]")
+                handler.postDelayed({ executeDirectSelection(school, course) }, 500)
+            }
+            
+            override fun onResponse(call: Call, response: Response) {
+                val html = response.body?.string() ?: ""
+                
+                try {
+                    var success = false
+                    var msg = "选课失败"
+                    
+                    // 尝试解析 JSON
+                    try {
+                        val json = org.json.JSONObject(html)
+                        val flag = json.optString("flag", "")
+                        if (flag == "1") {
+                            success = true
+                            msg = "选课成功"
+                        } else {
+                            msg = json.optString("msg", json.optString("message", "选课失败"))
+                        }
+                    } catch (e: Exception) {
+                        // 非 JSON 响应
+                        if (html.contains("成功") || html.contains("选课成功")) {
+                            success = true
+                            msg = "选课成功"
+                        } else if (html.contains("人数已满")) {
+                            msg = "人数已满，继续重试"
+                        }
+                    }
+                    
+                    if (success) {
+                        successCount++
+                        broadcastLog("🎉 模糊匹配抢课成功: ${course.name}")
+                        updateNotification("抢课成功: ${course.name}")
+                        
+                        // 清除模糊匹配目标，停止服务
+                        SmartSelector.getInstance().clearFuzzyMatchTarget()
+                        stopGrabbing()
+                    } else {
+                        failCount++
+                        broadcastLog("❌ $msg [$retryCount/10]")
+                        handler.postDelayed({ executeDirectSelection(school, course) }, 500)
+                    }
+                } catch (e: Exception) {
+                    failCount++
+                    Log.e(TAG, "解析选课响应失败: ${e.message}")
+                    handler.postDelayed({ executeDirectSelection(school, course) }, 500)
+                }
+            }
+        })
     }
 }
 

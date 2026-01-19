@@ -159,6 +159,8 @@ public class UserManager {
         try {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String json = prefs.getString(KEY_CUSTOM_SCHOOLS, "[]");
+            Log.d(TAG, "加载自定义学校 JSON: " + json);
+
             JSONArray arr = new JSONArray(json);
 
             for (int i = 0; i < arr.length(); i++) {
@@ -166,9 +168,12 @@ public class UserManager {
                 SchoolConfig school = SchoolConfig.fromJson(obj);
                 if (school != null && !school.domain.isEmpty()) {
                     customSchools.add(school);
+                    Log.d(TAG, "加载自定义学校: id=" + school.id + ", name=" + school.name);
                 }
             }
+            Log.d(TAG, "自定义学校加载完成, 共 " + customSchools.size() + " 个");
         } catch (Exception e) {
+            Log.e(TAG, "加载自定义学校失败: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -215,11 +220,19 @@ public class UserManager {
             savedCookie = prefs.getString(KEY_COOKIE, "");
 
             String schoolId = prefs.getString(KEY_CURRENT_SCHOOL_ID, "");
+            Log.d(TAG, "正在恢复学校, 保存的 schoolId=" + schoolId);
+
             if (!schoolId.isEmpty()) {
                 SchoolConfig school = getSchoolById(schoolId);
                 if (school != null) {
                     currentSchool = school;
+                    Log.d(TAG, "学校恢复成功: " + currentSchool.name);
+                } else {
+                    Log.w(TAG, "找不到保存的学校 ID: " + schoolId + ", 可用学校: " + listSchoolIds());
+                    // 保持默认学校不变
                 }
+            } else {
+                Log.d(TAG, "没有保存的学校 ID，使用默认学校");
             }
 
             Log.d(TAG, "登录状态已加载: isLoggedIn=" + isLoggedIn + ", student=" + studentName + ", school="
@@ -227,6 +240,17 @@ public class UserManager {
         } catch (Exception e) {
             Log.e(TAG, "加载登录状态失败: " + e.getMessage());
         }
+    }
+
+    // 辅助方法：列出所有可用学校 ID（用于调试）
+    private String listSchoolIds() {
+        StringBuilder sb = new StringBuilder();
+        for (SchoolConfig s : getSupportedSchools()) {
+            if (sb.length() > 0)
+                sb.append(", ");
+            sb.append(s.id);
+        }
+        return sb.toString();
     }
 
     // 保存 Cookie

@@ -1,6 +1,7 @@
 package com.tyust.course.ui.screen
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -84,7 +85,13 @@ fun GrabProScreen(
     // Warning dialog control
     showScheduleWarning: Boolean = true,
     onDismissWarningForever: (() -> Unit)? = null,
-    showQueueModeLabels: Boolean = true // 🔧 控制是否显示精确/智能模式标签
+    showQueueModeLabels: Boolean = true, // 🔧 控制是否显示精确/智能模式标签
+    // 🔧 模糊匹配捡漏模式
+    isFuzzyMatchMode: Boolean = false,
+    onFuzzyMatchModeChange: ((Boolean) -> Unit)? = null,
+    fuzzyMatchTarget: String? = null,
+    onStartFuzzyMatch: (() -> Unit)? = null,
+    onClearFuzzyMatchTarget: (() -> Unit)? = null
 ) {
     val scrollState = rememberLazyListState()
     val context = LocalContext.current
@@ -264,7 +271,13 @@ fun GrabProScreen(
                                 },
                                 onStop = onStop,
                                 onClearTargetCourse = onClearTargetCourse,
-                                queueSize = queue.size // 🔧 传递队列大小
+                                queueSize = queue.size, // 🔧 传递队列大小
+                                // 🔧 模糊匹配模式参数
+                                isFuzzyMatchMode = isFuzzyMatchMode,
+                                onFuzzyMatchModeChange = onFuzzyMatchModeChange,
+                                fuzzyMatchTarget = fuzzyMatchTarget,
+                                onStartFuzzyMatch = onStartFuzzyMatch,
+                                onClearFuzzyMatchTarget = onClearFuzzyMatchTarget
                             )
                         }
                     }
@@ -430,6 +443,7 @@ fun TabButton(text: String, selected: Boolean, icon: ImageVector, onClick: () ->
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun ImmediateGrabForm(
     targetCourseName: String?,
@@ -442,48 +456,131 @@ fun ImmediateGrabForm(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onClearTargetCourse: (() -> Unit)? = null, // 🔧 清除目标课程
-    queueSize: Int = 0 // 🔧 新增：队列大小
+    queueSize: Int = 0, // 🔧 队列大小
+    // 🔧 模糊匹配模式
+    isFuzzyMatchMode: Boolean = false,
+    onFuzzyMatchModeChange: ((Boolean) -> Unit)? = null,
+    fuzzyMatchTarget: String? = null, // 监控的课程类别名
+    onStartFuzzyMatch: (() -> Unit)? = null,
+    onClearFuzzyMatchTarget: (() -> Unit)? = null
 ) {
+    // 🔧 动画状态
+    val themeColor by animateColorAsState(
+        targetValue = if (isFuzzyMatchMode) Color(0xFFFF9800) else PrimaryPurple,
+        animationSpec = tween(durationMillis = 300)
+    )
+    val cardBgColor by animateColorAsState(
+        targetValue = if (isFuzzyMatchMode) Color(0xFFFFF3E0) else Color(0xFFF3E5F5),
+        animationSpec = tween(durationMillis = 300)
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Target Course Info
-            Text("目标课程", style = MaterialTheme.typography.labelMedium, color = PrimaryPurple, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF3E5F5), RoundedCornerShape(12.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Book, contentDescription = null, tint = PrimaryPurple, modifier = Modifier.size(32.dp))
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    if (targetCourseName != null) {
-                        Text(targetCourseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text("教师: ${targetCourseTeacher ?: "未知"}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-                    } else if (queueSize > 0) {
-                        Text("已就绪: 队列抢课模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = PrimaryPurple)
-                        Text("共 ${queueSize} 门课程待尝试", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    } else {
-                        Text("未选择课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
-                        Text("请在\"课程\"页面长按选择，或在下方添加队列", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            // 🔧 模式切换：精确捡漏 / 模糊匹配
+            if (onFuzzyMatchModeChange != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 精确捡漏按钮
+                    Button(
+                        onClick = { onFuzzyMatchModeChange(false) },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!isFuzzyMatchMode) PrimaryPurple else Color.LightGray.copy(alpha = 0.3f),
+                            contentColor = if (!isFuzzyMatchMode) Color.White else Color.Gray
+                        )
+                    ) {
+                        Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("精确捡漏", fontSize = 12.sp)
+                    }
+                    // 模糊匹配按钮
+                    Button(
+                        onClick = { onFuzzyMatchModeChange(true) },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isFuzzyMatchMode) Color(0xFFFF9800) else Color.LightGray.copy(alpha = 0.3f),
+                            contentColor = if (isFuzzyMatchMode) Color.White else Color.Gray
+                        )
+                    ) {
+                        Icon(Icons.Default.Radar, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("模糊匹配", fontSize = 12.sp)
                     }
                 }
-                // 🔧 清除按钮（仅当有目标课程时显示）
-                if (targetCourseName != null && onClearTargetCourse != null) {
-                    IconButton(onClick = { onClearTargetCourse() }) {
+                HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // Target Course Info - 使用 AnimatedContent 实现标题和内容的平滑切换
+            AnimatedContent(
+                targetState = isFuzzyMatchMode,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(300)) with fadeOut(animationSpec = tween(300))
+                }
+            ) { fuzzyMode ->
+                Column {
+                    Text(
+                        if (fuzzyMode) "监控目标" else "目标课程", 
+                        style = MaterialTheme.typography.labelMedium, 
+                        color = themeColor, 
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(cardBgColor, RoundedCornerShape(12.dp))
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "清除目标课程",
-                            tint = Color.Gray,
-                            modifier = Modifier.size(20.dp)
+                            if (fuzzyMode) Icons.Default.Radar else Icons.Default.Book, 
+                            contentDescription = null, 
+                            tint = themeColor, 
+                            modifier = Modifier.size(32.dp)
                         )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            if (fuzzyMode) {
+                                // 模糊匹配模式显示
+                                if (!fuzzyMatchTarget.isNullOrEmpty()) {
+                                    Text(fuzzyMatchTarget, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                                    Text("监控该类别所有教学班人数变化", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                } else {
+                                    Text("未设置监控目标", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                    Text("请在\"课程\"页面点击课程组的\"监控\"按钮", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                }
+                            } else if (targetCourseName != null) {
+                                Text(targetCourseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                                Text("教师: ${targetCourseTeacher ?: "未知"}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                            } else if (queueSize > 0) {
+                                Text("已就绪: 队列抢课模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = PrimaryPurple)
+                                Text("共 ${queueSize} 门课程待尝试", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            } else {
+                                Text("未选择课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text("请在\"课程\"页面长按选择，或在下方添加队列", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            }
+                        }
+                        
+                        // 清除按钮
+                        if (fuzzyMode && !fuzzyMatchTarget.isNullOrEmpty() && onClearFuzzyMatchTarget != null) {
+                            IconButton(onClick = { onClearFuzzyMatchTarget() }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除监控目标", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            }
+                        } else if (!fuzzyMode && targetCourseName != null && onClearTargetCourse != null) {
+                            IconButton(onClick = { onClearTargetCourse() }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除目标课程", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -516,30 +613,56 @@ fun ImmediateGrabForm(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Action Buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = onStart,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                    enabled = !isRunning && (targetCourseName != null || queueSize > 0)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("启动", fontSize = 16.sp)
+            // Action Buttons - 使用 AnimatedContent 实现底部按钮切换
+            AnimatedContent(
+                targetState = isFuzzyMatchMode,
+                transitionSpec = {
+                    slideInVertically { it } + fadeIn() with slideOutVertically { -it } + fadeOut()
                 }
-                
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                    enabled = isRunning
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("停止", fontSize = 16.sp)
+            ) { fuzzyMode ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (fuzzyMode) {
+                        // 模糊匹配模式按钮
+                        Button(
+                            onClick = { onStartFuzzyMatch?.invoke() },
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                            enabled = !isRunning && !fuzzyMatchTarget.isNullOrEmpty(),
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Radar, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("开始监控", fontSize = 14.sp, maxLines = 1)
+                        }
+                    } else {
+                        // 精确捡漏模式按钮
+                        Button(
+                            onClick = onStart,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            enabled = !isRunning && (targetCourseName != null || queueSize > 0),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("启动", fontSize = 15.sp, maxLines = 1)
+                        }
+                    }
+                    
+                    Button(
+                        onClick = onStop,
+                        modifier = Modifier.weight(1f).height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                        enabled = isRunning,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("停止", fontSize = 15.sp, maxLines = 1)
+                    }
                 }
             }
         }

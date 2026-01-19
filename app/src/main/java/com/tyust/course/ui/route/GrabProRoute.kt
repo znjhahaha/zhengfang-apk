@@ -73,6 +73,10 @@ fun GrabProRoute() {
     var queueVersion by remember { mutableIntStateOf(0) }  // 🔧 强制刷新计数器
     var isParallelMode by remember { mutableStateOf(prefs.getBoolean("parallel_mode", false)) }
     var isExactModeGlobal by remember { mutableStateOf(prefs.getBoolean("exact_mode_global", true)) } // 🔧 全局模式状态持久化
+    
+    // 🔧 模糊匹配捡漏模式
+    var isFuzzyMatchMode by remember { mutableStateOf(prefs.getBoolean("fuzzy_match_mode", false)) }
+    var fuzzyMatchTarget by remember { mutableStateOf<String?>(SmartSelector.getInstance().fuzzyMatchCourseName) }
 
     // 🔧 辅助函数：添加日志并限制在 100 条以内，防止变卡
     fun appendLog(message: String) {
@@ -151,10 +155,12 @@ fun GrabProRoute() {
     // Update target course and queue on launch
     LaunchedEffect(Unit) {
         SmartSelector.getInstance().init(context)
+        SmartSelector.getInstance().restoreFuzzyMatchSettings() // 🔧 恢复模糊匹配设置
         val course = SmartSelector.getInstance().targetCourse
         targetCourseName = course?.name
         targetCourseTeacher = course?.teacher
         isRunning = SmartSelector.getInstance().isRunning
+        fuzzyMatchTarget = SmartSelector.getInstance().fuzzyMatchCourseName // 🔧 恢复监控目标
         refreshQueue()
     }
 
@@ -307,12 +313,48 @@ fun GrabProRoute() {
                 context.startService(serviceIntent)
             }
             
-        appendLog("🚀 开始后台抢课: ${targetCourse.name}")
-        isRunning = true
+            appendLog("🚀 开始后台抢课: ${targetCourse.name}")
+            isRunning = true
             Toast.makeText(context, "后台抢课已启动", Toast.LENGTH_LONG).show()
         } else {
             Toast.makeText(context, "请先在\"课程\"页面长按选择要抢的课程，或在下方添加课程到队列", Toast.LENGTH_LONG).show()
         }
+    }
+    
+    // 🔧 启动模糊匹配捡漏模式
+    fun startFuzzyMatchGrabbing() {
+        val school = UserManager.getInstance().currentSchool
+        if (school == null) {
+            Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val fuzzyTargetId = SmartSelector.getInstance().fuzzyMatchCourseId
+        val fuzzyTargetName = SmartSelector.getInstance().fuzzyMatchCourseName
+        
+        if (fuzzyTargetId.isNullOrEmpty()) {
+            Toast.makeText(context, "请先设置监控目标", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // 启用模糊匹配模式
+        SmartSelector.getInstance().setFuzzyMatchEnabled(true)
+        
+        val serviceIntent = Intent(context, GrabService::class.java).apply {
+            action = GrabService.ACTION_START_FUZZY_MATCH
+            putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 2000)
+            putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry.toIntOrNull() ?: 999)
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
+        }
+        
+        appendLog("🔍 启动模糊匹配模式: $fuzzyTargetName")
+        isRunning = true
+        Toast.makeText(context, "模糊匹配监控已启动: $fuzzyTargetName", Toast.LENGTH_LONG).show()
     }
     
     fun stopGrabbing() {
@@ -321,6 +363,7 @@ fun GrabProRoute() {
         }
         context.startService(serviceIntent)
         SmartSelector.getInstance().stop()
+        SmartSelector.getInstance().setFuzzyMatchEnabled(false) // 🔧 关闭模糊匹配模式
         
         appendLog("⏹ 已停止抢课")
         isRunning = false
@@ -489,6 +532,19 @@ fun GrabProRoute() {
             targetCourseName = null
             targetCourseTeacher = null
             Toast.makeText(context, "已清除目标课程", Toast.LENGTH_SHORT).show()
+        },
+        // 🔧 模糊匹配模式参数
+        isFuzzyMatchMode = isFuzzyMatchMode,
+        onFuzzyMatchModeChange = { mode ->
+            isFuzzyMatchMode = mode
+            prefs.edit().putBoolean("fuzzy_match_mode", mode).apply()
+        },
+        fuzzyMatchTarget = fuzzyMatchTarget,
+        onStartFuzzyMatch = { startFuzzyMatchGrabbing() },
+        onClearFuzzyMatchTarget = {
+            SmartSelector.getInstance().clearFuzzyMatchTarget()
+            fuzzyMatchTarget = null
+            Toast.makeText(context, "已清除监控目标", Toast.LENGTH_SHORT).show()
         },
         schoolName = UserManager.getInstance().currentSchool?.name ?: "",
         showQueueModeLabels = false, // 🔧 隐藏单项模式标签，只用全局开关控制

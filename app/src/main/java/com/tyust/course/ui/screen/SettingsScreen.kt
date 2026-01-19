@@ -49,6 +49,8 @@ fun SettingsScreen(
     onAbout: () -> Unit,
     onLogout: () -> Unit,
     onQuotaClick: () -> Unit = {},
+    onLogExport: () -> Unit = {},
+    onFeedback: () -> Unit = {},
     isSuper: Boolean = false,
     quotaInfo: String = ""
 ) {
@@ -113,6 +115,13 @@ fun SettingsScreen(
                 iconColor = Color(0xFFFF9800),
                 onClick = onClearCache
             )
+            SettingsItem(
+                icon = Icons.Outlined.ContentPasteSearch,
+                title = "导出日志",
+                subtitle = "导出运行日志排查问题",
+                iconColor = Color(0xFF2196F3),
+                onClick = onLogExport
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -123,6 +132,13 @@ fun SettingsScreen(
                 subtitle = "当前版本 $currentVersion",
                 iconColor = Color(0xFF4CAF50),
                 onClick = onCheckUpdate
+            )
+            SettingsItem(
+                icon = Icons.Outlined.Message,
+                title = "反馈建议",
+                subtitle = "遇到问题或有好的建议？",
+                iconColor = PrimaryPurple,
+                onClick = onFeedback
             )
             SettingsItem(
                 icon = Icons.Outlined.Info,

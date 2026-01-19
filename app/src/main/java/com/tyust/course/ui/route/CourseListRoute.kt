@@ -883,6 +883,10 @@ fun CourseListRoute() {
                             SmartSelector.getInstance().setTargetCourse(course)
                             Toast.makeText(context, "🎯 已设为目标课程: ${course.name}", Toast.LENGTH_SHORT).show()
                         },
+                        // 🔧 模糊匹配目标设置
+                        onSetFuzzyMatchTarget = { courseId, courseName, xkkzId, kklxdm ->
+                            SmartSelector.getInstance().setFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
+                        },
                         isMultiSelectMode = isMultiSelectMode,
                         selectedClassIds = selectedClassIds,
                         onToggleSelection = { classId, isSelected ->

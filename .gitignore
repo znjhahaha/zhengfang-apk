@@ -51,6 +51,8 @@ dist/
 *.log
 build_error.txt
 build_output.log
+build*.txt
+build_out*.txt
 signature_report.txt
 
 # Whitelist (sensitive)
@@ -70,3 +72,7 @@ paper.md
 log.txt
 update.json
 announcement.json
+
+# Agent Skills
+.agent/
+web-app/
