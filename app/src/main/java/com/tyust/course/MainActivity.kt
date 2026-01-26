@@ -61,6 +61,9 @@ class MainActivity : FragmentActivity() {
         
         // 初始化 SmartSelector 持久化
         SmartSelector.getInstance().init(this)
+        
+        // 🔧 初始化 CourseApiClient 拦截器上下文
+        com.tyust.course.network.CourseApiClient.getInstance().init(this)
 
         // Check Login
         if (!UserManager.getInstance().isLoggedIn) {
@@ -153,6 +156,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     var currentAnnouncementIndex by remember { mutableIntStateOf(0) }
     var showAnnouncement by remember { mutableStateOf(false) }
     
+    // 🔧 全局 Token 过期状态
+    var isTokenExpired by remember { mutableStateOf(false) }
+
     // 启动时检查更新和公告
     LaunchedEffect(Unit) {
         updateState.checkForUpdate()
@@ -162,6 +168,26 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             announcements = unreadAnnouncements
             currentAnnouncementIndex = 0
             showAnnouncement = true
+        }
+    }
+
+    // 🔧 注册全局 Cookie 过期监听
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                if (intent?.action == com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED) {
+                    isTokenExpired = true
+                }
+            }
+        }
+        val filter = android.content.IntentFilter(com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            fragmentActivity.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            fragmentActivity.registerReceiver(receiver, filter)
+        }
+        onDispose {
+            fragmentActivity.unregisterReceiver(receiver)
         }
     }
     
@@ -223,42 +249,77 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            androidx.compose.animation.AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    // Use a custom bezier for a "silky" feel - emphasized decelerate
-                    val smoothEasing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
-                    val tweenSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(150, easing = smoothEasing)
-                    val fadeSpec = androidx.compose.animation.core.tween<Float>(150, easing = smoothEasing)
-                    
-                    if (targetState > initialState) {
-                        (slideInHorizontally(animationSpec = tweenSpec) { width -> width + 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
-                                (slideOutHorizontally(animationSpec = tweenSpec) { width -> -width / 4 } + fadeOut(animationSpec = fadeSpec))
-                    } else {
-                        (slideInHorizontally(animationSpec = tweenSpec) { width -> -width - 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
-                                (slideOutHorizontally(animationSpec = tweenSpec) { width -> width / 4 } + fadeOut(animationSpec = fadeSpec))
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 🔧 1. 恢复通栏提示条样式 (放在顶层 Column 中保证不挡标题)
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isTokenExpired,
+                    enter = androidx.compose.animation.expandVertically() + fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + fadeOut()
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        onClick = {
+                            // 跳转重登逻辑
+                            val intent = Intent(fragmentActivity, LoginActivity::class.java)
+                            intent.putExtra("force_relogin", true)
+                            fragmentActivity.startActivity(intent)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "登录已过期，部分功能受限。点击此处重新登录",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
-                },
-                label = "MainTabTransition"
-            ) { targetIndex ->
-                 // Note: We use fully qualified names or imports if added. 
-                 // Assuming imports are added or using fully qualified names here to be safe if imports fail.
-                 // Actually I should add imports at top of file, but tool only replaces MainScreen. 
-                 // I will stick to full package names for the Routes to avoid import issues in this replace call 
-                 // OR I should use MultiReplace to add imports.
-                 // Replace tool allows me to just replace this block.
-                 // I will use fully qualified names for the Routes to be safe.
-                 when (targetIndex) {
-                     0 -> com.tyust.course.ui.route.CourseListRoute()
-                     1 -> com.tyust.course.ui.route.ScheduleRoute()
-                     2 -> com.tyust.course.ui.route.GrabProRoute()
-                     3 -> com.tyust.course.ui.route.GradesRoute()
-                     4 -> com.tyust.course.ui.route.SettingsRoute()
-                     else -> com.tyust.course.ui.route.CourseListRoute()
-                 }
+                }
+
+                // 🔧 2. 内容区域 (占满剩余空间)
+                Box(modifier = Modifier.weight(1f)) {
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            val smoothEasing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
+                            val tweenSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(150, easing = smoothEasing)
+                            val fadeSpec = androidx.compose.animation.core.tween<Float>(150, easing = smoothEasing)
+                            
+                            if (targetState > initialState) {
+                                (slideInHorizontally(animationSpec = tweenSpec) { width -> width + 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
+                                        (slideOutHorizontally(animationSpec = tweenSpec) { width -> -width / 4 } + fadeOut(animationSpec = fadeSpec))
+                            } else {
+                                (slideInHorizontally(animationSpec = tweenSpec) { width -> -width - 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
+                                        (slideOutHorizontally(animationSpec = tweenSpec) { width -> width / 4 } + fadeOut(animationSpec = fadeSpec))
+                            }
+                        },
+                        label = "MainTabTransition"
+                    ) { targetIndex ->
+                        when (targetIndex) {
+                            0 -> com.tyust.course.ui.route.CourseListRoute()
+                            1 -> com.tyust.course.ui.route.ScheduleRoute()
+                            2 -> com.tyust.course.ui.route.GrabProRoute()
+                            3 -> com.tyust.course.ui.route.GradesRoute()
+                            4 -> com.tyust.course.ui.route.SettingsRoute()
+                            else -> com.tyust.course.ui.route.CourseListRoute()
+                        }
+                    }
+                }
             }
             
-            // 水印 - 右下角
+            // 🔧 3. 水印 (放在 Box 作用域内以支持 align)
             Text(
                 text = "作者:znj | 免费软件，请勿用于盈利",
                 modifier = Modifier
@@ -269,7 +330,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Light
             )
             
-            // 水印 - 左下角
             Text(
                 text = "znj © 免费开源",
                 modifier = Modifier
@@ -280,7 +340,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Light
             )
             
-            // 水印 - 右上角
             Text(
                 text = "请勿商用",
                 modifier = Modifier

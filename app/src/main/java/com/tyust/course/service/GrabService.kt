@@ -101,9 +101,26 @@ class GrabService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var grabRunnable: Runnable? = null
     
+    // 🔧 全局 Cookie 失效广播接收器
+    private val cookieExpiredReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED) {
+                if (isRunning) {
+                    Log.e(TAG, "📡 收到全局广播: Cookie 已失效，正在执行强提醒并停止服务")
+                    handleCookieInvalid()
+                }
+            }
+        }
+    }
+    
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        
+        // 🔧 注册 Cookie 失效监听
+        val filter = android.content.IntentFilter(com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED)
+        registerReceiver(cookieExpiredReceiver, filter)
+        
         Log.d(TAG, "GrabService created")
     }
     
@@ -149,12 +166,17 @@ class GrabService : Service() {
                     return START_STICKY
                 }
                 
-                val modeText = if (isParallelMode) "并行模式(${parallelWorkerCount}门)" else "顺序模式"
-                startForeground(NOTIFICATION_ID, createNotification("正在获取课程列表..."))
-                broadcastLog("📚 正在获取课程列表... [$modeText]")
-                
-                // 开始关键词抢课流程
-                startKeywordGrabbing(keywords)
+                // 🚀 获取列表前先检查 Cookie
+                checkCookieValidity(currentSchool!!) { isValid ->
+                    if (!isValid) return@checkCookieValidity
+                    
+                    val modeText = if (isParallelMode) "并行模式(${parallelWorkerCount}门)" else "顺序模式"
+                    startForeground(NOTIFICATION_ID, createNotification("正在获取课程列表..."))
+                    broadcastLog("📚 正在获取课程列表... [$modeText]")
+                    
+                    // 开始关键词抢课流程
+                    startKeywordGrabbing(keywords)
+                }
             }
             ACTION_START_QUEUE -> {
                 // 🔧 直接队列模式：利用 SmartSelector.queue 中的现有参数
@@ -172,14 +194,19 @@ class GrabService : Service() {
                     return START_STICKY
                 }
                 
-                startForeground(NOTIFICATION_ID, createNotification("正在准备队列抢课..."))
-                broadcastLog("🚀 启动直接队列抢课 (共 ${queue.size} 门)")
-                
-                isQueueMode = true
-                currentQueueIndex = 0
-                totalQueueSuccess = 0
-                
-                startNextQueueItem()
+                // 🚀 启动队列前先检查 Cookie
+                checkCookieValidity(currentSchool!!) { isValid ->
+                    if (!isValid) return@checkCookieValidity
+                    
+                    startForeground(NOTIFICATION_ID, createNotification("正在准备队列抢课..."))
+                    broadcastLog("🚀 启动直接队列抢课 (共 ${queue.size} 门)")
+                    
+                    isQueueMode = true
+                    currentQueueIndex = 0
+                    totalQueueSuccess = 0
+                    
+                    startNextQueueItem()
+                }
             }
             ACTION_START_FUZZY_MATCH -> {
                 // 🔧 模糊匹配捡漏模式：监控课程类别人数变化
@@ -227,6 +254,12 @@ class GrabService : Service() {
     
     override fun onDestroy() {
         stopGrabbing()
+        // 🔧 注销监听
+        try {
+            unregisterReceiver(cookieExpiredReceiver)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unregistering receiver failed: ${e.message}")
+        }
         super.onDestroy()
         Log.d(TAG, "GrabService destroyed")
     }
@@ -406,7 +439,23 @@ class GrabService : Service() {
         val course = targetCourse ?: return
         val school = currentSchool ?: return
         
-        // 先检查服务器健康状态
+        // 🚀 定期检查 Cookie 有效性 (Server Health 检查前)
+        // 策略：首次必须检查，后续每隔 200 次请求检查一次
+        if (retryCount == 0 || retryCount % 200 == 0) {
+            checkCookieValidity(school) { isValid ->
+                if (!isRunning) return@checkCookieValidity
+                if (!isValid) return@checkCookieValidity // 失效自动处理
+
+                // Cookie 有效，继续执行服务器检查
+                proceedToServerHealthCheck(school, course)
+            }
+        } else {
+            // 不需要检查 Cookie，直接进行服务器检查
+            proceedToServerHealthCheck(school, course)
+        }
+    }
+
+    private fun proceedToServerHealthCheck(school: SchoolConfig, course: Course) {
         broadcastLog("🔍 检测服务器状态...")
         checkServerHealth(school) { isHealthy, responseTime ->
             if (!isRunning) return@checkServerHealth
@@ -431,6 +480,66 @@ class GrabService : Service() {
         }
     }
     
+    // 检查 Cookie 有效性 (Pre-flight Check)
+    private fun checkCookieValidity(school: SchoolConfig, callback: (Boolean) -> Unit) {
+        CourseApiClient.getInstance().validateCookie(school, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                // 网络错误暂时视为通过 (避免因网络波动误判为过期)
+                Log.w(TAG, "Cookie validity check failed (network error): ${e.message}")
+                handler.post { callback(true) }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val html = response.body?.string() ?: ""
+                response.close()
+
+                // 判断逻辑：尝试解析学生姓名
+                val studentName = com.tyust.course.utils.CourseParser.parseStudentName(html)
+                val isValid = !studentName.isNullOrEmpty()
+
+                handler.post {
+                    if (isValid) {
+                        Log.d(TAG, "✅ Cookie 有效，学生姓名: $studentName")
+                        callback(true)
+                    } else {
+                        Log.e(TAG, "❌ Cookie 已失效，无法解析学生姓名")
+                        handleCookieInvalid()
+                        callback(false)
+                    }
+                }
+            }
+        })
+    }
+
+    private fun handleCookieInvalid() {
+        stopGrabbing()
+        
+        // 发送高优先级通知
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("⚠️ 登录已过期")
+            .setContentText("抢课已停止，请点击此通知重新登录！")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // 强提醒
+            .setDefaults(Notification.DEFAULT_ALL)         // 震动+声音
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID + 1, notification) //都不把常驻通知顶掉
+
+        broadcastLog("❌ 严重错误: Cookie 已失效！请重新登录")
+        broadcastUpdate("❌ Cookie 已失效，请重新登录")
+    }
+
     // 检查服务器健康状态（通过获取首页响应时间判断）
     private fun checkServerHealth(school: SchoolConfig, callback: (isHealthy: Boolean, responseTime: Long) -> Unit) {
         val startTime = System.currentTimeMillis()

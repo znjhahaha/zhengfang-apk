@@ -64,7 +64,7 @@ class LoginActivity : ComponentActivity() {
         // Initialize UserManager with context for SharedPreferences
         UserManager.getInstance().init(this)
         
-        // 🔄 每次启动 App 都同步云端激活配置（获取最新的 max_students）
+            // 🔄 每次启动 App 都同步云端激活配置（获取最新的 max_students）
         lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -74,8 +74,17 @@ class LoginActivity : ComponentActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "启动同步失败: ${e.message}")
             }
-            // 检查是否有保存的有效登录状态
-            checkSavedLoginState()
+            
+            // 🔧 关键修复：如果是为了“重新登录”而跳转过来的，不要执行自动登录检查
+            val forceRelogin = intent.getBooleanExtra("force_relogin", false)
+            if (forceRelogin) {
+                Log.d(TAG, "检测到强制重新登录请求，清空旧状态")
+                UserManager.getInstance().logout() // 清除登录标记和旧 Cookie
+                errorMessage = "请获取新的 Cookie 并登录"
+            } else {
+                // 检查是否有保存的有效登录状态
+                checkSavedLoginState()
+            }
         }
         
         setContent {
@@ -83,10 +92,17 @@ class LoginActivity : ComponentActivity() {
                 // Use mutableStateOf for reactive schools list
                 var schools by remember { mutableStateOf(UserManager.getInstance().supportedSchools) }
                 
-                // Ensure default school is set
+                // 🔧 强化版学校选择记忆逻辑
                 LaunchedEffect(schools) {
-                    if (schools.isNotEmpty() && UserManager.getInstance().currentSchool == null) {
-                        UserManager.getInstance().currentSchool = schools[0]
+                    val userManager = UserManager.getInstance()
+                    // 1. 如果当前没有选定学校，先尝试加载存过的
+                    if (userManager.currentSchool == null) {
+                        userManager.loadLoginState()
+                    }
+                    
+                    // 2. 如果加载后依然没选中任何学校（比如第一次用），才选第一个
+                    if (schools.isNotEmpty() && userManager.currentSchool == null) {
+                        userManager.currentSchool = schools[0]
                     }
                 }
                 

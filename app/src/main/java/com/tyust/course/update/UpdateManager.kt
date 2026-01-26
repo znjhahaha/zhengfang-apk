@@ -199,14 +199,15 @@ class UpdateManager(private val context: Context) {
                             onProgress(progress)
                         }
                         
+                        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
                         when (status) {
                             DownloadManager.STATUS_SUCCESSFUL -> {
                                 downloading = false
-                                onComplete(apkFile)
+                                mainHandler.post { onComplete(apkFile) }
                             }
                             DownloadManager.STATUS_FAILED -> {
                                 downloading = false
-                                onComplete(null)
+                                mainHandler.post { onComplete(null) }
                             }
                         }
                     }

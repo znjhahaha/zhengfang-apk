@@ -40,6 +40,7 @@ object AnnouncementManager {
         val title: String,
         val content: String,
         val type: String,  // info, warning, important
+        val contentType: String = "text",  // text, markdown
         val showOnce: Boolean
     )
     
@@ -142,6 +143,7 @@ object AnnouncementManager {
                 title = title,
                 content = content,
                 type = obj.optString("type", "info"),
+                contentType = obj.optString("contentType", "text"),
                 showOnce = obj.optBoolean("showOnce", true)
             )
         } catch (e: Exception) {

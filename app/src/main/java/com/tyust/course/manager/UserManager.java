@@ -42,7 +42,7 @@ public class UserManager {
         // 初始化默认学校
         defaultSchools.add(new SchoolConfig("tyust", "太原科技大学", "newjwc.tyust.edu.cn", "https"));
         defaultSchools.add(new SchoolConfig("zjut", "浙江工业大学", "www.gdjw.zjut.edu.cn", "http"));
-        currentSchool = defaultSchools.get(0);
+        // 🔧 重要修复：这里不要直接赋值 currentSchool，等待 init() 时从 SharedPreferences 加载
     }
 
     public static synchronized UserManager getInstance() {
@@ -284,10 +284,15 @@ public class UserManager {
                     .remove(KEY_STUDENT_ID)
                     .remove(KEY_COOKIE)
                     .remove(KEY_COOKIE_SAVE_TIME)
-                    .apply();
+                    .apply(); // 🔧 注意：这里不再 remove KEY_CURRENT_SCHOOL_ID，实现学校记忆
         }
 
         Log.d(TAG, "登录状态已清除");
+    }
+
+    // 🔧 别名方法，方便 Kotlin 调用
+    public void logout() {
+        clearLoginState();
     }
 
     // ========== 原有方法 ==========

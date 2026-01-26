@@ -34,6 +34,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.tyust.course.model.SchoolConfig
+import com.tyust.course.manager.UserManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -204,7 +205,11 @@ fun LoginScreen(
                         
                         // Initialize selected school
                         LaunchedEffect(schools) {
-                            if (schools.isNotEmpty() && selectedSchool == null) {
+                            val userManager = UserManager.getInstance()
+                            // 🔧 优先使用 UserManager 中已经加载好的学校 (即 loadLoginState 恢复的)
+                            if (userManager.getCurrentSchool() != null) {
+                                selectedSchool = userManager.getCurrentSchool()
+                            } else if (schools.isNotEmpty() && selectedSchool == null) {
                                 selectedSchool = schools[0]
                                 onSchoolSelected(schools[0])
                             }

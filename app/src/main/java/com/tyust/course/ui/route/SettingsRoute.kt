@@ -59,6 +59,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
+import com.tyust.course.ui.screen.FeedbackHistoryScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +78,9 @@ fun SettingsRoute() {
     var showHistory by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
     var showFeedbackDialog by remember { mutableStateOf(false) }
+    var showFeedbackHistory by remember { mutableStateOf(false) }
     var isSubmittingFeedback by remember { mutableStateOf(false) }
+    var hasNewFeedbackReply by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     
@@ -98,6 +101,12 @@ fun SettingsRoute() {
     // If history is showing, show the history screen
     if (showHistory) {
         AnnouncementHistoryScreen(onBack = { showHistory = false })
+        return
+    }
+
+    // 如果正在显示反馈历史，渲染反馈历史页面
+    if (showFeedbackHistory) {
+        FeedbackHistoryScreen(onNavigateBack = { showFeedbackHistory = false })
         return
     }
     
@@ -141,6 +150,15 @@ fun SettingsRoute() {
             append("━━━━━━━━━━━━━━━\n\n")
             append("💡 说明：激活名额一旦绑定无法自行解绑。")
         }
+        
+        // 初始化红点状态：先读取本地缓存，然后发起网络检查
+        hasNewFeedbackReply = com.tyust.course.network.FeedbackManager.hasNewReply(context)
+        
+        // 在 IO 线程中发起网络检查，完成后更新 UI
+        val hasNew = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.tyust.course.network.FeedbackManager.checkForNewReplies(context)
+        }
+        hasNewFeedbackReply = hasNew
     }
     
     fun performLogout() {
@@ -219,6 +237,12 @@ fun SettingsRoute() {
         onQuotaClick = { showQuotaDialog = true },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
         onFeedback = { showFeedbackDialog = true },
+        onFeedbackHistory = { 
+            showFeedbackHistory = true 
+            hasNewFeedbackReply = false
+            com.tyust.course.network.FeedbackManager.markRepliesAsRead(context)
+        },
+        hasNewFeedbackReply = hasNewFeedbackReply,
         isSuper = isSuper,
         quotaInfo = quotaInfo
     )

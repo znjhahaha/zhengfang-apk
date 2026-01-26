@@ -11,6 +11,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.*
 
 /**
  * 用户反馈管理器
@@ -22,6 +24,10 @@ object FeedbackManager {
     // 生产环境: https://www.znj2006.cn/api/feedback
     // 开发环境: http://10.0.2.2:3000/api/feedback (模拟器) 或 http://YOUR_IP:3000/api/feedback (真机)
     private const val FEEDBACK_API_URL = "https://www.znj2006.cn/api/feedback"
+    
+    private const val PREFS_NAME = "feedback_prefs"
+    private const val KEY_LAST_REPLY_ID = "last_reply_id"
+    private const val KEY_HAS_NEW_REPLY = "has_new_reply"
     
     private val client = OkHttpClient()
 
@@ -93,6 +99,139 @@ object FeedbackManager {
         } catch (e: Exception) {
             Log.e(TAG, "提交反馈失败: ${e.message}")
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 反馈历史数据类
+     */
+    data class FeedbackItem(
+        val id: String,
+        val content: String,
+        val createdAt: String,
+        val reply: ReplyInfo?
+    )
+
+    data class ReplyInfo(
+        val content: String,
+        val repliedAt: String
+    )
+
+    /**
+     * 获取我的反馈历史
+     */
+    suspend fun getMyFeedbacks(context: Context): Result<List<FeedbackItem>> = withContext(Dispatchers.IO) {
+        try {
+            val deviceId = com.tyust.course.activation.DeviceUtils.getDeviceId(context)
+            val timestamp = System.currentTimeMillis().toString()
+            val signature = calculateSignature(deviceId, timestamp)
+            
+            val url = "https://www.znj2006.cn/api/feedback/my?deviceId=$deviceId&t=$timestamp&s=$signature"
+
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val feedbacksArray = json.getJSONArray("feedbacks")
+                    val feedbacks = mutableListOf<FeedbackItem>()
+
+                    for (i in 0 until feedbacksArray.length()) {
+                        val item = feedbacksArray.getJSONObject(i)
+                        val replyObj = if (!item.isNull("reply")) item.getJSONObject("reply") else null
+
+                        feedbacks.add(FeedbackItem(
+                            id = item.getString("id"),
+                            content = item.getString("content"),
+                            createdAt = item.optString("createdAt", ""),
+                            reply = replyObj?.let {
+                                ReplyInfo(
+                                    content = it.getString("content"),
+                                    repliedAt = it.optString("repliedAt", "")
+                                )
+                            }
+                        ))
+                    }
+
+                    Result.success(feedbacks)
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "获取反馈历史失败: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 检查是否有新回复
+     */
+    fun hasNewReply(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_HAS_NEW_REPLY, false)
+    }
+
+    /**
+     * 标记所有回复为已读
+     */
+    fun markRepliesAsRead(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_HAS_NEW_REPLY, false).apply()
+    }
+
+    /**
+     * 后台检测新异步回复 (可在进入设置页面时触发)
+     */
+    /**
+     * 后台检测新异步回复 (可在进入设置页面时触发)
+     * @return Boolean 是否有新回复
+     */
+    suspend fun checkForNewReplies(context: Context): Boolean {
+        val result = getMyFeedbacks(context)
+        var hasNew = false
+        result.onSuccess { list ->
+            if (list.isNotEmpty()) {
+                val latest = list.first()
+                if (latest.reply != null) {
+                    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    val lastKnownId = prefs.getString(KEY_LAST_REPLY_ID, "")
+                    
+                    if (latest.id != lastKnownId) {
+                        prefs.edit()
+                            .putString(KEY_LAST_REPLY_ID, latest.id)
+                            .putBoolean(KEY_HAS_NEW_REPLY, true)
+                            .apply()
+                        hasNew = true
+                    } else {
+                        // 如果 ID 一样，读取当前的红点状态 (可能用户还没点进去看)
+                        hasNew = prefs.getBoolean(KEY_HAS_NEW_REPLY, false)
+                    }
+                }
+            }
+        }
+        return hasNew
+    }
+
+    /**
+     * 计算请求签名
+     * 算法: SHA256(deviceId + timestamp + secretKey)
+     */
+    private fun calculateSignature(deviceId: String, timestamp: String): String {
+        val secretKey = "znj_feedback_default_secret_666" // 与服务端保持一致
+        val data = deviceId + timestamp + secretKey
+        
+        return try {
+            val md = MessageDigest.getInstance("SHA-256")
+            val bytes = md.digest(data.toByteArray())
+            bytes.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "签名计算失败", e)
+            ""
         }
     }
 }

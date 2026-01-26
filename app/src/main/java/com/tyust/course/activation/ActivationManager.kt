@@ -26,8 +26,14 @@ object ActivationManager {
     private const val KEY_MAX_STUDENTS = "max_students"
     private const val KEY_IS_SUPER = "is_super"
     
-    // 白名单 JSON 地址（Gitee Raw）
+    // 白名单 JSON 地址（Gitee Raw，备用）
     private const val WHITELIST_URL = "https://gitee.com/znj12345/zhengfang/raw/main/whitelist.json"
+    
+    // D1 API 地址（主要，更快）
+    private const val D1_API_URL = "https://www.znj2006.cn/api/check-device"
+    
+    // API 签名密钥（与服务端保持一致）
+    private const val API_SECRET_KEY = "znj_feedback_default_secret_666"
     
     // 缓存有效期（1天内不重复请求）
     private const val CACHE_VALID_DAYS = 1
@@ -39,6 +45,22 @@ object ActivationManager {
     
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    
+    /**
+     * 计算 API 请求签名
+     * 算法: SHA256(deviceId + timestamp + secretKey)
+     */
+    private fun calculateSignature(deviceId: String, timestamp: String): String {
+        return try {
+            val data = deviceId + timestamp + API_SECRET_KEY
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val bytes = md.digest(data.toByteArray())
+            bytes.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "签名计算失败", e)
+            ""
+        }
     }
     
     /**
@@ -107,11 +129,21 @@ object ActivationManager {
     }
     
     /**
-     * 联网验证设备 ID
+     * 联网验证设备 ID（优先 D1 API，备用 Gitee）
      * 返回 Triple<是否激活, 过期日期, 最大学生数>
      */
     private suspend fun verifyOnline(context: Context, deviceId: String): Triple<Boolean, String?, Int> {
         return withContext(Dispatchers.IO) {
+            // 优先尝试 D1 API（更快更安全）
+            try {
+                val result = verifyOnlineD1(deviceId)
+                Log.d(TAG, "D1 API 验证成功")
+                return@withContext result
+            } catch (e: Exception) {
+                Log.w(TAG, "D1 API 验证失败，尝试 Gitee 备用: ${e.message}")
+            }
+            
+            // 备用：Gitee Raw（兼容旧版）
             val request = Request.Builder()
                 .url(WHITELIST_URL)
                 .header("Cache-Control", "no-cache")
@@ -128,7 +160,45 @@ object ActivationManager {
     }
     
     /**
-     * 解析白名单 JSON，查找设备 ID
+     * 使用 D1 API 验证设备
+     * 返回 Triple<是否激活, 过期日期, 最大学生数>
+     */
+    private fun verifyOnlineD1(deviceId: String): Triple<Boolean, String?, Int> {
+        val timestamp = System.currentTimeMillis().toString()
+        val signature = calculateSignature(deviceId, timestamp)
+        
+        val url = "$D1_API_URL?id=$deviceId&t=$timestamp&s=$signature"
+        
+        val request = Request.Builder()
+            .url(url)
+            .header("Cache-Control", "no-cache")
+            .build()
+        
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw Exception("D1 API HTTP ${response.code}")
+        }
+        
+        val json = response.body?.string() ?: throw Exception("Empty D1 response")
+        val result = JSONObject(json)
+        
+        val valid = result.optBoolean("valid", false)
+        val maxStudents = result.optInt("maxStudents", 0)
+        val isSuper = result.optBoolean("isSuper", false)
+        
+        if (!valid) {
+            Log.d(TAG, "D1: 设备 $deviceId 不在白名单中")
+            return Triple(false, null, 0)
+        }
+        
+        // D1 API 不返回过期日期，使用 null（永久）
+        val actualMaxStudents = if (isSuper) 0 else maxStudents
+        Log.d(TAG, "D1: 设备 $deviceId 验证通过，超级: $isSuper, 最大学生数: $actualMaxStudents")
+        return Triple(true, null, actualMaxStudents)
+    }
+    
+    /**
+     * 解析白名单 JSON，查找设备 ID（Gitee 备用）
      * 返回 Triple<是否激活, 过期日期, 最大学生数>
      */
     private fun parseWhitelist(json: String, deviceId: String): Triple<Boolean, String?, Int> {

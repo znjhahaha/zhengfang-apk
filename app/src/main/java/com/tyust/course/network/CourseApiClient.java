@@ -15,13 +15,20 @@ import okhttp3.FormBody;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.Response;
+import android.content.Intent;
+import android.content.Context;
 import com.tyust.course.model.SchoolConfig;
+import com.tyust.course.manager.UserManager;
 
 public class CourseApiClient {
         private static final String TAG = "CourseApiClient";
         private static volatile CourseApiClient instance;
         private final OkHttpClient client;
         private final CookieJarImpl cookieJar;
+        private Context appContext;
+
+        public static final String ACTION_COOKIE_EXPIRED = "com.tyust.course.ACTION_COOKIE_EXPIRED";
 
         // ============= Web版兼容: Display参数缓存 (按xkkz_id) =============
         private final Map<String, Map<String, String>> displayParamsCache = new ConcurrentHashMap<>();
@@ -54,7 +61,58 @@ public class CourseApiClient {
                                 .followRedirects(true)
                                 .followSslRedirects(true)
                                 .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
+                                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                .addInterceptor(chain -> {
+                                        Request request = chain.request();
+                                        Response response = chain.proceed(request);
+
+                                        // 只处理成功返回的 HTML 类型响应
+                                        if (response.isSuccessful() && response.body() != null) {
+                                                okhttp3.MediaType contentType = response.body().contentType();
+                                                if (contentType != null
+                                                                && contentType.toString().contains("text/html")) {
+                                                        // 🔧 修改判定逻辑：引入“高精度反证法”防止误报
+                                                        // 1. 扩大检查范围：从 50KB 增加到 256KB，确保能搜到复杂成绩页中的姓名标签
+                                                        String bodyPreview = response.peekBody(1024 * 256).string();
+                                                        String currentUrl = response.request().url().toString();
+
+                                                        // 2. 核心判定规则：必须包含真实的登录表单特征（密码框 ID 等）
+                                                        boolean hasLoginForm = bodyPreview.contains("id=\"pwd\"") ||
+                                                                        (bodyPreview.contains("name=\"mm\"")
+                                                                                        && bodyPreview.contains(
+                                                                                                        "name=\"yhm\""));
+
+                                                        // 这里的判定逻辑更严格：URL 包含 login_ 且包含“用户登录”文案，或包含真实的表单
+                                                        if (hasLoginForm || (currentUrl.contains("login_")
+                                                                        && bodyPreview.contains("用户登录"))) {
+                                                                // 3. 🚨 重点：尝试解析姓名作为“生存证明”
+                                                                // 只要能解析出姓名，说明绝对是误判（正方系统某些成绩页会混入登录代码）
+                                                                String possibleName = com.tyust.course.utils.CourseParser
+                                                                                .parseStudentName(bodyPreview);
+                                                                boolean isActuallyLoggedIn = possibleName != null
+                                                                                && !possibleName.isEmpty();
+
+                                                                if (!isActuallyLoggedIn) {
+                                                                        Log.e(TAG, "🚨 [确认失效] 拦截器确认 Cookie 已过期! URL: "
+                                                                                        + currentUrl);
+                                                                        if (appContext != null) {
+                                                                                Intent intent = new Intent(
+                                                                                                ACTION_COOKIE_EXPIRED);
+                                                                                intent.setPackage(appContext
+                                                                                                .getPackageName());
+                                                                                appContext.sendBroadcast(intent);
+                                                                                UserManager.getInstance()
+                                                                                                .setLoggedIn(false);
+                                                                        }
+                                                                } else {
+                                                                        Log.d(TAG, "🔍 [拦截误报] 虽然包含登录特征，但成功解析到姓名 ["
+                                                                                        + possibleName + "]，判定为业务数据页");
+                                                                }
+                                                        }
+                                                }
+                                        }
+                                        return response;
+                                });
 
                 try {
                         javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
@@ -78,6 +136,10 @@ public class CourseApiClient {
                         }
                 }
                 return instance;
+        }
+
+        public void init(Context context) {
+                this.appContext = context.getApplicationContext();
         }
 
         // ============= Display参数缓存方法 =============

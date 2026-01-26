@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.halilibo.richtext.markdown.Markdown
+import com.halilibo.richtext.ui.material3.Material3RichText
 
 /**
  * 公告弹窗 - 优化版支持丝滑动画
@@ -158,14 +160,23 @@ fun AnnouncementDialog(
                                     .heightIn(max = 280.dp)
                                     .verticalScroll(scrollState)
                             ) {
-                                Text(
-                                    text = announcement.content,
-                                    fontSize = 16.sp,
-                                    color = Color(0xFF555555),
-                                    textAlign = TextAlign.Start, // 改为左对齐更专业
-                                    lineHeight = 26.sp,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                                )
+                                // 根据 contentType 渲染 Markdown 或纯文本
+                                if (announcement.contentType == "markdown") {
+                                    Material3RichText(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                    ) {
+                                        Markdown(content = announcement.content)
+                                    }
+                                } else {
+                                    Text(
+                                        text = announcement.content,
+                                        fontSize = 16.sp,
+                                        color = Color(0xFF555555),
+                                        textAlign = TextAlign.Start,
+                                        lineHeight = 26.sp,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(32.dp))

@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import com.tyust.course.R
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.ui.theme.PrimaryPurple
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,9 +54,13 @@ fun SettingsScreen(
     onQuotaClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
     onFeedback: () -> Unit = {},
+    onFeedbackHistory: () -> Unit = {},
     isSuper: Boolean = false,
-    quotaInfo: String = ""
+    quotaInfo: String = "",
+    hasNewFeedbackReply: Boolean = false
 ) {
+    val context = LocalContext.current
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -74,93 +81,135 @@ fun SettingsScreen(
             // User Header Card
             SettingsHeader(studentName, studentId, schoolName, isSuper, quotaInfo)
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
-            // Settings Groups
-            SettingsGroupTitle("常用设置")
-            SettingsItem(
-                icon = Icons.Outlined.School,
-                title = "学校选择",
-                subtitle = schoolName,
-                onClick = onSchoolSelect
-            )
-            SettingsItem(
-                icon = Icons.Outlined.Campaign,
-                title = "历史公告",
-                subtitle = "查看过往发布的内容",
-                iconColor = PrimaryPurple,
-                onClick = onAnnouncementHistory
-            )
-            SettingsItem(
-                icon = Icons.Outlined.Cookie,
-                title = "重新配置Cookie",
-                subtitle = "更换登录凭证",
-                onClick = onCookieConfig
-            )
-            SettingsItem(
-                icon = Icons.Outlined.AssignmentInd,
-                title = "当前账号配额",
-                subtitle = if (isSuper) "超级用户 (无限绑定)" else if (quotaInfo.isNotEmpty()) "已绑定 $quotaInfo" else "正在获取...",
-                iconColor = if (isSuper) Color(0xFFFFD700) else PrimaryPurple,
-                onClick = onQuotaClick
-            )
+            // 1. 教务助手 (Compact Grid)
+            SettingsGroupTitle("教务助手")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(20.dp), // 圆角稍微改小一点适配紧凑风格
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) { // 卡片内边距减小到 8dp
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.School,
+                            title = "学校选择",
+                            onClick = onSchoolSelect
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.Campaign,
+                            title = "历史公告",
+                            iconColor = PrimaryPurple,
+                            onClick = onAnnouncementHistory
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.AssignmentInd,
+                            title = "配额/身份",
+                            iconColor = if (isSuper) Color(0xFFFFD700) else PrimaryPurple,
+                            onClick = onQuotaClick
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.Cookie,
+                            title = "配置凭证",
+                            onClick = onCookieConfig
+                        )
+                    }
+                }
+            }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp)) // 组间距减小到 8dp
             
-            SettingsGroupTitle("数据管理")
-            SettingsItem(
-                icon = Icons.Outlined.Delete,
-                title = "清除缓存",
-                subtitle = "清除本地缓存数据",
-                iconColor = Color(0xFFFF9800),
-                onClick = onClearCache
-            )
-            SettingsItem(
-                icon = Icons.Outlined.ContentPasteSearch,
-                title = "导出日志",
-                subtitle = "导出运行日志排查问题",
-                iconColor = Color(0xFF2196F3),
-                onClick = onLogExport
-            )
+            // 2. 数据与安全 (Compact Grid)
+            SettingsGroupTitle("数据与安全")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        SettingsCompactItem(
+                            icon = Icons.Filled.SystemUpdate,
+                            title = "检查更新",
+                            iconColor = Color(0xFF4CAF50),
+                            onClick = onCheckUpdate
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.Delete,
+                            title = "清除缓存",
+                            iconColor = Color(0xFFFF9800),
+                            onClick = onClearCache
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.ContentPasteSearch,
+                            title = "导出日志",
+                            iconColor = Color(0xFF2196F3),
+                            onClick = onLogExport
+                        )
+                        // 占位符保持对齐
+                         Spacer(modifier = Modifier.width(64.dp))
+                    }
+                }
+            }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
-            SettingsGroupTitle("其他")
-            SettingsItem(
-                icon = Icons.Filled.SystemUpdate,
-                title = "检查更新",
-                subtitle = "当前版本 $currentVersion",
-                iconColor = Color(0xFF4CAF50),
-                onClick = onCheckUpdate
-            )
-            SettingsItem(
-                icon = Icons.Outlined.Message,
-                title = "反馈建议",
-                subtitle = "遇到问题或有好的建议？",
-                iconColor = PrimaryPurple,
-                onClick = onFeedback
-            )
-            SettingsItem(
-                icon = Icons.Outlined.Info,
-                title = "关于",
-                subtitle = "版本 $currentVersion",
-                onClick = onAbout
-            )
+            // 3. 交流与反馈 (Compact Grid)
+            SettingsGroupTitle("交流与反馈")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.Message,
+                            title = "提交反馈",
+                            onClick = onFeedback
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.History,
+                            title = "我的反馈",
+                            iconColor = Color(0xFF9C27B0),
+                            showBadge = hasNewFeedbackReply,
+                            onClick = onFeedbackHistory
+                        )
+                        SettingsCompactItem(
+                            icon = Icons.Outlined.Info,
+                            title = "关于应用",
+                            onClick = onAbout
+                        )
+                         // 占位符保持对齐
+                         Spacer(modifier = Modifier.width(64.dp))
+                    }
+                }
+            }
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             
             // Logout Button
             Box(modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth()) {
                 Button(
                     onClick = onLogout,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
                         contentColor = MaterialTheme.colorScheme.onErrorContainer
                     ),
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("退出登录", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
@@ -191,26 +240,26 @@ fun SettingsHeader(name: String, id: String, school: String, isSuper: Boolean = 
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Avatar Placeholder
                     Box(
                         modifier = Modifier
-                            .size(70.dp)
+                            .size(60.dp)
                             .clip(CircleShape)
                             .background(Color.White),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = name.take(1),
-                            fontSize = 32.sp,
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryPurple
                         )
                     }
                     
-                    Spacer(modifier = Modifier.width(20.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     
                     Column {
                         Text(
@@ -281,10 +330,10 @@ fun SettingsHeader(name: String, id: String, school: String, isSuper: Boolean = 
 fun SettingsGroupTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.labelLarge, // 换更小的字体风格
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp) // 极小的垂直间距
     )
 }
 
@@ -294,6 +343,7 @@ fun SettingsItem(
     title: String,
     subtitle: String? = null,
     iconColor: Color = MaterialTheme.colorScheme.primary,
+    showBadge: Boolean = false,
     onClick: () -> Unit
 ) {
     Surface(
@@ -341,11 +391,79 @@ fun SettingsItem(
                 }
             }
             
+            if (showBadge) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.Red)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
         }
+    }
+}
+
+@Composable
+fun SettingsCompactItem(
+    icon: ImageVector,
+    title: String,
+    iconColor: Color = MaterialTheme.colorScheme.primary,
+    showBadge: Boolean = false,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(64.dp) // 减小触控区域宽度
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp) // 减小垂直内边距
+    ) {
+        Box(
+            contentAlignment = Alignment.TopEnd
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp) // 减小图标背景块大小
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(iconColor.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(22.dp) // 略微减小图标
+                )
+            }
+            
+            if (showBadge) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = 3.dp, y = (-3).dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.Red)
+                        .border(1.dp, Color.White, CircleShape)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp)) // 减小文字间距
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            fontSize = 11.sp // 略微减小字号以适应更窄宽度
+        )
     }
 }
