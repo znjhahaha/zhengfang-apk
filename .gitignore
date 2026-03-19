@@ -77,3 +77,4 @@ announcement.json
 .agent/
 /web-app
 .vscode
+.gocache
