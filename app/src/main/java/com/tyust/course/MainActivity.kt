@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -151,24 +152,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     // 更新检查状态
     val updateState = rememberUpdateState()
     
-    // 公告状态（支持多条）
-    var announcements by remember { mutableStateOf<List<com.tyust.course.announcement.AnnouncementManager.Announcement>>(emptyList()) }
-    var currentAnnouncementIndex by remember { mutableIntStateOf(0) }
-    var showAnnouncement by remember { mutableStateOf(false) }
-    
     // 🔧 全局 Token 过期状态
     var isTokenExpired by remember { mutableStateOf(false) }
 
-    // 启动时检查更新和公告
+    // 启动时检查更新
     LaunchedEffect(Unit) {
         updateState.checkForUpdate()
-        // 检查公告
-        val unreadAnnouncements = com.tyust.course.announcement.AnnouncementManager.fetchUnreadAnnouncements(fragmentActivity)
-        if (unreadAnnouncements.isNotEmpty()) {
-            announcements = unreadAnnouncements
-            currentAnnouncementIndex = 0
-            showAnnouncement = true
-        }
     }
 
     // 🔧 注册全局 Cookie 过期监听
@@ -181,11 +170,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
         }
         val filter = android.content.IntentFilter(com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            fragmentActivity.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            fragmentActivity.registerReceiver(receiver, filter)
-        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            fragmentActivity,
+            receiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         onDispose {
             fragmentActivity.unregisterReceiver(receiver)
         }
@@ -201,24 +191,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             onUpdate = { updateState.startDownload() },
             downloadProgress = updateState.downloadProgress(),
             isDownloading = updateState.isDownloading()
-        )
-    }
-    
-    // 公告对话框（更新对话框关闭后才显示，逐条显示）
-    if (showAnnouncement && announcements.isNotEmpty() && currentAnnouncementIndex < announcements.size && !updateState.showDialog()) {
-        val currentAnnouncement = announcements[currentAnnouncementIndex]
-        com.tyust.course.announcement.AnnouncementDialog(
-            announcement = currentAnnouncement,
-            onDismiss = {
-                // 标记当前公告已读
-                com.tyust.course.announcement.AnnouncementManager.markAsRead(fragmentActivity, currentAnnouncement.id)
-                // 显示下一条
-                if (currentAnnouncementIndex < announcements.size - 1) {
-                    currentAnnouncementIndex++
-                } else {
-                    showAnnouncement = false
-                }
-            }
         )
     }
 
@@ -349,6 +321,49 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 fontSize = 8.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Light
             )
+
+            // 🔧 4. 防倒卖强制大水印 (仅针对未签发 Release 的 Debug 开源构建版本展示)
+            val isDebug = (fragmentActivity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (isDebug) {
+                // 不可交互点击的全屏遮罩
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 80.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                        val paint = android.graphics.Paint().apply {
+                            textSize = 55f
+                            // 稍微加深一点透明度，解决看不清的问题
+                            color = android.graphics.Color.argb(70, 255, 80, 80)
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            isAntiAlias = true
+                        }
+                        
+                        // 计算屏幕中心并在各个角落倾斜绘制交叉水印
+                        val centerX = size.width / 2
+                        val centerY = size.height / 2
+                        
+                        val nativeCanvas = drawContext.canvas.nativeCanvas
+                        nativeCanvas.save()
+                        nativeCanvas.rotate(-30f, centerX, centerY)
+                        
+                        // 疏远间距，防止文字重叠
+                        for (i in -2..2) {
+                            for (j in -3..3) {
+                                nativeCanvas.drawText(
+                                    "开源版 / 严禁倒卖",
+                                    centerX + (i * 600f),
+                                    centerY + (j * 650f),
+                                    paint
+                                )
+                            }
+                        }
+                        nativeCanvas.restore()
+                    }
+                }
+            }
         }
     }
 }

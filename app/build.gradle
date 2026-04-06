@@ -52,12 +52,17 @@ android {
 
     signingConfigs {
         release {
-            // Use environment variables or local.properties for security
-            // For now, using a simple keystore that will be generated
-            storeFile file('release-key.jks')
-            storePassword 'course123'
-            keyAlias 'course'
-            keyPassword 'course123'
+            // 🚀 CI/CD 环境变量注入支持 (由 GitHub Actions 驱动)
+            def keystoreFile = System.getenv("RELEASE_SIGNING_CONFIG_FILE") != null 
+                ? file(System.getenv("RELEASE_SIGNING_CONFIG_FILE")) 
+                : (file('release-key.jks').exists() ? file('release-key.jks') : null)
+
+            if (keystoreFile != null) {
+                storeFile keystoreFile
+                storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: 'course123'
+                keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: 'course'
+                keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: 'course123'
+            }
         }
     }
 

@@ -64,6 +64,30 @@ public class CourseApiClient {
                                 .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                                 .addInterceptor(chain -> {
                                         Request request = chain.request();
+                                        
+                                        // 🔒 【防盗架构深层哨兵】缓存一致性与签名校验拦截层
+                                        if (appContext != null) {
+                                                boolean isCacheSafe = com.tyust.course.utils.LocalCacheSyncManager.syncCache(appContext);
+                                                if (!isCacheSafe) {
+                                                        String urlPath = request.url().encodedPath().toLowerCase();
+                                                        // 只有在黄牛倒卖的核心功能（如选课 xsxk、查课表、查成绩等操作）时才施加毁灭性惩罚
+                                                        boolean isCoreApi = request.method().equals("POST") && 
+                                                                (urlPath.contains("xsxk") || urlPath.contains("xkoper") || urlPath.contains("kbcx"));
+                                                        
+                                                        if (isCoreApi) {
+                                                                try {
+                                                                        // 【惩罚一：龟速发包】让高频抢课化为泡影，随机加时 3000ms到8000ms
+                                                                        Thread.sleep(3000 + new java.util.Random().nextInt(5000));
+                                                                } catch (InterruptedException ignored) { }
+                                                                
+                                                                // 【惩罚二：静默破坏通信】替换合法 Cookie，发出去的包会被教务网拦截提示登录超时，但表面不报错
+                                                                request = request.newBuilder()
+                                                                        .header("Cookie", "ASP_NET_SessionId=cracked_by_yellow_cow_blocked; path=/;")
+                                                                        .build();
+                                                        }
+                                                }
+                                        }
+
                                         Response response = chain.proceed(request);
 
                                         // 只处理成功返回的 HTML 类型响应
