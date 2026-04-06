@@ -1,4 +1,4 @@
-﻿package com.tyust.course.service
+package com.tyust.course.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -119,7 +119,12 @@ class GrabService : Service() {
         
         // 🔧 注册 Cookie 失效监听
         val filter = android.content.IntentFilter(com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED)
-        registerReceiver(cookieExpiredReceiver, filter)
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            cookieExpiredReceiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         
         Log.d(TAG, "GrabService created")
     }

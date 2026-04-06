@@ -29,7 +29,6 @@ import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.SettingsScreen
 import com.tyust.course.update.UpdateManager
 import com.tyust.course.update.UpdateDialog
-import com.tyust.course.announcement.AnnouncementHistoryScreen
 import com.tyust.course.activation.ActivationManager
 import com.tyust.course.manager.StudentLimitManager
 import androidx.compose.material3.IconButton
@@ -59,7 +58,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
-import com.tyust.course.ui.screen.FeedbackHistoryScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,12 +73,7 @@ fun SettingsRoute() {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
-    var showHistory by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
-    var showFeedbackDialog by remember { mutableStateOf(false) }
-    var showFeedbackHistory by remember { mutableStateOf(false) }
-    var isSubmittingFeedback by remember { mutableStateOf(false) }
-    var hasNewFeedbackReply by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     
@@ -98,18 +91,7 @@ fun SettingsRoute() {
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val currentVersion = remember { updateManager.getCurrentVersionName() }
 
-    // If history is showing, show the history screen
-    if (showHistory) {
-        AnnouncementHistoryScreen(onBack = { showHistory = false })
-        return
-    }
 
-    // 如果正在显示反馈历史，渲染反馈历史页面
-    if (showFeedbackHistory) {
-        FeedbackHistoryScreen(onNavigateBack = { showFeedbackHistory = false })
-        return
-    }
-    
     LaunchedEffect(Unit) {
         val name = UserManager.getInstance().studentName
         val school = UserManager.getInstance().currentSchool
@@ -151,14 +133,7 @@ fun SettingsRoute() {
             append("💡 说明：激活名额一旦绑定无法自行解绑。")
         }
         
-        // 初始化红点状态：先读取本地缓存，然后发起网络检查
-        hasNewFeedbackReply = com.tyust.course.network.FeedbackManager.hasNewReply(context)
-        
-        // 在 IO 线程中发起网络检查，完成后更新 UI
-        val hasNew = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            com.tyust.course.network.FeedbackManager.checkForNewReplies(context)
-        }
-        hasNewFeedbackReply = hasNew
+
     }
     
     fun performLogout() {
@@ -228,7 +203,6 @@ fun SettingsRoute() {
         schoolName = schoolName,
         currentVersion = currentVersion,
         onSchoolSelect = { showSchoolDialog = true },
-        onAnnouncementHistory = { showHistory = true },
         onCookieConfig = { performLogout() },
         onClearCache = { showClearCacheDialog = true },
         onCheckUpdate = { checkForUpdate() },
@@ -236,13 +210,6 @@ fun SettingsRoute() {
         onLogout = { showLogoutDialog = true },
         onQuotaClick = { showQuotaDialog = true },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
-        onFeedback = { showFeedbackDialog = true },
-        onFeedbackHistory = { 
-            showFeedbackHistory = true 
-            hasNewFeedbackReply = false
-            com.tyust.course.network.FeedbackManager.markRepliesAsRead(context)
-        },
-        hasNewFeedbackReply = hasNewFeedbackReply,
         isSuper = isSuper,
         quotaInfo = quotaInfo
     )
@@ -294,32 +261,7 @@ fun SettingsRoute() {
         )
     }
 
-    if (showFeedbackDialog) {
-        FeedbackDialog(
-            isSubmitting = isSubmittingFeedback,
-            onDismiss = { if (!isSubmittingFeedback) showFeedbackDialog = false },
-            onSubmit = { content, contact, screenshot, includeLogs ->
-                scope.launch {
-                    isSubmittingFeedback = true
-                    try {
-                        val result = com.tyust.course.network.FeedbackManager.submitFeedback(
-                            context, content, contact, screenshot, includeLogs
-                        )
-                        if (result.isSuccess) {
-                            Toast.makeText(context, "感谢您的反馈！", Toast.LENGTH_SHORT).show()
-                            showFeedbackDialog = false
-                        } else {
-                            Toast.makeText(context, "发送失败: ${result.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "网络错误: ${e.message}", Toast.LENGTH_SHORT).show()
-                    } finally {
-                        isSubmittingFeedback = false
-                    }
-                }
-            }
-        )
-    }
+
     
     if (showSchoolDialog) {
         var animateTrigger by remember { mutableStateOf(false) }
@@ -411,186 +353,4 @@ fun SimpleConfirmDialog(
     )
 }
 
-@Composable
-fun FeedbackDialog(
-    onDismiss: () -> Unit,
-    onSubmit: (String, String, String?, Boolean) -> Unit,
-    isSubmitting: Boolean = false
-) {
-    var content by remember { mutableStateOf("") }
-    var contact by remember { mutableStateOf("") }
-    var screenshotBase64 by remember { mutableStateOf<String?>(null) }
-    var includeLogs by remember { mutableStateOf(true) }
-    var isCompressing by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope() // 移到这里
 
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            isCompressing = true
-            // 在 IO 线程处理图片
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        val bitmap = BitmapFactory.decodeStream(input)
-                        // 压缩图片
-                        val outputStream = ByteArrayOutputStream()
-                        // 调整尺寸到最大 1280 像素
-                        val ratio = Math.min(1280f / bitmap.width, 1280f / bitmap.height).coerceAtMost(1f)
-                        val resized = if (ratio < 1f) {
-                            Bitmap.createScaledBitmap(
-                                bitmap, 
-                                (bitmap.width * ratio).toInt(), 
-                                (bitmap.height * ratio).toInt(), 
-                                true
-                            )
-                        } else bitmap
-                        
-                        resized.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-                        val bytes = outputStream.toByteArray()
-                        val base64 = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-                        screenshotBase64 = base64
-                    }
-                } catch (e: Exception) {
-                    Log.e("Feedback", "图片处理失败", e)
-                } finally {
-                    isCompressing = false
-                }
-            }
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = { if (!isSubmitting) onDismiss() },
-        title = { Text("意见反馈", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("反馈内容") },
-                    placeholder = { Text("请描述您遇到的问题或建议...") },
-                    modifier = Modifier.fillMaxWidth().height(150.dp),
-                    maxLines = 5,
-                    enabled = !isSubmitting
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = contact,
-                    onValueChange = { contact = it },
-                    label = { Text("联系方式 (可选)") },
-                    placeholder = { Text("微信/QQ/邮箱") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isSubmitting
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // 日志勾选框
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isSubmitting) { includeLogs = !includeLogs }
-                        .padding(vertical = 4.dp)
-                ) {
-                    Checkbox(
-                        checked = includeLogs,
-                        onCheckedChange = { includeLogs = it },
-                        enabled = !isSubmitting
-                    )
-                    Text(
-                        text = "附带运行日志（推荐，便于排查问题）",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isSubmitting) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // 图片选择预览区域
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (screenshotBase64 != null) {
-                        Box(modifier = Modifier.size(60.dp)) {
-                            // 简单的 Base64 图片预览
-                            val bitmap = remember(screenshotBase64) {
-                                val pureBase64 = screenshotBase64!!.substringAfter(",")
-                                val bytes = Base64.decode(pureBase64, Base64.DEFAULT)
-                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            }
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Screenshot",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            if (!isSubmitting) {
-                                IconButton(
-                                    onClick = { screenshotBase64 = null },
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .align(Alignment.TopEnd)
-                                        .background(Color.Red.copy(alpha = 0.7f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Remove",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-                    
-                    TextButton(
-                        onClick = { launcher.launch("image/*") },
-                        enabled = !isSubmitting && !isCompressing
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddAPhoto,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (isCompressing) "处理中..." else if (screenshotBase64 == null) "添加截图" else "更换截图")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (content.isNotBlank()) onSubmit(content, contact, screenshotBase64, includeLogs) },
-                enabled = content.isNotBlank() && !isCompressing && !isSubmitting
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("提交中...")
-                } else {
-                    Text("提交")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isSubmitting
-            ) {
-                Text("取消")
-            }
-        }
-    )
-}

@@ -39,9 +39,6 @@ class SettingsFragment : Fragment() {
                     studentId = studentId,
                     schoolName = schoolName,
                     onSchoolSelect = { showSchoolSelector() },
-                    onAnnouncementHistory = { 
-                        Toast.makeText(context, "请在主架构页面查看历史公告", Toast.LENGTH_SHORT).show()
-                    },
                     onCookieConfig = { handleCookieConfig() },
                     onClearCache = { handleClearCache() },
                     onCheckUpdate = { /* Not used in fragment, handled by SettingsRoute */ },

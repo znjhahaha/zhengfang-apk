@@ -45,7 +45,6 @@ fun SettingsScreen(
     schoolName: String,
     currentVersion: String = "1.0.0",
     onSchoolSelect: () -> Unit,
-    onAnnouncementHistory: () -> Unit,
     onCookieConfig: () -> Unit,
     onClearCache: () -> Unit,
     onCheckUpdate: () -> Unit,
@@ -53,11 +52,8 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onQuotaClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
-    onFeedback: () -> Unit = {},
-    onFeedbackHistory: () -> Unit = {},
     isSuper: Boolean = false,
-    quotaInfo: String = "",
-    hasNewFeedbackReply: Boolean = false
+    quotaInfo: String = ""
 ) {
     val context = LocalContext.current
 
@@ -101,12 +97,6 @@ fun SettingsScreen(
                             onClick = onSchoolSelect
                         )
                         SettingsCompactItem(
-                            icon = Icons.Outlined.Campaign,
-                            title = "历史公告",
-                            iconColor = PrimaryPurple,
-                            onClick = onAnnouncementHistory
-                        )
-                        SettingsCompactItem(
                             icon = Icons.Outlined.AssignmentInd,
                             title = "配额/身份",
                             iconColor = if (isSuper) Color(0xFFFFD700) else PrimaryPurple,
@@ -117,6 +107,7 @@ fun SettingsScreen(
                             title = "配置凭证",
                             onClick = onCookieConfig
                         )
+                        Spacer(modifier = Modifier.width(64.dp))
                     }
                 }
             }
@@ -153,45 +144,11 @@ fun SettingsScreen(
                             iconColor = Color(0xFF2196F3),
                             onClick = onLogExport
                         )
-                        // 占位符保持对齐
-                         Spacer(modifier = Modifier.width(64.dp))
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 3. 交流与反馈 (Compact Grid)
-            SettingsGroupTitle("交流与反馈")
-            Card(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-            ) {
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        SettingsCompactItem(
-                            icon = Icons.Outlined.Message,
-                            title = "提交反馈",
-                            onClick = onFeedback
-                        )
-                        SettingsCompactItem(
-                            icon = Icons.Outlined.History,
-                            title = "我的反馈",
-                            iconColor = Color(0xFF9C27B0),
-                            showBadge = hasNewFeedbackReply,
-                            onClick = onFeedbackHistory
-                        )
                         SettingsCompactItem(
                             icon = Icons.Outlined.Info,
                             title = "关于应用",
                             onClick = onAbout
                         )
-                         // 占位符保持对齐
-                         Spacer(modifier = Modifier.width(64.dp))
                     }
                 }
             }
