@@ -1,227 +1,153 @@
-# 正方教务助手 (Android)
+<p align="center">
+  <img src="pic/07_登录页.jpg" width="200"/>
+  <img src="pic/01_课程列表.jpg" width="200"/>
+  <img src="pic/03_课表.jpg" width="200"/>
+</p>
 
-一款针对正方教务系统的 Android 客户端，支持课程查询、智能抢课、课表查看、成绩查询等功能。采用现代化 UI 设计，操作流畅，功能完善。
+<h1 align="center">📚 正方教务助手</h1>
 
----
+<p align="center">
+  <strong>开源 · 免费 · 安全</strong><br/>
+  一款面向正方教务系统的 Android 智能选课客户端
+</p>
 
-## 功能介绍
-
-### 1. 登录与认证
-
-应用采用 Cookie 认证方式，无需在 App 内输入密码，保障账号安全。
-
-**使用流程：**
-1. 在手机浏览器中登录教务系统
-2. 复制浏览器中的 Cookie
-3. 粘贴到 App 中完成登录
-
-**特性：**
-- 支持多所学校的正方教务系统
-- Cookie 本地加密存储
-- 支持自动登录（保存登录状态）
-- 登录失效时自动提示重新配置
-
-![登录页面](pic/07_登录页.jpg)
-
-![Cookie获取说明](pic/08_浏览器获取Cookie.jpg)
+<p align="center">
+  <a href="https://github.com/znjhahaha/zhengfang-apk/releases/latest"><img src="https://img.shields.io/github/v/release/znjhahaha/zhengfang-apk?style=flat-square&color=blueviolet&label=最新版本" alt="Release"/></a>
+  <a href="https://github.com/znjhahaha/zhengfang-apk/actions"><img src="https://img.shields.io/github/actions/workflow/status/znjhahaha/zhengfang-apk/release.yml?style=flat-square&label=CI/CD" alt="CI"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"/></a>
+</p>
 
 ---
 
-### 2. 课程列表
+## ✨ 功能亮点
 
-查看当前学期所有可选课程，快速定位目标课程。
-
-**功能点：**
-- 按课程名称关键词搜索
-- 按课程类别筛选（通识课、专业课等）
-- 显示课程余量、上课时间、授课教师
-- 点击课程可查看详情或直接选课
-
-![课程列表](pic/01_课程列表.jpg)
-
----
-
-### 3. 智能抢课
-
-核心功能模块，提供多种抢课策略应对不同场景。
-
-#### 3.1 定时抢课
-
-设置指定日期和时间，到点自动开始抢课。适用于选课系统开放前的预约场景。
-
-**配置项：**
-- 开始日期/时间
-- 抢课间隔（毫秒级）
-- 最大重试次数
-- 多课程队列（按顺序依次尝试）
-
-![定时抢课](pic/02_定时抢课.jpg)
-
-#### 3.2 立即抢课
-
-实时监控目标课程状态，检测到有空位时立即提交选课请求。
-
-**工作原理：**
-1. 持续轮询课程接口获取最新余量
-2. 余量 > 0 时立即发送选课请求
-3. 选课成功后自动停止监控
-
-![立即抢课](pic/10_立即抢课.jpg)
-
-#### 3.3 捡漏模式
-
-针对已满课程的持续监控，当有学生退课时第一时间抢入。
-
-**适用场景：**
-- 热门课程已被选满
-- 等待其他同学退课
-- 长时间挂机等待
+| 功能 | 说明 |
+|------|------|
+| 🔐 **安全登录** | 采用 Cookie 认证，**无需在 App 内输入密码**，杜绝账号泄露风险 |
+| 📋 **课程浏览** | 按关键词搜索、按类别筛选，实时显示课程余量与教师信息 |
+| ⚡ **智能抢课** | 定时抢课 · 立即抢课 · 捡漏模式，毫秒级发包，三种策略覆盖所有选课场景 |
+| 📅 **课表查看** | 清晰周视图，不同课程自动配色，支持导出 `.ics` 同步至系统日历 |
+| 📊 **成绩查询** | 按学期筛选，自动计算 GPA，一键查看成绩详情 |
+| 🏫 **多校适配** | 内置多校配置，也可自行添加任意正方教务系统的学校 |
 
 ---
 
-### 4. 课表查看
+## 📸 功能预览
 
-清晰直观的周课表视图，一目了然地查看每周课程安排。
-
-**功能点：**
-- 按周次切换查看
-- 显示课程名称、教室、节次
-- 不同课程自动分配颜色
-- 支持导出为 iCalendar (.ics) 格式
-- 可同步至手机系统日历
-
-![课表](pic/03_课表.jpg)
-
----
-
-### 5. 已选课程管理
-
-管理当前学期已选的所有课程。
-
-**功能点：**
-- 查看已选课程列表
-- 显示课程学分、课时
-- 一键退课功能
-- 退课前二次确认，防止误操作
-
-![已选课程](pic/04_已选课程.jpg)
-
-![退课确认](pic/05_退课确认.jpg)
+<table>
+  <tr>
+    <td align="center"><img src="pic/01_课程列表.jpg" width="180"/><br/><sub>课程列表</sub></td>
+    <td align="center"><img src="pic/02_定时抢课.jpg" width="180"/><br/><sub>定时抢课</sub></td>
+    <td align="center"><img src="pic/10_立即抢课.jpg" width="180"/><br/><sub>立即抢课</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="pic/03_课表.jpg" width="180"/><br/><sub>课表查看</sub></td>
+    <td align="center"><img src="pic/06_成绩查询.jpg" width="180"/><br/><sub>成绩查询</sub></td>
+    <td align="center"><img src="pic/04_已选课程.jpg" width="180"/><br/><sub>已选课程</sub></td>
+  </tr>
+</table>
 
 ---
 
-### 6. 成绩查询
+## 🚀 快速开始
 
-查询历史各学期成绩，了解学业情况。
+### 方式一：直接下载（推荐）
 
-**功能点：**
-- 按学期筛选成绩
-- 显示课程成绩、学分、绩点
-- 自动计算学期平均绩点
-- 支持查看成绩详情
+前往 [**Releases 页面**](https://github.com/znjhahaha/zhengfang-apk/releases/latest) 下载最新版 APK，安装即用。
 
-![成绩查询](pic/06_成绩查询.jpg)
+### 方式二：从源码构建
 
----
+```bash
+# 1. 克隆项目
+git clone https://github.com/znjhahaha/zhengfang-apk.git
+cd zhengfang-apk
 
-### 7. 设置与账号管理
+# 2. 构建 Debug 版本
+./gradlew assembleDebug
+```
 
-**设置项：**
-- 学校切换
-- Cookie 重新配置
-- 清除本地缓存
-- 检查更新
-- 关于/版本信息
-
-**账号配额管理：**
-- 查看当前设备绑定的学生账号
-- 显示配额使用情况（如 1/3）
-- 超级用户标识
+> **环境要求**：Android Studio Hedgehog+、JDK 17、Android SDK 34
 
 ---
 
-## 技术实现
+## 🔧 使用指南
+
+### 第一步：获取 Cookie
+
+1. 在手机浏览器中打开学校的教务系统并登录
+2. 复制浏览器地址栏中的 Cookie（详见 App 内教程）
+3. 将 Cookie 粘贴到 App 的登录页面
+
+<p align="center">
+  <img src="pic/08_浏览器获取Cookie.jpg" width="280"/>
+</p>
+
+### 第二步：开始选课
+
+- **定时抢课**：设置开抢时间 → 配置课程队列 → 坐等自动发包
+- **立即抢课**：选中目标课程 → 点击抢课 → 实时监控余量变化
+- **捡漏模式**：针对满员课程，挂机等待退课名额
+
+---
+
+## 🏗️ 技术架构
 
 | 模块 | 技术选型 |
 |------|----------|
 | 开发语言 | Kotlin + Java |
-| UI 框架 | Jetpack Compose + 传统 View 混合 |
-| 网络请求 | OkHttp |
+| UI 框架 | Jetpack Compose + 传统 View 混合迁移 |
+| 网络请求 | OkHttp 4 |
 | 异步处理 | Kotlin Coroutines |
-| 数据存储 | SharedPreferences |
 | HTML 解析 | Jsoup |
-| JSON 解析 | org.json |
+| 数据存储 | SharedPreferences |
+| CI/CD | GitHub Actions（自动构建 + 发布） |
 
----
-
-## 构建说明
-
-### 环境要求
-
-- Android Studio Hedgehog 或更高版本
-- JDK 17
-- Android SDK 34
-
-### 构建步骤
-
-```bash
-# 克隆项目
-git clone https://github.com/znjhahaha/zhengfang-apk.git
-
-# 进入项目目录
-cd zhengfang-apk
-
-# 构建 Debug 版本
-./gradlew assembleDebug
-
-# 构建 Release 版本（需配置签名）
-./gradlew assembleRelease
-```
-
-### 签名配置
-
-Release 构建需要配置签名密钥，在 `app/` 目录下创建 `release-key.jks` 并在 `build.gradle` 中配置签名信息。
-
----
-
-## 项目结构
+<details>
+<summary>📁 项目结构</summary>
 
 ```
 app/src/main/java/com/tyust/course/
-├── activation/          # 激活与设备管理
-│   └── ActivationManager.kt
-├── fragment/            # Fragment 页面
-│   ├── GradesFragment.kt
-│   ├── GrabProFragment.kt
-│   ├── ScheduleFragment.kt
-│   └── SettingsFragment.kt
-├── manager/             # 业务管理器
-│   ├── SmartSelector.java
-│   ├── StudentLimitManager.kt
-│   └── UserManager.java
-├── model/               # 数据模型
-│   ├── Course.java
-│   └── SchoolConfig.java
-├── network/             # 网络请求
-│   └── CourseApiClient.java
-├── ui/                  # Compose UI
-│   ├── route/           # 页面路由
-│   ├── screen/          # 页面组件
-│   └── theme/           # 主题配置
-└── utils/               # 工具类
-    ├── CourseParser.java
-    ├── DeviceUtils.kt
-    └── ICalExporter.kt
+├── activation/        # 设备激活与配额管理
+├── fragment/          # Fragment 页面容器
+├── manager/           # 业务管理器（选课逻辑、用户状态）
+├── model/             # 数据模型（Course、SchoolConfig）
+├── network/           # 网络层（CourseApiClient、Cookie 管理）
+├── service/           # 后台抢课服务（GrabService）
+├── ui/
+│   ├── route/         # 页面路由与业务逻辑
+│   ├── screen/        # Compose UI 组件
+│   └── theme/         # Material 3 主题配置
+├── update/            # 应用内更新模块
+└── utils/             # 工具类（解析、导出、设备识别）
 ```
+</details>
 
 ---
 
-## 免责声明
+## 🤝 贡献指南
 
-本项目仅供学习交流使用，请勿用于任何商业用途。使用本软件所产生的一切后果由用户自行承担。
+欢迎提交 Pull Request！
+
+1. Fork 本仓库
+2. 创建特性分支：`git checkout -b feature/amazing-feature`
+3. 提交修改：`git commit -m 'feat: 添加新功能'`
+4. 推送分支：`git push origin feature/amazing-feature`
+5. 提交 Pull Request
+
+> **注意**：Debug 构建版会显示开源水印，这是正常行为，不影响开发调试。
 
 ---
 
-## 许可证
+## ⚠️ 免责声明
 
-Apache License 2.0
+- 本项目**完全开源免费**，仅供学习交流使用
+- 严禁任何个人或组织将本项目用于商业用途或二次售卖
+- 使用本软件所产生的一切后果由用户自行承担
+- 请遵守所在学校的相关规定
+
+---
+
+## 📄 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 协议开源。
+

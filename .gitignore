@@ -62,6 +62,9 @@ whitelist.json
 *.bak
 *.tmp
 *.swp
+k_b64.txt
+tmp.txt
+*base64.txt
 
 # Documentation & Tools (not needed in repo)
 api.md
