@@ -20,13 +20,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
-import com.tyust.course.ui.theme.PrimaryPurple
-
+import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.theme.SemanticSuccess
+import com.tyust.course.ui.theme.SemanticDanger
+import com.tyust.course.ui.theme.SemanticWarning
+import com.tyust.course.ui.theme.Neutral500
+import com.tyust.course.ui.theme.Neutral900
+import com.tyust.course.ui.theme.SurfaceWhite
+import com.tyust.course.ui.theme.Neutral100
+import com.tyust.course.ui.theme.Neutral200
 /**
  * 抢课队列项状态
  */
@@ -163,7 +172,7 @@ fun GrabQueueEmptyState(onAddCourse: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(200.dp)
-            .background(Color.White, RoundedCornerShape(12.dp))
+            .background(SurfaceWhite, RoundedCornerShape(12.dp))
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -196,9 +205,6 @@ fun GrabQueueEmptyState(onAddCourse: () -> Unit) {
     }
 }
 
-/**
- * 队列项组件
- */
 @Composable
 fun GrabQueueItem(
     course: Course,
@@ -209,107 +215,86 @@ fun GrabQueueItem(
     onRemove: () -> Unit,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
-    onToggleMode: () -> Unit = {},  // 🔧 模式切换回调
-    showMode: Boolean = true, // 🔧 是否显示模式标签
-    useExactMatch: Boolean = false, // 🔧 显式模式参数
+    onToggleMode: () -> Unit = {},
+    showMode: Boolean = true,
+    useExactMatch: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val backgroundColor by animateColorAsState(
+    val statusColor by animateColorAsState(
         when (status) {
-            GrabQueueItemStatus.WAITING -> Color.White
-            GrabQueueItemStatus.GRABBING -> Color(0xFFFFF3E0)  // 橙色背景
-            GrabQueueItemStatus.SUCCESS -> Color(0xFFE8F5E9)   // 绿色背景
-            GrabQueueItemStatus.FAILED -> Color(0xFFFFEBEE)    // 红色背景
+            GrabQueueItemStatus.WAITING -> Color.LightGray
+            GrabQueueItemStatus.GRABBING -> SemanticWarning
+            GrabQueueItemStatus.SUCCESS -> SemanticSuccess
+            GrabQueueItemStatus.FAILED -> SemanticDanger
         },
-        label = "bgColor"
+        label = "statusColor"
     )
     
-    val elevation by animateDpAsState(
-        if (isActive) 8.dp else 2.dp,
-        label = "elevation"
-    )
-    
-    Surface(
+    val itemBgColor = if (isActive) Neutral100 else SurfaceWhite
+
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        color = backgroundColor
+            .heightIn(min = 48.dp)
+            .background(itemBgColor)
+            .padding(end = 12.dp)
+            // 底部横线
+            .drawBehind {
+                drawLine(
+                    color = Neutral200,
+                    start = androidx.compose.ui.geometry.Offset(0f, size.height),
+                    end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                    strokeWidth = 1f
+                )
+            },
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        // 左侧强烈的彩色指示线代表状态
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 序号
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(
-                        when (status) {
-                            GrabQueueItemStatus.SUCCESS -> Color(0xFF4CAF50)
-                            GrabQueueItemStatus.FAILED -> Color(0xFFF44336)
-                            GrabQueueItemStatus.GRABBING -> PrimaryPurple
-                            else -> Color.LightGray
-                        },
-                        RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                when (status) {
-                    GrabQueueItemStatus.SUCCESS -> Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    GrabQueueItemStatus.FAILED -> Icon(
-                        Icons.Default.Close,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    GrabQueueItemStatus.GRABBING -> CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                    else -> Text(
-                        text = "${index + 1}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
+                .width(4.dp)
+                .fillMaxHeight()
+                .background(statusColor)
+        )
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        // 状态小标/Loading
+        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            when (status) {
+                GrabQueueItemStatus.SUCCESS -> Icon(Icons.Default.Check, contentDescription = null, tint = SemanticSuccess, modifier = Modifier.size(16.dp))
+                GrabQueueItemStatus.FAILED -> Icon(Icons.Default.Close, contentDescription = null, tint = SemanticDanger, modifier = Modifier.size(16.dp))
+                GrabQueueItemStatus.GRABBING -> CircularProgressIndicator(modifier = Modifier.size(16.dp), color = SemanticWarning, strokeWidth = 2.dp)
+                else -> Text("${index + 1}", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
-            
-            Spacer(modifier = Modifier.width(12.dp))
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
             
             // 课程信息
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = course.name ?: "未知课程",
+                    text = course.name ?: "未知",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
+                    color = Neutral900,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${course.teacher ?: "未知教师"} | ${course.time ?: ""}",
+                    text = "${course.teacher ?: ""} | ${course.time ?: ""}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Neutral500,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                // 🔧 模式指示器 (当 showMode 为 true 时显示)
                 if (showMode) {
                     val hasClassId = !course.classId.isNullOrEmpty()
-                    val effectiveExactMode = hasClassId && useExactMatch // 🔧 使用显式参数
+                    val effectiveExactMode = hasClassId && useExactMatch
                     Text(
                         text = if (effectiveExactMode) "🔒 精确模式" else "🔄 智能模式",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (effectiveExactMode) PrimaryPurple else Color(0xFF4CAF50),
+                        color = if (effectiveExactMode) SystemBlue else SemanticSuccess,
                         fontSize = 10.sp
                     )
                 }
@@ -326,7 +311,7 @@ fun GrabQueueItem(
                                 Icon(
                                     imageVector = if (useExactMatch) Icons.Default.Lock else Icons.Default.Refresh,
                                     contentDescription = if (useExactMatch) "精确模式" else "智能模式",
-                                    tint = if (useExactMatch) PrimaryPurple else Color(0xFF4CAF50),
+                                    tint = if (useExactMatch) SystemBlue else SemanticSuccess,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -357,12 +342,11 @@ fun GrabQueueItem(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "删除",
-                            tint = Color(0xFFF44336),
+                            tint = SemanticDanger,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-            }
         }
     }
 }
@@ -387,7 +371,7 @@ fun GrabModeSwitch(
     )
     
     val trackColor by animateColorAsState(
-        targetValue = if (checked) PrimaryPurple.copy(alpha = 0.9f) else Color(0xFF4CAF50).copy(alpha = 0.9f),
+        targetValue = if (checked) SystemBlue.copy(alpha = 0.9f) else SemanticSuccess.copy(alpha = 0.9f),
         label = "trackColor"
     )
 
@@ -396,7 +380,7 @@ fun GrabModeSwitch(
         shape = RoundedCornerShape(trackHeight / 2),
         color = trackColor,
         modifier = modifier.size(trackWidth, trackHeight),
-        shadowElevation = 4.dp
+        shadowElevation = 0.dp
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             // 背景文字和图标
@@ -429,7 +413,7 @@ fun GrabModeSwitch(
                     Icon(
                         imageVector = if (checked) Icons.Default.Lock else Icons.Default.Refresh,
                         contentDescription = null,
-                        tint = if (checked) PrimaryPurple else Color(0xFF4CAF50),
+                        tint = if (checked) SystemBlue else SemanticSuccess,
                         modifier = Modifier.size(14.dp)
                     )
                 }

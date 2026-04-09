@@ -24,14 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tyust.course.ui.theme.PrimaryPurple
+import com.tyust.course.ui.theme.SystemBlue
 import kotlinx.coroutines.launch
 
 data class OnboardingPage(
     val icon: ImageVector,
     val title: String,
     val description: String,
-    val backgroundColor: Color
+    val iconColor: Color
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -43,26 +43,26 @@ fun OnboardingScreen(
         OnboardingPage(
             icon = Icons.Default.Search,
             title = "智能搜索课程",
-            description = "快速搜索全校开放课程\n支持按课程名、教师名、时间段筛选",
-            backgroundColor = Color(0xFF6C5CE7)
+            description = "快速搜索全校开放课程\n支持按课程名、教师名、时间段精确筛选",
+            iconColor = com.tyust.course.ui.theme.SystemBlue
         ),
         OnboardingPage(
             icon = Icons.Default.PlayArrow,
-            title = "一键抢课",
-            description = "设置目标课程后自动循环抢课\n支持多课程队列，成功后自动切换",
-            backgroundColor = Color(0xFF00CEC9)
+            title = "一键抢课引擎",
+            description = "设置目标课程后高频自动循环获取\n支持多课程队列，成功后平滑切换",
+            iconColor = com.tyust.course.ui.theme.SystemBlue
         ),
         OnboardingPage(
             icon = Icons.Default.DateRange,
-            title = "可视化课表",
-            description = "清晰展示每周课程安排\n支持添加自定义课程和导出日历",
-            backgroundColor = Color(0xFFFF7675)
+            title = "极简可视课表",
+            description = "系统级极简体验展示每周课程安排\n脱离校园网也能查看并支持导出至日历",
+            iconColor = com.tyust.course.ui.theme.SystemBlue
         ),
         OnboardingPage(
             icon = Icons.Default.Star,
-            title = "开始使用",
-            description = "登录教务系统账号\n即可开始智能选课之旅",
-            backgroundColor = PrimaryPurple
+            title = "探索完整功能",
+            description = "授权安全会话凭证录入\n即刻进入纯粹工具主义体验",
+            iconColor = com.tyust.course.ui.theme.SystemBlue
         )
     )
     
@@ -72,14 +72,7 @@ fun OnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        pages[pagerState.currentPage].backgroundColor,
-                        pages[pagerState.currentPage].backgroundColor.copy(alpha = 0.7f)
-                    )
-                )
-            )
+            .background(com.tyust.course.ui.theme.Neutral50)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -89,13 +82,19 @@ fun OnboardingScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
                 horizontalArrangement = Arrangement.End
             ) {
                 if (pagerState.currentPage < pages.size - 1) {
                     TextButton(onClick = onFinish) {
-                        Text("跳过", color = Color.White.copy(alpha = 0.8f))
+                        Text(
+                            "跳过", 
+                            color = com.tyust.course.ui.theme.Neutral500,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
+                } else {
+                    Spacer(modifier = Modifier.height(48.dp))
                 }
             }
             
@@ -107,7 +106,7 @@ fun OnboardingScreen(
                 OnboardingPageContent(page = pages[pageIndex])
             }
             
-            // Page Indicators
+            // Page Indicators (Spring fluid stretch)
             Row(
                 modifier = Modifier.padding(16.dp),
                 horizontalArrangement = Arrangement.Center
@@ -115,12 +114,15 @@ fun OnboardingScreen(
                 pages.forEachIndexed { index, _ ->
                     val isSelected = pagerState.currentPage == index
                     val width by animateDpAsState(
-                        targetValue = if (isSelected) 24.dp else 8.dp,
-                        animationSpec = tween(300),
+                        targetValue = if (isSelected) 28.dp else 8.dp,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow, 
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
+                        ),
                         label = "indicator_width"
                     )
                     val color by animateColorAsState(
-                        targetValue = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        targetValue = if (isSelected) com.tyust.course.ui.theme.SystemBlue else com.tyust.course.ui.theme.Neutral200,
                         animationSpec = tween(300),
                         label = "indicator_color"
                     )
@@ -136,11 +138,13 @@ fun OnboardingScreen(
                 }
             }
             
+            Spacer(modifier = Modifier.height(16.dp))
+            
             // Bottom Button
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(horizontal = 32.dp, vertical = 24.dp)
             ) {
                 if (pagerState.currentPage == pages.size - 1) {
                     // Last page: Start button
@@ -150,15 +154,16 @@ fun OnboardingScreen(
                             .fillMaxWidth()
                             .height(56.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = PrimaryPurple
+                            containerColor = com.tyust.course.ui.theme.SystemBlue,
+                            contentColor = Color.White
                         ),
-                        shape = RoundedCornerShape(28.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Text(
                             "开始使用",
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
                         )
                     }
                 } else {
@@ -166,30 +171,37 @@ fun OnboardingScreen(
                     Button(
                         onClick = {
                             coroutineScope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                pagerState.animateScrollToPage(
+                                    page = pagerState.currentPage + 1,
+                                    animationSpec = androidx.compose.animation.core.spring(
+                                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
+                                    )
+                                )
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.2f),
-                            contentColor = Color.White
+                            containerColor = com.tyust.course.ui.theme.Neutral100,
+                            contentColor = com.tyust.course.ui.theme.Neutral900
                         ),
-                        shape = RoundedCornerShape(28.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = ButtonDefaults.buttonElevation(0.dp)
                     ) {
                         Text(
                             "下一步",
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.ArrowForward, contentDescription = null)
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
@@ -199,34 +211,41 @@ fun OnboardingPageContent(page: OnboardingPage) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.2f)),
-            contentAlignment = Alignment.Center
+        // Icon (Clean Geometry aesthetic)
+        Surface(
+            modifier = Modifier.size(140.dp),
+            shape = RoundedCornerShape(36.dp),
+            color = Color.White,
+            shadowElevation = 16.dp,
+            tonalElevation = 6.dp
         ) {
-            Icon(
-                imageVector = page.icon,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color.White
-            )
+            Box(contentAlignment = Alignment.Center) {
+                // Background subtle ring
+                Box(
+                    modifier = Modifier.size(80.dp).background(page.iconColor.copy(alpha = 0.1f), CircleShape)
+                )
+                Icon(
+                    imageVector = page.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = page.iconColor
+                )
+            }
         }
         
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(56.dp))
         
         // Title
         Text(
             text = page.title,
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
+            fontWeight = FontWeight.ExtraBold,
+            color = com.tyust.course.ui.theme.Neutral900,
+            letterSpacing = (-0.5).sp
         )
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -235,9 +254,10 @@ fun OnboardingPageContent(page: OnboardingPage) {
         Text(
             text = page.description,
             style = MaterialTheme.typography.bodyLarge,
-            color = Color.White.copy(alpha = 0.9f),
+            color = com.tyust.course.ui.theme.Neutral500,
             textAlign = TextAlign.Center,
-            lineHeight = 28.sp
+            lineHeight = 28.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }

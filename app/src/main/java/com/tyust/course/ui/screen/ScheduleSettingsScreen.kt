@@ -27,7 +27,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.tyust.course.manager.ScheduleSettingsManager
 import com.tyust.course.manager.ScheduleSettingsManager.PeriodTime
-import com.tyust.course.ui.theme.PrimaryPurple
+import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.theme.Neutral50
+import com.tyust.course.ui.theme.Neutral100
+import com.tyust.course.ui.theme.Neutral200
+import com.tyust.course.ui.theme.SurfaceWhite
+import com.tyust.course.ui.theme.Neutral900
+import com.tyust.course.ui.theme.Neutral500
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -57,7 +63,7 @@ fun ScheduleSettingsScreen(
             TopAppBar(
                 title = { Text("课表设置", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = SurfaceWhite
                 ),
                 actions = {
                     TextButton(onClick = onClose) {
@@ -66,7 +72,7 @@ fun ScheduleSettingsScreen(
                 }
             )
         },
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = Neutral50
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -80,7 +86,7 @@ fun ScheduleSettingsScreen(
                 Text(
                     "基础设置", 
                     style = MaterialTheme.typography.labelLarge, 
-                    color = PrimaryPurple,
+                    color = SystemBlue,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -93,7 +99,7 @@ fun ScheduleSettingsScreen(
                         value = dateText,
                         onClick = onShowDatePicker
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(color = Neutral200)
                     
                     // Period Count Dropdown Logic
                     var expanded by remember { mutableStateOf(false) }
@@ -107,7 +113,7 @@ fun ScheduleSettingsScreen(
                         DropdownMenu(
                             expanded = expanded,
                             onDismissRequest = { expanded = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                            modifier = Modifier.background(SurfaceWhite)
                         ) {
                             (8..16).forEach { count ->
                                 DropdownMenuItem(
@@ -118,7 +124,7 @@ fun ScheduleSettingsScreen(
                                         expanded = false
                                     },
                                     trailingIcon = if (count == periodCount) {
-                                        { Icon(Icons.Filled.Check, null, tint = PrimaryPurple) }
+                                        { Icon(Icons.Filled.Check, null, tint = SystemBlue) }
                                     } else null
                                 )
                             }
@@ -133,7 +139,7 @@ fun ScheduleSettingsScreen(
                 Text(
                     "节次时间", 
                     style = MaterialTheme.typography.labelLarge, 
-                    color = PrimaryPurple,
+                    color = SystemBlue,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -159,10 +165,11 @@ fun ScheduleSettingsScreen(
 @Composable
 fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth()
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             content()
@@ -187,7 +194,7 @@ fun SettingsRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = PrimaryPurple,
+            tint = SystemBlue,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
@@ -199,14 +206,14 @@ fun SettingsRow(
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary,
+            color = SystemBlue,
             fontWeight = FontWeight.Medium
         )
         Spacer(modifier = Modifier.width(4.dp))
         Icon(
             imageVector = Icons.Default.ArrowDropDown, // Or generic arrow
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = Neutral500
         )
     }
 }
@@ -219,11 +226,13 @@ fun PeriodTimeRow(
     var showEditDialog by remember { mutableStateOf(false) }
     
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200),
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 4.dp)
             .clickable { showEditDialog = true }
     ) {
         Row(
@@ -234,13 +243,13 @@ fun PeriodTimeRow(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(PrimaryPurple.copy(alpha = 0.1f)),
+                    .background(SystemBlue.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "${periodTime.period}",
                     fontWeight = FontWeight.Bold,
-                    color = PrimaryPurple
+                    color = SystemBlue
                 )
             }
             
@@ -255,7 +264,7 @@ fun PeriodTimeRow(
             Spacer(modifier = Modifier.weight(1f))
             
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = Neutral100,
                 shape = RoundedCornerShape(6.dp)
             ) {
                 Text(

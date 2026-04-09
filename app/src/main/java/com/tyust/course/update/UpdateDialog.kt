@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.tyust.course.ui.theme.PrimaryPurple
+import com.tyust.course.ui.theme.SystemBlue
 
 /**
  * 更新对话框
@@ -93,14 +93,14 @@ fun UpdateDialog(
                             }
                             .size(72.dp)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(PrimaryPurple.copy(alpha = 0.1f)),
+                            .background(SystemBlue.copy(alpha = 0.1f)),
                         contentAlignment = Alignment.Center
                     ) {
                     Icon(
                         imageVector = Icons.Default.SystemUpdate,
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
-                        tint = PrimaryPurple
+                        tint = SystemBlue
                     )
                 }
                 
@@ -135,7 +135,7 @@ fun UpdateDialog(
                         text = "v${updateInfo.versionName}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = PrimaryPurple
+                        color = SystemBlue
                     )
                 }
                 
@@ -192,7 +192,7 @@ fun UpdateDialog(
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
-                            color = PrimaryPurple,
+                            color = SystemBlue,
                             trackColor = Color(0xFFE0E0E0)
                         )
                         
@@ -230,7 +230,7 @@ fun UpdateDialog(
                             onClick = onUpdate,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
                         ) {
                             Text("立即更新")
                         }

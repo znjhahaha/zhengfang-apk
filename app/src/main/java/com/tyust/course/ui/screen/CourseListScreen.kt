@@ -42,8 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.tyust.course.model.Course
-import com.tyust.course.ui.theme.PrimaryPurple
-import com.tyust.course.ui.theme.PurpleGrey80
+import com.tyust.course.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -54,34 +53,23 @@ fun CourseListScreen(
     onSearch: (String) -> Unit,
     onCourseSelect: (Course) -> Unit,
     onAutoGrab: (Course) -> Unit,
-    // 批量抢课支持
     onBatchSelect: (List<Course>) -> Unit = {},
     isBatchSelecting: Boolean = false,
-    // 获取课程详情（展开时触发）- 回调 Boolean 表示是否成功
     onFetchDetails: (List<Course>, (Boolean) -> Unit) -> Unit = { _, callback -> callback(true) },
-    // 🔧 预加载进度
     isPreloading: Boolean = false,
     preloadProgress: Float = 0f,
     preloadedGroupIds: Set<String> = emptySet(),
-    // 🔧 交互锁：数据是否就绪
     isDetailsReady: Boolean = false,
-    // 🔧 加入队列（定时抢课）
     onAddToQueue: (Course) -> Unit = {},
-    // 🔧 设置为目标课程（长按触发）
     onSetTargetCourse: (Course) -> Unit = {},
-    // 🔧 设置模糊匹配监控目标 (courseId, courseName, xkkzId, kklxdm)
     onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null,
-    // 🔧 状态由外部管理
     isMultiSelectMode: Boolean = false,
     selectedClassIds: Set<String> = emptySet(),
     onToggleSelection: (String, Boolean) -> Unit = { _, _ -> },
     onEnterMultiSelect: (String) -> Unit = {}
 ) {
-    // 分组折叠状态: courseId -> isExpanded
     val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
-    // 正在加载详情的分组
     val loadingGroups = remember { mutableStateMapOf<String, Boolean>() }
-    // 已加载详情的分组
     val loadedGroups = remember { mutableStateMapOf<String, Boolean>() }
 
     val groupedCourses = remember(courses) {
@@ -91,23 +79,21 @@ fun CourseListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8F9FA))
+            .background(Neutral50) // Apple System Utility Background
     ) {
-        // 批量选课处理中标记
         if (isBatchSelecting) {
             LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().height(2.dp),
-                color = PrimaryPurple,
-                trackColor = PrimaryPurple.copy(alpha = 0.1f)
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = SystemBlue,
+                trackColor = SystemBlueLight
             )
         }
         
-        // 🔧 预加载进度条
         AnimatedVisibility(visible = isPreloading) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFE3F2FD))
+                    .background(SystemBlueLight)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Row(
@@ -116,15 +102,16 @@ fun CourseListScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "⚡ 正在加载课程详情...",
+                        text = "⚡ 正在加载详情",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF1976D2)
+                        color = SystemBlueDark,
+                        fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = "${(preloadProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1976D2)
+                        color = SystemBlueDark
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -134,8 +121,8 @@ fun CourseListScreen(
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp)),
-                    color = Color(0xFF1976D2),
-                    trackColor = Color(0xFFBBDEFB),
+                    color = SystemBlueDark,
+                    trackColor = SystemBlueLight,
                 )
             }
         }
@@ -148,16 +135,17 @@ fun CourseListScreen(
             if (courses.isEmpty() && !isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "暂无课程数据\n请尝试刷新",
+                        text = "没有找到课程\n尝试下拉刷新",
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Color.Gray
+                        color = Neutral300,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(groupedCourses) { (key, classes) ->
                         val courseId = key.first
@@ -170,10 +158,9 @@ fun CourseListScreen(
                             classes = classes,
                             isExpanded = isExpanded,
                             isLoading = loadingGroups[courseId] == true,
-                            isDetailsReady = isDetailsReady, // Pass down
+                            isDetailsReady = isDetailsReady,
                             onExpandClick = {
                                 if (!isExpanded && loadedGroups[courseId] != true) {
-                                    // 首次展开，获取详情
                                     loadingGroups[courseId] = true
                                     onFetchDetails(classes) { success ->
                                         loadingGroups[courseId] = false
@@ -181,7 +168,6 @@ fun CourseListScreen(
                                             loadedGroups[courseId] = true
                                             expandedGroups[courseId] = true
                                         }
-                                        // 失败时不标记为已加载，允许重新点击
                                     }
                                 } else {
                                     expandedGroups[courseId] = !isExpanded
@@ -204,7 +190,6 @@ fun CourseListScreen(
     }
 }
 
-
 @Composable
 fun CourseGroupItem(
     courseId: String,
@@ -220,171 +205,169 @@ fun CourseGroupItem(
     onEnterMultiSelect: (String) -> Unit,
     onCourseSelect: (Course) -> Unit,
     onAutoGrab: (Course) -> Unit,
-    onAddToQueue: (Course) -> Unit = {}, // 🔧 加入队列
-    onSetTargetCourse: (Course) -> Unit = {}, // 🔧 设置为目标课程
-    onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null // 🔧 设置模糊匹配目标 (courseId, courseName, xkkzId, kklxdm)
+    onAddToQueue: (Course) -> Unit = {},
+    onSetTargetCourse: (Course) -> Unit = {},
+    onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val firstCourse = classes.firstOrNull()
     val credits = firstCourse?.credit ?: "0.0"
     val hasSelected = classes.any { it.isSelected } 
-    val statusText = if (hasSelected) "已选" else "未选"
-    val statusColor = if (hasSelected) MaterialTheme.colorScheme.primary else Color.Gray
+    val statusText = if (hasSelected) "已选" else "开放"
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp)
-            .animateContentSize(), // 平滑动画
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp), // 更圆润的角
+            .animateContentSize(
+                animationSpec = androidx.compose.animation.core.spring(
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
+                )
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = RoundedCornerShape(16.dp), // iOS Inset Rounded Group
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column {
             // Header
             Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min) // 确保高度一致
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { 
+                        if (isDetailsReady) {
+                            onExpandClick() 
+                        } else {
+                            android.widget.Toast.makeText(context, "正在获取安全标识，请稍候...", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // 左侧色条
+                // Vercel like indicator chip
                 Box(
                     modifier = Modifier
-                        .width(6.dp)
-                        .fillMaxHeight()
-                        .background(if (hasSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha=0.3f))
+                        .size(4.dp, 24.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(if (hasSelected) SystemBlue else Neutral200)
                 )
+                Spacer(modifier = Modifier.width(12.dp))
                 
-                // 主要内容
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                        .clickable { 
-                            if (isDetailsReady) {
-                                Log.d("CourseListScreen", "👆 点击展开: 允许 (ready=true)")
-                                onExpandClick() 
-                            } else {
-                                Log.d("CourseListScreen", "🚫 点击展开: 拦截 (ready=false)")
-                                android.widget.Toast.makeText(context, "正在加载选课参数，请稍候...", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "($courseId) $courseName",
+                        text = courseName,
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold
+                        color = Neutral900,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text(
+                            text = courseId,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Neutral500,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        
                         Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            color = Neutral100,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
                                 text = "$credits 学分",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                color = Neutral700,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "${classes.size} 个教学班",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
+                            text = "${classes.size} 模块",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Neutral500
                         )
                         if (hasSelected) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = "已选",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
+                                tint = SystemBlue,
+                                modifier = Modifier.size(12.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "已选课",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                text = "已囊获",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SystemBlue,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
                 
-                // 🔧 监控按钮（模糊匹配模式）
                 if (onSetFuzzyMatchTarget != null && !hasSelected) {
                     Surface(
                         onClick = { 
-                            // 传递 courseId, courseName, xkkz_id, kklxdm
                             val xkkzId = firstCourse?._xkkz_id
                             val kklxdm = firstCourse?.kklxdm
                             onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
-                            android.widget.Toast.makeText(context, "🔍 已设为监控目标: $courseName", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "🔍 追踪锁定: $courseName", android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.padding(end = 8.dp),
-                        color = Color(0xFFFF9800),
-                        shape = RoundedCornerShape(4.dp)
+                        color = SemanticWarning.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            text = "监控",
-                            color = Color.White,
-                            fontSize = 10.sp,
+                            text = "追踪",
+                            color = SemanticWarning,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
                 }
                 
-                // 加载中显示进度条，否则显示箭头
                 if (isLoading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                        color = SystemBlue,
                         strokeWidth = 2.dp
                     )
                 } else {
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = Neutral300
                     )
                 }
             }
-            }
             
-            // Divider (仅在展开时显示)
-            if (isExpanded) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
-            }
-
-            // Body (Expanded Content)
+            // Expanded Content
             AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
                 Column {
-                    // 表头行
+                    HorizontalDivider(color = Neutral100, thickness = 1.dp)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .background(Neutral50)
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isMultiSelectMode) {
-                            Spacer(modifier = Modifier.width(36.dp)) // Checkbox 占位 + padding
+                            Spacer(modifier = Modifier.width(36.dp))
                         }
-                        Text("教学班/教师", modifier = Modifier.weight(1.2f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                        Text("时间/地点", modifier = Modifier.weight(1.6f).padding(horizontal = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        Text("建制班/讲师", modifier = Modifier.weight(1.2f), fontSize = 11.sp, color = Neutral500, fontWeight = FontWeight.SemiBold)
+                        Text("安排", modifier = Modifier.weight(1.6f).padding(horizontal = 4.dp), fontSize = 11.sp, color = Neutral500, fontWeight = FontWeight.SemiBold)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 1.dp)
+                    HorizontalDivider(color = Neutral100, thickness = 1.dp)
 
                     classes.forEachIndexed { index, course ->
                         TeachingClassRow(
@@ -399,7 +382,11 @@ fun CourseGroupItem(
                             onSetTargetCourse = { onSetTargetCourse(course) }
                         )
                         if (index < classes.size - 1) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
+                            HorizontalDivider(
+                                color = Neutral100, 
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(start = 16.dp)
+                            )
                         }
                     }
                 }
@@ -418,14 +405,14 @@ fun TeachingClassRow(
     onLongClick: () -> Unit,
     onClick: () -> Unit,
     onAutoGrab: () -> Unit,
-    onAddToQueue: () -> Unit = {}, // 🔧 加入队列
-    onSetTargetCourse: () -> Unit = {} // 🔧 设为目标课程
+    onAddToQueue: () -> Unit = {},
+    onSetTargetCourse: () -> Unit = {}
 ) {
     val teacher = course.teacher.ifEmpty { "--" }
     val time = course.time.ifEmpty { "--" }
     val location = course.location.ifEmpty { "--" }
     
-    val backgroundColor = if (isChecked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.White
+    val backgroundColor = if (isChecked) SystemBlueLight.copy(alpha = 0.5f) else Color.Transparent
     
     Row(
         modifier = Modifier
@@ -433,9 +420,7 @@ fun TeachingClassRow(
             .combinedClickable(
                 onClick = {
                     if (isMultiSelectMode) {
-                        if (!course.isSelected) {
-                             onToggleSelection(isChecked)
-                        }
+                        if (!course.isSelected) onToggleSelection(isChecked)
                     } else {
                         onClick()
                     }
@@ -449,7 +434,7 @@ fun TeachingClassRow(
                 }
             )
             .background(backgroundColor)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isMultiSelectMode) {
@@ -457,120 +442,120 @@ fun TeachingClassRow(
                 checked = isChecked,
                 onCheckedChange = { onToggleSelection(isChecked) },
                 enabled = !course.isSelected,
-                colors = CheckboxDefaults.colors(checkedColor = PrimaryPurple),
+                colors = CheckboxDefaults.colors(checkedColor = SystemBlue),
                 modifier = Modifier.padding(end = 16.dp).size(20.dp)
             )
         }
 
-        // 1. 教学班/教师/容量列 (Weight 1.2) - 🔧 优化：显示教学班名称和教师名
         Column(modifier = Modifier.weight(1.2f)) {
-            // 🔧 优先显示教学班名称 (jxbmc)，如果没有则显示教师名
-            val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "未知教师" } }
+            val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "N/A" } }
             Text(
                 text = displayName,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = Neutral900,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            // 如果有教学班名称且教师不为空，额外显示教师名
             if (course.jxbmc.isNotEmpty() && course.teacher.isNotEmpty()) {
                 Text(
                     text = course.teacher,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = Neutral500,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            // 容量进度条
+            Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
                 progress = { if (course.capacity > 0) course.selected.toFloat() / course.capacity else 0f },
                 modifier = Modifier.fillMaxWidth(0.9f).height(4.dp).clip(RoundedCornerShape(2.dp)),
-                color = if (course.selected >= course.capacity) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                color = if (course.selected >= course.capacity) SemanticDanger else SystemBlue,
+                trackColor = Neutral100,
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${course.selected}/${course.capacity}",
+                text = "${course.selected} / ${course.capacity} (已满/总量)",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (course.selected >= course.capacity) MaterialTheme.colorScheme.error else Color.Gray
+                fontSize = 9.sp,
+                color = if (course.selected >= course.capacity) SemanticDanger else Neutral500
             )
         }
 
-        // 2. 时间地点列 (Weight 1.6)
         Column(modifier = Modifier.weight(1.6f).padding(horizontal = 4.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(12.dp).padding(top = 2.dp), tint = Color.Gray)
-                Spacer(modifier = Modifier.width(2.dp))
+                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(12.dp).padding(top = 1.dp), tint = Neutral300)
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = time,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.DarkGray,
+                    color = Neutral700,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 14.sp
+                    lineHeight = 16.sp
                 )
             }
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
-                Spacer(modifier = Modifier.width(2.dp))
+                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(12.dp), tint = Neutral300)
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = location,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = Neutral500,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
         
-        // 🔧 加入队列按钮（未选课程显示）- 显眼的带文字按钮
         if (!course.isSelected && !isMultiSelectMode) {
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(2.dp))
+            // AppStore GET Style Button
             Surface(
                 onClick = onAddToQueue,
-                color = Color(0xFF4CAF50), // 绿色背景
-                shape = RoundedCornerShape(4.dp)
+                color = SystemBlueLight, 
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.defaultMinSize(minWidth = 52.dp)
             ) {
                 Text(
-                    text = "+ 队列",
-                    color = Color.White,
-                    fontSize = 10.sp,
+                    text = "获取",
+                    color = SystemBlueDark,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
-            // 🔧 设为目标按钮
             Spacer(modifier = Modifier.width(4.dp))
             Surface(
                 onClick = onSetTargetCourse,
-                color = PrimaryPurple, // 紫色背景
-                shape = RoundedCornerShape(4.dp)
+                color = Neutral100,
+                shape = RoundedCornerShape(16.dp)
             ) {
-                Text(
-                    text = "🎯",
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                Icon(
+                    imageVector = Icons.Default.ListAlt,
+                    contentDescription = null,
+                    modifier = Modifier.padding(6.dp).size(16.dp),
+                    tint = Neutral700
                 )
             }
         }
         
-        // 已选标记
         if (course.isSelected) {
             Spacer(modifier = Modifier.width(8.dp))
             Surface(
-                color = MaterialTheme.colorScheme.primary,
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.padding(start = 4.dp)
+                color = SystemBlue,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(start = 4.dp).defaultMinSize(minWidth = 52.dp)
             ) {
                 Text(
-                    text = "已选",
+                    text = "已获",
                     color = Color.White,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    fontSize = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     fontWeight = FontWeight.Bold
                 )
             }

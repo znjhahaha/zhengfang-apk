@@ -21,12 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.theme.*
 
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -75,14 +77,7 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        PrimaryPurple,
-                        PrimaryPurpleDark
-                    )
-                )
-            )
+            .background(Neutral50)
     ) {
         Column(
             modifier = Modifier
@@ -95,64 +90,73 @@ fun LoginScreen(
             // App Icon
             AnimatedVisibility(
                 visible = visible,
-                enter = fadeIn() + slideInVertically { -100 }
+                enter = androidx.compose.animation.scaleIn(initialScale = 0.9f, animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow, dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Surface(
-                        modifier = Modifier.size(100.dp),
+                        modifier = Modifier.size(90.dp),
                         shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)
+                        color = Color.White,
+                        shadowElevation = 8.dp,
+                        tonalElevation = 4.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.School,
                                 contentDescription = "School Icon",
-                                modifier = Modifier.size(60.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.size(48.dp),
+                                tint = SystemBlue
                             )
                         }
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
                         text = "抢课助手",
                         style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.Bold
+                        color = Neutral900,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.5).sp
                     )
                     
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     
                     Text(
-                        text = "智能选课 · 一键抢课",
+                        text = "极致纯粹的规则代理工具",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                        color = Neutral500,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
             
             Spacer(modifier = Modifier.height(48.dp))
             
-            // Login Card
+            // Login Card (Glassmorphism / Outline style)
             AnimatedVisibility(
                 visible = visible,
-                enter = fadeIn() + slideInVertically { 100 }
+                enter = slideInVertically(
+                    initialOffsetY = { 100 },
+                    animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow, dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy)
+                ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(28.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = Color.White
                     ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200.copy(alpha = 0.5f))
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(24.dp)
+                            .padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         // Title with Settings Button
@@ -162,20 +166,21 @@ fun LoginScreen(
                             Text(
                                 text = "Cookie 登录",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
+                                color = Neutral900,
                                 modifier = Modifier.align(Alignment.Center)
                             )
                             
-                            // Settings button in top-right corner
+                            // Settings button
                             IconButton(
                                 onClick = { showEditSchoolDialog = true },
-                                modifier = Modifier.align(Alignment.CenterEnd)
+                                modifier = Modifier.align(Alignment.CenterEnd).size(36.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Settings,
                                     contentDescription = "编辑学校配置",
-                                    tint = PrimaryPurple.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(22.dp)
+                                    tint = Neutral500,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -183,17 +188,20 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         Text(
-                            text = "请从浏览器复制登录后的Cookie",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "请从浏览器复制登录状态下所需的会话凭证",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Neutral500,
                             textAlign = TextAlign.Center
                         )
                         
+                        Spacer(modifier = Modifier.height(32.dp))
+                        
                         // School Selector
                         Text(
-                            text = "选择学校",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = PrimaryPurple,
+                            text = "选择教务系统预设配置",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Neutral700,
                             modifier = Modifier.align(Alignment.Start)
                         )
                         
@@ -206,7 +214,6 @@ fun LoginScreen(
                         // Initialize selected school
                         LaunchedEffect(schools) {
                             val userManager = UserManager.getInstance()
-                            // 🔧 优先使用 UserManager 中已经加载好的学校 (即 loadLoginState 恢复的)
                             if (userManager.getCurrentSchool() != null) {
                                 selectedSchool = userManager.getCurrentSchool()
                             } else if (schools.isNotEmpty() && selectedSchool == null) {
@@ -220,7 +227,7 @@ fun LoginScreen(
                             onExpandedChange = { expanded = !expanded },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            OutlinedTextField(
+                            TextField(
                                 value = selectedSchool?.name ?: "请选择学校",
                                 onValueChange = {},
                                 readOnly = true,
@@ -228,20 +235,25 @@ fun LoginScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = PrimaryPurple,
-                                    unfocusedBorderColor = PrimaryPurple.copy(alpha = 0.5f)
+                                shape = RoundedCornerShape(16.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Neutral100,
+                                    unfocusedContainerColor = Neutral100,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = Neutral900,
+                                    unfocusedTextColor = Neutral900
                                 )
                             )
 
                             ExposedDropdownMenu(
                                 expanded = expanded,
-                                onDismissRequest = { expanded = false }
+                                onDismissRequest = { expanded = false },
+                                modifier = Modifier.background(Color.White)
                             ) {
                                 schools.forEach { school ->
                                     DropdownMenuItem(
-                                        text = { Text(school.name) },
+                                        text = { Text(school.name, color = Neutral900) },
                                         onClick = {
                                             selectedSchool = school
                                             onSchoolSelected(school)
@@ -249,12 +261,12 @@ fun LoginScreen(
                                         }
                                     )
                                 }
-                                // Add "Add School" as last menu item
+                                HorizontalDivider(color = Neutral200, thickness = 0.5.dp)
                                 DropdownMenuItem(
                                     text = { 
                                         Text(
-                                            text = "+ 添加新学校",
-                                            color = PrimaryPurple,
+                                            text = "+ 配置新终端",
+                                            color = SystemBlue,
                                             fontWeight = FontWeight.Medium
                                         )
                                     },
@@ -271,12 +283,10 @@ fun LoginScreen(
                             AddSchoolDialog(
                                 onDismiss = { showAddSchoolDialog = false },
                                 onConfirm = { name, urlData, protocol ->
-                                    // Parse domain and basePath from "domain|basePath" format
                                     val parts = urlData.split("|")
                                     val domain = parts[0].trim()
                                     val basePath = if (parts.size > 1) parts[1] else "/jwglxt"
                                     
-                                    // Validate domain format
                                     val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9]$")
                                     val isValidDomain = domain.length >= 2 && domainPattern.matches(domain)
                                     
@@ -288,9 +298,7 @@ fun LoginScreen(
                                             this.basePath = basePath
                                         }
                                         com.tyust.course.manager.UserManager.getInstance().addCustomSchool(newSchool)
-                                        // Notify parent to refresh list
                                         onSchoolAdded()
-                                        // Select the new school
                                         selectedSchool = newSchool
                                         onSchoolSelected(newSchool)
                                     }
@@ -305,84 +313,95 @@ fun LoginScreen(
                                 onDismiss = { showEditSchoolDialog = false },
                                 onSave = { updatedSchool ->
                                     showEditSchoolDialog = false
-                                    // Update in UserManager
                                     com.tyust.course.manager.UserManager.getInstance().updateSchoolConfig(updatedSchool)
-                                    // Refresh
                                     selectedSchool = updatedSchool
                                     onSchoolSelected(updatedSchool)
-                                    onSchoolAdded() // Trigger refresh
+                                    onSchoolAdded()
                                 }
                             )
                         }
                         
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
                         
-                        // Cookie Input
-                        OutlinedTextField(
+                        Text(
+                            text = "安全会话凭据",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Neutral700,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Cookie Input (Minimalist TextField)
+                        TextField(
                             value = cookie,
                             onValueChange = { cookie = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Cookie") },
-                            placeholder = { Text("粘贴Cookie字符串...") },
-                            visualTransformation = if (showPassword) {
-                                VisualTransformation.None
-                            } else {
-                                PasswordVisualTransformation()
-                            },
+                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                            placeholder = { Text("粘贴 Cookie 字符串...", color = Neutral500) },
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                             trailingIcon = {
                                 IconButton(onClick = { showPassword = !showPassword }) {
                                     Icon(
-                                        imageVector = if (showPassword) {
-                                            Icons.Default.VisibilityOff
-                                        } else {
-                                            Icons.Default.Visibility
-                                        },
-                                        contentDescription = if (showPassword) "隐藏" else "显示"
+                                        imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (showPassword) "隐藏" else "显示",
+                                        tint = Neutral500
                                     )
                                 }
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             singleLine = false,
-                            maxLines = 4,
-                            isError = errorMessage != null
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Neutral100,
+                                unfocusedContainerColor = Neutral100,
+                                focusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
+                                unfocusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
+                                focusedTextColor = Neutral900,
+                                unfocusedTextColor = Neutral900,
+                                cursorColor = SystemBlue
+                            )
                         )
                         
                         // Error Message
-                        if (errorMessage != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = errorMessage,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                        AnimatedVisibility(visible = errorMessage != null) {
+                            Column {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = errorMessage ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SemanticDanger
+                                )
+                            }
                         }
                         
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
                         
-                        // Login Button
+                        // Login Button (Modern Pill shape)
                         Button(
                             onClick = { onLoginClick(cookie) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
                             enabled = cookie.isNotBlank() && !isLoading,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryPurple
+                                containerColor = SystemBlue,
+                                disabledContainerColor = Neutral100,
+                                disabledContentColor = Neutral300
                             )
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = Color.White,
                                     strokeWidth = 2.dp
                                 )
                             } else {
                                 Text(
-                                    text = "登录",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "登入控制台",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
                                 )
                             }
                         }
@@ -394,37 +413,29 @@ fun LoginScreen(
                             onClick = { onOpenWebView() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
+                                .height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = PrimaryPurple
-                            )
+                                contentColor = Neutral900
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.OpenInBrowser,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp),
+                                tint = Neutral700
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "在线获取 Cookie",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
+                                text = "内嵌浏览器自动获取",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Neutral700
                             )
                         }
                         
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Help Text
-                        Text(
-                            text = "💡 点击上方按钮，在内置浏览器中登录教务系统，一键获取 Cookie",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
                         
                         // Demo Mode Button
                         TextButton(
@@ -432,23 +443,27 @@ fun LoginScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "🎮 演示模式 (无需登录)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "体验只读演示模式",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Neutral500,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(40.dp))
             
             // Version Text
-            Text(
-                text = "Version 2.0 • Jetpack Compose",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
-            )
+            AnimatedVisibility(visible = visible, enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(800))) {
+                Text(
+                    text = "Tyust Course Matrix • Version 2.0",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Neutral300,
+                    letterSpacing = 1.sp
+                )
+            }
         }
     }
 
@@ -497,14 +512,14 @@ fun BindingConfirmationDialog(
                     Surface(
                         modifier = Modifier.size(64.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = PrimaryPurple.copy(alpha = 0.1f)
+                        color = SystemBlue.copy(alpha = 0.1f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = androidx.compose.material.icons.Icons.Default.School,
                                 contentDescription = null,
                                 modifier = Modifier.size(32.dp),
-                                tint = PrimaryPurple
+                                tint = SystemBlue
                             )
                         }
                     }
@@ -523,7 +538,7 @@ fun BindingConfirmationDialog(
                     Text(
                         text = "检测到新账号：「$studentName」",
                         style = MaterialTheme.typography.titleMedium,
-                        color = PrimaryPurple,
+                        color = SystemBlue,
                         fontWeight = FontWeight.Medium
                     )
                     
@@ -545,7 +560,7 @@ fun BindingConfirmationDialog(
                                 Text(
                                     text = "${usedNames.size} / $maxStudents",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = if (usedNames.size >= maxStudents) ErrorRed else SuccessGreen
+                                    color = if (usedNames.size >= maxStudents) SemanticDanger else SemanticSuccess
                                 )
                             }
                             
@@ -589,7 +604,7 @@ fun BindingConfirmationDialog(
                             onClick = onConfirm,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
                         ) {
                             Text("确认绑定", fontWeight = FontWeight.Bold)
                         }
@@ -706,7 +721,7 @@ fun AddSchoolDialog(
                         Text(
                             text = "🪄 智能识别",
                             style = MaterialTheme.typography.labelLarge,
-                            color = PrimaryPurple,
+                            color = SystemBlue,
                             fontWeight = FontWeight.Medium
                         )
                         
@@ -727,7 +742,7 @@ fun AddSchoolDialog(
                         Button(
                             onClick = { parseUrl(urlInput) },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue),
                             enabled = urlInput.isNotBlank()
                         ) {
                             Text("自动识别")
@@ -798,8 +813,8 @@ fun AddSchoolDialog(
                             .menuAnchor(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryPurple,
-                            unfocusedBorderColor = PrimaryPurple.copy(alpha = 0.5f)
+                            focusedBorderColor = SystemBlue,
+                            unfocusedBorderColor = SystemBlue.copy(alpha = 0.5f)
                         )
                     )
                     
@@ -832,7 +847,7 @@ fun AddSchoolDialog(
                     onConfirm(name, "$domain|$basePath", protocol) 
                 },
                 enabled = isValidDomain,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
             ) {
                 Text("添加")
             }

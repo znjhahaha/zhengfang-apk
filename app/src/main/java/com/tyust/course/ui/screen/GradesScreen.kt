@@ -204,54 +204,44 @@ fun OverallGradesContent(
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Premium Stats Card
+        // Hero Data Island (Overall)
         if (!isLoading) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White, RoundedCornerShape(20.dp))
+                    .padding(24.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(PrimaryPurple, Color(0xFF7E57C2))
-                            )
-                        )
-                        .padding(20.dp)
+                Text(
+                    text = "总体绩点",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stats.gpa,
-                                    style = MaterialTheme.typography.displayMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "总体绩点 (GPA)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
-                            
-                            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                                CompactStatItem(stats.credits, "已修学分", Color.White)
-                                CompactStatItem("${stats.courseCount}", "总课程", Color.White)
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        // Visual Distribution Bar
-                        GradeDistributionBar(stats)
+                    Text(
+                        text = stats.gpa,
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = Color.Black,
+                        letterSpacing = (-1.5).sp
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        CompactStatItem(stats.credits, "已修学分", Color.Black)
+                        CompactStatItem("${stats.courseCount}", "总课程", Color.Black)
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Visual Distribution Bar
+                GradeDistributionBar(stats)
             }
         }
 
@@ -354,15 +344,19 @@ fun SemesterGradesContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Stats Row (Instead of Card)
+        // Hero Data Island (Semester)
         if (!isLoading) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White, RoundedCornerShape(20.dp))
+                    .padding(vertical = 20.dp, horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SemesterStatCard("平均绩点", String.format("%.2f", avgGPA), PrimaryPurple, Modifier.weight(1f))
-                SemesterStatCard("总学分", String.format("%.1f", totalCredits), Color(0xFF2196F3), Modifier.weight(1f))
-                SemesterStatCard("课程数", "${grades.size}", Color(0xFFFF9800), Modifier.weight(1f))
+                SemesterStatBlock("平均绩点", String.format("%.2f", avgGPA), Color.Black)
+                SemesterStatBlock("总学分", String.format("%.1f", totalCredits), Color.Black)
+                SemesterStatBlock("课程数", "${grades.size}", Color.Black)
             }
         }
 
@@ -390,29 +384,26 @@ fun SemesterGradesContent(
 }
 
 @Composable
-fun SemesterStatCard(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(16.dp)
+fun SemesterStatBlock(label: String, value: String, color: Color) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-        }
+        Text(
+            text = value,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            color = color,
+            letterSpacing = (-1).sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.Gray,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -443,9 +434,9 @@ fun GradeDistributionBar(stats: OverallStatsUi) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(12.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color.White.copy(alpha = 0.2f))
+                .height(8.dp) // 变细，更精致
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color.Black.copy(alpha = 0.05f)) // 极简灰底
         ) {
             if (stats.excellent > 0) Box(Modifier.weight(stats.excellent.toFloat()).fillMaxHeight().background(Color(0xFF4CAF50)))
             if (stats.good > 0) Box(Modifier.weight(stats.good.toFloat()).fillMaxHeight().background(Color(0xFF2196F3)))
@@ -471,9 +462,9 @@ fun GradeDistributionBar(stats: OverallStatsUi) {
 @Composable
 fun LegendItem(label: String, count: Int, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text("$label $count", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(color))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("$label $count", style = MaterialTheme.typography.labelSmall, color = Color.Gray, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -510,18 +501,10 @@ fun GradeItemRow(item: GradeItemUi) {
         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left Indicator Strip
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .background(getGradeColor(item.grade), RoundedCornerShape(2.dp))
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
+            // Remove colored Left Indicator Strip
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -553,8 +536,10 @@ fun GradeItemRow(item: GradeItemUi) {
                 Text(
                     text = item.grade,
                     color = gradeColor,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    letterSpacing = (-0.5).sp
                 )
                 Text(
                     text = "GP: ${item.gpa}", 

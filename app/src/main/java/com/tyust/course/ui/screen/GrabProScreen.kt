@@ -12,7 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Timer
@@ -34,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
-import com.tyust.course.ui.theme.PrimaryPurple
-
+import com.tyust.course.ui.theme.*
+import com.tyust.course.ui.system.*
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun GrabProScreen(
@@ -129,7 +128,7 @@ fun GrabProScreen(
                         localScheduledMode = true
                         onScheduledModeChange?.invoke(true)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                    colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
                 ) { Text("我已知晓") }
             },
             dismissButton = {
@@ -157,57 +156,34 @@ fun GrabProScreen(
             ) {
                 ExtendedFloatingActionButton(
                     onClick = { onScheduledStart?.invoke() },
-                    containerColor = PrimaryPurple,
+                    containerColor = SystemBlue,
                     contentColor = Color.White,
                     icon = { Icon(Icons.Default.AlarmAdd, contentDescription = null) },
                     text = { Text("添加定时任务") },
-                    expanded = scrollState.isScrollInProgress.not()
+                    expanded = scrollState.isScrollInProgress.not(),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
                 )
             }
         }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFFF5F5F7)) // iOS style background color
+                .fillMaxWidth()
+                .background(Neutral50) // iOS style background color
                 .padding(paddingValues)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             state = scrollState
         ) {
-            // 1. Status Header
+            // 1. Status Header + Statistics (Brutalist Data)
             item {
-                StatusHeader(isRunning, hasScheduledTask)
-            }
-
-            // 2. Statistics Cards
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        title = "成功",
-                        value = successCount.toString(),
-                        icon = Icons.Default.CheckCircle,
-                        color = Color(0xFF4CAF50)
-                    )
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        title = "失败",
-                        value = failCount.toString(),
-                        icon = Icons.Default.Cancel,
-                        color = Color(0xFFF44336)
-                    )
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        title = "尝试",
-                        value = retryCount.toString(),
-                        icon = Icons.Default.Refresh,
-                        color = Color(0xFF2196F3)
-                    )
-                }
+                BrutalistStatusDashboard(
+                    isRunning = isRunning, 
+                    hasScheduledTask = hasScheduledTask,
+                    successCount = successCount,
+                    failCount = failCount,
+                    retryCount = retryCount
+                )
             }
 
             // 3. Mode Switcher
@@ -288,9 +264,10 @@ fun GrabProScreen(
             if (localScheduledMode || queue.isNotEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), // Add inset group feel
+                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200)
                     ) {
                          GrabQueueHeader(
                             queueSize = queue.size,
@@ -335,74 +312,92 @@ fun GrabProScreen(
 }
 
 @Composable
-fun StatusHeader(isRunning: Boolean, hasScheduledTask: Boolean) {
-    val (bgColor, icon, text, subtext) = when {
-        hasScheduledTask -> Quadruple(
-            Color(0xFFE65100), Icons.Outlined.Timer, "定时任务等待中", "将在预定时间自动启动"
-        )
-        isRunning -> Quadruple(
-            Color(0xFF2E7D32), Icons.Default.Autorenew, "抢课服务运行中", "保持后台运行以持续抢课"
-        )
-        else -> Quadruple(
-            Color(0xFF424242), Icons.Default.Speed, "服务已就绪", "配置参数后开始抢课"
-        )
+fun BrutalistStatusDashboard(
+    isRunning: Boolean,
+    hasScheduledTask: Boolean,
+    successCount: Int,
+    failCount: Int,
+    retryCount: Int
+) {
+    val (statusColor, icon, text, pulse) = when {
+        hasScheduledTask -> Quadruple(SemanticWarning, Icons.Outlined.Timer, "定时待机", true)
+        isRunning -> Quadruple(SystemBlue, Icons.Default.Autorenew, "执行中", true)
+        else -> Quadruple(Neutral500, Icons.Default.Speed, "已就绪", false)
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = bgColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceWhite, RoundedCornerShape(20.dp))
+            .padding(24.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+        // 顶栏状态标识
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = statusColor, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = text, 
+                style = MaterialTheme.typography.titleLarge, 
+                color = Neutral900, 
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.5).sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (pulse) {
+                // 呼吸状态灯
+                Box(modifier = Modifier.size(10.dp).background(statusColor, CircleShape))
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(text, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                Text(subtext, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
-            }
+        }
+        
+        Spacer(modifier = Modifier.height(28.dp))
+        
+        // 极致的数据展示
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            BrutalistDataBlock(label = "尝试", value = retryCount.toString(), color = Neutral900, modifier = Modifier.weight(1f))
+            BrutalistDataBlock(label = "成功", value = successCount.toString(), color = SemanticSuccess, modifier = Modifier.weight(1f))
+            BrutalistDataBlock(label = "失败", value = failCount.toString(), color = SemanticDanger, modifier = Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-fun StatCard(modifier: Modifier = Modifier, title: String, value: String, icon: ImageVector, color: Color) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+fun RowScope.BrutalistDataBlock(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(icon, contentDescription = null, tint = color.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
-            Text(title, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-        }
+        // 使用内置的等宽数字体验，极高字重
+        Text(
+            text = value,
+            fontSize = 38.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            color = color,
+            letterSpacing = (-1.5).sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Neutral500,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp
+        )
     }
 }
 
 @Composable
 fun ModeSwitcherCard(isScheduledMode: Boolean, onModeChange: (Boolean) -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Neutral100, RoundedCornerShape(8.dp))
+            .padding(4.dp)
     ) {
         Row(
-            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -413,7 +408,6 @@ fun ModeSwitcherCard(isScheduledMode: Boolean, onModeChange: (Boolean) -> Unit) 
                 onClick = { onModeChange(false) },
                 modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(8.dp))
             TabButton(
                 text = "定时",
                 selected = isScheduledMode,
@@ -427,15 +421,16 @@ fun ModeSwitcherCard(isScheduledMode: Boolean, onModeChange: (Boolean) -> Unit) 
 
 @Composable
 fun TabButton(text: String, selected: Boolean, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val bgColor = if (selected) PrimaryPurple else Color.Transparent
-    val contentColor = if (selected) Color.White else Color.Gray
+    val bgColor = if (selected) SurfaceWhite else Color.Transparent
+    val contentColor = if (selected) Neutral900 else Neutral500
     
     Button(
         onClick = onClick,
-        modifier = modifier.height(44.dp),
+        modifier = modifier.height(36.dp),
         colors = ButtonDefaults.buttonColors(containerColor = bgColor, contentColor = contentColor),
-        shape = RoundedCornerShape(12.dp),
-        elevation = if (selected) ButtonDefaults.buttonElevation(defaultElevation = 2.dp) else ButtonDefaults.buttonElevation(0.dp)
+        shape = RoundedCornerShape(6.dp),
+        elevation = if (selected) ButtonDefaults.buttonElevation(defaultElevation = 1.dp) else ButtonDefaults.buttonElevation(0.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp)
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
@@ -466,18 +461,19 @@ fun ImmediateGrabForm(
 ) {
     // 🔧 动画状态
     val themeColor by animateColorAsState(
-        targetValue = if (isFuzzyMatchMode) Color(0xFFFF9800) else PrimaryPurple,
+        targetValue = if (isFuzzyMatchMode) SemanticWarning else SystemBlue,
         animationSpec = tween(durationMillis = 300)
     )
     val cardBgColor by animateColorAsState(
-        targetValue = if (isFuzzyMatchMode) Color(0xFFFFF3E0) else Color(0xFFF3E5F5),
+        targetValue = if (isFuzzyMatchMode) Color(0xFFFFF7ED) else Color(0xFFF0F5FF),
         animationSpec = tween(durationMillis = 300)
     )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // 🔧 模式切换：精确捡漏 / 模糊匹配
@@ -492,8 +488,8 @@ fun ImmediateGrabForm(
                         modifier = Modifier.weight(1f).height(40.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!isFuzzyMatchMode) PrimaryPurple else Color.LightGray.copy(alpha = 0.3f),
-                            contentColor = if (!isFuzzyMatchMode) Color.White else Color.Gray
+                            containerColor = if (!isFuzzyMatchMode) SystemBlue else Neutral100,
+                            contentColor = if (!isFuzzyMatchMode) Color.White else Neutral500
                         )
                     ) {
                         Icon(Icons.Default.GpsFixed, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -506,8 +502,8 @@ fun ImmediateGrabForm(
                         modifier = Modifier.weight(1f).height(40.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isFuzzyMatchMode) Color(0xFFFF9800) else Color.LightGray.copy(alpha = 0.3f),
-                            contentColor = if (isFuzzyMatchMode) Color.White else Color.Gray
+                            containerColor = if (isFuzzyMatchMode) SemanticWarning else Neutral100,
+                            contentColor = if (isFuzzyMatchMode) Color.White else Neutral500
                         )
                     ) {
                         Icon(Icons.Default.Radar, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -563,8 +559,8 @@ fun ImmediateGrabForm(
                                 Text(targetCourseName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
                                 Text("教师: ${targetCourseTeacher ?: "未知"}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                             } else if (queueSize > 0) {
-                                Text("已就绪: 队列抢课模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = PrimaryPurple)
-                                Text("共 ${queueSize} 门课程待尝试", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                Text("已就绪: 队列抢课模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = SystemBlue)
+                                Text("共 ${queueSize} 门课程待尝试", style = MaterialTheme.typography.bodySmall, color = Neutral500)
                             } else {
                                 Text("未选择课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
                                 Text("请在\"课程\"页面长按选择，或在下方添加队列", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
@@ -641,7 +637,7 @@ fun ImmediateGrabForm(
                             onClick = onStart,
                             modifier = Modifier.weight(1f).height(50.dp),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            colors = ButtonDefaults.buttonColors(containerColor = SemanticSuccess),
                             enabled = !isRunning && (targetCourseName != null || queueSize > 0),
                             contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
@@ -655,7 +651,7 @@ fun ImmediateGrabForm(
                         onClick = onStop,
                         modifier = Modifier.weight(1f).height(50.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                        colors = ButtonDefaults.buttonColors(containerColor = SemanticDanger),
                         enabled = isRunning,
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
@@ -683,10 +679,10 @@ fun ScheduledTaskForm(
 ) {
     if (hasTask) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = if (isRunning) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)),
-            elevation = CardDefaults.cardElevation(4.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) Color(0xFF4CAF50) else Color(0xFFFF9800))
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isRunning) Color(0xFFE8F5E9) else Color(0xFFFFF7ED)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) SemanticSuccess else SemanticWarning)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -732,14 +728,15 @@ fun ScheduledTaskForm(
         }
     } else {
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(2.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+            elevation = CardDefaults.cardElevation(0.dp),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 // School
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Domain, contentDescription = null, tint = PrimaryPurple)
+                    Icon(Icons.Default.Domain, contentDescription = null, tint = SystemBlue)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(schoolName.ifEmpty { "未登录" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                 }
@@ -788,7 +785,7 @@ fun ScheduledTaskForm(
                     leadingIcon = { Icon(Icons.Default.Event, contentDescription = null) },
                     trailingIcon = { 
                         IconButton(onClick = onDateTimeClick) {
-                            Icon(Icons.Default.EditCalendar, contentDescription = null, tint = PrimaryPurple)
+                            Icon(Icons.Default.EditCalendar, contentDescription = null, tint = SystemBlue)
                         }
                     }
                 )
@@ -799,48 +796,46 @@ fun ScheduledTaskForm(
 
 @Composable
 fun LogConsole(logText: String, onClearLog: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), // Dark theme for console
-        elevation = CardDefaults.cardElevation(4.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(BackgroundDark)
+            .padding(top = 8.dp)
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF2D2D2D))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Terminal, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("运行日志", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                IconButton(onClick = onClearLog, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(16.dp))
-                }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Terminal, contentDescription = null, tint = Neutral500, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("PROCESS LOG", color = Neutral500, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             }
+            IconButton(onClick = onClearLog, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = "Clear", tint = Neutral500, modifier = Modifier.size(16.dp))
+            }
+        }
+        
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            val scroll = rememberScrollState()
+            LaunchedEffect(logText) { scroll.animateScrollTo(scroll.maxValue) }
             
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .padding(12.dp)
-            ) {
-                val scroll = rememberScrollState()
-                LaunchedEffect(logText) { scroll.animateScrollTo(scroll.maxValue) }
-                
-                Text(
-                    text = logText.ifEmpty { "> 等待任务指令...\n" },
-                    color = Color(0xFF00E676), // Terminal green
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.verticalScroll(scroll)
-                )
-            }
+            Text(
+                text = logText.ifEmpty { "> system standby...\n" },
+                color = Color(0xFFA3BE8C), // 典型的北极星色系代码绿
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 16.sp,
+                modifier = Modifier.verticalScroll(scroll)
+            )
         }
     }
 }

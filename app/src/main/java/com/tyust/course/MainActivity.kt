@@ -11,13 +11,19 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,7 +39,6 @@ import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
 import com.tyust.course.ui.theme.CourseSelectorTheme
-import com.tyust.course.ui.theme.PrimaryPurple
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
 import kotlinx.coroutines.launch
@@ -97,7 +102,7 @@ class MainActivity : FragmentActivity() {
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = PrimaryPurple)
+                            CircularProgressIndicator(color = com.tyust.course.ui.theme.SystemBlue)
                         }
                     }
                     // 未激活 - 显示激活界面
@@ -196,22 +201,85 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = PrimaryPurple
-            ) {
-                items.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = PrimaryPurple,
-                            selectedTextColor = PrimaryPurple,
-                            indicatorColor = PrimaryPurple.copy(alpha = 0.1f)
-                        )
+            // 毛玻璃透视底栏 (Translucent Glass Bar)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        com.tyust.course.ui.theme.SurfaceWhite.copy(alpha = 0.88f)
                     )
+                    // 顶部极细分隔线，代替厚重阴影
+                    .drawBehind {
+                        drawLine(
+                            color = com.tyust.course.ui.theme.Neutral200,
+                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                            end = androidx.compose.ui.geometry.Offset(size.width, 0f),
+                            strokeWidth = 0.5f
+                        )
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items.forEachIndexed { index, item ->
+                        val isSelected = selectedTab == index
+                        val interactSource = remember { MutableInteractionSource() }
+                        
+                        // 弹簧缩放动效
+                        val scale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isSelected) 1f else 0.9f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                            ),
+                            label = "tabScale"
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = interactSource,
+                                    indication = null,
+                                    onClick = { selectedTab = index }
+                                )
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                val contentColor = if (isSelected) com.tyust.course.ui.theme.SystemBlue else com.tyust.course.ui.theme.Neutral500
+                                
+                                Icon(
+                                    imageVector = item.icon,
+                                    contentDescription = item.label,
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                
+                                Spacer(modifier = Modifier.height(2.dp))
+                                
+                                Text(
+                                    text = item.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                                    color = contentColor
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

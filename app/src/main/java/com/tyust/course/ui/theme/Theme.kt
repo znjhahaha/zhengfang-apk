@@ -17,29 +17,35 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryPurpleLight,
-    secondary = SecondaryPurple,
-    tertiary = Pink80,
+    primary = SystemBlue,
+    onPrimary = SurfaceWhite,
+    primaryContainer = SystemBlueDark,
+    onPrimaryContainer = SurfaceWhite,
+    secondary = Neutral300,
+    onSecondary = Neutral900,
     background = BackgroundDark,
+    onBackground = Neutral50,
     surface = SurfaceDark,
-    onPrimary = SurfaceLight,
-    onSecondary = SurfaceLight,
-    onBackground = SurfaceLight,
-    onSurface = SurfaceLight
+    onSurface = Neutral50,
+    surfaceVariant = Neutral700,
+    onSurfaceVariant = Neutral300,
+    error = SemanticDanger
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = PrimaryPurple,
-    secondary = SecondaryPurple,
-    tertiary = Pink40,
-    background = Color(0xFFF8F9FA),  // Light gray background
-    surface = Color.White,
-    surfaceVariant = Color(0xFFF0F0F5),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onBackground = Color(0xFF1A1A1A),
-    onSurface = Color(0xFF1A1A1A),
-    onSurfaceVariant = Color(0xFF666666)
+    primary = SystemBlue,
+    onPrimary = SurfaceWhite,
+    primaryContainer = SystemBlueLight,
+    onPrimaryContainer = SystemBlueDark,
+    secondary = Neutral500,
+    onSecondary = SurfaceWhite,
+    background = Neutral50,
+    onBackground = Neutral900,
+    surface = SurfaceWhite,
+    onSurface = Neutral900,
+    surfaceVariant = Neutral100,
+    onSurfaceVariant = Neutral500,
+    error = SemanticDanger
 )
 
 @Composable
@@ -61,7 +67,8 @@ fun CourseSelectorTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            // 系统工具风：状态栏融于背景，不再强制涂成醒目的品牌色
+            window.statusBarColor = colorScheme.background.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }

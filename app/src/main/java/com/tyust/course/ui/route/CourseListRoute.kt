@@ -39,7 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
-import com.tyust.course.ui.theme.PrimaryPurple
+import com.tyust.course.ui.theme.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 
@@ -648,11 +649,12 @@ fun CourseListRoute() {
     Scaffold(
         topBar = {
             Surface(
-                color = PrimaryPurple,
-                contentColor = Color.White,
-                shadowElevation = 4.dp
+                color = SurfaceWhite.copy(alpha = 0.88f), // 极简系统工具风：高亮变白透
+                contentColor = Neutral900,
+                shadowElevation = 0.dp // 移除原生大阴影
             ) {
-                AnimatedContent(
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    AnimatedContent(
                     targetState = when {
                         isSearchActive -> "search"
                         isMultiSelectMode -> "multiSelect"
@@ -684,36 +686,38 @@ fun CourseListRoute() {
                                     isSearchActive = false
                                     onSearch("")
                                 }) { 
-                                    Icon(Icons.Default.Close, contentDescription = "取消搜索", tint = Color.White) 
+                                    Icon(Icons.Default.Close, contentDescription = "取消搜索", tint = Neutral900) 
                                 }
                                 TextField(
                                     value = searchQuery,
                                     onValueChange = { onSearch(it) },
-                                    placeholder = { Text("搜索课程名、教师或ID", color = Color.White.copy(alpha = 0.6f)) },
+                                    placeholder = { Text("搜索课程名、教师或ID", color = Neutral500) },
                                     modifier = Modifier.weight(1f),
                                     colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedContainerColor = Neutral100,
+                                        unfocusedContainerColor = Neutral50,
                                         focusedIndicatorColor = Color.Transparent,
                                         unfocusedIndicatorColor = Color.Transparent,
-                                        cursorColor = Color.White,
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                        disabledTextColor = Color.White,
-                                        focusedPlaceholderColor = Color.White.copy(alpha = 0.5f),
-                                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.5f)
+                                        cursorColor = SystemBlue,
+                                        focusedTextColor = Neutral900,
+                                        unfocusedTextColor = Neutral900,
+                                        disabledTextColor = Neutral300,
+                                        focusedPlaceholderColor = Neutral300,
+                                        unfocusedPlaceholderColor = Neutral300
                                     ),
+                                    shape = RoundedCornerShape(12.dp),
                                     singleLine = true
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
                             }
                         }
                         "multiSelect" -> {
                             //  Sélection 模式顶栏
                             TopAppBar(
-                                title = { Text("已选 ${selectedClassIds.size} 门课程", style = MaterialTheme.typography.titleMedium) },
+                                title = { Text("已选 ${selectedClassIds.size} 门课程", style = MaterialTheme.typography.titleMedium, color = Neutral900) },
                                 navigationIcon = {
                                     IconButton(onClick = { exitMultiSelectMode() }) {
-                                        Icon(Icons.Default.Close, contentDescription = "取消", tint = Color.White)
+                                        Icon(Icons.Default.Close, contentDescription = "取消", tint = Neutral900)
                                     }
                                 },
                                 actions = {
@@ -725,67 +729,70 @@ fun CourseListRoute() {
                                             selectedClassIds = selectable.mapNotNull { it.classId }.toSet()
                                         }
                                     }) {
-                                        Text("全选", color = Color.White)
+                                        Text("全选", color = SystemBlue, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = PrimaryPurple,
-                                    titleContentColor = Color.White,
-                                    navigationIconContentColor = Color.White
+                                    containerColor = Color.Transparent,
+                                    titleContentColor = Neutral900,
+                                    navigationIconContentColor = Neutral900
                                 )
                             )
                         }
                         else -> {
-                            // 🏠 标准模式：现代化分段选择器
+                            // 🏠 标准模式：现代化分段选择器 (Apple Style)
                             CenterAlignedTopAppBar(
                                 title = {
                                     SingleChoiceSegmentedButtonRow(
-                                        modifier = Modifier.width(200.dp)
+                                        modifier = Modifier.width(200.dp).height(36.dp)
                                     ) {
                                         SegmentedButton(
                                             selected = !showSelectedCourses,
                                             onClick = { showSelectedCourses = false },
                                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                                             colors = SegmentedButtonDefaults.colors(
-                                                activeContainerColor = Color.White.copy(alpha = 0.2f),
-                                                activeContentColor = Color.White,
-                                                inactiveContentColor = Color.White.copy(alpha = 0.7f),
-                                                inactiveContainerColor = Color.Transparent
+                                                activeContainerColor = SurfaceWhite,
+                                                activeContentColor = Neutral900,
+                                                inactiveContentColor = Neutral500,
+                                                inactiveContainerColor = Neutral100
                                             )
                                         ) {
-                                            Text("可选", style = MaterialTheme.typography.labelLarge)
+                                            Text("可选", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                                         }
                                         SegmentedButton(
                                             selected = showSelectedCourses,
                                             onClick = { showSelectedCourses = true },
                                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                                             colors = SegmentedButtonDefaults.colors(
-                                                activeContainerColor = Color.White.copy(alpha = 0.2f),
-                                                activeContentColor = Color.White,
-                                                inactiveContentColor = Color.White.copy(alpha = 0.7f),
-                                                inactiveContainerColor = Color.Transparent
+                                                activeContainerColor = SurfaceWhite,
+                                                activeContentColor = Neutral900,
+                                                inactiveContentColor = Neutral500,
+                                                inactiveContainerColor = Neutral100
                                             )
                                         ) {
-                                            Text("已选", style = MaterialTheme.typography.labelLarge)
+                                            Text("已选", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                                         }
                                     }
                                 },
                                 actions = {
                                     if (!showSelectedCourses) {
                                         IconButton(onClick = { isSearchActive = true }) {
-                                            Icon(Icons.Default.Search, contentDescription = "搜索", tint = Color.White)
+                                            Icon(Icons.Default.Search, contentDescription = "搜索", tint = Neutral900)
                                         }
                                     }
                                     IconButton(onClick = { loadCourses() }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = Color.White)
+                                        Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = Neutral900)
                                     }
                                 },
                                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                                    containerColor = PrimaryPurple
+                                    containerColor = Color.Transparent
                                 )
                             )
                         }
                     }
+                }
+                // 底部细线边缘
+                HorizontalDivider(modifier = Modifier.fillMaxWidth(), thickness = 0.5.dp, color = Neutral200.copy(alpha = 0.5f))
                 }
             }
         },

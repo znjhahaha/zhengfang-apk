@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.tyust.course.model.Course
-import com.tyust.course.ui.theme.PrimaryPurple
+import com.tyust.course.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +37,7 @@ fun SelectedCoursesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8F9FA))
+            .background(Neutral50)
     ) {
         // 添加退课进度条
         if (isDropping) {
@@ -45,8 +45,8 @@ fun SelectedCoursesScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter),
-                color = Color(0xFFE53935),
-                trackColor = Color(0xFFFFCDD2)
+                color = SemanticDanger,
+                trackColor = SemanticDanger.copy(alpha = 0.2f)
             )
         }
         
@@ -71,7 +71,7 @@ fun SelectedCoursesScreen(
                         text = "暂无已选课程数据\n请尝试刷新",
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Color.LightGray
+                        color = Neutral500
                     )
                 }
             } else {
@@ -83,7 +83,7 @@ fun SelectedCoursesScreen(
                     item {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = PrimaryPurple.copy(alpha = 0.1f),
+                            color = SystemBlue.copy(alpha = 0.1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Row(
@@ -99,7 +99,7 @@ fun SelectedCoursesScreen(
                                     text = "已选课程: ${courses.size} 门",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = PrimaryPurple
+                                    color = SystemBlue
                                 )
                             }
                         }
@@ -149,7 +149,7 @@ fun SelectedCourseItem(
                         onDrop()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE53935)
+                        containerColor = SemanticDanger
                     )
                 ) {
                     Text("确认退课")
@@ -157,17 +157,18 @@ fun SelectedCourseItem(
             },
             dismissButton = {
                 TextButton(onClick = { showDropConfirmDialog = false }) {
-                    Text("取消")
+                    Text("取消", color = Neutral500)
                 }
             }
         )
     }
     
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -180,24 +181,24 @@ fun SelectedCourseItem(
                         text = course.name ?: "未知课程",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1A1A1A)
+                        color = Neutral900
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "ID: ${course.courseId ?: "--"}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.Gray
+                        color = Neutral500
                     )
                 }
                 
                 Surface(
-                    color = PrimaryPurple.copy(alpha = 0.1f),
+                    color = SystemBlue.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
                         text = "${course.credit ?: "0.0"} 学分",
                         style = MaterialTheme.typography.labelMedium,
-                        color = PrimaryPurple,
+                        color = SystemBlue,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -206,7 +207,7 @@ fun SelectedCourseItem(
             
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 12.dp),
-                color = Color(0xFFEEEEEE),
+                color = Neutral100,
                 thickness = 1.dp
             )
             
@@ -215,9 +216,9 @@ fun SelectedCourseItem(
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 // 教师
-                InfoRow(label = "教师", value = course.teacher ?: "--", iconColor = Color(0xFF4CAF50))
+                InfoRow(label = "教师", value = course.teacher ?: "--", iconColor = SemanticSuccess)
                 // 教学班
-                InfoRow(label = "班级", value = course.classId ?: "--", iconColor = PrimaryPurple)
+                InfoRow(label = "班级", value = course.classId ?: "--", iconColor = SystemBlue)
             }
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -225,21 +226,21 @@ fun SelectedCourseItem(
             // 时间地点：使用更柔和的背景
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFFF1F3F5),
+                color = Neutral100,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     Text(
                         text = "📅 ${course.time ?: "时间未安排"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF495057)
+                        color = Neutral700
                     )
                     if (!course.location.isNullOrEmpty()) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "📍 ${course.location}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF495057)
+                            color = Neutral700
                         )
                     }
                 }
@@ -253,9 +254,9 @@ fun SelectedCourseItem(
                 enabled = !isDropping,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE53935),
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFBDBDBD)
+                    containerColor = SemanticDanger,
+                    contentColor = SurfaceWhite,
+                    disabledContainerColor = Neutral300
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -277,7 +278,7 @@ fun SelectedCourseItem(
 @Composable
 fun InfoRow(label: String, value: String, iconColor: Color) {
     Column {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Neutral500)
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
@@ -290,24 +291,26 @@ fun InfoRow(label: String, value: String, iconColor: Color) {
 @Composable
 fun CourseSkeletonItem() {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.6f))
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite.copy(alpha = 0.6f)),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Box(modifier = Modifier.width(150.dp).height(20.dp).background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp)))
-                Box(modifier = Modifier.width(50.dp).height(20.dp).background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp)))
+                Box(modifier = Modifier.width(150.dp).height(20.dp).background(Neutral200.copy(alpha = 0.5f), RoundedCornerShape(4.dp)))
+                Box(modifier = Modifier.width(50.dp).height(20.dp).background(Neutral200.copy(alpha = 0.5f), RoundedCornerShape(4.dp)))
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color.LightGray.copy(alpha = 0.1f)))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Neutral100))
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Box(modifier = Modifier.width(60.dp).height(30.dp).background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp)))
-                Box(modifier = Modifier.width(60.dp).height(30.dp).background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp)))
+                Box(modifier = Modifier.width(60.dp).height(30.dp).background(Neutral200.copy(alpha = 0.5f), RoundedCornerShape(4.dp)))
+                Box(modifier = Modifier.width(60.dp).height(30.dp).background(Neutral200.copy(alpha = 0.5f), RoundedCornerShape(4.dp)))
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(40.dp).background(Color.LightGray.copy(alpha = 0.2f), RoundedCornerShape(8.dp)))
+            Box(modifier = Modifier.fillMaxWidth().height(40.dp).background(Neutral200.copy(alpha = 0.3f), RoundedCornerShape(8.dp)))
         }
     }
 }
