@@ -31,7 +31,21 @@ google-services.json
 # Keystore (sensitive)
 *.jks
 *.keystore
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
 release-key.jks
+
+# Secrets
+.env
+.env.*
+secrets.properties
+secret.properties
+service-account*.json
+credentials*.json
 
 # Proguard
 proguard-rules.pro
@@ -82,3 +96,4 @@ announcement.json
 .vscode
 .gocache
 PLAN.md
+work

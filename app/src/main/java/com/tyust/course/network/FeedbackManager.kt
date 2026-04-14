@@ -2,6 +2,7 @@ package com.tyust.course.network
 
 import android.content.Context
 import android.util.Log
+import com.tyust.course.BuildConfig
 import com.tyust.course.activation.ActivationManager
 import com.tyust.course.manager.UserManager
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +126,12 @@ object FeedbackManager {
             val deviceId = com.tyust.course.activation.DeviceUtils.getDeviceId(context)
             val timestamp = System.currentTimeMillis().toString()
             val signature = calculateSignature(deviceId, timestamp)
+
+            if (signature.isBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Feedback signing secret is not configured")
+                )
+            }
             
             val url = "https://www.znj2006.cn/api/feedback/my?deviceId=$deviceId&t=$timestamp&s=$signature"
 
@@ -222,7 +229,11 @@ object FeedbackManager {
      * 算法: SHA256(deviceId + timestamp + secretKey)
      */
     private fun calculateSignature(deviceId: String, timestamp: String): String {
-        val secretKey = "znj_feedback_default_secret_666" // 与服务端保持一致
+        val secretKey = BuildConfig.FEEDBACK_SIGNING_SECRET
+        if (secretKey.isBlank()) {
+            Log.w(TAG, "Feedback signing secret is missing; signed history requests are disabled")
+            return ""
+        }
         val data = deviceId + timestamp + secretKey
         
         return try {

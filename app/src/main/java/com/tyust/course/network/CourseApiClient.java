@@ -214,7 +214,7 @@ public class CourseApiClient {
                                                         .path("/")
                                                         .build();
                                         cookieJar.addCookie(url, cookie);
-                                        Log.d(TAG, "Added cookie: " + name + "=" + value);
+                                        Log.d(TAG, "Added cookie: " + name + "=<redacted>");
                                 } catch (Exception e) {
                                         Log.w(TAG, "Skipped invalid cookie: " + name + " - " + e.getMessage());
                                 }

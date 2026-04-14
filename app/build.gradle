@@ -16,6 +16,30 @@ if (versionPropsFile.exists()) {
 
 def code = versionProps['VERSION_CODE'].toInteger()
 def name = versionProps['VERSION_NAME']
+def localSecrets = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+
+if (localPropertiesFile.exists()) {
+    localSecrets.load(new FileInputStream(localPropertiesFile))
+}
+
+def readSecret = { String envName, String propertyName = envName ->
+    def envValue = System.getenv(envName)
+    if (envValue != null && !envValue.trim().isEmpty()) {
+        return envValue.trim()
+    }
+
+    def propertyValue = localSecrets.getProperty(propertyName)
+    if (propertyValue != null && !propertyValue.trim().isEmpty()) {
+        return propertyValue.trim()
+    }
+
+    return null
+}
+
+def quoteForBuildConfig = { String value ->
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
 
 // 在配置阶段就递增版本号（这样 defaultConfig 能获取到正确的值）
 // 只在 Release 构建时递增，Debug 不递增
@@ -38,6 +62,22 @@ if (isReleaseTask) {
     println "📦 版本号已更新: versionCode=$code, versionName=$name"
 }
 
+def releaseKeystoreFile = System.getenv("RELEASE_SIGNING_CONFIG_FILE") != null
+    ? file(System.getenv("RELEASE_SIGNING_CONFIG_FILE"))
+    : (file('release-key.jks').exists() ? file('release-key.jks') : null)
+def releaseStorePassword = readSecret("RELEASE_STORE_PASSWORD")
+def releaseKeyAlias = readSecret("RELEASE_KEY_ALIAS")
+def releaseKeyPassword = readSecret("RELEASE_KEY_PASSWORD")
+def hasReleaseSigning = releaseKeystoreFile != null &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
+def feedbackSigningSecret = readSecret("FEEDBACK_SIGNING_SECRET") ?: ""
+
+if (releaseKeystoreFile != null && isReleaseTask && !hasReleaseSigning) {
+    throw new GradleException("Release signing credentials are missing. Configure RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD via environment variables or local.properties.")
+}
+
 android {
     namespace 'com.tyust.course'
     compileSdk 34
@@ -48,20 +88,16 @@ android {
         targetSdk 34
         versionCode code
         versionName name
+        buildConfigField "String", "FEEDBACK_SIGNING_SECRET", quoteForBuildConfig(feedbackSigningSecret)
     }
 
     signingConfigs {
         release {
-            // 🚀 CI/CD 环境变量注入支持 (由 GitHub Actions 驱动)
-            def keystoreFile = System.getenv("RELEASE_SIGNING_CONFIG_FILE") != null 
-                ? file(System.getenv("RELEASE_SIGNING_CONFIG_FILE")) 
-                : (file('release-key.jks').exists() ? file('release-key.jks') : null)
-
-            if (keystoreFile != null) {
-                storeFile keystoreFile
-                storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: 'course123'
-                keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: 'course'
-                keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: 'course123'
+            if (hasReleaseSigning) {
+                storeFile releaseKeystoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             }
         }
     }
@@ -71,7 +107,9 @@ android {
             minifyEnabled true
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             minifyEnabled false
@@ -89,6 +127,7 @@ android {
     }
     
     buildFeatures {
+        buildConfig true
         compose true
     }
     
