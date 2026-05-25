@@ -25,7 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.theme.MotionDuration
+import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.theme.MotionSpring
+import com.tyust.course.ui.theme.NeuPrimary
 
 /**
  * 更新对话框
@@ -51,7 +54,7 @@ fun UpdateDialog(
         initialValue = 1f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(MotionDuration.EmphasisPulse, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
@@ -67,8 +70,8 @@ fun UpdateDialog(
     ) {
         AnimatedVisibility(
             visible = isVisible,
-            enter = scaleIn(initialScale = 0.8f, animationSpec = tween(400, easing = OvershootInterpolator(1.5f).toEasing())) + 
-                    fadeIn(animationSpec = tween(400)),
+            enter = scaleIn(initialScale = 0.8f, animationSpec = MotionSpring.bounce()) +
+                    fadeIn(animationSpec = MotionSpecs.dialogEnter()),
         ) {
             Card(
                 modifier = Modifier
@@ -93,14 +96,14 @@ fun UpdateDialog(
                             }
                             .size(72.dp)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(SystemBlue.copy(alpha = 0.1f)),
+                            .background(NeuPrimary.copy(alpha = 0.1f)),
                         contentAlignment = Alignment.Center
                     ) {
                     Icon(
                         imageVector = Icons.Default.SystemUpdate,
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
-                        tint = SystemBlue
+                        tint = NeuPrimary
                     )
                 }
                 
@@ -135,7 +138,7 @@ fun UpdateDialog(
                         text = "v${updateInfo.versionName}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = SystemBlue
+                        color = NeuPrimary
                     )
                 }
                 
@@ -192,7 +195,7 @@ fun UpdateDialog(
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
-                            color = SystemBlue,
+                            color = NeuPrimary,
                             trackColor = Color(0xFFE0E0E0)
                         )
                         
@@ -230,7 +233,7 @@ fun UpdateDialog(
                             onClick = onUpdate,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
+                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
                         ) {
                             Text("立即更新")
                         }
@@ -239,18 +242,6 @@ fun UpdateDialog(
             }
             }
         }
-    }
-}
-
-// 辅助函数：将 Interpolator 转换为 Easing
-private fun android.view.animation.Interpolator.toEasing() = Easing { x -> 
-    getInterpolation(x) 
-}
-
-private class OvershootInterpolator(val tension: Float = 2f) : android.view.animation.Interpolator {
-    override fun getInterpolation(t: Float): Float {
-        var x = t - 1.0f
-        return x * x * ((tension + 1) * x + tension) + 1.0f
     }
 }
 

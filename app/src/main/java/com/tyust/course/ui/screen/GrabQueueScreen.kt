@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
-import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.SemanticSuccess
 import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticWarning
@@ -294,7 +294,7 @@ fun GrabQueueItem(
                     Text(
                         text = if (effectiveExactMode) "🔒 精确模式" else "🔄 智能模式",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (effectiveExactMode) SystemBlue else SemanticSuccess,
+                        color = if (effectiveExactMode) NeuPrimary else SemanticSuccess,
                         fontSize = 10.sp
                     )
                 }
@@ -311,7 +311,7 @@ fun GrabQueueItem(
                                 Icon(
                                     imageVector = if (useExactMatch) Icons.Default.Lock else Icons.Default.Refresh,
                                     contentDescription = if (useExactMatch) "精确模式" else "智能模式",
-                                    tint = if (useExactMatch) SystemBlue else SemanticSuccess,
+                                    tint = if (useExactMatch) NeuPrimary else SemanticSuccess,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -371,7 +371,7 @@ fun GrabModeSwitch(
     )
     
     val trackColor by animateColorAsState(
-        targetValue = if (checked) SystemBlue.copy(alpha = 0.9f) else SemanticSuccess.copy(alpha = 0.9f),
+        targetValue = if (checked) NeuPrimary.copy(alpha = 0.9f) else SemanticSuccess.copy(alpha = 0.9f),
         label = "trackColor"
     )
 
@@ -413,7 +413,7 @@ fun GrabModeSwitch(
                     Icon(
                         imageVector = if (checked) Icons.Default.Lock else Icons.Default.Refresh,
                         contentDescription = null,
-                        tint = if (checked) SystemBlue else SemanticSuccess,
+                        tint = if (checked) NeuPrimary else SemanticSuccess,
                         modifier = Modifier.size(14.dp)
                     )
                 }

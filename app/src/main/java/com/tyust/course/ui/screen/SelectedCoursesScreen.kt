@@ -10,7 +10,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,10 +21,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.tyust.course.model.Course
 import com.tyust.course.ui.theme.*
 
@@ -34,12 +36,24 @@ fun SelectedCoursesScreen(
     onRefresh: () -> Unit,
     onDropCourse: (Course) -> Unit = {}
 ) {
+    val pullRefreshState = rememberPullToRefreshState(enabled = { !isLoading })
+
+    LaunchedEffect(pullRefreshState.isRefreshing, isLoading) {
+        if (pullRefreshState.isRefreshing && !isLoading) {
+            onRefresh()
+        }
+    }
+    LaunchedEffect(isLoading) {
+        if (isLoading) pullRefreshState.startRefresh()
+        else pullRefreshState.endRefresh()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Neutral50)
     ) {
-        // 添加退课进度条
+        // 退课进度条
         if (isDropping) {
             LinearProgressIndicator(
                 modifier = Modifier
@@ -49,71 +63,79 @@ fun SelectedCoursesScreen(
                 trackColor = SemanticDanger.copy(alpha = 0.2f)
             )
         }
-        
-        SwipeRefresh(
-            state = rememberSwipeRefreshState(isRefreshing = isLoading),
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize()
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(pullRefreshState.nestedScrollConnection)
         ) {
-            if (isLoading && courses.isEmpty()) {
-                // 🔧 骨架屏加载状态
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(6) {
-                        CourseSkeletonItem()
-                    }
-                }
-            } else if (courses.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "暂无已选课程数据\n请尝试刷新",
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Neutral500
-                    )
-                }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // 🔧 显示已选课程数量
-                    item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = SystemBlue.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📚",
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "已选课程: ${courses.size} 门",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SystemBlue
-                                )
-                            }
+            when {
+                isLoading && courses.isEmpty() -> {
+                    // 骨架屏加载状态
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(6) {
+                            CourseSkeletonItem()
                         }
                     }
-                    
-                    items(courses) { course ->
-                        SelectedCourseItem(
-                            course = course,
-                            isDropping = isDropping,
-                            onDrop = { onDropCourse(course) }
+                }
+                courses.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "暂无已选课程\n下拉刷新获取数据",
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = Neutral500
                         )
                     }
                 }
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = NeuPrimary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "📚",
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "已选 ${courses.size} 门课程",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeuPrimary
+                                    )
+                                }
+                            }
+                        }
+
+                        items(courses) { course ->
+                            SelectedCourseItem(
+                                course = course,
+                                isDropping = isDropping,
+                                onDrop = { onDropCourse(course) }
+                            )
+                        }
+                    }
+                }
             }
+
+            PullToRefreshContainer(
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }
@@ -192,13 +214,13 @@ fun SelectedCourseItem(
                 }
                 
                 Surface(
-                    color = SystemBlue.copy(alpha = 0.1f),
+                    color = NeuPrimary.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
                         text = "${course.credit ?: "0.0"} 学分",
                         style = MaterialTheme.typography.labelMedium,
-                        color = SystemBlue,
+                        color = NeuPrimary,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -218,7 +240,7 @@ fun SelectedCourseItem(
                 // 教师
                 InfoRow(label = "教师", value = course.teacher ?: "--", iconColor = SemanticSuccess)
                 // 教学班
-                InfoRow(label = "班级", value = course.classId ?: "--", iconColor = SystemBlue)
+                InfoRow(label = "班级", value = course.classId ?: "--", iconColor = NeuPrimary)
             }
             
             Spacer(modifier = Modifier.height(8.dp))

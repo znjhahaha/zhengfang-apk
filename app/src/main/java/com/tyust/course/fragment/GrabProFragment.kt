@@ -117,7 +117,6 @@ class GrabProFragment : Fragment(), SmartSelector.OnStatusUpdateListener {
                         courseKeywords = courseKeywords,
                         onCourseKeywordsChange = { courseKeywords = it },
                         scheduledDateTime = scheduledDateTime,
-                        onScheduledDateTimeChange = { scheduledDateTime = it },
                         isScheduledMode = isScheduledMode,
                         onScheduledModeChange = { isScheduledMode = it },
                         onScheduledStart = { createScheduledTask() },

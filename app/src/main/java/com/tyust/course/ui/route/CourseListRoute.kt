@@ -698,7 +698,7 @@ fun CourseListRoute() {
                                         unfocusedContainerColor = Neutral50,
                                         focusedIndicatorColor = Color.Transparent,
                                         unfocusedIndicatorColor = Color.Transparent,
-                                        cursorColor = SystemBlue,
+                                        cursorColor = NeuPrimary,
                                         focusedTextColor = Neutral900,
                                         unfocusedTextColor = Neutral900,
                                         disabledTextColor = Neutral300,
@@ -729,7 +729,7 @@ fun CourseListRoute() {
                                             selectedClassIds = selectable.mapNotNull { it.classId }.toSet()
                                         }
                                     }) {
-                                        Text("全选", color = SystemBlue, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                                        Text("全选", color = NeuPrimary, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(

@@ -2,49 +2,79 @@ package com.tyust.course
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
-import android.view.View
-import android.widget.FrameLayout
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.fragment.app.Fragment
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import androidx.fragment.app.FragmentContainerView
 import com.tyust.course.activation.ActivationManager
 import com.tyust.course.activation.ActivationScreen
-import com.tyust.course.fragment.*
 import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
+import com.tyust.course.ui.system.CapsuleNavigationBar
+import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.theme.CourseSelectorTheme
+import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
-import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
-    
+
     companion object {
         private const val PREFS_NAME = "app_prefs"
         private const val KEY_HAS_SEEN_ONBOARDING = "has_seen_onboarding"
@@ -52,11 +82,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // 初始化 UserManager（确保自定义学校和登录状态被加载）
+
         UserManager.getInstance().init(this)
-        
-        // 恢复 Cookie 到 CourseApiClient（关键！）
+
         val userManager = UserManager.getInstance()
         if (userManager.hasSavedCookie() && userManager.currentSchool != null) {
             com.tyust.course.network.CourseApiClient.getInstance().setCookie(
@@ -64,54 +92,43 @@ class MainActivity : FragmentActivity() {
                 userManager.savedCookie
             )
         }
-        
-        // 初始化 SmartSelector 持久化
+
         SmartSelector.getInstance().init(this)
-        
-        // 🔧 初始化 CourseApiClient 拦截器上下文
         com.tyust.course.network.CourseApiClient.getInstance().init(this)
 
-        // Check Login
         if (!UserManager.getInstance().isLoggedIn) {
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
             return
         }
-        
+
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val hasSeenOnboarding = prefs.getBoolean(KEY_HAS_SEEN_ONBOARDING, false)
 
         setContent {
             CourseSelectorTheme {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
-                
-                // 激活状态：0=检查中, 1=未激活, 2=已激活
                 var activationState by remember { mutableIntStateOf(0) }
-                val scope = rememberCoroutineScope()
-                
-                // 启动时检查激活状态
+
                 LaunchedEffect(Unit) {
                     val activated = ActivationManager.checkActivation(this@MainActivity)
                     activationState = if (activated) 2 else 1
                 }
-                
+
                 when {
-                    // 检查中 - 显示加载
                     activationState == 0 -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = com.tyust.course.ui.theme.SystemBlue)
+                            SystemLoadingState(text = "正在检查设备授权…")
                         }
                     }
-                    // 未激活 - 显示激活界面
+
                     activationState == 1 -> {
-                        ActivationScreen(
-                            onActivated = { activationState = 2 }
-                        )
+                        ActivationScreen(onActivated = { activationState = 2 })
                     }
-                    // 已激活 - 正常流程
+
                     showOnboarding -> {
                         OnboardingScreen(
                             onFinish = {
@@ -120,8 +137,9 @@ class MainActivity : FragmentActivity() {
                             }
                         )
                     }
+
                     else -> {
-                        MainScreen(fragmentActivity = this)
+                        MainScreen(fragmentActivity = this@MainActivity)
                     }
                 }
             }
@@ -129,23 +147,21 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-
 sealed class BottomNavItem(
     val route: String,
     val icon: ImageVector,
     val label: String
 ) {
-    object Courses : BottomNavItem("courses", Icons.Default.List, "课程")
+    object Courses : BottomNavItem("courses", Icons.AutoMirrored.Filled.List, "课程")
     object Schedule : BottomNavItem("schedule", Icons.Default.DateRange, "课表")
     object Grab : BottomNavItem("grab", Icons.Default.PlayArrow, "抢课")
     object Grades : BottomNavItem("grades", Icons.Default.Star, "成绩/考试")
     object Settings : BottomNavItem("settings", Icons.Default.Settings, "设置")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(fragmentActivity: FragmentActivity) {
-    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val items = listOf(
         BottomNavItem.Courses,
         BottomNavItem.Schedule,
@@ -153,20 +169,14 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         BottomNavItem.Grades,
         BottomNavItem.Settings
     )
-    
-    // 更新检查状态
     val updateState = rememberUpdateState()
-    
-    // 🔧 全局 Token 过期状态
     var isTokenExpired by remember { mutableStateOf(false) }
 
-    // 启动时检查更新
     LaunchedEffect(Unit) {
         updateState.checkForUpdate()
     }
 
-    // 🔧 注册全局 Cookie 过期监听
-    DisposableEffect(Unit) {
+    DisposableEffect(fragmentActivity) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
                 if (intent?.action == com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED) {
@@ -175,18 +185,17 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
         }
         val filter = android.content.IntentFilter(com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED)
-        androidx.core.content.ContextCompat.registerReceiver(
+        ContextCompat.registerReceiver(
             fragmentActivity,
             receiver,
             filter,
-            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
         onDispose {
             fragmentActivity.unregisterReceiver(receiver)
         }
     }
-    
-    // 更新对话框
+
     val updateInfo = updateState.updateInfo()
     if (updateState.showDialog() && updateInfo != null) {
         UpdateDialog(
@@ -200,88 +209,13 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            // 毛玻璃透视底栏 (Translucent Glass Bar)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        com.tyust.course.ui.theme.SurfaceWhite.copy(alpha = 0.88f)
-                    )
-                    // 顶部极细分隔线，代替厚重阴影
-                    .drawBehind {
-                        drawLine(
-                            color = com.tyust.course.ui.theme.Neutral200,
-                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            end = androidx.compose.ui.geometry.Offset(size.width, 0f),
-                            strokeWidth = 0.5f
-                        )
-                    }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    items.forEachIndexed { index, item ->
-                        val isSelected = selectedTab == index
-                        val interactSource = remember { MutableInteractionSource() }
-                        
-                        // 弹簧缩放动效
-                        val scale by androidx.compose.animation.core.animateFloatAsState(
-                            targetValue = if (isSelected) 1f else 0.9f,
-                            animationSpec = androidx.compose.animation.core.spring(
-                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                                stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                            ),
-                            label = "tabScale"
-                        )
-                        
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(
-                                    interactionSource = interactSource,
-                                    indication = null,
-                                    onClick = { selectedTab = index }
-                                )
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            ) {
-                                val contentColor = if (isSelected) com.tyust.course.ui.theme.SystemBlue else com.tyust.course.ui.theme.Neutral500
-                                
-                                Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = item.label,
-                                    tint = contentColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                
-                                Spacer(modifier = Modifier.height(2.dp))
-                                
-                                Text(
-                                    text = item.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                    color = contentColor
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            CapsuleNavigationBar(
+                items = items,
+                selectedTab = selectedTab,
+                onTabSelect = { selectedTab = it }
+            )
         }
     ) { paddingValues ->
         Box(
@@ -290,59 +224,32 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 .padding(paddingValues)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 🔧 1. 恢复通栏提示条样式 (放在顶层 Column 中保证不挡标题)
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = isTokenExpired,
-                    enter = androidx.compose.animation.expandVertically() + fadeIn(),
-                    exit = androidx.compose.animation.shrinkVertically() + fadeOut()
+                    enter = fadeIn(),
+                    exit = fadeOut()
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
+                    TokenExpiredBanner(
                         onClick = {
-                            // 跳转重登逻辑
                             val intent = Intent(fragmentActivity, LoginActivity::class.java)
                             intent.putExtra("force_relogin", true)
                             fragmentActivity.startActivity(intent)
                         }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "登录已过期，部分功能受限。点击此处重新登录",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
+                    )
                 }
 
-                // 🔧 2. 内容区域 (占满剩余空间)
                 Box(modifier = Modifier.weight(1f)) {
-                    androidx.compose.animation.AnimatedContent(
+                    AnimatedContent(
                         targetState = selectedTab,
                         transitionSpec = {
-                            val smoothEasing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
-                            val tweenSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(150, easing = smoothEasing)
-                            val fadeSpec = androidx.compose.animation.core.tween<Float>(150, easing = smoothEasing)
-                            
+                            val offsetTween = MotionSpecs.tabTransition<IntOffset>()
+                            val fadeTween = MotionSpecs.standard<Float>()
                             if (targetState > initialState) {
-                                (slideInHorizontally(animationSpec = tweenSpec) { width -> width + 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
-                                        (slideOutHorizontally(animationSpec = tweenSpec) { width -> -width / 4 } + fadeOut(animationSpec = fadeSpec))
+                                (slideInHorizontally(animationSpec = offsetTween) { width -> width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
+                                    (slideOutHorizontally(animationSpec = offsetTween) { width -> -width / 32 } + fadeOut(animationSpec = fadeTween))
                             } else {
-                                (slideInHorizontally(animationSpec = tweenSpec) { width -> -width - 100 } + fadeIn(animationSpec = fadeSpec)) togetherWith
-                                        (slideOutHorizontally(animationSpec = tweenSpec) { width -> width / 4 } + fadeOut(animationSpec = fadeSpec))
+                                (slideInHorizontally(animationSpec = offsetTween) { width -> -width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
+                                    (slideOutHorizontally(animationSpec = offsetTween) { width -> width / 32 } + fadeOut(animationSpec = fadeTween))
                             }
                         },
                         label = "MainTabTransition"
@@ -358,79 +265,92 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     }
                 }
             }
-            
-            // 🔧 3. 水印 (放在 Box 作用域内以支持 align)
-            Text(
-                text = "作者:znj | 免费软件，请勿用于盈利",
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 4.dp),
-                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.35f),
-                fontSize = 9.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Light
-            )
-            
-            Text(
-                text = "znj © 免费开源",
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 8.dp, bottom = 4.dp),
-                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.3f),
-                fontSize = 8.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Light
-            )
-            
-            Text(
-                text = "请勿商用",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 12.dp, top = 8.dp),
-                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.25f),
-                fontSize = 8.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Light
-            )
 
-            // 🔧 4. 防倒卖强制大水印 (仅针对未签发 Release 的 Debug 开源构建版本展示)
-            val isDebug = (fragmentActivity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-            if (isDebug) {
-                // 不可交互点击的全屏遮罩
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 80.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                        val paint = android.graphics.Paint().apply {
-                            textSize = 55f
-                            // 稍微加深一点透明度，解决看不清的问题
-                            color = android.graphics.Color.argb(70, 255, 80, 80)
-                            textAlign = android.graphics.Paint.Align.CENTER
-                            isAntiAlias = true
-                        }
-                        
-                        // 计算屏幕中心并在各个角落倾斜绘制交叉水印
-                        val centerX = size.width / 2
-                        val centerY = size.height / 2
-                        
-                        val nativeCanvas = drawContext.canvas.nativeCanvas
-                        nativeCanvas.save()
-                        nativeCanvas.rotate(-30f, centerX, centerY)
-                        
-                        // 疏远间距，防止文字重叠
-                        for (i in -2..2) {
-                            for (j in -3..3) {
-                                nativeCanvas.drawText(
-                                    "开源版 / 严禁倒卖",
-                                    centerX + (i * 600f),
-                                    centerY + (j * 650f),
-                                    paint
-                                )
-                            }
-                        }
-                        nativeCanvas.restore()
+            AppBuildWatermarks(fragmentActivity = fragmentActivity)
+        }
+    }
+}
+
+@Composable
+private fun TokenExpiredBanner(
+    onClick: () -> Unit
+) {
+    Surface(
+        color = com.tyust.course.ui.theme.NeuInsetBackground,
+        contentColor = com.tyust.course.ui.theme.SemanticWarning,
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = PagePadding, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = com.tyust.course.ui.theme.SemanticWarning,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "登录已过期，点击此处重新登录",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.AppBuildWatermarks(
+    fragmentActivity: FragmentActivity
+) {
+    Text(
+        text = "开源版 · 请勿商用",
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 12.dp, bottom = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Medium
+    )
+
+    val isDebug = (fragmentActivity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    if (isDebug) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 88.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    textSize = 54f
+                    setColor(android.graphics.Color.argb(64, 199, 58, 47))
+                    textAlign = android.graphics.Paint.Align.CENTER
+                }
+                val centerX = size.width / 2f
+                val centerY = size.height / 2f
+                val nativeCanvas = drawContext.canvas.nativeCanvas
+                nativeCanvas.save()
+                nativeCanvas.rotate(-28f, centerX, centerY)
+                for (i in -2..2) {
+                    for (j in -3..3) {
+                        nativeCanvas.drawText(
+                            "开源版 / 严禁倒卖",
+                            centerX + (i * 560f),
+                            centerY + (j * 620f),
+                            paint
+                        )
                     }
                 }
+                nativeCanvas.restore()
             }
         }
     }

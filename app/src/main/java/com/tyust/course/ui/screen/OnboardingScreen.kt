@@ -1,37 +1,52 @@
 package com.tyust.course.ui.screen
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.SectionSpacing
+import com.tyust.course.ui.system.SystemCard
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.theme.NeuPrimary
 import kotlinx.coroutines.launch
 
 data class OnboardingPage(
     val icon: ImageVector,
     val title: String,
-    val description: String,
-    val iconColor: Color
+    val description: String
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -39,225 +54,168 @@ data class OnboardingPage(
 fun OnboardingScreen(
     onFinish: () -> Unit
 ) {
-    val pages = listOf(
-        OnboardingPage(
-            icon = Icons.Default.Search,
-            title = "智能搜索课程",
-            description = "快速搜索全校开放课程\n支持按课程名、教师名、时间段精确筛选",
-            iconColor = com.tyust.course.ui.theme.SystemBlue
-        ),
-        OnboardingPage(
-            icon = Icons.Default.PlayArrow,
-            title = "一键抢课引擎",
-            description = "设置目标课程后高频自动循环获取\n支持多课程队列，成功后平滑切换",
-            iconColor = com.tyust.course.ui.theme.SystemBlue
-        ),
-        OnboardingPage(
-            icon = Icons.Default.DateRange,
-            title = "极简可视课表",
-            description = "系统级极简体验展示每周课程安排\n脱离校园网也能查看并支持导出至日历",
-            iconColor = com.tyust.course.ui.theme.SystemBlue
-        ),
-        OnboardingPage(
-            icon = Icons.Default.Star,
-            title = "探索完整功能",
-            description = "授权安全会话凭证录入\n即刻进入纯粹工具主义体验",
-            iconColor = com.tyust.course.ui.theme.SystemBlue
+    val pages = remember {
+        listOf(
+            OnboardingPage(
+                icon = Icons.Default.Search,
+                title = "智能搜索课程",
+                description = "快速筛选开放课程，按课程名、教师名和时间信息定位目标。"
+            ),
+            OnboardingPage(
+                icon = Icons.Default.PlayArrow,
+                title = "高频抢课队列",
+                description = "支持单课、队列与定时模式，持续轮询并自动推进下一目标。"
+            ),
+            OnboardingPage(
+                icon = Icons.Default.DateRange,
+                title = "极简可视课表",
+                description = "以更清晰的方式查看每周安排，并保持离线场景下的阅读体验。"
+            ),
+            OnboardingPage(
+                icon = Icons.Default.Star,
+                title = "进入完整工作台",
+                description = "配置会话凭证后即可进入主界面，统一使用轻量、原生的 Android 工具风体验。"
+            )
         )
-    )
-    
+    }
     val pagerState = rememberPagerState(pageCount = { pages.size })
-    val coroutineScope = rememberCoroutineScope()
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(com.tyust.course.ui.theme.Neutral50)
+    val scope = rememberCoroutineScope()
+    val isLastPage = pagerState.currentPage == pages.lastIndex
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = PagePadding, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(SectionSpacing)
         ) {
-            // Skip Button
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                if (pagerState.currentPage < pages.size - 1) {
+                if (!isLastPage) {
                     TextButton(onClick = onFinish) {
-                        Text(
-                            "跳过", 
-                            color = com.tyust.course.ui.theme.Neutral500,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("跳过")
                     }
-                } else {
-                    Spacer(modifier = Modifier.height(48.dp))
                 }
             }
-            
-            // Pager
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { pageIndex ->
                 OnboardingPageContent(page = pages[pageIndex])
             }
-            
-            // Page Indicators (Spring fluid stretch)
+
             Row(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
             ) {
                 pages.forEachIndexed { index, _ ->
-                    val isSelected = pagerState.currentPage == index
-                    val width by animateDpAsState(
-                        targetValue = if (isSelected) 28.dp else 8.dp,
-                        animationSpec = androidx.compose.animation.core.spring(
-                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow, 
-                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
-                        ),
-                        label = "indicator_width"
-                    )
-                    val color by animateColorAsState(
-                        targetValue = if (isSelected) com.tyust.course.ui.theme.SystemBlue else com.tyust.course.ui.theme.Neutral200,
-                        animationSpec = tween(300),
-                        label = "indicator_color"
-                    )
-                    
+                    val selected = index == pagerState.currentPage
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 4.dp)
                             .height(8.dp)
-                            .width(width)
-                            .clip(CircleShape)
-                            .background(color)
+                            .background(
+                                color = if (selected) NeuPrimary else MaterialTheme.colorScheme.outlineVariant,
+                                shape = CircleShape
+                            )
+                            .then(
+                                if (selected) Modifier.size(width = 28.dp, height = 8.dp)
+                                else Modifier.size(8.dp)
+                            )
                     )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Bottom Button
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp, vertical = 24.dp)
-            ) {
-                if (pagerState.currentPage == pages.size - 1) {
-                    // Last page: Start button
-                    Button(
-                        onClick = onFinish,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = com.tyust.course.ui.theme.SystemBlue,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text(
-                            "开始使用",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
+
+            if (isLastPage) {
+                SystemPrimaryButton(
+                    text = "开始使用",
+                    onClick = onFinish,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                SystemSecondaryButton(
+                    text = "下一步",
+                    onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                } else {
-                    // Not last page: Next button
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(
-                                    page = pagerState.currentPage + 1,
-                                    animationSpec = androidx.compose.animation.core.spring(
-                                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
-                                    )
-                                )
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = com.tyust.course.ui.theme.Neutral100,
-                            contentColor = com.tyust.course.ui.theme.Neutral900
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = ButtonDefaults.buttonElevation(0.dp)
-                    ) {
-                        Text(
-                            "下一步",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp))
-                    }
-                }
+                )
             }
-            
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @Composable
 fun OnboardingPageContent(page: OnboardingPage) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(bottom = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
-        // Icon (Clean Geometry aesthetic)
-        Surface(
-            modifier = Modifier.size(140.dp),
-            shape = RoundedCornerShape(36.dp),
-            color = Color.White,
-            shadowElevation = 16.dp,
-            tonalElevation = 6.dp
+        SystemCard(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = MaterialTheme.colorScheme.surface,
+            borderColor = MaterialTheme.colorScheme.outlineVariant
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                // Background subtle ring
-                Box(
-                    modifier = Modifier.size(80.dp).background(page.iconColor.copy(alpha = 0.1f), CircleShape)
-                )
-                Icon(
-                    imageVector = page.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = page.iconColor
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.size(96.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = page.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = page.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = page.description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
             }
         }
-        
-        Spacer(modifier = Modifier.height(56.dp))
-        
-        // Title
-        Text(
-            text = page.title,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.ExtraBold,
-            color = com.tyust.course.ui.theme.Neutral900,
-            letterSpacing = (-0.5).sp
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Description
-        Text(
-            text = page.description,
-            style = MaterialTheme.typography.bodyLarge,
-            color = com.tyust.course.ui.theme.Neutral500,
-            textAlign = TextAlign.Center,
-            lineHeight = 28.sp,
-            fontWeight = FontWeight.Medium
-        )
     }
 }

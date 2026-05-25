@@ -2,74 +2,166 @@ package com.tyust.course.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Apple iOS System Colors (2024 Design Standard)
-val SystemBlue = Color(0xFF007AFF) // iOS Default Blue
-val SystemBlueDark = Color(0xFF0A84FF) // iOS Dark Mode Blue
-val SystemBlueLight = Color(0xFFE5F1FF) // 10% Opacity Blue for Light Mode Surfaces
+val BrandPrimary = Color(0xFF3559E0)
+val BrandPrimaryStrong = Color(0xFF2142BA)
+val BrandPrimaryContainer = Color(0xFFDDE5FF)
+val BrandSecondary = Color(0xFF556070)
+val BrandSecondaryContainer = Color(0xFFE7EBF3)
 
-// Solid Tints for Schedule/Course Blocks (Apple System Colors)
-val BlockMint = Color(0xFF00C7BE)    // systemMint
-val BlockCyan = Color(0xFF32ADE6)    // systemCyan
-val BlockIndigo = Color(0xFF5E5CE6)  // systemIndigo
-val BlockViolet = Color(0xFFAF52DE)  // systemPurple
-val BlockOrange = Color(0xFFFF9500)  // systemOrange
-val BlockRose = Color(0xFFFF2D55)    // systemPink
+val Neutral0 = Color(0xFFFFFFFF)
+val Neutral10 = Color(0xFFF8F9FC)
+val Neutral20 = Color(0xFFF3F5F9)
+val Neutral30 = Color(0xFFECEFF5)
+val Neutral40 = Color(0xFFE0E5EE)
+val Neutral50 = Color(0xFFF6F7FB)
+val Neutral100 = Color(0xFFE8ECF3)
+val Neutral200 = Color(0xFFD5DCE7)
+val Neutral300 = Color(0xFFB3BDCC)
+val Neutral500 = Color(0xFF667085)
+val Neutral700 = Color(0xFF344054)
+val Neutral900 = Color(0xFF101828)
 
-// Apple Native Neutral Scale (iOS Light Mode System Colors)
-val Neutral50 = Color(0xFFF2F2F7)    // Secondary System Background (Inset Grouped)
-val Neutral100 = Color(0xFFE5E5EA)   // System Gray 5 (Dividers / Subtle borders)
-val Neutral200 = Color(0xFFD1D1D6)   // System Gray 4 (Disabled states)
-val Neutral300 = Color(0xFFC7C7CC)   // System Gray 3 (Icons)
-val Neutral500 = Color(0xFF8E8E93)   // System Gray (Secondary Label/Subtitle)
-val Neutral700 = Color(0xFF3C3C43)   // Primary text secondary variant (60% black)
-val Neutral900 = Color(0xFF000000)   // Label (Absolute Black)
+val SurfaceWhite = Neutral0
+val SurfaceAlt = Color(0xFFF9FAFD)
+val SurfaceSubtle = Color(0xFFF2F5FA)
+val DividerSubtle = Color(0xFFE4E8F0)
+val SurfaceDark = Color(0xFF171B22)
+val BackgroundDark = Color(0xFF0F1218)
 
-// Functional Semantic Colors (Apple System)
-val SemanticSuccess = Color(0xFF34C759) // systemGreen
-val SemanticWarning = Color(0xFFFFCC00) // systemYellow
-val SemanticDanger = Color(0xFFFF3B30) // systemRed
+val SemanticSuccess = Color(0xFF1F845A)
+val SemanticSuccessContainer = Color(0xFFD8F4E5)
+val SemanticWarning = Color(0xFFE58A00)
+val SemanticWarningContainer = Color(0xFFFFE9C2)
+val SemanticDanger = Color(0xFFC73A2F)
+val SemanticDangerContainer = Color(0xFFFFDAD6)
+val SemanticInfo = BrandPrimary
+val SemanticInfoContainer = BrandPrimaryContainer
 
-// Surface Base
-val SurfaceWhite = Color(0xFFFFFFFF)
-val SurfaceDark = Color(0xFF1C1C1E)  // iOS System Background Dark
-val BackgroundDark = Color(0xFF000000) // iOS Pure Black Background
-
-// ==========================================
-// ⚠️ DEPRECATED OLD TOKENS (For legacy compatibility)
-// To be removed during Phase 3/4 per-page refactoring
-// ==========================================
-@Deprecated("Use SystemBlue instead")
-val PrimaryPurple = SystemBlue
-@Deprecated("Use SystemBlueLight instead")
-val PrimaryPurpleLight = SystemBlueLight
-@Deprecated("Use SystemBlueDark instead")
-val PrimaryPurpleDark = SystemBlueDark
-@Deprecated("Use Neutral300 instead")
-val SecondaryPurple = Neutral300
-@Deprecated("Use SemanticSuccess instead")
-val SuccessGreen = SemanticSuccess
-@Deprecated("Use SemanticDanger instead")
-val ErrorRed = SemanticDanger
-@Deprecated("Use SemanticWarning instead")
-val WarningOrange = SemanticWarning
-@Deprecated("Use SystemBlue instead")
-val InfoBlue = SystemBlue
-@Deprecated("Use Neutral50 instead")
-val BackgroundLight = Neutral50
-@Deprecated("Use SurfaceWhite instead")
-val SurfaceLight = SurfaceWhite
-@Deprecated("Use Neutral100 instead")
-val PurpleGrey80 = Neutral100
+val BlockBlue = Color(0xFF4F6BED)
+val BlockCyan = Color(0xFF1F88C8)
+val BlockMint = Color(0xFF0F9D84)
+val BlockIndigo = Color(0xFF5965D8)
+val BlockViolet = Color(0xFF855AE0)
+val BlockOrange = Color(0xFFE57A1F)
+val BlockRose = Color(0xFFD9487E)
+val BlockTeal = Color(0xFF1C8F8F)
+val BlockGreen = Color(0xFF4E9F3D)
+val BlockRed = Color(0xFFD95757)
 
 val CourseColors = listOf(
-    SystemBlue,
+    BlockBlue,
     BlockMint,
     BlockCyan,
     BlockIndigo,
     BlockViolet,
     BlockOrange,
     BlockRose,
-    Color(0xFF34D399),
-    Color(0xFF818CF8),
-    Color(0xFFEC4899)
+    BlockTeal,
+    BlockGreen,
+    BlockRed
 )
+
+val SystemBlue = BrandPrimary
+val SystemBlueDark = BrandPrimaryStrong
+val SystemBlueLight = BrandPrimaryContainer
+
+@Deprecated("Use BrandPrimary instead")
+val PrimaryPurple = BrandPrimary
+
+@Deprecated("Use BrandPrimaryContainer instead")
+val PrimaryPurpleLight = BrandPrimaryContainer
+
+@Deprecated("Use BrandPrimaryStrong instead")
+val PrimaryPurpleDark = BrandPrimaryStrong
+
+@Deprecated("Use Neutral300 instead")
+val SecondaryPurple = Neutral300
+
+@Deprecated("Use SemanticSuccess instead")
+val SuccessGreen = SemanticSuccess
+
+@Deprecated("Use SemanticDanger instead")
+val ErrorRed = SemanticDanger
+
+@Deprecated("Use SemanticWarning instead")
+val WarningOrange = SemanticWarning
+
+@Deprecated("Use SemanticInfo instead")
+val InfoBlue = SemanticInfo
+
+@Deprecated("Use Neutral50 instead")
+val BackgroundLight = Neutral50
+
+@Deprecated("Use SurfaceWhite instead")
+val SurfaceLight = SurfaceWhite
+
+@Deprecated("Use Neutral100 instead")
+val PurpleGrey80 = Neutral100
+
+// ═══════════════════════════════════════════════════════════
+// 新拟态（Neumorphism）基础颜色
+// 参考模板：Neumorphism 新拟态设计·组件展示
+// ═══════════════════════════════════════════════════════════
+
+/** 新拟态全局背景色（温润灰蓝底，不可使用纯白） */
+val NeuBackground = Color(0xFFECF0F3)
+
+/** 新拟态卡片/组件表面色（与背景同色系，略亮） */
+val NeuSurface = Color(0xFFECF0F3)
+
+/** 新拟态左上角光源亮影（模拟光照投射） */
+val NeuLightShadow = Color(0xFFFFFFFF)
+
+/** 新拟态右下角环境暗影 */
+val NeuDarkShadow = Color(0xFFD1D9E6)
+
+/** 新拟态内凹槽背景（比 NeuBackground 略深） */
+val NeuInsetBackground = Color(0xFFE2E6EC)
+
+/** 新拟态内凹左上暗影（内阴影效果） */
+val NeuInsetDarkShadow = Color(0xFFBEC8D6)
+
+/** 新拟态内凹右下亮影（内反光效果） */
+val NeuInsetLightShadow = Color(0xFFF5F9FC)
+
+// ═══════════════════════════════════════════════════════════
+// 液态玻璃（Liquid Glass）颜色
+// 参考模板：Liquid Glass 液态玻璃·水滴边框效果
+// ═══════════════════════════════════════════════════════════
+
+/** 液态玻璃表面高光（半透明白色叠层） */
+val GlassHighlight = Color(0xAAFFFFFF)
+
+/** 液态玻璃弧形折射高光（月牙反光渐变起始色） */
+val GlassShearHighlight = Color(0x66FFFFFF)
+
+/** 液态折射描边-明面（顶部与左侧边框渐变色） */
+val GlassBorderLight = Color(0xB2FFFFFF)
+
+/** 液态折射描边-暗面（底部与右侧边框渐变色） */
+val GlassBorderDark = Color(0x26A6B4C9)
+
+/** 液态玻璃卡片内部半透明填充色（深色暗绿调，参照模板2） */
+val GlassSurfaceDark = Color(0xCC1A2E2A)
+
+/** 液态玻璃高光弧线色（亮侧弧线描边） */
+val GlassArcHighlight = Color(0x55FFFFFF)
+
+// ═══════════════════════════════════════════════════════════
+// 新拟态主题适配色（覆盖原 Brand 色以柔和化）
+// ═══════════════════════════════════════════════════════════
+
+/** 新拟态主色（柔和液态蓝，替代 BrandPrimary 用于新拟态上下文） */
+val NeuPrimary = Color(0xFF4D70FF)
+
+/** 新拟态主色容器（淡蓝融合新拟态灰底） */
+val NeuPrimaryContainer = Color(0xFFDAE2FF)
+
+/** 新拟态文字主色 */
+val NeuOnSurface = Color(0xFF2E3A4D)
+
+/** 新拟态次要文字色 */
+val NeuOnSurfaceVariant = Color(0xFF8494A7)
+
+/** 新拟态分割线（极微弱对比） */
+val NeuDivider = Color(0xFFD8DFE9)

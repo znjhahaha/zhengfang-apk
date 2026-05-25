@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyust.course.model.SchoolConfig
-import com.tyust.course.ui.theme.PrimaryPurple
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,7 +102,7 @@ fun EditSchoolConfigDialog(
             Icon(
                 Icons.Default.Settings,
                 contentDescription = null,
-                tint = PrimaryPurple,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(32.dp)
             )
         },
@@ -135,14 +134,14 @@ fun EditSchoolConfigDialog(
                             Icon(
                                 Icons.Default.AutoAwesome,
                                 contentDescription = null,
-                                tint = PrimaryPurple,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "智能识别 URL",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = PrimaryPurple,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -164,7 +163,7 @@ fun EditSchoolConfigDialog(
                         Button(
                             onClick = { parseUrl(urlInput) },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             enabled = urlInput.isNotBlank()
                         ) {
                             Text("自动识别并填充")
@@ -177,7 +176,7 @@ fun EditSchoolConfigDialog(
                 Text(
                     text = "基本配置",
                     style = MaterialTheme.typography.labelLarge,
-                    color = PrimaryPurple,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
                 )
                 
@@ -225,8 +224,8 @@ fun EditSchoolConfigDialog(
                             .menuAnchor(),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryPurple,
-                            unfocusedBorderColor = PrimaryPurple.copy(alpha = 0.5f)
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         )
                     )
                     
@@ -280,7 +279,7 @@ fun EditSchoolConfigDialog(
                 Text(
                     text = "模块代码 (gnmkdm)",
                     style = MaterialTheme.typography.labelLarge,
-                    color = PrimaryPurple,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
                 )
                 
@@ -325,7 +324,7 @@ fun EditSchoolConfigDialog(
                     Text(
                         text = "URL 路径配置",
                         style = MaterialTheme.typography.labelLarge,
-                        color = PrimaryPurple,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
                     )
                     
@@ -415,7 +414,7 @@ fun EditSchoolConfigDialog(
                     }
                     onSave(updatedSchool)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text("保存")
             }

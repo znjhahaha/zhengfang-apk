@@ -195,9 +195,6 @@ dependencies {
     // Coil for image loading in Compose
     implementation 'io.coil-kt:coil-compose:2.5.0'
 
-    // Accompanist (Swipe Refresh)
-    implementation "com.google.accompanist:accompanist-swiperefresh:0.34.0"
-    
     // Markdown Rendering for Compose
     implementation "com.halilibo.compose-richtext:richtext-commonmark:0.17.0"
     implementation "com.halilibo.compose-richtext:richtext-ui-material3:0.17.0"

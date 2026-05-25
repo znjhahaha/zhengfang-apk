@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -16,26 +17,34 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Help
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tyust.course.ui.theme.CourseSelectorTheme
-import com.tyust.course.ui.theme.PrimaryPurple
 
 class CookieWebViewActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_COOKIE_RESULT = "cookie_result"
         const val EXTRA_SEARCH_KEYWORD = "search_keyword"
+    }
+
+    private fun closeWithCancel() {
+        setResult(RESULT_CANCELED)
+        finish()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,19 +63,10 @@ class CookieWebViewActivity : ComponentActivity() {
                         setResult(RESULT_OK, resultIntent)
                         finish()
                     },
-                    onBack = {
-                        setResult(RESULT_CANCELED)
-                        finish()
-                    }
+                    onBack = { closeWithCancel() }
                 )
             }
         }
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        super.onBackPressed()
-        setResult(RESULT_CANCELED)
     }
 }
 
@@ -86,9 +86,15 @@ fun CookieWebViewScreen(
     var canGoBack by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
     var extractedCookie by remember { mutableStateOf("") }
-
-    val context = LocalContext.current
     val searchUrl = "https://www.bing.com/search?q=${initialSearchKeyword}"
+
+    BackHandler {
+        if (canGoBack) {
+            webView?.goBack()
+        } else {
+            onBack()
+        }
+    }
 
     // Cookie extraction function - improved to get all cookies
     fun extractCookie(): String {
@@ -205,7 +211,7 @@ fun CookieWebViewScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
                     IconButton(onClick = { showTutorial = true }) {
-                        Icon(Icons.Default.Help, contentDescription = "帮助")
+                        Icon(Icons.AutoMirrored.Filled.Help, contentDescription = "帮助")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -236,7 +242,7 @@ fun CookieWebViewScreen(
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryPurple
+                            containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
                         Icon(
@@ -337,7 +343,7 @@ fun CookieWebViewScreen(
             ) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
-                    color = PrimaryPurple
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -351,7 +357,7 @@ fun CookieWebViewScreen(
                 Icon(
                     Icons.Default.School,
                     contentDescription = null,
-                    tint = PrimaryPurple,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(48.dp)
                 )
             },
@@ -399,7 +405,7 @@ fun CookieWebViewScreen(
             confirmButton = {
                 Button(
                     onClick = { showTutorial = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("我知道了")
                 }
@@ -465,7 +471,7 @@ fun CookieWebViewScreen(
                         showCookieDialog = false
                         onCookieExtracted(extractedCookie)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("使用此 Cookie")
                 }
@@ -488,7 +494,7 @@ private fun TutorialStep(number: Int, text: String) {
         Surface(
             modifier = Modifier.size(28.dp),
             shape = RoundedCornerShape(14.dp),
-            color = PrimaryPurple
+            color = MaterialTheme.colorScheme.primary
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(

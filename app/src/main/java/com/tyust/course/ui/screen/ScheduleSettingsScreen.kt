@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.tyust.course.manager.ScheduleSettingsManager
 import com.tyust.course.manager.ScheduleSettingsManager.PeriodTime
-import com.tyust.course.ui.theme.SystemBlue
+import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.Neutral50
 import com.tyust.course.ui.theme.Neutral100
 import com.tyust.course.ui.theme.Neutral200
@@ -86,7 +86,7 @@ fun ScheduleSettingsScreen(
                 Text(
                     "基础设置", 
                     style = MaterialTheme.typography.labelLarge, 
-                    color = SystemBlue,
+                    color = NeuPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -124,7 +124,7 @@ fun ScheduleSettingsScreen(
                                         expanded = false
                                     },
                                     trailingIcon = if (count == periodCount) {
-                                        { Icon(Icons.Filled.Check, null, tint = SystemBlue) }
+                                        { Icon(Icons.Filled.Check, null, tint = NeuPrimary) }
                                     } else null
                                 )
                             }
@@ -139,7 +139,7 @@ fun ScheduleSettingsScreen(
                 Text(
                     "节次时间", 
                     style = MaterialTheme.typography.labelLarge, 
-                    color = SystemBlue,
+                    color = NeuPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -194,7 +194,7 @@ fun SettingsRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = SystemBlue,
+            tint = NeuPrimary,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
@@ -206,7 +206,7 @@ fun SettingsRow(
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = SystemBlue,
+            color = NeuPrimary,
             fontWeight = FontWeight.Medium
         )
         Spacer(modifier = Modifier.width(4.dp))
@@ -243,13 +243,13 @@ fun PeriodTimeRow(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(SystemBlue.copy(alpha = 0.1f)),
+                    .background(NeuPrimary.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "${periodTime.period}",
                     fontWeight = FontWeight.Bold,
-                    color = SystemBlue
+                    color = NeuPrimary
                 )
             }
             

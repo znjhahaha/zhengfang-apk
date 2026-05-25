@@ -1,9 +1,8 @@
 package com.tyust.course.ui.screen
 
-import android.util.Log
-
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,40 +11,73 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.tyust.course.model.Course
-import com.tyust.course.ui.theme.*
+import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.SystemActionButton
+import com.tyust.course.ui.system.SystemCapacityIndicator
+import com.tyust.course.ui.system.SystemCard
+import com.tyust.course.ui.system.SystemEmptyState
+import com.tyust.course.ui.system.SystemLoadingState
+import com.tyust.course.ui.system.SystemStatusBadge
+import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.theme.NeuDivider
+import com.tyust.course.ui.theme.NeuInsetBackground
+import com.tyust.course.ui.theme.NeuPrimary
+import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.theme.SemanticSuccess
+import com.tyust.course.ui.theme.SemanticWarning
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun CourseListScreen(
     courses: List<Course>,
     isLoading: Boolean,
@@ -75,117 +107,161 @@ fun CourseListScreen(
     val groupedCourses = remember(courses) {
         courses.groupBy { (it.courseId ?: "") to (it.name ?: "") }.toList()
     }
+    val pullRefreshState = rememberPullToRefreshState(enabled = { !isLoading })
+
+    LaunchedEffect(pullRefreshState.isRefreshing, isLoading) {
+        if (pullRefreshState.isRefreshing && !isLoading) {
+            onRefresh()
+        }
+    }
+
+    LaunchedEffect(isLoading) {
+        if (isLoading) {
+            pullRefreshState.startRefresh()
+        } else {
+            pullRefreshState.endRefresh()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Neutral50) // Apple System Utility Background
+            .background(MaterialTheme.colorScheme.background)
     ) {
         if (isBatchSelecting) {
             LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().height(3.dp),
-                color = SystemBlue,
-                trackColor = SystemBlueLight
-            )
-        }
-        
-        AnimatedVisibility(visible = isPreloading) {
-            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(SystemBlueLight)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "⚡ 正在加载详情",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SystemBlueDark,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "${(preloadProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = SystemBlueDark
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { preloadProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp)),
-                    color = SystemBlueDark,
-                    trackColor = SystemBlueLight,
-                )
-            }
+                    .height(3.dp),
+                color = NeuPrimary,
+                trackColor = MaterialTheme.colorScheme.secondaryContainer
+            )
         }
 
-        SwipeRefresh(
-            state = rememberSwipeRefreshState(isRefreshing = isLoading),
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            if (courses.isEmpty() && !isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "没有找到课程\n尝试下拉刷新",
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = Neutral300,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(groupedCourses) { (key, classes) ->
-                        val courseId = key.first
-                        val courseName = key.second
-                        val isExpanded = expandedGroups[courseId] == true
+        AnimatedVisibility(visible = isPreloading) {
+            PreloadBanner(
+                preloadProgress = preloadProgress,
+                readyCount = preloadedGroupIds.size
+            )
+        }
 
-                        CourseGroupItem(
-                            courseId = courseId,
-                            courseName = courseName,
-                            classes = classes,
-                            isExpanded = isExpanded,
-                            isLoading = loadingGroups[courseId] == true,
-                            isDetailsReady = isDetailsReady,
-                            onExpandClick = {
-                                if (!isExpanded && loadedGroups[courseId] != true) {
-                                    loadingGroups[courseId] = true
-                                    onFetchDetails(classes) { success ->
-                                        loadingGroups[courseId] = false
-                                        if (success) {
-                                            loadedGroups[courseId] = true
-                                            expandedGroups[courseId] = true
-                                        }
-                                    }
-                                } else {
-                                    expandedGroups[courseId] = !isExpanded
-                                }
-                            },
-                            isMultiSelectMode = isMultiSelectMode,
-                            selectedClassIds = selectedClassIds,
-                            onToggleSelection = onToggleSelection,
-                            onEnterMultiSelect = onEnterMultiSelect,
-                            onCourseSelect = onCourseSelect,
-                            onAutoGrab = onAutoGrab,
-                            onAddToQueue = onAddToQueue,
-                            onSetTargetCourse = onSetTargetCourse,
-                            onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(pullRefreshState.nestedScrollConnection)
+        ) {
+            when {
+                isLoading && courses.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        SystemLoadingState(text = "正在加载课程列表…")
+                    }
+                }
+
+                courses.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        SystemEmptyState(
+                            title = "暂无可选课程",
+                            message = "下拉刷新获取最新数据"
                         )
                     }
                 }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(PagePadding),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(groupedCourses) { (key, classes) ->
+                            val courseId = key.first
+                            val courseName = key.second
+                            val isExpanded = expandedGroups[courseId] == true
+
+                            CourseGroupItem(
+                                courseId = courseId,
+                                courseName = courseName,
+                                classes = classes,
+                                isExpanded = isExpanded,
+                                isLoading = loadingGroups[courseId] == true,
+                                isDetailsReady = isDetailsReady,
+                                onExpandClick = {
+                                    if (!isExpanded && loadedGroups[courseId] != true) {
+                                        loadingGroups[courseId] = true
+                                        onFetchDetails(classes) { success ->
+                                            loadingGroups[courseId] = false
+                                            if (success) {
+                                                loadedGroups[courseId] = true
+                                                expandedGroups[courseId] = true
+                                            }
+                                        }
+                                    } else {
+                                        expandedGroups[courseId] = !isExpanded
+                                    }
+                                },
+                                isMultiSelectMode = isMultiSelectMode,
+                                selectedClassIds = selectedClassIds,
+                                onToggleSelection = onToggleSelection,
+                                onEnterMultiSelect = onEnterMultiSelect,
+                                onCourseSelect = onCourseSelect,
+                                onAutoGrab = onAutoGrab,
+                                onAddToQueue = onAddToQueue,
+                                onSetTargetCourse = onSetTargetCourse,
+                                onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
+                            )
+                        }
+                    }
+                }
             }
+
+            PullToRefreshContainer(
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PreloadBanner(
+    preloadProgress: Float,
+    readyCount: Int
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = PagePadding, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "正在预加载课程详情",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${(preloadProgress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            LinearProgressIndicator(
+                progress = { preloadProgress },
+                modifier = Modifier.fillMaxWidth(),
+                color = NeuPrimary,
+                trackColor = MaterialTheme.colorScheme.surface
+            )
+            Text(
+                text = if (readyCount > 0) "已准备 $readyCount 个课程分组" else "正在获取可展开详情所需标识",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+            )
         }
     }
 }
@@ -209,165 +285,196 @@ fun CourseGroupItem(
     onSetTargetCourse: (Course) -> Unit = {},
     onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val firstCourse = classes.firstOrNull()
     val credits = firstCourse?.credit ?: "0.0"
-    val hasSelected = classes.any { it.isSelected } 
-    val statusText = if (hasSelected) "已选" else "开放"
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = androidx.compose.animation.core.spring(
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
-                )
-            ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        shape = RoundedCornerShape(16.dp), // iOS Inset Rounded Group
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Neutral200),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+    val hasSelected = classes.any { it.isSelected }
+    val hasAvailableSeat = classes.any { !it.isSelected && (it.capacity <= 0 || it.selected < it.capacity) }
+    val cardBorderColor by animateColorAsState(
+        targetValue = when {
+            hasSelected -> SemanticSuccess.copy(alpha = 0.7f)
+            hasAvailableSeat -> NeuPrimary.copy(alpha = 0.25f)
+            else -> MaterialTheme.colorScheme.outlineVariant
+        },
+        animationSpec = MotionSpecs.standard(),
+        label = "courseGroupBorder"
+    )
+    val cardBackgroundColor by animateColorAsState(
+        targetValue = when {
+            hasSelected -> SemanticSuccess.copy(alpha = 0.06f)
+            hasAvailableSeat -> MaterialTheme.colorScheme.surface
+            else -> NeuInsetBackground.copy(alpha = 0.60f)
+        },
+        animationSpec = MotionSpecs.standard(),
+        label = "courseGroupBackground"
+    )
+
+    SystemCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = cardBackgroundColor,
+        borderColor = cardBorderColor,
+        onClick = {
+            if (isDetailsReady) {
+                onExpandClick()
+            } else {
+                Toast.makeText(context, "正在准备课程数据…", Toast.LENGTH_SHORT).show()
+            }
+        },
+        contentPadding = PaddingValues(0.dp)
     ) {
         Column {
-            // Header
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { 
-                        if (isDetailsReady) {
-                            onExpandClick() 
-                        } else {
-                            android.widget.Toast.makeText(context, "正在获取安全标识，请稍候...", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    }
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Vercel like indicator chip
-                Box(
-                    modifier = Modifier
-                        .size(4.dp, 24.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(if (hasSelected) SystemBlue else Neutral200)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = courseName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Neutral900,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.3).sp
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = courseId,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Neutral500,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        
-                        Surface(
-                            color = Neutral100,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = "$credits 学分",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Neutral700,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${classes.size} 模块",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Neutral500
-                        )
-                        if (hasSelected) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "已选",
-                                tint = SystemBlue,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "已囊获",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SystemBlue,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-                
-                if (onSetFuzzyMatchTarget != null && !hasSelected) {
-                    Surface(
-                        onClick = { 
-                            val xkkzId = firstCourse?._xkkz_id
-                            val kklxdm = firstCourse?.kklxdm
-                            onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
-                            android.widget.Toast.makeText(context, "🔍 追踪锁定: $courseName", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.padding(end = 8.dp),
-                        color = SemanticWarning.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "追踪",
-                            color = SemanticWarning,
-                            fontSize = 11.sp,
+                            text = courseName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SystemStatusBadge(
+                                text = when {
+                                    hasSelected -> "已选"
+                                    hasAvailableSeat -> "可选"
+                                    else -> "紧张"
+                                },
+                                tone = when {
+                                    hasSelected -> SystemTone.Success
+                                    hasAvailableSeat -> SystemTone.Info
+                                    else -> SystemTone.Warning
+                                }
+                            )
+                            SystemStatusBadge(
+                                text = "$credits 学分",
+                                tone = SystemTone.Neutral
+                            )
+                            SystemStatusBadge(
+                                text = "${classes.size} 个班",
+                                tone = SystemTone.Neutral
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (onSetFuzzyMatchTarget != null && !hasSelected) {
+                            SystemActionButton(
+                                text = "监控",
+                                onClick = {
+                                    val xkkzId = firstCourse?._xkkz_id
+                                    val kklxdm = firstCourse?.kklxdm
+                                    onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
+                                    Toast.makeText(context, "已设为监控目标: $courseName", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+
+                        TextButton(onClick = onExpandClick) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = NeuPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (isExpanded) "收起" else "展开")
+                            }
+                        }
                     }
                 }
-                
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = SystemBlue,
-                        strokeWidth = 2.dp
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (courseId.isBlank()) "课程 ID 未提供" else "课程 ID：$courseId",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                } else {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = Neutral300
+                    Text(
+                        text = "${classes.size} 个教学班",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                if (!isExpanded && !isMultiSelectMode) {
+                    Text(
+                        text = "长按可多选批量操作",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
                     )
                 }
             }
-            
-            // Expanded Content
+
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(animationSpec = MotionSpecs.expandCollapse()) + fadeIn(animationSpec = MotionSpecs.standard()),
+                exit = shrinkVertically(animationSpec = MotionSpecs.expandCollapse()) + fadeOut(animationSpec = MotionSpecs.standard())
             ) {
                 Column {
-                    HorizontalDivider(color = Neutral100, thickness = 1.dp)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Neutral50)
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    HorizontalDivider(color = NeuDivider, thickness = 1.dp)
+                    Surface(
+                        color = NeuInsetBackground,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (isMultiSelectMode) {
-                            Spacer(modifier = Modifier.width(36.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isMultiSelectMode) {
+                                Spacer(modifier = Modifier.width(36.dp))
+                            }
+                            Text(
+                                text = "班级 / 容量",
+                                modifier = Modifier.weight(1.2f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "时间 / 地点",
+                                modifier = Modifier.weight(1.1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(96.dp))
                         }
-                        Text("建制班/讲师", modifier = Modifier.weight(1.2f), fontSize = 11.sp, color = Neutral500, fontWeight = FontWeight.SemiBold)
-                        Text("安排", modifier = Modifier.weight(1.6f).padding(horizontal = 4.dp), fontSize = 11.sp, color = Neutral500, fontWeight = FontWeight.SemiBold)
                     }
-                    HorizontalDivider(color = Neutral100, thickness = 1.dp)
 
                     classes.forEachIndexed { index, course ->
                         TeachingClassRow(
@@ -383,8 +490,8 @@ fun CourseGroupItem(
                         )
                         if (index < classes.size - 1) {
                             HorizontalDivider(
-                                color = Neutral100, 
-                                thickness = 0.5.dp,
+                                color = NeuDivider,
+                                thickness = 1.dp,
                                 modifier = Modifier.padding(start = 16.dp)
                             )
                         }
@@ -408,15 +515,34 @@ fun TeachingClassRow(
     onAddToQueue: () -> Unit = {},
     onSetTargetCourse: () -> Unit = {}
 ) {
-    val teacher = course.teacher.ifEmpty { "--" }
-    val time = course.time.ifEmpty { "--" }
-    val location = course.location.ifEmpty { "--" }
-    
-    val backgroundColor = if (isChecked) SystemBlueLight.copy(alpha = 0.5f) else Color.Transparent
-    
+    val teacher = course.teacher.ifEmpty { "未提供教师" }
+    val time = course.time.ifEmpty { "未提供时间" }
+    val location = course.location.ifEmpty { "未提供地点" }
+    val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "未命名教学班" } }
+    val isSelectedRow = course.isSelected
+    val rowBackground by animateColorAsState(
+        targetValue = when {
+            isSelectedRow -> SemanticSuccess.copy(alpha = 0.12f)
+            isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.64f)
+            else -> Color.Transparent
+        },
+        animationSpec = MotionSpecs.standard(),
+        label = "classRowBackground"
+    )
+    val rowBorderColor by animateColorAsState(
+        targetValue = when {
+            isSelectedRow || isChecked -> SemanticSuccess.copy(alpha = 0.76f)
+            else -> Color.Transparent
+        },
+        animationSpec = MotionSpecs.standard(),
+        label = "classRowBorder"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(rowBackground)
+            .border(width = if (isSelectedRow || isChecked) 2.dp else 0.dp, color = rowBorderColor)
             .combinedClickable(
                 onClick = {
                     if (isMultiSelectMode) {
@@ -433,7 +559,6 @@ fun TeachingClassRow(
                     }
                 }
             )
-            .background(backgroundColor)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -442,123 +567,115 @@ fun TeachingClassRow(
                 checked = isChecked,
                 onCheckedChange = { onToggleSelection(isChecked) },
                 enabled = !course.isSelected,
-                colors = CheckboxDefaults.colors(checkedColor = SystemBlue),
-                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                colors = CheckboxDefaults.colors(checkedColor = NeuPrimary),
+                modifier = Modifier.padding(end = 14.dp)
+            )
+        } else if (isSelectedRow) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = SemanticSuccess,
+                modifier = Modifier
+                    .padding(end = 10.dp)
+                    .size(18.dp)
             )
         }
 
-        Column(modifier = Modifier.weight(1.2f)) {
-            val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "N/A" } }
+        Column(
+            modifier = Modifier.weight(1.2f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
                 text = displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Neutral900,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = teacher,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (course.jxbmc.isNotEmpty() && course.teacher.isNotEmpty()) {
-                Text(
-                    text = course.teacher,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Neutral500,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { if (course.capacity > 0) course.selected.toFloat() / course.capacity else 0f },
-                modifier = Modifier.fillMaxWidth(0.9f).height(4.dp).clip(RoundedCornerShape(2.dp)),
-                color = if (course.selected >= course.capacity) SemanticDanger else SystemBlue,
-                trackColor = Neutral100,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${course.selected} / ${course.capacity} (已满/总量)",
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 9.sp,
-                color = if (course.selected >= course.capacity) SemanticDanger else Neutral500
+
+            SystemCapacityIndicator(
+                selected = course.selected,
+                capacity = course.capacity,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        Column(modifier = Modifier.weight(1.6f).padding(horizontal = 4.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(12.dp).padding(top = 1.dp), tint = Neutral300)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = time,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Neutral700,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 16.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(12.dp), tint = Neutral300)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = location,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Neutral500,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1.1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CourseDetailLine(
+                icon = Icons.Default.Schedule,
+                text = time
+            )
+            CourseDetailLine(
+                icon = Icons.Default.Place,
+                text = location
+            )
         }
-        
+
+        Spacer(modifier = Modifier.width(10.dp))
+
         if (!course.isSelected && !isMultiSelectMode) {
-            Spacer(modifier = Modifier.width(2.dp))
-            // AppStore GET Style Button
-            Surface(
-                onClick = onAddToQueue,
-                color = SystemBlueLight, 
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.defaultMinSize(minWidth = 52.dp)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "获取",
-                    color = SystemBlueDark,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                SystemActionButton(
+                    text = "入队",
+                    onClick = onAddToQueue,
+                    primary = true
                 )
-            }
-            Spacer(modifier = Modifier.width(4.dp))
-            Surface(
-                onClick = onSetTargetCourse,
-                color = Neutral100,
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ListAlt,
-                    contentDescription = null,
-                    modifier = Modifier.padding(6.dp).size(16.dp),
-                    tint = Neutral700
+                SystemActionButton(
+                    text = "目标",
+                    onClick = onSetTargetCourse,
+                    icon = Icons.Default.Flag
                 )
             }
         }
-        
+
         if (course.isSelected) {
             Spacer(modifier = Modifier.width(8.dp))
-            Surface(
-                color = SystemBlue,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.padding(start = 4.dp).defaultMinSize(minWidth = 52.dp)
-            ) {
-                Text(
-                    text = "已获",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            SystemStatusBadge(
+                text = "已选",
+                tone = SystemTone.Success
+            )
         }
+    }
+}
+
+@Composable
+private fun CourseDetailLine(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String
+) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

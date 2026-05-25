@@ -1,49 +1,54 @@
 package com.tyust.course.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.AssignmentInd
+import androidx.compose.material.icons.outlined.ContentPasteSearch
+import androidx.compose.material.icons.outlined.Cookie
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.tyust.course.R
-import com.tyust.course.model.SchoolConfig
-import com.tyust.course.ui.theme.SystemBlue
-import com.tyust.course.ui.theme.Neutral50
-import com.tyust.course.ui.theme.Neutral100
-import com.tyust.course.ui.theme.Neutral500
-import com.tyust.course.ui.theme.Neutral900
-import com.tyust.course.ui.theme.SemanticDanger
+import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.SectionSpacing
+import com.tyust.course.ui.system.SystemCard
+import com.tyust.course.ui.system.SystemDestructiveButton
+import com.tyust.course.ui.system.SystemDivider
+import com.tyust.course.ui.system.SystemListItem
+import com.tyust.course.ui.system.SystemSectionHeader
+import com.tyust.course.ui.system.SystemStatusBadge
+import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.system.SystemTopBar
 import com.tyust.course.ui.theme.SemanticSuccess
 import com.tyust.course.ui.theme.SemanticWarning
-import com.tyust.course.ui.theme.SurfaceWhite
-import com.tyust.course.ui.system.SystemCard
-import com.tyust.course.ui.system.SystemDivider
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
+import com.tyust.course.ui.theme.NeuPrimary
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     studentName: String,
@@ -61,17 +66,12 @@ fun SettingsScreen(
     isSuper: Boolean = false,
     quotaInfo: String = ""
 ) {
-    val context = LocalContext.current
-
     Scaffold(
-        containerColor = Neutral50,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("设置", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SurfaceWhite,
-                    titleContentColor = Neutral900
-                )
+            SystemTopBar(
+                title = "设置",
+                subtitle = "账号管理与偏好设置"
             )
         }
     ) { padding ->
@@ -80,242 +80,236 @@ fun SettingsScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = PagePadding, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(SectionSpacing)
         ) {
-            // 用户信息横条
-            SettingsHeader(studentName, studentId, schoolName, isSuper, quotaInfo)
+            SettingsHeader(
+                name = studentName,
+                studentId = studentId,
+                school = schoolName,
+                isSuper = isSuper,
+                quotaInfo = quotaInfo
+            )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 第一组：教务助手
-            SettingsGroupTitle("教务助手")
-            SystemCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                SettingsRow(
+            SettingsSection(title = "账号与教务") {
+                SettingsActionItem(
                     icon = Icons.Outlined.School,
                     title = "学校选择",
-                    subtitle = schoolName.ifEmpty { "未选择" },
+                    subtitle = schoolName.ifBlank { "未选择学校" },
+                    tintColor = NeuPrimary,
                     onClick = onSchoolSelect
                 )
-                SystemDivider(modifier = Modifier.padding(start = 56.dp))
-                SettingsRow(
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
                     icon = Icons.Outlined.AssignmentInd,
                     title = "配额 / 身份",
-                    subtitle = if (isSuper) "👑 超级用户" else quotaInfo.ifEmpty { "普通用户" },
-                    tintColor = if (isSuper) Color(0xFFFFD700) else SystemBlue,
+                    subtitle = if (isSuper) "超级用户 · 无限制" else quotaInfo.ifBlank { "普通用户" },
+                    tintColor = if (isSuper) SemanticSuccess else NeuPrimary,
                     onClick = onQuotaClick
                 )
-                SystemDivider(modifier = Modifier.padding(start = 56.dp))
-                SettingsRow(
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
                     icon = Icons.Outlined.Cookie,
-                    title = "配置凭证",
-                    subtitle = "Cookie / Token",
+                    title = "凭证管理",
+                    subtitle = "更新登录状态与身份信息",
+                    tintColor = NeuPrimary,
                     onClick = onCookieConfig
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 第二组：数据与安全
-            SettingsGroupTitle("数据与安全")
-            SystemCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                SettingsRow(
-                    icon = Icons.Filled.SystemUpdate,
+            SettingsSection(title = "应用与支持") {
+                SettingsActionItem(
+                    icon = Icons.Outlined.SystemUpdate,
                     title = "检查更新",
+                    subtitle = "当前版本 $currentVersion",
                     tintColor = SemanticSuccess,
                     onClick = onCheckUpdate
                 )
-                SystemDivider(modifier = Modifier.padding(start = 56.dp))
-                SettingsRow(
-                    icon = Icons.Outlined.Delete,
-                    title = "清除缓存",
-                    tintColor = SemanticWarning,
-                    onClick = onClearCache
-                )
-                SystemDivider(modifier = Modifier.padding(start = 56.dp))
-                SettingsRow(
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
                     icon = Icons.Outlined.ContentPasteSearch,
                     title = "导出日志",
-                    tintColor = SystemBlue,
+                    subtitle = "导出本地运行日志",
+                    tintColor = NeuPrimary,
                     onClick = onLogExport
                 )
-                SystemDivider(modifier = Modifier.padding(start = 56.dp))
-                SettingsRow(
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
                     icon = Icons.Outlined.Info,
                     title = "关于应用",
+                    subtitle = "版本信息与功能说明",
+                    tintColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     onClick = onAbout
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 退出登录
-            Box(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = onLogout,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = SemanticDanger
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SemanticDanger.copy(alpha = 0.3f)),
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("退出登录", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                }
+            SettingsSection(title = "数据与安全") {
+                SettingsActionItem(
+                    icon = Icons.Outlined.Delete,
+                    title = "清除缓存",
+                    subtitle = "释放本地存储空间",
+                    tintColor = SemanticWarning,
+                    onClick = onClearCache
+                )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            SystemDestructiveButton(
+                text = "退出登录",
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            )
+
+            Text(
+                text = "Tyust Course Matrix · $currentVersion",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         }
     }
 }
 
-// 用户信息横条 — 极简、无装饰
 @Composable
-fun SettingsHeader(name: String, id: String, school: String, isSuper: Boolean = false, quotaInfo: String = "") {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically() + fadeIn(animationSpec = tween(500))
+private fun SettingsHeader(
+    name: String,
+    studentId: String,
+    school: String,
+    isSuper: Boolean,
+    quotaInfo: String
+) {
+    SystemCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = MaterialTheme.colorScheme.surface,
+        borderColor = MaterialTheme.colorScheme.outlineVariant
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceWhite)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 头像首字
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Neutral100),
+                    .size(56.dp)
+                    .padding(2.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = name.take(1),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SystemBlue
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Neutral900
-                    )
-                    if (isSuper) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "👑",
-                            fontSize = 14.sp
-                        )
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .align(Alignment.Center)
+                ) {
+                    androidx.compose.material3.Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = name.take(1).ifBlank { "同" },
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
                 }
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
-                    text = school.ifEmpty { "未登录" },
+                    text = name.ifBlank { "同学" },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = school.ifBlank { "未选择学校" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "设备 ID：${studentId.ifBlank { "未获取" }}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Neutral500
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        // iOS 设置页不需要在独立 Block 的底部加强制切分线
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isSuper) {
+                SystemStatusBadge(
+                    text = "超级用户",
+                    tone = SystemTone.Success
+                )
+            }
+            if (quotaInfo.isNotBlank()) {
+                SystemStatusBadge(
+                    text = if (isSuper) "无限制" else "配额 $quotaInfo",
+                    tone = if (isSuper) SystemTone.Info else SystemTone.Neutral
+                )
+            }
+        }
     }
 }
 
-// 分组标题
 @Composable
-fun SettingsGroupTitle(title: String) {
-    Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = Neutral500,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.5.sp,
-        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
-    )
+private fun SettingsSection(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SystemSectionHeader(title = title)
+        SystemCard(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = MaterialTheme.colorScheme.surface,
+            borderColor = MaterialTheme.colorScheme.outlineVariant,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+        ) {
+            content()
+        }
+    }
 }
 
-// Things 3 风格列表行
 @Composable
-fun SettingsRow(
+private fun SettingsActionItem(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
-    tintColor: Color = Neutral500,
+    tintColor: Color,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tintColor,
-            modifier = Modifier.size(22.dp)
-        )
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = Neutral900,
-                fontWeight = FontWeight.Normal
+    SystemListItem(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tintColor,
+                modifier = Modifier.size(18.dp)
             )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Neutral500
-                )
-            }
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
         }
-
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = Neutral500.copy(alpha = 0.4f),
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-// 保留旧 SettingsItem 的签名以兼容其他调用方 (如果有)
-@Composable
-fun SettingsItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String? = null,
-    iconColor: Color = MaterialTheme.colorScheme.primary,
-    showBadge: Boolean = false,
-    onClick: () -> Unit
-) {
-    SettingsRow(icon = icon, title = title, subtitle = subtitle, tintColor = iconColor, onClick = onClick)
-}
-
-// 保留旧 SettingsCompactItem 的签名以兼容其他调用方 (如果有)
-@Composable
-fun SettingsCompactItem(
-    icon: ImageVector,
-    title: String,
-    iconColor: Color = MaterialTheme.colorScheme.primary,
-    showBadge: Boolean = false,
-    onClick: () -> Unit
-) {
-    SettingsRow(icon = icon, title = title, tintColor = iconColor, onClick = onClick)
+    )
 }

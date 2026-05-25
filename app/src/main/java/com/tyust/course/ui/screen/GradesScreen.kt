@@ -1,36 +1,68 @@
 package com.tyust.course.ui.screen
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.*
-import androidx.compose.material3.TabPosition
-import com.tyust.course.ui.theme.PrimaryPurple
-import java.util.Calendar
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.SystemCard
+import com.tyust.course.ui.system.SystemEmptyState
+import com.tyust.course.ui.system.SystemLoadingState
+import com.tyust.course.ui.system.SystemSectionHeader
+import com.tyust.course.ui.system.SystemSegmentedControl
+import com.tyust.course.ui.system.SystemStatStrip
+import com.tyust.course.ui.system.SystemStatusBadge
+import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.system.SystemTopBar
+import com.tyust.course.ui.theme.SemanticDanger
+import com.tyust.course.ui.theme.SemanticInfo
+import com.tyust.course.ui.theme.SemanticSuccess
+import com.tyust.course.ui.theme.SemanticWarning
 
 data class GradeItemUi(
     val courseName: String,
@@ -49,509 +81,6 @@ data class ExamItemUi(
     val teacher: String
 )
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
-@Composable
-fun GradesScreen(
-    currentTab: Int,
-    onTabChange: (Int) -> Unit,
-    // Semester Tab Params
-    semesterGrades: List<GradeItemUi>,
-    semesters: List<String>,
-    currentSemester: String,
-    onSemesterChange: (String) -> Unit,
-    semesterIsLoading: Boolean,
-    
-    // Overall Tab Params
-    overallGrades: List<GradeItemUi>,
-    overallStats: OverallStatsUi,
-    overallIsLoading: Boolean,
-    
-    // Exam Tab Params
-    examList: List<ExamItemUi>,
-    examIsLoading: Boolean,
-    
-    onRefresh: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("成绩/考试", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
-                ),
-                actions = {
-                    IconButton(onClick = onRefresh) {
-                        var isRotating by remember { mutableStateOf(false) }
-                        val rotation by animateFloatAsState(
-                            targetValue = if (isRotating) 360f else 0f,
-                            animationSpec = tween(1000, easing = LinearEasing),
-                            label = "refresh_rotation"
-                        )
-                        
-                        LaunchedEffect(semesterIsLoading || overallIsLoading || examIsLoading) {
-                            if (semesterIsLoading || overallIsLoading || examIsLoading) {
-                                isRotating = true
-                            } else {
-                                isRotating = false
-                            }
-                        }
-
-                        Icon(
-                            Icons.Filled.Refresh, 
-                            contentDescription = "刷新",
-                            modifier = Modifier.scale(if (semesterIsLoading || overallIsLoading || examIsLoading) 0.8f else 1f)
-                        )
-                    }
-                }
-            )
-        },
-        containerColor = Color(0xFFF5F5F7) // Light Gray Background
-    ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            // Fancy Tab Row
-            TabRow(
-                selectedTabIndex = currentTab,
-                containerColor = Color.White,
-                contentColor = PrimaryPurple,
-                indicator = { tabPositions ->
-                    if (currentTab < tabPositions.size) {
-                         Box(
-                            Modifier
-                                .myTabIndicatorOffset(tabPositions[currentTab])
-                                .height(3.dp)
-                                .background(
-                                    brush = Brush.horizontalGradient(
-                                        colors = listOf(PrimaryPurple, Color(0xFF9C27B0))
-                                    ),
-                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
-                                )
-                        )
-                    }
-                },
-                divider = {
-                     HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
-                }
-            ) {
-                Tab(
-                    selected = currentTab == 0,
-                    onClick = { onTabChange(0) },
-                    text = { Text("学期成绩", fontWeight = if(currentTab == 0) FontWeight.Bold else FontWeight.Normal) },
-                    selectedContentColor = PrimaryPurple,
-                    unselectedContentColor = Color.Gray
-                )
-                Tab(
-                    selected = currentTab == 1,
-                    onClick = { onTabChange(1) },
-                    text = { Text("总体成绩", fontWeight = if(currentTab == 1) FontWeight.Bold else FontWeight.Normal) },
-                    selectedContentColor = PrimaryPurple,
-                    unselectedContentColor = Color.Gray
-                )
-                Tab(
-                    selected = currentTab == 2,
-                    onClick = { onTabChange(2) },
-                    text = { Text("考试安排", fontWeight = if(currentTab == 2) FontWeight.Bold else FontWeight.Normal) },
-                    selectedContentColor = PrimaryPurple,
-                    unselectedContentColor = Color.Gray
-                )
-            }
-
-            AnimatedContent(
-                targetState = currentTab,
-                transitionSpec = {
-                    if (targetState > initialState) {
-                        slideInHorizontally { width -> width } + fadeIn() togetherWith
-                                slideOutHorizontally { width -> -width } + fadeOut()
-                    } else {
-                        slideInHorizontally { width -> -width } + fadeIn() togetherWith
-                                slideOutHorizontally { width -> width } + fadeOut()
-                    }
-                },
-                label = "tab_content_anim"
-            ) { targetTab ->
-                if (targetTab == 0) {
-                    SemesterGradesContent(
-                        grades = semesterGrades,
-                        semesters = semesters,
-                        currentSemester = currentSemester,
-                        onSemesterChange = onSemesterChange,
-                        isLoading = semesterIsLoading
-                    )
-                } else if (targetTab == 1) {
-                    OverallGradesContent(
-                        grades = overallGrades,
-                        stats = overallStats,
-                        isLoading = overallIsLoading
-                    )
-                } else {
-                    ExamScheduleContent(
-                        exams = examList,
-                        isLoading = examIsLoading
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun OverallGradesContent(
-    grades: List<GradeItemUi>,
-    stats: OverallStatsUi,
-    isLoading: Boolean
-) {
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Hero Data Island (Overall)
-        if (!isLoading) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White, RoundedCornerShape(20.dp))
-                    .padding(24.dp)
-            ) {
-                Text(
-                    text = "总体绩点",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.Gray,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = stats.gpa,
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        color = Color.Black,
-                        letterSpacing = (-1.5).sp
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        CompactStatItem(stats.credits, "已修学分", Color.Black)
-                        CompactStatItem("${stats.courseCount}", "总课程", Color.Black)
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Visual Distribution Bar
-                GradeDistributionBar(stats)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PrimaryPurple)
-            }
-        } else if (grades.isEmpty()) {
-            EmptyState("暂无总体成绩数据")
-        } else {
-             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-            ) {
-                Icon(Icons.Default.List, contentDescription = null, tint = PrimaryPurple, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "课程明细", 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold, 
-                    color = Color.Black
-                )
-            }
-            
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
-                itemsIndexed(grades) { index, item ->
-                    AnimatedEntryList(index) {
-                        GradeItemRow(item)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SemesterGradesContent(
-    grades: List<GradeItemUi>,
-    semesters: List<String>,
-    currentSemester: String,
-    onSemesterChange: (String) -> Unit,
-    isLoading: Boolean
-) {
-    var expanded by remember { mutableStateOf(false) }
-    
-    // Calculate stats
-    val totalCredits = grades.sumOf { it.credits.toDoubleOrNull() ?: 0.0 }
-    val weightedGPA = grades.sumOf { (it.credits.toDoubleOrNull() ?: 0.0) * (it.gpa.toDoubleOrNull() ?: 0.0) }
-    val avgGPA = if (totalCredits > 0) weightedGPA / totalCredits else 0.0
-
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Modern Semester Selector
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            OutlinedTextField(
-                value = currentSemester,
-                onValueChange = {},
-                readOnly = true,
-                leadingIcon = { Icon(Icons.Default.CalendarToday, null, tint = PrimaryPurple) },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryPurple,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                ),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth()
-                    .shadow(2.dp, RoundedCornerShape(16.dp))
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.background(Color.White)
-            ) {
-                semesters.forEach { semester ->
-                    DropdownMenuItem(
-                        text = { Text(semester) },
-                        onClick = {
-                            onSemesterChange(semester)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Hero Data Island (Semester)
-        if (!isLoading) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White, RoundedCornerShape(20.dp))
-                    .padding(vertical = 20.dp, horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SemesterStatBlock("平均绩点", String.format("%.2f", avgGPA), Color.Black)
-                SemesterStatBlock("总学分", String.format("%.1f", totalCredits), Color.Black)
-                SemesterStatBlock("课程数", "${grades.size}", Color.Black)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PrimaryPurple)
-            }
-        } else if (grades.isEmpty()) {
-            EmptyState("本学期暂无成绩数据")
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
-                itemsIndexed(grades) { index, item ->
-                    AnimatedEntryList(index) {
-                        GradeItemRow(item)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SemesterStatBlock(label: String, value: String, color: Color) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 8.dp)
-    ) {
-        Text(
-            text = value,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            color = color,
-            letterSpacing = (-1).sp
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.Gray,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
-fun CompactStatItem(value: String, label: String, contentColor: Color) {
-    Column(horizontalAlignment = Alignment.End) {
-        Text(
-            text = value, 
-            style = MaterialTheme.typography.titleLarge, 
-            fontWeight = FontWeight.Bold,
-            color = contentColor
-        )
-        Text(
-            text = label, 
-            style = MaterialTheme.typography.bodySmall, 
-            color = contentColor.copy(alpha = 0.8f)
-        )
-    }
-}
-
-@Composable
-fun GradeDistributionBar(stats: OverallStatsUi) {
-    val total = (stats.excellent + stats.good + stats.medium + stats.pass).toFloat()
-    if (total == 0f) return
-
-    Column {
-        // The Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp) // 变细，更精致
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.Black.copy(alpha = 0.05f)) // 极简灰底
-        ) {
-            if (stats.excellent > 0) Box(Modifier.weight(stats.excellent.toFloat()).fillMaxHeight().background(Color(0xFF4CAF50)))
-            if (stats.good > 0) Box(Modifier.weight(stats.good.toFloat()).fillMaxHeight().background(Color(0xFF2196F3)))
-            if (stats.medium > 0) Box(Modifier.weight(stats.medium.toFloat()).fillMaxHeight().background(Color(0xFFFF9800)))
-            if (stats.pass > 0) Box(Modifier.weight(stats.pass.toFloat()).fillMaxHeight().background(Color(0xFFF44336))) // Pass is red/amber? '及格' usually low. 0xFFF44336 is red.
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // The Legend
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            LegendItem("优", stats.excellent, Color(0xFF4CAF50))
-            LegendItem("良", stats.good, Color(0xFF2196F3))
-            LegendItem("中", stats.medium, Color(0xFFFF9800))
-            LegendItem("及", stats.pass, Color(0xFFF44336))
-        }
-    }
-}
-
-@Composable
-fun LegendItem(label: String, count: Int, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(color))
-        Spacer(modifier = Modifier.width(6.dp))
-        Text("$label $count", style = MaterialTheme.typography.labelSmall, color = Color.Gray, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-fun EmptyState(message: String) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Default.School, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(64.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(message, color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-@Composable
-fun AnimatedEntryList(index: Int, content: @Composable () -> Unit) {
-    // Use simple fade-in animation without staggered delay to avoid scroll lag
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(animationSpec = tween(150, easing = FastOutSlowInEasing))
-    ) {
-        content()
-    }
-}
-
-@Composable
-fun GradeItemRow(item: GradeItemUi) {
-    Card(
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Remove colored Left Indicator Strip
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.courseName, 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black,
-                    maxLines = 2
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(item.courseType, fontSize = 10.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        border = null,
-                        modifier = Modifier.height(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "${item.credits} 学分", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                }
-            }
-            
-            Column(horizontalAlignment = Alignment.End) {
-                val gradeColor = getGradeColor(item.grade)
-                Text(
-                    text = item.grade,
-                    color = gradeColor,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    letterSpacing = (-0.5).sp
-                )
-                Text(
-                    text = "GP: ${item.gpa}", 
-                    style = MaterialTheme.typography.labelSmall, 
-                    color = Color.Gray,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
 data class OverallStatsUi(
     val gpa: String,
     val credits: String,
@@ -562,172 +91,582 @@ data class OverallStatsUi(
     val pass: Int
 )
 
-fun Modifier.myTabIndicatorOffset(
-    currentTabPosition: TabPosition
-): Modifier = composed {
-    val currentTabWidth by animateDpAsState(
-        targetValue = currentTabPosition.width,
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-        label = "tab width"
-    )
-    val indicatorOffset by animateDpAsState(
-        targetValue = currentTabPosition.left,
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-        label = "tab offset"
-    )
-    fillMaxWidth()
-        .wrapContentSize(Alignment.BottomStart)
-        .offset(x = indicatorOffset)
-        .width(currentTabWidth)
+@Composable
+fun GradesScreen(
+    currentTab: Int,
+    onTabChange: (Int) -> Unit,
+    semesterGrades: List<GradeItemUi>,
+    semesters: List<String>,
+    currentSemester: String,
+    onSemesterChange: (String) -> Unit,
+    semesterIsLoading: Boolean,
+    overallGrades: List<GradeItemUi>,
+    overallStats: OverallStatsUi,
+    overallIsLoading: Boolean,
+    examList: List<ExamItemUi>,
+    examIsLoading: Boolean,
+    onRefresh: () -> Unit
+) {
+    val tabTitles = listOf("学期成绩", "总体成绩", "考试安排")
+    val isRefreshing = semesterIsLoading || overallIsLoading || examIsLoading
+    val subtitle = when (currentTab) {
+        0 -> if (currentSemester.isBlank()) "按学期查看课程成绩" else currentSemester
+        1 -> "累计成绩与分布概览"
+        else -> "近期考试安排"
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            SystemTopBar(
+                title = "成绩与考试",
+                subtitle = subtitle,
+                actions = {
+                    if (isRefreshing) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .size(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onRefresh) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "刷新"
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = PagePadding, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SystemSegmentedControl(
+                options = tabTitles,
+                selectedIndex = currentTab,
+                onSelect = onTabChange
+            )
+
+            Box(modifier = Modifier.weight(1f)) {
+                AnimatedContent(
+                    targetState = currentTab,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "grades_tab_content"
+                ) { tab ->
+                    when (tab) {
+                        0 -> SemesterGradesContent(
+                            grades = semesterGrades,
+                            semesters = semesters,
+                            currentSemester = currentSemester,
+                            onSemesterChange = onSemesterChange,
+                            isLoading = semesterIsLoading
+                        )
+
+                        1 -> OverallGradesContent(
+                            grades = overallGrades,
+                            stats = overallStats,
+                            isLoading = overallIsLoading
+                        )
+
+                        else -> ExamScheduleContent(
+                            exams = examList,
+                            isLoading = examIsLoading
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverallGradesContent(
+    grades: List<GradeItemUi>,
+    stats: OverallStatsUi,
+    isLoading: Boolean
+) {
+    when {
+        isLoading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SystemLoadingState(text = "正在加载总体成绩…")
+            }
+        }
+
+        grades.isEmpty() -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SystemEmptyState(
+                    title = "暂无总体成绩",
+                    message = "点击刷新获取最新成绩"
+                )
+            }
+        }
+
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SystemStatStrip(
+                            items = listOf(
+                                "累计绩点" to stats.gpa.ifBlank { "0.00" },
+                                "已修学分" to stats.credits.ifBlank { "0" },
+                                "总课程" to stats.courseCount.toString()
+                            )
+                        )
+                        GradeDistributionCard(stats = stats)
+                        SystemSectionHeader(
+                            title = "课程明细",
+                            subtitle = "共 ${grades.size} 门课程"
+                        )
+                    }
+                }
+
+                items(grades) { item ->
+                    GradeItemRow(item = item)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SemesterGradesContent(
+    grades: List<GradeItemUi>,
+    semesters: List<String>,
+    currentSemester: String,
+    onSemesterChange: (String) -> Unit,
+    isLoading: Boolean
+) {
+    val totalCredits = grades.sumOf { it.credits.toDoubleOrNull() ?: 0.0 }
+    val weightedGpa = grades.sumOf {
+        (it.credits.toDoubleOrNull() ?: 0.0) * (it.gpa.toDoubleOrNull() ?: 0.0)
+    }
+    val averageGpa = if (totalCredits > 0) weightedGpa / totalCredits else 0.0
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SemesterSelector(
+                    semesters = semesters,
+                    currentSemester = currentSemester,
+                    onSemesterChange = onSemesterChange
+                )
+
+                when {
+                    isLoading -> SystemLoadingState(text = "正在加载学期成绩…")
+                    grades.isEmpty() -> SystemEmptyState(
+                        title = "暂无学期成绩",
+                        message = if (currentSemester.isBlank()) {
+                            "请选择学期查看成绩"
+                        } else {
+                            "$currentSemester 暂无成绩记录"
+                        }
+                    )
+                    else -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            SystemStatStrip(
+                                items = listOf(
+                                    "平均绩点" to String.format("%.2f", averageGpa),
+                                    "总学分" to String.format("%.1f", totalCredits),
+                                    "课程数" to grades.size.toString()
+                                )
+                            )
+                            SystemSectionHeader(
+                                title = "课程明细",
+                                subtitle = currentSemester.ifBlank { null }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!isLoading && grades.isNotEmpty()) {
+            items(grades) { item ->
+                GradeItemRow(item = item)
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SemesterSelector(
+    semesters: List<String>,
+    currentSemester: String,
+    onSemesterChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = currentSemester.ifBlank { "选择学期" },
+            onValueChange = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+            readOnly = true,
+            singleLine = true,
+            label = { Text("学期") },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.CalendarToday,
+                    contentDescription = null
+                )
+            },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            shape = MaterialTheme.shapes.small,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.outline,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            semesters.forEach { semester ->
+                DropdownMenuItem(
+                    text = { Text(semester) },
+                    onClick = {
+                        onSemesterChange(semester)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GradeDistributionCard(
+    stats: OverallStatsUi
+) {
+    SystemCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = MaterialTheme.colorScheme.surface,
+        borderColor = MaterialTheme.colorScheme.outlineVariant
+    ) {
+        SystemSectionHeader(
+            title = "成绩分布",
+            subtitle = "按已统计课程划分"
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(999.dp)
+                )
+        ) {
+            if (stats.excellent > 0) {
+                Box(
+                    modifier = Modifier
+                        .weight(stats.excellent.toFloat())
+                        .fillMaxSize()
+                        .background(SemanticSuccess)
+                )
+            }
+            if (stats.good > 0) {
+                Box(
+                    modifier = Modifier
+                        .weight(stats.good.toFloat())
+                        .fillMaxSize()
+                        .background(SemanticInfo)
+                )
+            }
+            if (stats.medium > 0) {
+                Box(
+                    modifier = Modifier
+                        .weight(stats.medium.toFloat())
+                        .fillMaxSize()
+                        .background(SemanticWarning)
+                )
+            }
+            if (stats.pass > 0) {
+                Box(
+                    modifier = Modifier
+                        .weight(stats.pass.toFloat())
+                        .fillMaxSize()
+                        .background(SemanticDanger)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DistributionItem("优", stats.excellent, SystemTone.Success, Modifier.weight(1f))
+            DistributionItem("良", stats.good, SystemTone.Info, Modifier.weight(1f))
+            DistributionItem("中", stats.medium, SystemTone.Warning, Modifier.weight(1f))
+            DistributionItem("及", stats.pass, SystemTone.Danger, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun DistributionItem(
+    label: String,
+    count: Int,
+    tone: SystemTone,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        SystemStatusBadge(
+            text = label,
+            tone = tone
+        )
+        Text(
+            text = "$count 门",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun GradeItemRow(
+    item: GradeItemUi
+) {
+    val gradeColor = getGradeColor(item.grade)
+
+    SystemCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = MaterialTheme.colorScheme.surface,
+        borderColor = MaterialTheme.colorScheme.outlineVariant
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = item.courseName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (item.courseType.isNotBlank()) {
+                        SystemStatusBadge(
+                            text = item.courseType,
+                            tone = SystemTone.Neutral
+                        )
+                    }
+                    Text(
+                        text = "${item.credits} 学分",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = item.grade,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = gradeColor
+                )
+                Text(
+                    text = "绩点 ${item.gpa}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExamScheduleContent(
+    exams: List<ExamItemUi>,
+    isLoading: Boolean
+) {
+    when {
+        isLoading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SystemLoadingState(text = "正在加载考试安排…")
+            }
+        }
+
+        exams.isEmpty() -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SystemEmptyState(
+                    title = "暂无考试安排",
+                    message = "点击刷新获取最新考试信息"
+                )
+            }
+        }
+
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SystemStatStrip(
+                            items = listOf(
+                                "考试数" to exams.size.toString(),
+                                "最近状态" to "已同步",
+                                "查看方式" to "列表"
+                            )
+                        )
+                        SystemSectionHeader(
+                            title = "考试列表",
+                            subtitle = "按时间顺序展示"
+                        )
+                    }
+                }
+
+                items(exams) { exam ->
+                    ExamItemRow(exam = exam)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExamItemRow(
+    exam: ExamItemUi
+) {
+    val examTone = if (exam.examName.contains("期中")) SystemTone.Warning else SystemTone.Info
+
+    SystemCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = MaterialTheme.colorScheme.surface,
+        borderColor = MaterialTheme.colorScheme.outlineVariant
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = exam.courseName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            SystemStatusBadge(
+                text = if (exam.examName.isBlank()) "考试" else exam.examName,
+                tone = examTone
+            )
+        }
+
+        ExamDetailRow(
+            icon = Icons.Default.Schedule,
+            text = exam.examTime.ifBlank { "未提供考试时间" }
+        )
+        ExamDetailRow(
+            icon = Icons.Default.LocationOn,
+            text = buildString {
+                append(exam.location.ifBlank { "未提供地点" })
+                if (exam.seatNumber.isNotBlank()) {
+                    append(" · 座位 ${exam.seatNumber}")
+                }
+            }
+        )
+        ExamDetailRow(
+            icon = Icons.Default.Person,
+            text = exam.teacher.ifBlank { "未提供教师信息" }
+        )
+    }
+}
+
+@Composable
+private fun ExamDetailRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 fun getGradeColor(grade: String): Color {
     val score = grade.replace("[^0-9]".toRegex(), "").toIntOrNull()
-    
+
     if (score != null) {
         return when {
-            score >= 90 -> Color(0xFF4CAF50) // Green
-            score >= 80 -> Color(0xFF2196F3) // Blue
-            score >= 70 -> Color(0xFFFF9800) // Orange
-            score >= 60 -> Color(0xFFFFC107) // Amber
-            else -> Color(0xFFF44336) // Red
+            score >= 90 -> SemanticSuccess
+            score >= 80 -> SemanticInfo
+            score >= 70 -> SemanticWarning
+            score >= 60 -> Color(0xFFB26A00)
+            else -> SemanticDanger
         }
     }
-    
+
     return when (grade) {
-        "优秀" -> Color(0xFF4CAF50)
-        "良好" -> Color(0xFF2196F3)
-        "中等" -> Color(0xFFFF9800)
-        "及格" -> Color(0xFFFFC107) // Changed to Amber for better visibility
-        else -> Color(0xFFF44336)
-    }
-}
-
-// ============= 考试安排相关 =============
-
-@Composable
-fun ExamScheduleContent(
-    exams: List<ExamItemUi>,
-    isLoading: Boolean
-) {
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PrimaryPurple)
-            }
-        } else if (exams.isEmpty()) {
-            EmptyState("暂无考试安排")
-        } else {
-            // 考试统计卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.EventNote, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("共 ${exams.size} 场考试", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
-                itemsIndexed(exams) { index, exam ->
-                    AnimatedEntryList(index) {
-                        ExamItemRow(exam)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ExamItemRow(exam: ExamItemUi) {
-    Card(
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // 课程名 + 考试类型
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Text(
-                    text = exam.courseName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black,
-                    modifier = Modifier.weight(1f)
-                )
-                SuggestionChip(
-                    onClick = {},
-                    label = { Text(if (exam.examName.contains("期中")) "期中" else "期末", fontSize = 10.sp) },
-                    colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = if (exam.examName.contains("期中")) Color(0xFFFFF3E0) else Color(0xFFE3F2FD),
-                        labelColor = if (exam.examName.contains("期中")) Color(0xFFFF9800) else Color(0xFF2196F3)
-                    ),
-                    border = null,
-                    modifier = Modifier.height(24.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // 时间
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Schedule, null, tint = Color(0xFFF44336), modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = exam.examTime,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFF44336),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 地点 + 座位号
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.LocationOn, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "${exam.location}  座位: ${exam.seatNumber}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.DarkGray
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 教师
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Person, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = exam.teacher,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
-        }
+        "优秀" -> SemanticSuccess
+        "良好" -> SemanticInfo
+        "中等" -> SemanticWarning
+        "及格" -> Color(0xFFB26A00)
+        else -> SemanticDanger
     }
 }

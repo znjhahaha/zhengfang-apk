@@ -107,7 +107,7 @@ fun LoginScreen(
                                 imageVector = Icons.Default.School,
                                 contentDescription = "School Icon",
                                 modifier = Modifier.size(48.dp),
-                                tint = SystemBlue
+                                tint = NeuPrimary
                             )
                         }
                     }
@@ -266,7 +266,7 @@ fun LoginScreen(
                                     text = { 
                                         Text(
                                             text = "+ 配置新终端",
-                                            color = SystemBlue,
+                                            color = NeuPrimary,
                                             fontWeight = FontWeight.Medium
                                         )
                                     },
@@ -358,7 +358,7 @@ fun LoginScreen(
                                 unfocusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
                                 focusedTextColor = Neutral900,
                                 unfocusedTextColor = Neutral900,
-                                cursorColor = SystemBlue
+                                cursorColor = NeuPrimary
                             )
                         )
                         
@@ -385,7 +385,7 @@ fun LoginScreen(
                             enabled = cookie.isNotBlank() && !isLoading,
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = SystemBlue,
+                                containerColor = NeuPrimary,
                                 disabledContainerColor = Neutral100,
                                 disabledContentColor = Neutral300
                             )
@@ -512,14 +512,14 @@ fun BindingConfirmationDialog(
                     Surface(
                         modifier = Modifier.size(64.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = SystemBlue.copy(alpha = 0.1f)
+                        color = NeuPrimary.copy(alpha = 0.1f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = androidx.compose.material.icons.Icons.Default.School,
                                 contentDescription = null,
                                 modifier = Modifier.size(32.dp),
-                                tint = SystemBlue
+                                tint = NeuPrimary
                             )
                         }
                     }
@@ -538,7 +538,7 @@ fun BindingConfirmationDialog(
                     Text(
                         text = "检测到新账号：「$studentName」",
                         style = MaterialTheme.typography.titleMedium,
-                        color = SystemBlue,
+                        color = NeuPrimary,
                         fontWeight = FontWeight.Medium
                     )
                     
@@ -604,7 +604,7 @@ fun BindingConfirmationDialog(
                             onClick = onConfirm,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
+                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
                         ) {
                             Text("确认绑定", fontWeight = FontWeight.Bold)
                         }
@@ -721,7 +721,7 @@ fun AddSchoolDialog(
                         Text(
                             text = "🪄 智能识别",
                             style = MaterialTheme.typography.labelLarge,
-                            color = SystemBlue,
+                            color = NeuPrimary,
                             fontWeight = FontWeight.Medium
                         )
                         
@@ -742,7 +742,7 @@ fun AddSchoolDialog(
                         Button(
                             onClick = { parseUrl(urlInput) },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = SystemBlue),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary),
                             enabled = urlInput.isNotBlank()
                         ) {
                             Text("自动识别")
@@ -813,8 +813,8 @@ fun AddSchoolDialog(
                             .menuAnchor(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = SystemBlue,
-                            unfocusedBorderColor = SystemBlue.copy(alpha = 0.5f)
+                            focusedBorderColor = NeuPrimary,
+                            unfocusedBorderColor = NeuPrimary.copy(alpha = 0.5f)
                         )
                     )
                     
@@ -847,7 +847,7 @@ fun AddSchoolDialog(
                     onConfirm(name, "$domain|$basePath", protocol) 
                 },
                 enabled = isValidDomain,
-                colors = ButtonDefaults.buttonColors(containerColor = SystemBlue)
+                colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
             ) {
                 Text("添加")
             }

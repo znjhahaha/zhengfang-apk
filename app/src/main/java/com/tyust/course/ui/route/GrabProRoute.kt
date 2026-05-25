@@ -548,10 +548,7 @@ fun GrabProRoute() {
         },
         schoolName = UserManager.getInstance().currentSchool?.name ?: "",
         showQueueModeLabels = false, // 🔧 隐藏单项模式标签，只用全局开关控制
-        courseKeywords = courseKeywords,
-        onCourseKeywordsChange = { courseKeywords = it },
         scheduledDateTime = scheduledDateTime,
-        onScheduledDateTimeChange = { scheduledDateTime = it },
         isScheduledMode = isScheduledMode,
         onScheduledModeChange = { isScheduledMode = it },
         onScheduledStart = { createScheduledTask() },

@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tyust.course.ui.theme.PrimaryPurple
 import com.tyust.course.announcement.AnnouncementManager
 import com.tyust.course.announcement.AnnouncementDialog
 import java.text.SimpleDateFormat
@@ -62,7 +61,7 @@ fun AnnouncementHistoryScreen(
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
-                    color = PrimaryPurple
+                    color = MaterialTheme.colorScheme.primary
                 )
             } else if (announcements.isEmpty()) {
                 Column(
