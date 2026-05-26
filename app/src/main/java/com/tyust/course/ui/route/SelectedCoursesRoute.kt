@@ -84,7 +84,7 @@ fun SelectedCoursesRoute() {
     fun performDropCourse(course: Course) {
         val school = UserManager.getInstance().currentSchool ?: return
         val kchId = course.courseId ?: return
-        val jxbIds = course.classId ?: return
+        val jxbIds = (if (!course.doJxbId.isNullOrEmpty()) course.doJxbId else course.classId) ?: return
         
         if (xkxnm.isEmpty() || xkxqm.isEmpty()) {
             Toast.makeText(context, "学年学期参数缺失，请刷新后重试", Toast.LENGTH_SHORT).show()
