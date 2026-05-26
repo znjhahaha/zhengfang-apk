@@ -72,6 +72,7 @@ import com.tyust.course.ui.theme.NeuDarkShadow
 import com.tyust.course.ui.theme.NeuDivider
 import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuLightShadow
+import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.NeuSurface
 import com.tyust.course.ui.theme.Neutral200
@@ -296,9 +297,14 @@ fun SystemCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed && onClick != null) 0.975f else 1f,
-        animationSpec = com.tyust.course.ui.theme.MotionSpring.snappy(),
-        label = "cardPressScale"
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = MotionSpring.bounce(),
+        label = "cardScale"
+    )
+    val pressElevation by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 6.dp,
+        animationSpec = MotionSpring.bounce(),
+        label = "cardElevation"
     )
 
     val baseModifier = modifier
@@ -306,7 +312,7 @@ fun SystemCard(
         .scale(pressScale)
         .neumorphicShadow(
             cornerRadius = 16.dp,
-            elevation = 6.dp
+            elevation = pressElevation
         )
     val clickableModifier = if (onClick != null) {
         baseModifier.clickable(
@@ -861,4 +867,30 @@ fun SystemCapacityIndicator(
             )
         }
     }
+}
+
+/**
+ * 柔和的玻璃态分割线（两端淡出）
+ * 替代原生生硬的 HorizontalDivider
+ */
+@Composable
+fun SystemDivider(
+    modifier: Modifier = Modifier,
+    alpha: Float = 0.5f
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        NeuDivider.copy(alpha = alpha),
+                        NeuDivider.copy(alpha = alpha),
+                        Color.Transparent
+                    )
+                )
+            )
+    )
 }

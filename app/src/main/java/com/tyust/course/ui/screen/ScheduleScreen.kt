@@ -59,6 +59,7 @@ import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.system.neumorphicShadow
 
 import com.tyust.course.ui.theme.MotionSpring
@@ -306,10 +307,7 @@ fun WeekHeaderCompact(
                 }
             }
 
-            HorizontalDivider(
-                color = NeuDivider,
-                thickness = 1.dp
-            )
+            SystemDivider(alpha = 0.8f)
         }
     }
 }
@@ -537,7 +535,7 @@ private fun TimetableBackground(
                                 .align(Alignment.CenterEnd)
                                 .fillMaxHeight()
                                 .width(1.dp)
-                                .background(NeuDivider)
+                                .background(NeuDivider.copy(alpha = 0.4f))
                         )
                     }
                 }
@@ -554,8 +552,8 @@ private fun TimetableBackground(
                     if (rowIndex < periodCount - 1) {
                         HorizontalDivider(
                             modifier = Modifier.align(Alignment.BottomCenter),
-                            color = NeuDivider,
-                            thickness = 1.dp
+                            color = NeuDivider.copy(alpha = 0.4f),
+                            thickness = 0.8.dp
                         )
                     }
                 }

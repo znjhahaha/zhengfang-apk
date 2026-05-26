@@ -68,10 +68,10 @@ import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
-import com.tyust.course.ui.theme.NeuDivider
 import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticSuccess
 import com.tyust.course.ui.theme.SemanticWarning
@@ -419,7 +419,7 @@ fun CourseGroupItem(
                 exit = shrinkVertically(animationSpec = MotionSpecs.expandCollapse()) + fadeOut(animationSpec = MotionSpecs.standard())
             ) {
                 Column {
-                    HorizontalDivider(color = NeuDivider, thickness = 1.dp)
+                    SystemDivider()
                     Surface(
                         color = NeuInsetBackground,
                         modifier = Modifier.fillMaxWidth()
@@ -464,9 +464,7 @@ fun CourseGroupItem(
                             onSetTargetCourse = { onSetTargetCourse(course) }
                         )
                         if (index < classes.size - 1) {
-                            HorizontalDivider(
-                                color = NeuDivider,
-                                thickness = 1.dp,
+                            SystemDivider(
                                 modifier = Modifier.padding(start = 16.dp)
                             )
                         }
