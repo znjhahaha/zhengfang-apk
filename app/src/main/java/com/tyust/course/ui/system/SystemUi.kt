@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -569,7 +570,7 @@ fun SystemSegmentedControl(
 
             // 选项文字行
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(40.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 options.forEachIndexed { index, label ->
@@ -582,7 +583,7 @@ fun SystemSegmentedControl(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .defaultMinSize(minHeight = 40.dp)
+                            .fillMaxHeight()
                             .clip(RoundedCornerShape(10.dp))
                             .clickable(
                                 indication = null,
@@ -593,7 +594,7 @@ fun SystemSegmentedControl(
                     ) {
                         Text(
                             text = label,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                             color = textColor

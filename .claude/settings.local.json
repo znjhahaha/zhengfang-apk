@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew :app:assembleDebug:*)",
+      "Bash(./gradlew:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(python:*)",
+      "Bash(npx skills:*)",
+      "Bash(git:*)"
+    ]
+  }
+}

@@ -196,7 +196,7 @@ private fun CapsuleNavItem(
     // 选中时图标略微放大
     val iconScale by animateFloatAsState(
         targetValue = if (selected) 1.12f else 1f,
-        animationSpec = MotionSpring.gentle(),
+        animationSpec = MotionSpring.bounce(),
         label = "navIconScale"
     )
     // 选中时整体微微上浮
