@@ -411,7 +411,7 @@ fun CourseGroupItem(
                             } else {
                                 val arrowRotation by animateFloatAsState(
                                     targetValue = if (isExpanded) 180f else 0f,
-                                    animationSpec = MotionSpecs.standard(),
+                                    animationSpec = MotionSpecs.emphasized(),
                                     label = "arrowRotation"
                                 )
                                 Icon(
@@ -432,8 +432,8 @@ fun CourseGroupItem(
 
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(300)),
-                exit = shrinkVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(300))
+                enter = expandVertically(animationSpec = MotionSpecs.emphasized()) + fadeIn(animationSpec = MotionSpecs.emphasized()),
+                exit = shrinkVertically(animationSpec = MotionSpecs.emphasized()) + fadeOut(animationSpec = MotionSpecs.emphasized())
             ) {
                 Column {
                     SystemDivider()
