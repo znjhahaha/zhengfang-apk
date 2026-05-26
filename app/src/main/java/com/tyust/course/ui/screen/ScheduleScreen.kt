@@ -460,6 +460,21 @@ fun ScheduleGrid(
                     }
                 }
 
+                // 时间列右侧渐变阴影（替代硬竖线，形成自然过渡）
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .fillMaxHeight()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    NeuDivider.copy(alpha = 0.25f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+
                 Box(
                     modifier = Modifier
                         .weight(1f)

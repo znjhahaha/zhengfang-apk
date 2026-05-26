@@ -2,6 +2,7 @@ package com.tyust.course.ui.screen
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -17,10 +18,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +38,9 @@ import com.tyust.course.ui.theme.Neutral900
 import com.tyust.course.ui.theme.SurfaceWhite
 import com.tyust.course.ui.theme.Neutral100
 import com.tyust.course.ui.theme.Neutral200
+import com.tyust.course.ui.theme.NeuInsetBackground
+import com.tyust.course.ui.theme.GlassBorderLight
+import com.tyust.course.ui.theme.GlassBorderDark
 /**
  * 抢课队列项状态
  */
@@ -107,7 +112,12 @@ fun LazyListScope.grabQueueItems(
             OutlinedButton(
                 onClick = onAddCourse,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                enabled = !isRunning
+                enabled = !isRunning,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, NeuPrimary.copy(alpha = 0.3f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = NeuPrimary
+                )
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
@@ -230,32 +240,39 @@ fun GrabQueueItem(
         label = "statusColor"
     )
     
-    val itemBgColor = if (isActive) Neutral100 else SurfaceWhite
-
-    Row(
+    Surface(
         modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .background(itemBgColor)
-            .padding(end = 12.dp)
-            // 底部横线
-            .drawBehind {
-                drawLine(
-                    color = Neutral200,
-                    start = androidx.compose.ui.geometry.Offset(0f, size.height),
-                    end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                    strokeWidth = 1f
-                )
-            },
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isActive) NeuInsetBackground else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            width = 0.8.dp,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    GlassBorderLight.copy(alpha = 0.45f),
+                    GlassBorderDark.copy(alpha = 0.20f)
+                ),
+                start = Offset.Zero,
+                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+            )
+        ),
+        shadowElevation = 2.dp
     ) {
-        // 左侧强烈的彩色指示线代表状态
-        Box(
+        Row(
             modifier = Modifier
-                .width(4.dp)
-                .fillMaxHeight()
-                .background(statusColor)
-        )
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧彩色状态指示线
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(statusColor)
+            )
         
         Spacer(modifier = Modifier.width(12.dp))
         
@@ -347,6 +364,7 @@ fun GrabQueueItem(
                         )
                     }
                 }
+        }
         }
     }
 }

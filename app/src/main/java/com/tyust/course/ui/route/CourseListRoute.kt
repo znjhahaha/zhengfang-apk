@@ -252,6 +252,14 @@ fun CourseListRoute() {
     LaunchedEffect(Unit) {
         loadCoursesInternal(forceRefresh = false)
     }
+
+    // 从"已选"切回"可选"时强制刷新，同步退课后的状态
+    LaunchedEffect(showSelectedCourses) {
+        if (!showSelectedCourses && allCourses.isNotEmpty()) {
+            // 从已选切回可选时，强制刷新以同步 isSelected 状态
+            loadCoursesInternal(forceRefresh = true)
+        }
+    }
     
     // Filter logic
     val onSearch: (String) -> Unit = { query ->
@@ -740,39 +748,15 @@ fun CourseListRoute() {
                             )
                         }
                         else -> {
-                            // 🏠 标准模式：现代化分段选择器 (Apple Style)
+                            // 🏠 标准模式：液态玻璃分段选择器
                             CenterAlignedTopAppBar(
                                 title = {
-                                    SingleChoiceSegmentedButtonRow(
-                                        modifier = Modifier.width(200.dp).height(36.dp)
-                                    ) {
-                                        SegmentedButton(
-                                            selected = !showSelectedCourses,
-                                            onClick = { showSelectedCourses = false },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                            colors = SegmentedButtonDefaults.colors(
-                                                activeContainerColor = SurfaceWhite,
-                                                activeContentColor = Neutral900,
-                                                inactiveContentColor = Neutral500,
-                                                inactiveContainerColor = Neutral100
-                                            )
-                                        ) {
-                                            Text("可选", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                                        }
-                                        SegmentedButton(
-                                            selected = showSelectedCourses,
-                                            onClick = { showSelectedCourses = true },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                            colors = SegmentedButtonDefaults.colors(
-                                                activeContainerColor = SurfaceWhite,
-                                                activeContentColor = Neutral900,
-                                                inactiveContentColor = Neutral500,
-                                                inactiveContainerColor = Neutral100
-                                            )
-                                        ) {
-                                            Text("已选", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                                        }
-                                    }
+                                    com.tyust.course.ui.system.SystemSegmentedControl(
+                                        options = listOf("可选", "已选"),
+                                        selectedIndex = if (showSelectedCourses) 1 else 0,
+                                        onSelect = { index -> showSelectedCourses = index == 1 },
+                                        modifier = Modifier.width(200.dp)
+                                    )
                                 },
                                 actions = {
                                     if (!showSelectedCourses) {
@@ -791,8 +775,8 @@ fun CourseListRoute() {
                         }
                     }
                 }
-                // 底部细线边缘
-                HorizontalDivider(modifier = Modifier.fillMaxWidth(), thickness = 0.5.dp, color = Neutral200.copy(alpha = 0.5f))
+                // 底部柔和渐变线
+                com.tyust.course.ui.system.SystemDivider(alpha = 0.6f)
                 }
             }
         },

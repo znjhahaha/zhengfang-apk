@@ -10,6 +10,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -293,7 +294,7 @@ fun CourseGroupItem(
     val hasAvailableSeat = classes.any { !it.isSelected && (it.capacity <= 0 || it.selected < it.capacity) }
     val cardBorderColor by animateColorAsState(
         targetValue = when {
-            hasSelected -> SemanticSuccess.copy(alpha = 0.7f)
+            hasSelected -> SemanticSuccess.copy(alpha = 0.35f)
             hasAvailableSeat -> NeuPrimary.copy(alpha = 0.25f)
             else -> MaterialTheme.colorScheme.outlineVariant
         },
@@ -302,7 +303,7 @@ fun CourseGroupItem(
     )
     val cardBackgroundColor by animateColorAsState(
         targetValue = when {
-            hasSelected -> SemanticSuccess.copy(alpha = 0.06f)
+            hasSelected -> SemanticSuccess.copy(alpha = 0.04f)
             hasAvailableSeat -> MaterialTheme.colorScheme.surface
             else -> NeuInsetBackground.copy(alpha = 0.60f)
         },
@@ -495,7 +496,7 @@ fun TeachingClassRow(
     val isSelectedRow = course.isSelected
     val rowBackground by animateColorAsState(
         targetValue = when {
-            isSelectedRow -> SemanticSuccess.copy(alpha = 0.12f)
+            isSelectedRow -> SemanticSuccess.copy(alpha = 0.06f)
             isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.64f)
             else -> Color.Transparent
         },
@@ -504,7 +505,7 @@ fun TeachingClassRow(
     )
     val rowBorderColor by animateColorAsState(
         targetValue = when {
-            isSelectedRow || isChecked -> SemanticSuccess.copy(alpha = 0.76f)
+            isSelectedRow || isChecked -> SemanticSuccess.copy(alpha = 0.35f)
             else -> Color.Transparent
         },
         animationSpec = MotionSpecs.standard(),
@@ -515,7 +516,7 @@ fun TeachingClassRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(rowBackground)
-            .border(width = if (isSelectedRow || isChecked) 2.dp else 0.dp, color = rowBorderColor)
+            .border(width = if (isSelectedRow || isChecked) 1.dp else 0.dp, color = rowBorderColor, shape = RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = {
                     if (isMultiSelectMode) {

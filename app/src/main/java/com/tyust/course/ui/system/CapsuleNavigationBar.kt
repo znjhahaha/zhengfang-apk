@@ -85,8 +85,8 @@ fun CapsuleNavigationBar(
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                GlassHighlight.copy(alpha = 0.40f),
-                                GlassHighlight.copy(alpha = 0.12f),
+                                GlassHighlight.copy(alpha = 0.55f),
+                                GlassHighlight.copy(alpha = 0.20f),
                                 Color.Transparent
                             ),
                             startY = 0f,
@@ -97,7 +97,7 @@ fun CapsuleNavigationBar(
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.20f),
+                                Color.White.copy(alpha = 0.30f),
                                 Color.Transparent
                             ),
                             center = Offset(size.width * 0.15f, size.height * 0.20f),
@@ -153,15 +153,26 @@ fun CapsuleNavigationBar(
                         )
                     )
                     .drawBehind {
-                        // 指示器内部微光（增强效果）
+                        // 顶部反光带（增强玻璃厚度感）
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.18f),
+                                    Color.White.copy(alpha = 0.28f),
                                     Color.Transparent
                                 ),
                                 startY = 0f,
                                 endY = size.height * 0.45f
+                            )
+                        )
+                        // 底部微弱内阴影（模拟凹陷玻璃片效果）
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.08f)
+                                ),
+                                startY = size.height * 0.5f,
+                                endY = size.height
                             )
                         )
                     }
@@ -195,13 +206,13 @@ private fun CapsuleNavItem(
 ) {
     // 选中时图标略微放大
     val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1.12f else 1f,
+        targetValue = if (selected) 1.18f else 1f,
         animationSpec = MotionSpring.bounce(),
         label = "navIconScale"
     )
     // 选中时整体微微上浮
     val contentOffsetY by animateDpAsState(
-        targetValue = if (selected) (-2).dp else 0.dp,
+        targetValue = if (selected) (-3).dp else 0.dp,
         animationSpec = MotionSpring.gentle(),
         label = "navContentOffset"
     )
@@ -209,7 +220,7 @@ private fun CapsuleNavItem(
         targetValue = if (selected)
             NeuPrimary
         else
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
         animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
         label = "navIconTint"
     )

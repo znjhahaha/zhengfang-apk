@@ -224,7 +224,21 @@ fun SystemTopBar(
     navigationIcon: @Composable (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    Column {
+    Column(
+        modifier = Modifier.drawBehind {
+            // 顶部微弱暖光环境渐变
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        GlassHighlight.copy(alpha = 0.08f),
+                        Color.Transparent
+                    ),
+                    startY = 0f,
+                    endY = size.height * 0.6f
+                )
+            )
+        }
+    ) {
         TopAppBar(
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -267,7 +281,7 @@ fun SystemTopBar(
                 actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         )
-        // 渐变分割线，模拟玻璃边缘折射
+        // 渐变分割线 + 底部柔和环境光
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -275,9 +289,10 @@ fun SystemTopBar(
                 .background(
                     Brush.horizontalGradient(
                         colors = listOf(
-                            NeuDivider.copy(alpha = 0.2f),
-                            NeuDivider,
-                            NeuDivider.copy(alpha = 0.2f)
+                            Color.Transparent,
+                            GlassBorderLight.copy(alpha = 0.40f),
+                            GlassBorderLight.copy(alpha = 0.40f),
+                            Color.Transparent
                         )
                     )
                 )
