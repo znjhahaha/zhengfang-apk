@@ -100,6 +100,14 @@ fun SelectedCoursesRoute() {
                     // 服务器返回 "1" 或 {"flag":"1"} 都表示成功
                     if (result != null && (result.trim() == "\"1\"" || result.contains("\"flag\":\"1\""))) {
                         Toast.makeText(context, "退课成功: ${course.name}", Toast.LENGTH_SHORT).show()
+                        // 同步更新本地缓存的 isSelected 状态
+                        val cached = com.tyust.course.manager.CourseCacheManager.getCachedCourses(context)
+                        if (cached != null) {
+                            cached.forEach { c ->
+                                if (c.classId == course.classId) c.isSelected = false
+                            }
+                            com.tyust.course.manager.CourseCacheManager.saveCourses(context, cached)
+                        }
                         loadSelectedCourses() // 刷新列表
                     } else {
                         val msg = if (result != null && result.contains("msg")) {

@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -430,8 +432,8 @@ fun CourseGroupItem(
 
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(animationSpec = MotionSpring.gentle()) + fadeIn(animationSpec = MotionSpecs.standard()),
-                exit = shrinkVertically(animationSpec = MotionSpring.gentle()) + fadeOut(animationSpec = MotionSpecs.standard())
+                enter = expandVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(300)),
+                exit = shrinkVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(300))
             ) {
                 Column {
                     SystemDivider()

@@ -253,11 +253,10 @@ fun CourseListRoute() {
         loadCoursesInternal(forceRefresh = false)
     }
 
-    // 从"已选"切回"可选"时强制刷新，同步退课后的状态
+    // 从"已选"切回"可选"时，仅从缓存重载（退课状态由退课回调同步）
     LaunchedEffect(showSelectedCourses) {
         if (!showSelectedCourses && allCourses.isNotEmpty()) {
-            // 从已选切回可选时，强制刷新以同步 isSelected 状态
-            loadCoursesInternal(forceRefresh = true)
+            loadCoursesInternal(forceRefresh = false)
         }
     }
     

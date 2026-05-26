@@ -75,7 +75,7 @@ import java.util.Calendar
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-private val ScheduleTimeColumnWidth = 34.dp
+private val ScheduleTimeColumnWidth = 28.dp
 private val SchedulePeriodHeight = 84.dp
 
 data class ScheduleCourseUi(
@@ -602,8 +602,7 @@ fun TimetableLayout(
         val ultraCompactThreshold = 42.dp.toPx()
         val cardInset = when {
             columnWidth < ultraCompactThreshold -> 1.dp.roundToPx()
-            columnWidth < compactThreshold -> 2.dp.roundToPx()
-            else -> 3.dp.roundToPx()
+            else -> 1.dp.roundToPx()
         }
         val pxPerPeriod = periodHeight.toPx()
 
@@ -648,9 +647,9 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
     val accentColor = course.color.copy(alpha = 0.70f)
 
     val nameFontSize = when {
-        duration == 1 -> 10.sp
-        duration == 2 -> 10.5.sp
-        else -> 11.sp
+        duration == 1 -> 10.5.sp
+        duration == 2 -> 11.sp
+        else -> 11.5.sp
     }
     val locationFontSize = when {
         duration <= 2 -> 9.sp
@@ -714,8 +713,8 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                    .padding(start = 5.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
                 Text(
                     text = course.name,
@@ -723,9 +722,9 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = nameFontSize,
-                    maxLines = 4,
+                    maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = (nameFontSize.value + 2).sp,
+                    lineHeight = (nameFontSize.value + 1.5).sp,
                     letterSpacing = (-0.2).sp
                 )
 
@@ -736,9 +735,9 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
                         fontWeight = FontWeight.Normal,
                         fontSize = locationFontSize,
-                        maxLines = 4,
+                        maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
-                        lineHeight = (locationFontSize.value + 2).sp
+                        lineHeight = (locationFontSize.value + 1.5).sp
                     )
                 }
             }

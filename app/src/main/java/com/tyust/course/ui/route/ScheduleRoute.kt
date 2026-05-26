@@ -2,27 +2,39 @@ package com.tyust.course.ui.route
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -34,6 +46,9 @@ import com.tyust.course.ui.screen.PeriodTimeUi
 import com.tyust.course.ui.screen.ScheduleCourseUi
 import com.tyust.course.ui.screen.ScheduleScreen
 import com.tyust.course.ui.screen.ScheduleSettingsScreen
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.theme.MotionDuration
+import com.tyust.course.ui.theme.MotionEasing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.Call
@@ -269,7 +284,7 @@ fun ScheduleRoute() {
         onToggleSemester = { isNextSemester = !isNextSemester }
     )
     
-    // Custom Dialog Logic (Animated)
+    // 设置弹窗（使用滑入动画）
     if (showSettingsDialog) {
         var animateTrigger by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { animateTrigger = true }
@@ -278,10 +293,9 @@ fun ScheduleRoute() {
             animateTrigger = false
         }
 
-        // We delay the actual removal of the Dialog from the composition until the animation finishes
         if (!animateTrigger) {
             LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(300) // Wait for exit animation
+                kotlinx.coroutines.delay(300)
                 showSettingsDialog = false
             }
         }
@@ -292,20 +306,22 @@ fun ScheduleRoute() {
         ) {
             AnimatedVisibility(
                 visible = animateTrigger,
-                enter = scaleIn(animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                )) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-                exit = scaleOut(animationSpec = androidx.compose.animation.core.tween(200)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
+                enter = slideInVertically(
+                    initialOffsetY = { it / 4 },
+                    animationSpec = tween(MotionDuration.DialogEnter, easing = MotionEasing.FastOutSlowIn)
+                ) + fadeIn(animationSpec = tween(MotionDuration.Medium)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it / 4 },
+                    animationSpec = tween(MotionDuration.Medium, easing = MotionEasing.Accelerate)
+                ) + fadeOut(animationSpec = tween(MotionDuration.Medium))
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.surface
                 ) {
                     ScheduleSettingsScreen(
                         manager = settingsManager,
                         onClose = {
-                            // Reload settings
                             periodCount = settingsManager.periodCount
                             periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
                             val w = settingsManager.calculateCurrentWeek()
@@ -332,7 +348,7 @@ fun ScheduleRoute() {
         }
     }
     
-    // Course Detail Dialog (Compose Version)
+    // 课程详情弹窗（统一设计语言）
     if (showCourseDetail != null) {
         val course = showCourseDetail!!
         var animateTrigger by remember { mutableStateOf(false) }
@@ -350,42 +366,90 @@ fun ScheduleRoute() {
         }
 
         Dialog(onDismissRequest = { dismiss() }) {
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = animateTrigger,
-                enter = androidx.compose.animation.scaleIn(animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                )) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-                exit = androidx.compose.animation.scaleOut(animationSpec = androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
+                enter = slideInVertically(
+                    initialOffsetY = { it / 3 },
+                    animationSpec = tween(MotionDuration.DialogEnter, easing = MotionEasing.FastOutSlowIn)
+                ) + fadeIn(animationSpec = tween(MotionDuration.Medium)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it / 3 },
+                    animationSpec = tween(MotionDuration.Medium, easing = MotionEasing.Accelerate)
+                ) + fadeOut(animationSpec = tween(MotionDuration.Medium))
             ) {
-                // Simple Detail Card
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color.White,
-                    modifier = Modifier.background(Color.White)
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
                 ) {
-                   Column(
-                       modifier = Modifier.padding(24.dp),
-                       verticalArrangement = Arrangement.spacedBy(16.dp)
-                   ) {
-                       Text(
-                           text = course.name,
-                           style = MaterialTheme.typography.titleLarge
-                       )
-                       HorizontalDivider()
-                       Text("时间: ${course.weeks} 周${course.day} 第${course.startPeriod}-${course.endPeriod}节")
-                       Text("教室: ${if(course.location.isNotEmpty()) course.location else "未指定"}")
-                       Text("教师: ${if(course.teacher.isNotEmpty()) course.teacher else "未指定"}")
-                       
-                       Button(
-                           onClick = { dismiss() },
-                           modifier = Modifier.fillMaxWidth()
-                       ) {
-                           Text("确定")
-                       }
-                   }
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // 课程名
+                        Text(
+                            text = course.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // 信息行
+                        CourseInfoRow(
+                            icon = Icons.Default.AccessTime,
+                            label = "时间",
+                            value = "${course.weeks} 周${course.day} 第${course.startPeriod}-${course.endPeriod}节"
+                        )
+                        CourseInfoRow(
+                            icon = Icons.Default.Place,
+                            label = "教室",
+                            value = course.location.ifEmpty { "未指定" }
+                        )
+                        CourseInfoRow(
+                            icon = Icons.Default.Person,
+                            label = "教师",
+                            value = course.teacher.ifEmpty { "未指定" }
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        SystemPrimaryButton(
+                            text = "确定",
+                            onClick = { dismiss() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CourseInfoRow(icon: ImageVector, label: String, value: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
