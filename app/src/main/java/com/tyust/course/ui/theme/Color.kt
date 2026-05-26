@@ -1,6 +1,9 @@
 package com.tyust.course.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 
 val BrandPrimary = Color(0xFF3559E0)
 val BrandPrimaryStrong = Color(0xFF2142BA)
@@ -158,10 +161,17 @@ val GlassInnerShadow = Color(0x0DBEC8D6)
 // ═══════════════════════════════════════════════════════════
 
 /** 新拟态主色（柔和液态蓝，替代 BrandPrimary 用于新拟态上下文） */
-val NeuPrimary = Color(0xFF4D70FF)
+/** 新拟态主色（动态映射到 MaterialTheme.colorScheme.primary） */
+val NeuPrimary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.primary
 
-/** 新拟态主色容器（淡蓝融合新拟态灰底） */
-val NeuPrimaryContainer = Color(0xFFDAE2FF)
+/** 新拟态主色容器（动态映射到 MaterialTheme.colorScheme.primaryContainer） */
+val NeuPrimaryContainer: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.primaryContainer
 
 /** 新拟态文字主色 */
 val NeuOnSurface = Color(0xFF2E3A4D)

@@ -2,9 +2,16 @@ package com.tyust.course.ui.screen
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +49,9 @@ import com.tyust.course.ui.theme.Neutral200
 import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.GlassBorderLight
 import com.tyust.course.ui.theme.GlassBorderDark
+import com.tyust.course.ui.theme.MotionSpring
+import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.system.neumorphicShadow
 /**
  * 抢课队列项状态
  */
@@ -166,12 +176,23 @@ fun GrabQueueHeader(
             }
 
             // 清空队列
-            IconButton(
+            Surface(
                 onClick = onClearQueue,
                 enabled = queueSize > 0 && !isRunning,
-                modifier = Modifier.size(32.dp)
+                shape = RoundedCornerShape(8.dp),
+                color = if (queueSize > 0 && !isRunning) SemanticDanger.copy(alpha = 0.12f) else NeuInsetBackground.copy(alpha = 0.5f),
+                contentColor = if (queueSize > 0 && !isRunning) SemanticDanger.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier
+                    .size(30.dp)
+                    .neumorphicShadow(cornerRadius = 8.dp, elevation = if (queueSize > 0 && !isRunning) 2.dp else 0.dp)
             ) {
-                Icon(Icons.Default.DeleteSweep, contentDescription = "清空队列")
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = "清空队列",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
@@ -343,19 +364,22 @@ fun GrabQueueItem(
                         }
                     }
                     // 删除
-                    IconButton(
+                    Surface(
                         onClick = onRemove,
+                        shape = RoundedCornerShape(8.dp),
+                        color = SemanticDanger.copy(alpha = 0.12f),
+                        contentColor = SemanticDanger.copy(alpha = 0.85f),
                         modifier = Modifier
                             .size(30.dp)
-                            .clip(CircleShape)
-                            .background(SemanticDanger.copy(alpha = 0.12f))
+                            .neumorphicShadow(cornerRadius = 8.dp, elevation = 2.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "删除",
-                            tint = SemanticDanger.copy(alpha = 0.85f),
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -364,7 +388,7 @@ fun GrabQueueItem(
 }
 
 /**
- * 🔧 仿图二样式的自定义模式切换开关
+ * 🔧 仿图二样式的自定义模式切换开关（物理优化版：对称滑动与层叠文字染色，新增触压弹性及图标微动效）
  */
 @Composable
 fun GrabModeSwitch(
@@ -372,62 +396,161 @@ fun GrabModeSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val trackWidth = 84.dp
+    val trackWidth = 88.dp
     val trackHeight = 32.dp
-    val thumbSize = 26.dp
+    val thumbWidth = 41.dp
+    val thumbHeight = 26.dp
     val padding = 3.dp
+
+    // 收集点击/按压物理状态
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
     
+    // 整体开关按压微缩放
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = MotionSpring.gentle(),
+        label = "scale"
+    )
+
+    // 弹性滑动指示器偏移量：左侧 0.dp，右侧 41.dp
     val thumbOffset by animateDpAsState(
-        targetValue = if (checked) padding else trackWidth - thumbSize - padding,
+        targetValue = if (checked) trackWidth - thumbWidth - padding * 2 else 0.dp,
+        animationSpec = MotionSpring.gentle(),
         label = "thumbOffset"
     )
     
     val trackColor by animateColorAsState(
         targetValue = if (checked) NeuPrimary.copy(alpha = 0.9f) else SemanticSuccess.copy(alpha = 0.9f),
+        animationSpec = MotionSpecs.standard(),
         label = "trackColor"
     )
 
+    // 智能模式激活时刷新图标旋转
+    val refreshRotation by animateFloatAsState(
+        targetValue = if (!checked) 360f else 0f,
+        animationSpec = MotionSpring.gentle(),
+        label = "refreshRotation"
+    )
+
+    // 精确模式激活时锁头图标轻微缩放呼吸
+    val lockScale by animateFloatAsState(
+        targetValue = if (checked) 1.15f else 0.9f,
+        animationSpec = MotionSpring.bounce(),
+        label = "lockScale"
+    )
+
     Surface(
-        onClick = { onCheckedChange(!checked) },
         shape = RoundedCornerShape(trackHeight / 2),
         color = trackColor,
-        modifier = modifier.size(trackWidth, trackHeight),
+        modifier = modifier
+            .size(trackWidth, trackHeight)
+            .scale(scale)
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(trackHeight / 2)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                onCheckedChange(!checked)
+            },
         shadowElevation = 0.dp
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            // 背景文字和图标
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!checked) {
-                    Text("智能", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Icon(Icons.Default.Refresh, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
-                } else {
-                    Icon(Icons.Default.Lock, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
-                    Text("精确", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            
-            // 滑块
+            // 1. 底层滑块
             Surface(
-                shape = RoundedCornerShape(thumbSize / 2),
+                shape = RoundedCornerShape(13.dp),
                 color = Color.White,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(padding)
-                    .size(thumbSize)
-                    .offset(x = thumbOffset),
-                shadowElevation = 2.dp
+                    .size(width = thumbWidth, height = thumbHeight)
+                    .offset(x = thumbOffset)
+                    .scale(if (isPressed) 0.92f else 1f) // 按压时滑块单独回弹挤压
+                    .border(
+                        width = 0.5.dp,
+                        color = Color.Black.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(13.dp)
+                    ),
+                shadowElevation = 3.dp // 增加阴影高度，提升立体新拟态浮雕感
+            ) {}
+
+            // 2. 表层文字和图标逻辑（层叠在滑块之上，避免被滑块遮挡，产生完美滑块染色质感）
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (checked) Icons.Default.Lock else Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = if (checked) NeuPrimary else SemanticSuccess,
-                        modifier = Modifier.size(14.dp)
-                    )
+                // 智能模式
+                val leftActive = !checked
+                val leftColor by animateColorAsState(
+                    targetValue = if (leftActive) SemanticSuccess else Color.White.copy(alpha = 0.7f),
+                    animationSpec = MotionSpecs.standard(),
+                    label = "leftColor"
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "智能",
+                            color = leftColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = leftColor,
+                            modifier = Modifier
+                                .size(11.dp)
+                                .graphicsLayer { rotationZ = refreshRotation }
+                        )
+                    }
+                }
+                
+                // 精确模式
+                val rightActive = checked
+                val rightColor by animateColorAsState(
+                    targetValue = if (rightActive) NeuPrimary else Color.White.copy(alpha = 0.7f),
+                    animationSpec = MotionSpecs.standard(),
+                    label = "rightColor"
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = rightColor,
+                            modifier = Modifier
+                                .size(11.dp)
+                                .scale(lockScale)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "精确",
+                            color = rightColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

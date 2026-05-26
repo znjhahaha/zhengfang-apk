@@ -255,12 +255,24 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         label = "MainTabTransition"
                     ) { targetIndex ->
                         when (targetIndex) {
-                            0 -> com.tyust.course.ui.route.CourseListRoute()
-                            1 -> com.tyust.course.ui.route.ScheduleRoute()
-                            2 -> com.tyust.course.ui.route.GrabProRoute()
-                            3 -> com.tyust.course.ui.route.GradesRoute()
-                            4 -> com.tyust.course.ui.route.SettingsRoute()
-                            else -> com.tyust.course.ui.route.CourseListRoute()
+                            0 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                com.tyust.course.ui.route.CourseListRoute()
+                            }
+                            1 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF10B981)) {
+                                com.tyust.course.ui.route.ScheduleRoute()
+                            }
+                            2 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                com.tyust.course.ui.route.GrabProRoute()
+                            }
+                            3 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFFF59E0B)) {
+                                com.tyust.course.ui.route.GradesRoute()
+                            }
+                            4 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF3B82F6)) {
+                                com.tyust.course.ui.route.SettingsRoute()
+                            }
+                            else -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                com.tyust.course.ui.route.CourseListRoute()
+                            }
                         }
                     }
                 }

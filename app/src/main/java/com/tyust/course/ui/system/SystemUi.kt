@@ -118,7 +118,9 @@ fun Modifier.neumorphicShadow(
     .graphicsLayer { clip = false }
     .drawBehind {
         val elevationPx = elevation.toPx()
-        val blurPx = elevationPx * 2f
+        // BlurMaskFilter 不接受 radius <= 0，直接跳过绘制
+        if (elevationPx <= 0f) return@drawBehind
+        val blurPx = (elevationPx * 2f).coerceAtLeast(0.1f)
         val radiusPx = cornerRadius.toPx()
 
         // 组件本体对应的圆角矩形路径（大小不变）
@@ -800,23 +802,28 @@ fun SystemActionButton(
         color = containerColor,
         contentColor = contentColor
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Box(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
         ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold
-            )
         }
     }
 }

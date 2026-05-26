@@ -36,6 +36,7 @@ import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDestructiveButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.neumorphicShadow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -233,155 +234,155 @@ fun SelectedCourseItem(
     }
     
     SystemCard(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧：课程信息及安排
+            Column(modifier = Modifier.weight(1f)) {
+                // 第一行：标题 + 学分
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
                         text = course.name ?: "未知课程",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "ID: ${course.courseId ?: "--"}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    SystemStatusBadge(
+                        text = "${course.credit ?: "0.0"}学分",
+                        tone = SystemTone.Info
                     )
                 }
                 
-                SystemStatusBadge(
-                    text = "${course.credit ?: "0.0"} 学分",
-                    tone = SystemTone.Info
-                )
-            }
-            
-            // 分割线使用系统透明度
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                thickness = 0.5.dp
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 教师
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = NeuPrimary
-                    )
-                    Column {
-                        Text(text = "教师", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = course.teacher ?: "--",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(6.dp))
                 
-                // 班级
+                // 第二行：教师和班级（紧凑同行显示）
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = NeuPrimary
-                    )
-                    Column {
-                        Text(text = "班级", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = course.jxbmc ?: course.classId ?: "--",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-            
-            // 时间地点：使用系统圆角柔和背景
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = NeuInsetBackground.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Schedule,
+                            imageVector = Icons.Default.Person,
                             contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            modifier = Modifier.size(13.dp),
+                            tint = NeuPrimary.copy(alpha = 0.8f)
                         )
                         Text(
-                            text = course.time ?: "时间未安排",
+                            text = course.teacher ?: "--",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (!course.location.isNullOrEmpty()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = course.location ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Group,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = NeuPrimary.copy(alpha = 0.8f)
+                        )
+                        Text(
+                            text = course.jxbmc ?: course.classId ?: "--",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                // 第三行：时间
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = course.time ?: "时间未安排",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // 第四行：地点（若有）
+                if (!course.location.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = course.location ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             
-            SystemDestructiveButton(
-                text = if (isDropping) "退课中..." else "退课",
+            // 右侧：圆形红色退课按钮
+            Surface(
                 onClick = { showDropConfirmDialog = true },
                 enabled = !isDropping,
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                shape = RoundedCornerShape(19.dp),
+                color = SemanticDanger,
+                contentColor = Color.White,
+                modifier = Modifier
+                    .size(38.dp)
+                    .neumorphicShadow(cornerRadius = 19.dp, elevation = 4.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (isDropping) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "退课",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
-            )
+            }
         }
     }
 }
