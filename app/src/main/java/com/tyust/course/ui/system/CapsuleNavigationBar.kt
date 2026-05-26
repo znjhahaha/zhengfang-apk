@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyust.course.BottomNavItem
+import com.tyust.course.ui.theme.GlassBorderDark
+import com.tyust.course.ui.theme.GlassBorderLight
 import com.tyust.course.ui.theme.GlassHighlight
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuInsetBackground
@@ -77,30 +79,46 @@ fun CapsuleNavigationBar(
                 // 整个容器为真正的胶囊形状 clip
                 .clip(capsuleShape)
                 .background(NeuSurface)
-                // 液态玻璃高光层：顶部半透明白色渐变
+                // 液态玻璃高光层：顶部半透明白色渐变（增强效果）
                 .drawBehind {
-                    // 顶部高光条纹
+                    // 顶部高光条纹（提升alpha使效果更显著）
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                GlassHighlight.copy(alpha = 0.30f),
-                                GlassHighlight.copy(alpha = 0.08f),
+                                GlassHighlight.copy(alpha = 0.40f),
+                                GlassHighlight.copy(alpha = 0.12f),
                                 Color.Transparent
                             ),
                             startY = 0f,
-                            endY = size.height * 0.55f
+                            endY = size.height * 0.50f
                         )
                     )
                     // 左上角微妙的液态折射光斑
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.15f),
+                                Color.White.copy(alpha = 0.20f),
                                 Color.Transparent
                             ),
                             center = Offset(size.width * 0.15f, size.height * 0.20f),
                             radius = size.height * 0.8f
                         )
+                    )
+                    // 双色边框效果：顶部亮 + 底部暗
+                    val borderWidth = 1.dp.toPx()
+                    // 顶部亮线
+                    drawLine(
+                        color = GlassBorderLight.copy(alpha = 0.45f),
+                        start = Offset(28.dp.toPx(), 0f),
+                        end = Offset(size.width - 28.dp.toPx(), 0f),
+                        strokeWidth = borderWidth
+                    )
+                    // 底部暗线
+                    drawLine(
+                        color = GlassBorderDark.copy(alpha = 0.30f),
+                        start = Offset(28.dp.toPx(), size.height),
+                        end = Offset(size.width - 28.dp.toPx(), size.height),
+                        strokeWidth = borderWidth
                     )
                 }
         ) {
@@ -135,15 +153,15 @@ fun CapsuleNavigationBar(
                         )
                     )
                     .drawBehind {
-                        // 指示器内部微光
+                        // 指示器内部微光（增强效果）
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.12f),
+                                    Color.White.copy(alpha = 0.18f),
                                     Color.Transparent
                                 ),
                                 startY = 0f,
-                                endY = size.height * 0.4f
+                                endY = size.height * 0.45f
                             )
                         )
                     }

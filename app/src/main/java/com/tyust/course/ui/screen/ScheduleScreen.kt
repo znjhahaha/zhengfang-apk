@@ -70,7 +70,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private val ScheduleTimeColumnWidth = 34.dp
-private val SchedulePeriodHeight = 82.dp
+private val SchedulePeriodHeight = 84.dp
 
 data class ScheduleCourseUi(
     val name: String,
@@ -628,13 +628,24 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
 
     // 极限紧凑排版：每一个 sp 和 dp 都很珍贵
     val nameFontSize = when {
-        duration == 1 -> 10.5.sp
-        duration == 2 -> 11.sp
-        else -> 11.5.sp
+        duration == 1 -> 10.sp
+        duration == 2 -> 10.5.sp
+        else -> 11.sp
     }
     val locationFontSize = when {
         duration <= 2 -> 9.sp
         else -> 9.5.sp
+    }
+
+    // 地点简化：自动缩短常见校区前缀，释放显示空间
+    val displayLocation = remember(course.location) {
+        course.location
+            .replace("西校区", "西")
+            .replace("东校区", "东")
+            .replace("南校区", "南")
+            .replace("北校区", "北")
+            .replace("主校区", "主")
+            .replace("新校区", "新")
     }
 
     Surface(
@@ -650,7 +661,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                 .padding(horizontal = 3.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.Top
         ) {
-            // 课程名称：核心信息，给足行数
+            // 课程名称：压缩行数给地点让路
             Text(
                 text = course.name,
                 style = MaterialTheme.typography.labelSmall,
@@ -659,34 +670,34 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                 fontSize = nameFontSize,
                 maxLines = when {
                     duration == 1 -> 2
-                    duration == 2 -> 3
-                    else -> 4
+                    duration == 2 -> 2
+                    else -> 3
                 },
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = (nameFontSize.value + 1).sp,
                 letterSpacing = (-0.3).sp
             )
 
-            // 上课地点：关键信息，必须尽量完整显示
-            if (course.location.isNotBlank()) {
+            // 上课地点：关键信息，给足行数完整显示
+            if (displayLocation.isNotBlank()) {
                 Spacer(modifier = Modifier.height(1.dp))
                 Text(
-                    text = course.location,
+                    text = displayLocation,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     fontWeight = FontWeight.Normal,
                     fontSize = locationFontSize,
                     maxLines = when {
-                        duration == 1 -> 2
-                        duration == 2 -> 3
-                        else -> 3
+                        duration == 1 -> 3
+                        duration == 2 -> 4
+                        else -> 4
                     },
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = (locationFontSize.value + 1).sp
                 )
             }
 
-            // 教师：仅在空间充足时显示（3节及以上）
+            // 教师：仅在3节及以上时显示
             if (duration >= 3 && course.teacher.isNotBlank()) {
                 Spacer(modifier = Modifier.height(1.dp))
                 Text(

@@ -429,7 +429,7 @@ fun CourseListRoute() {
         android.util.Log.d("CourseListRoute", "🚀 开始并行预加载 $totalGroups 个课程组")
         
         // 使用信号量限制并发数（避免请求过多被服务器拒绝）
-        val semaphore = Semaphore(3) // 最多3个并发请求
+        val semaphore = Semaphore(5) // 最多5个并发请求（提升加载速度）
         var completedCount = 0
         
         // 并行获取所有课程组的详情
@@ -484,7 +484,7 @@ fun CourseListRoute() {
                             preloadedGroupIds = preloadedGroupIds + courseId
                             
                             // 触发UI刷新（通过创建新列表引用）
-                            if (completedCount % 5 == 0 || completedCount == totalGroups) {
+                            if (completedCount % 3 == 0 || completedCount == totalGroups) {
                                 courses = allCourses.toList()
                             }
                         }
@@ -649,9 +649,9 @@ fun CourseListRoute() {
     Scaffold(
         topBar = {
             Surface(
-                color = SurfaceWhite.copy(alpha = 0.88f), // 极简系统工具风：高亮变白透
+                color = NeuSurface,
                 contentColor = Neutral900,
-                shadowElevation = 0.dp // 移除原生大阴影
+                shadowElevation = 0.dp
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     AnimatedContent(

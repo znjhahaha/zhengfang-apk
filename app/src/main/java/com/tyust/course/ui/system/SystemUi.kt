@@ -58,10 +58,16 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tyust.course.ui.theme.GlassArcHighlight
+import com.tyust.course.ui.theme.GlassBorderDark
+import com.tyust.course.ui.theme.GlassBorderLight
+import com.tyust.course.ui.theme.GlassHighlight
+import com.tyust.course.ui.theme.GlassOverlay
 import com.tyust.course.ui.theme.NeuDarkShadow
 import com.tyust.course.ui.theme.NeuDivider
 import com.tyust.course.ui.theme.NeuInsetBackground
@@ -153,6 +159,53 @@ fun Modifier.neumorphicShadow(
         }
     }
 
+/**
+ * 液态玻璃高光效果 Modifier
+ * 在组件上方绘制：
+ * 1. 顶部水平渐变高光条（模拟玻璃表面反射）
+ * 2. 左上角径向光斑（模拟水滴折射光点）
+ * 3. 底部微弱内阴影（增加玻璃深度感）
+ */
+fun Modifier.glassHighlight(
+    highlightAlpha: Float = 0.22f,
+    spotAlpha: Float = 0.12f
+): Modifier = this.drawBehind {
+    // 1. 顶部高光条纹：模拟光源从上方照射玻璃的反射
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                GlassHighlight.copy(alpha = highlightAlpha),
+                GlassHighlight.copy(alpha = highlightAlpha * 0.35f),
+                Color.Transparent
+            ),
+            startY = 0f,
+            endY = size.height * 0.45f
+        )
+    )
+    // 2. 左上角径向光斑：模拟水滴折射的聚焦光点
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.White.copy(alpha = spotAlpha),
+                Color.Transparent
+            ),
+            center = Offset(size.width * 0.12f, size.height * 0.15f),
+            radius = size.height * 0.7f
+        )
+    )
+    // 3. 底部微弱阴影：增加玻璃厚度感
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                GlassBorderDark.copy(alpha = 0.06f)
+            ),
+            startY = size.height * 0.75f,
+            endY = size.height
+        )
+    )
+}
+
 enum class SystemTone {
     Info,
     Success,
@@ -205,14 +258,28 @@ fun SystemTopBar(
             navigationIcon = { navigationIcon?.invoke() },
             actions = actions,
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = NeuSurface,
-                scrolledContainerColor = NeuSurface,
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
                 actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         )
-        HorizontalDivider(color = NeuDivider, thickness = 0.5.dp)
+        // 渐变分割线，模拟玻璃边缘折射
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            NeuDivider.copy(alpha = 0.2f),
+                            NeuDivider,
+                            NeuDivider.copy(alpha = 0.2f)
+                        )
+                    )
+                )
+        )
     }
 }
 
@@ -255,15 +322,32 @@ fun SystemCard(
         modifier = clickableModifier,
         shape = RoundedCornerShape(16.dp),
         color = backgroundColor,
+        border = BorderStroke(
+            width = 0.8.dp,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    GlassBorderLight.copy(alpha = 0.55f),
+                    GlassBorderDark.copy(alpha = 0.25f)
+                ),
+                start = Offset.Zero,
+                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+            )
+        ),
         shadowElevation = 0.dp
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            content = content
-        )
+                .glassHighlight()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(contentPadding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content
+            )
+        }
     }
 }
 

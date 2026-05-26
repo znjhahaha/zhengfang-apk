@@ -133,19 +133,25 @@ val NeuInsetLightShadow = Color(0xFFF5F9FC)
 val GlassHighlight = Color(0xAAFFFFFF)
 
 /** 液态玻璃弧形折射高光（月牙反光渐变起始色） */
-val GlassShearHighlight = Color(0x66FFFFFF)
+val GlassShearHighlight = Color(0x80FFFFFF)
 
 /** 液态折射描边-明面（顶部与左侧边框渐变色） */
-val GlassBorderLight = Color(0xB2FFFFFF)
+val GlassBorderLight = Color(0xCCFFFFFF)
 
 /** 液态折射描边-暗面（底部与右侧边框渐变色） */
-val GlassBorderDark = Color(0x26A6B4C9)
+val GlassBorderDark = Color(0x33A6B4C9)
 
 /** 液态玻璃卡片内部半透明填充色（深色暗绿调，参照模板2） */
 val GlassSurfaceDark = Color(0xCC1A2E2A)
 
 /** 液态玻璃高光弧线色（亮侧弧线描边） */
-val GlassArcHighlight = Color(0x55FFFFFF)
+val GlassArcHighlight = Color(0x66FFFFFF)
+
+/** 玻璃覆盖层（卡片内微白覆盖层，增加磨砂质感） */
+val GlassOverlay = Color(0x18FFFFFF)
+
+/** 玻璃内阴影（模拟玻璃内部折射暗角） */
+val GlassInnerShadow = Color(0x0DBEC8D6)
 
 // ═══════════════════════════════════════════════════════════
 // 新拟态主题适配色（覆盖原 Brand 色以柔和化）

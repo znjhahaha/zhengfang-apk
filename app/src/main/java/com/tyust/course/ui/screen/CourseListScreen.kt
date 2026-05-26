@@ -72,6 +72,7 @@ import com.tyust.course.ui.theme.NeuDivider
 import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticSuccess
 import com.tyust.course.ui.theme.SemanticWarning
 
@@ -326,16 +327,16 @@ fun CourseGroupItem(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = courseName,
@@ -346,7 +347,7 @@ fun CourseGroupItem(
                             overflow = TextOverflow.Ellipsis
                         )
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             SystemStatusBadge(
@@ -366,17 +367,17 @@ fun CourseGroupItem(
                                 tone = SystemTone.Neutral
                             )
                             SystemStatusBadge(
-                                text = "${classes.size} 个班",
+                                text = "${classes.size} 个教学班",
                                 tone = SystemTone.Neutral
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Column(
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (onSetFuzzyMatchTarget != null && !hasSelected) {
                             SystemActionButton(
@@ -409,32 +410,6 @@ fun CourseGroupItem(
                             }
                         }
                     }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (courseId.isBlank()) "课程 ID 未提供" else "课程 ID：$courseId",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${classes.size} 个教学班",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                if (!isExpanded && !isMultiSelectMode) {
-                    Text(
-                        text = "长按可多选批量操作",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
-                    )
                 }
             }
 
@@ -559,7 +534,7 @@ fun TeachingClassRow(
                     }
                 }
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isMultiSelectMode) {
@@ -583,29 +558,38 @@ fun TeachingClassRow(
 
         Column(
             modifier = Modifier.weight(1.2f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = displayName,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
             Text(
                 text = teacher,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
-            SystemCapacityIndicator(
-                selected = course.selected,
-                capacity = course.capacity,
-                modifier = Modifier.fillMaxWidth()
+            // 紧凑容量显示：内联文字替代独立进度条
+            val ratio = if (course.capacity > 0) course.selected.toFloat() / course.capacity else 0f
+            val capacityText = if (course.capacity > 0) "${course.selected}/${course.capacity}" else "${course.selected}/--"
+            val capacityColor = when {
+                course.capacity > 0 && course.selected >= course.capacity -> SemanticDanger
+                ratio >= 0.85f -> SemanticWarning
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Text(
+                text = capacityText,
+                style = MaterialTheme.typography.labelSmall,
+                color = capacityColor,
+                fontWeight = FontWeight.Medium
             )
         }
 
