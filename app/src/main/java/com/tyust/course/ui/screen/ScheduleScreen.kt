@@ -45,8 +45,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -289,6 +291,7 @@ fun WeekHeaderCompact(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = PagePadding)
                     .padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -623,10 +626,11 @@ fun TimetableLayout(
 @Composable
 fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
     val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
-    val containerColor = if (course.isCustom) course.color.copy(alpha = 0.32f) else course.color.copy(alpha = 0.25f)
-    val borderColor = course.color.copy(alpha = 0.45f)
+    // 新拟态玻璃风格：更柔和的半透明填充 + 顶部高光
+    val containerColor = if (course.isCustom) course.color.copy(alpha = 0.28f) else course.color.copy(alpha = 0.18f)
+    val borderColor = course.color.copy(alpha = 0.35f)
+    val accentColor = course.color.copy(alpha = 0.70f)
 
-    // 极限紧凑排版：每一个 sp 和 dp 都很珍贵
     val nameFontSize = when {
         duration == 1 -> 10.sp
         duration == 2 -> 10.5.sp
@@ -637,7 +641,6 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
         else -> 9.5.sp
     }
 
-    // 地点简化：自动缩短常见校区前缀，释放显示空间
     val displayLocation = remember(course.location) {
         course.location
             .replace("西校区", "西")
@@ -650,65 +653,94 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
 
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(0.8.dp, borderColor)
+        border = BorderStroke(0.6.dp, borderColor)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 3.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.Top
-        ) {
-            // 课程名称：压缩行数给地点让路
-            Text(
-                text = course.name,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-                fontSize = nameFontSize,
-                maxLines = when {
-                    duration == 1 -> 2
-                    duration == 2 -> 2
-                    else -> 3
-                },
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = (nameFontSize.value + 1).sp,
-                letterSpacing = (-0.3).sp
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 顶部玻璃高光渐变：模拟光源照射的反射
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(with(LocalDensity.current) { (duration * 20).dp })
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.25f),
+                                Color.White.copy(alpha = 0.05f),
+                                Color.Transparent
+                            )
+                        )
+                    )
             )
-
-            // 上课地点：关键信息，给足行数完整显示
-            if (displayLocation.isNotBlank()) {
-                Spacer(modifier = Modifier.height(1.dp))
+            // 左侧彩色指示条：课程颜色标识
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                accentColor,
+                                accentColor.copy(alpha = 0.3f)
+                            )
+                        )
+                    )
+            )
+            // 内容区域
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 5.dp, end = 3.dp, top = 3.dp, bottom = 2.dp),
+                verticalArrangement = Arrangement.Top
+            ) {
                 Text(
-                    text = displayLocation,
+                    text = course.name,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                    fontWeight = FontWeight.Normal,
-                    fontSize = locationFontSize,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = nameFontSize,
                     maxLines = when {
-                        duration == 1 -> 3
-                        duration == 2 -> 4
-                        else -> 4
+                        duration == 1 -> 2
+                        duration == 2 -> 2
+                        else -> 3
                     },
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = (locationFontSize.value + 1).sp
+                    lineHeight = (nameFontSize.value + 1).sp,
+                    letterSpacing = (-0.3).sp
                 )
-            }
 
-            // 教师：仅在3节及以上时显示
-            if (duration >= 3 && course.teacher.isNotBlank()) {
-                Spacer(modifier = Modifier.height(1.dp))
-                Text(
-                    text = course.teacher,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 10.sp
-                )
+                if (displayLocation.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = displayLocation,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+                        fontWeight = FontWeight.Normal,
+                        fontSize = locationFontSize,
+                        maxLines = when {
+                            duration == 1 -> 3
+                            duration == 2 -> 4
+                            else -> 4
+                        },
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = (locationFontSize.value + 1).sp
+                    )
+                }
+
+                if (duration >= 3 && course.teacher.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = course.teacher,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 10.sp
+                    )
+                }
             }
         }
     }
