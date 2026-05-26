@@ -633,7 +633,7 @@ fun SystemPrimaryButton(
         onClick = onClick,
         modifier = modifier
             .height(52.dp)
-            .neumorphicShadow(cornerRadius = 12.dp, elevation = 4.dp),
+            ,
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary),
         shape = RoundedCornerShape(12.dp),
@@ -643,7 +643,7 @@ fun SystemPrimaryButton(
             leadingIcon()
             Spacer(modifier = Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -659,7 +659,7 @@ fun SystemSecondaryButton(
         onClick = onClick,
         modifier = modifier
             .height(52.dp)
-            .neumorphicShadow(cornerRadius = 12.dp, elevation = 4.dp),
+            ,
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(
             containerColor = NeuSurface,
@@ -672,7 +672,7 @@ fun SystemSecondaryButton(
             leadingIcon()
             Spacer(modifier = Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -688,7 +688,7 @@ fun SystemDestructiveButton(
         onClick = onClick,
         modifier = modifier
             .height(52.dp)
-            .neumorphicShadow(cornerRadius = 12.dp, elevation = 4.dp),
+            ,
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(containerColor = SemanticDanger),
         shape = RoundedCornerShape(12.dp),
@@ -698,7 +698,7 @@ fun SystemDestructiveButton(
             leadingIcon()
             Spacer(modifier = Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = MaterialTheme.typography.labelLarge)
     }
 }
 

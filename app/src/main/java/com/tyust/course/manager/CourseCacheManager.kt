@@ -46,6 +46,7 @@ object CourseCacheManager {
                 obj.put("location", course.location ?: "")
                 obj.put("capacity", course.capacity)  // int
                 obj.put("selected", course.selected)  // int
+                obj.put("isSelected", course.isSelected) // 🔧 新增：保存选课状态
                 obj.put("credit", course.credit ?: "")
                 obj.put("kklxdm", course.kklxdm ?: "")
                 obj.put("_xkkz_id", course._xkkz_id ?: "")
@@ -105,6 +106,7 @@ object CourseCacheManager {
                 course.location = obj.optString("location", "")
                 course.capacity = obj.optInt("capacity", 0)
                 course.selected = obj.optInt("selected", 0)
+                course.isSelected = obj.optBoolean("isSelected", false) // 🔧 新增：恢复选课状态
                 course.credit = obj.optString("credit", "")
                 course.kklxdm = obj.optString("kklxdm", "")
                 course._xkkz_id = obj.optString("_xkkz_id", "")

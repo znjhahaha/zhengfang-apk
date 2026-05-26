@@ -3,6 +3,7 @@ package com.tyust.course.ui.screen
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,12 +25,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Place
@@ -72,6 +78,7 @@ import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.MotionSpecs
+import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticSuccess
@@ -400,11 +407,18 @@ fun CourseGroupItem(
                                     strokeWidth = 2.dp
                                 )
                             } else {
+                                val arrowRotation by animateFloatAsState(
+                                    targetValue = if (isExpanded) 180f else 0f,
+                                    animationSpec = MotionSpecs.standard(),
+                                    label = "arrowRotation"
+                                )
                                 Icon(
-                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    imageVector = Icons.Default.KeyboardArrowDown,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .rotate(arrowRotation)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(if (isExpanded) "收起" else "展开")
@@ -416,8 +430,8 @@ fun CourseGroupItem(
 
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(animationSpec = MotionSpecs.expandCollapse()) + fadeIn(animationSpec = MotionSpecs.standard()),
-                exit = shrinkVertically(animationSpec = MotionSpecs.expandCollapse()) + fadeOut(animationSpec = MotionSpecs.standard())
+                enter = expandVertically(animationSpec = MotionSpring.gentle()) + fadeIn(animationSpec = MotionSpecs.standard()),
+                exit = shrinkVertically(animationSpec = MotionSpring.gentle()) + fadeOut(animationSpec = MotionSpecs.standard())
             ) {
                 Column {
                     SystemDivider()
@@ -494,29 +508,37 @@ fun TeachingClassRow(
     val location = course.location.ifEmpty { "未提供地点" }
     val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "未命名教学班" } }
     val isSelectedRow = course.isSelected
-    val rowBackground by animateColorAsState(
+    val rowBackgroundColor = when {
+        isSelectedRow -> SemanticSuccess
+        isChecked -> MaterialTheme.colorScheme.secondaryContainer
+        else -> com.tyust.course.ui.theme.NeuSurface
+    }
+    val backgroundAlpha by animateFloatAsState(
         targetValue = when {
-            isSelectedRow -> SemanticSuccess.copy(alpha = 0.06f)
-            isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.64f)
-            else -> Color.Transparent
+            isSelectedRow -> 0.12f
+            isChecked -> 0.64f
+            else -> 1f
         },
         animationSpec = MotionSpecs.standard(),
-        label = "classRowBackground"
-    )
-    val rowBorderColor by animateColorAsState(
-        targetValue = when {
-            isSelectedRow || isChecked -> SemanticSuccess.copy(alpha = 0.35f)
-            else -> Color.Transparent
-        },
-        animationSpec = MotionSpecs.standard(),
-        label = "classRowBorder"
+        label = "classRowBackgroundAlpha"
     )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(rowBackground)
-            .border(width = if (isSelectedRow || isChecked) 1.dp else 0.dp, color = rowBorderColor, shape = RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(12.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.3f), RoundedCornerShape(12.dp))
+            .background(
+                if (isSelectedRow && backgroundAlpha > 0f) {
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            SemanticSuccess.copy(alpha = backgroundAlpha),
+                            SemanticSuccess.copy(alpha = backgroundAlpha * 0.1f)
+                        )
+                    )
+                } else {
+                    androidx.compose.ui.graphics.SolidColor(rowBackgroundColor.copy(alpha = backgroundAlpha))
+                }
+            )
             .combinedClickable(
                 onClick = {
                     if (isMultiSelectMode) {
@@ -568,13 +590,17 @@ fun TeachingClassRow(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Text(
-                text = teacher,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = teacher,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             // 紧凑容量显示：内联文字替代独立进度条
             val ratio = if (course.capacity > 0) course.selected.toFloat() / course.capacity else 0f
@@ -584,12 +610,16 @@ fun TeachingClassRow(
                 ratio >= 0.85f -> SemanticWarning
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
-            Text(
-                text = capacityText,
-                style = MaterialTheme.typography.labelSmall,
-                color = capacityColor,
-                fontWeight = FontWeight.Medium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Group, contentDescription = null, modifier = Modifier.size(12.dp), tint = capacityColor)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = capacityText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = capacityColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -240,23 +241,10 @@ fun GrabQueueItem(
         label = "statusColor"
     )
     
-    Surface(
-        modifier = modifier
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = if (isActive) NeuInsetBackground else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = 0.8.dp,
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    GlassBorderLight.copy(alpha = 0.45f),
-                    GlassBorderDark.copy(alpha = 0.20f)
-                ),
-                start = Offset.Zero,
-                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-            )
-        ),
-        shadowElevation = 2.dp
+    com.tyust.course.ui.system.SystemCard(
+        modifier = modifier.fillMaxWidth(),
+        backgroundColor = if (isActive) NeuInsetBackground else MaterialTheme.colorScheme.surface,
+        contentPadding = PaddingValues(0.dp)
     ) {
         Row(
             modifier = Modifier
@@ -355,16 +343,22 @@ fun GrabQueueItem(
                         }
                     }
                     // 删除
-                    IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+                    IconButton(
+                        onClick = onRemove,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(SemanticDanger.copy(alpha = 0.12f))
+                    ) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "删除",
-                            tint = SemanticDanger,
-                            modifier = Modifier.size(20.dp)
+                            tint = SemanticDanger.copy(alpha = 0.85f),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
-        }
+            }
         }
     }
 }

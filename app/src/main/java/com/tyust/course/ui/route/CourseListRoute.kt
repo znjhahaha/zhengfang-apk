@@ -614,6 +614,10 @@ fun CourseListRoute() {
                     if (result) {
                         Toast.makeText(context, "✅ 选课成功: ${course.name}", Toast.LENGTH_LONG).show()
                         course.isSelected = true
+                        // 🔧 强制刷新 UI 并保存到持久化缓存
+                        courses = courses.toList()
+                        allCourses = allCourses.toList()
+                        CourseCacheManager.saveCourses(context, allCourses)
                     } else {
                         // 失败消息已经在 performSelectionSync 中显示
                     }

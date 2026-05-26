@@ -3,6 +3,9 @@ package com.tyust.course.ui.screen
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -460,15 +463,15 @@ fun ScheduleGrid(
                     }
                 }
 
-                // 时间列右侧渐变阴影（替代硬竖线，形成自然过渡）
+                // 时间列右侧阴影，柔和过渡
                 Box(
                     modifier = Modifier
-                        .width(3.dp)
+                        .width(8.dp)
                         .fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
                                 colors = listOf(
-                                    NeuDivider.copy(alpha = 0.25f),
+                                    NeuDivider.copy(alpha = 0.10f),
                                     Color.Transparent
                                 )
                             )
@@ -550,7 +553,7 @@ private fun TimetableBackground(
                                 .align(Alignment.CenterEnd)
                                 .fillMaxHeight()
                                 .width(1.dp)
-                                .background(NeuDivider.copy(alpha = 0.4f))
+                                .background(NeuDivider.copy(alpha = 0.15f))
                         )
                     }
                 }
@@ -567,8 +570,8 @@ private fun TimetableBackground(
                     if (rowIndex < periodCount - 1) {
                         HorizontalDivider(
                             modifier = Modifier.align(Alignment.BottomCenter),
-                            color = NeuDivider.copy(alpha = 0.4f),
-                            thickness = 0.8.dp
+                            color = NeuDivider.copy(alpha = 0.15f),
+                            thickness = 0.5.dp
                         )
                     }
                 }
@@ -654,18 +657,24 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
         else -> 9.5.sp
     }
 
-    val displayLocation = remember(course.location) {
-        course.location
-            .replace("西校区", "西")
-            .replace("东校区", "东")
-            .replace("南校区", "南")
-            .replace("北校区", "北")
-            .replace("主校区", "主")
-            .replace("新校区", "新")
-    }
+    val displayLocation = course.location
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = MotionSpring.gentle(),
+        label = "courseCardScale"
+    )
 
     Surface(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick
+            ),
         shape = RoundedCornerShape(8.dp),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -680,7 +689,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.25f),
+                                Color.White.copy(alpha = 0.35f),
                                 Color.White.copy(alpha = 0.05f),
                                 Color.Transparent
                             )
@@ -705,8 +714,8 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 5.dp, end = 3.dp, top = 3.dp, bottom = 2.dp),
-                verticalArrangement = Arrangement.Top
+                    .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
                     text = course.name,
@@ -714,44 +723,22 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = nameFontSize,
-                    maxLines = when {
-                        duration == 1 -> 2
-                        duration == 2 -> 2
-                        else -> 3
-                    },
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = (nameFontSize.value + 1).sp,
-                    letterSpacing = (-0.3).sp
+                    lineHeight = (nameFontSize.value + 2).sp,
+                    letterSpacing = (-0.2).sp
                 )
 
                 if (displayLocation.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = displayLocation,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
                         fontWeight = FontWeight.Normal,
                         fontSize = locationFontSize,
-                        maxLines = when {
-                            duration == 1 -> 3
-                            duration == 2 -> 4
-                            else -> 4
-                        },
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
-                        lineHeight = (locationFontSize.value + 1).sp
-                    )
-                }
-
-                if (duration >= 3 && course.teacher.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(1.dp))
-                    Text(
-                        text = course.teacher,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 10.sp
+                        lineHeight = (locationFontSize.value + 2).sp
                     )
                 }
             }

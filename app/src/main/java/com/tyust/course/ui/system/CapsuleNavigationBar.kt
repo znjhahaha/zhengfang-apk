@@ -78,15 +78,15 @@ fun CapsuleNavigationBar(
                 .neumorphicShadow(cornerRadius = 28.dp, elevation = 10.dp)
                 // 整个容器为真正的胶囊形状 clip
                 .clip(capsuleShape)
-                .background(NeuSurface)
+                .background(NeuSurface.copy(alpha = 0.85f))
                 // 液态玻璃高光层：顶部半透明白色渐变（增强效果）
                 .drawBehind {
                     // 顶部高光条纹（提升alpha使效果更显著）
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                GlassHighlight.copy(alpha = 0.55f),
-                                GlassHighlight.copy(alpha = 0.20f),
+                                GlassHighlight.copy(alpha = 0.75f),
+                                GlassHighlight.copy(alpha = 0.35f),
                                 Color.Transparent
                             ),
                             startY = 0f,
@@ -132,7 +132,7 @@ fun CapsuleNavigationBar(
             // 带弹性动画的偏移
             val animatedOffset by animateDpAsState(
                 targetValue = slotWidth * selectedTab + indicatorHPad,
-                animationSpec = MotionSpring.gentle(),
+                animationSpec = MotionSpring.bounce(),
                 label = "navIndicatorOffset"
             )
 
@@ -157,7 +157,7 @@ fun CapsuleNavigationBar(
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.28f),
+                                    Color.White.copy(alpha = 0.45f),
                                     Color.Transparent
                                 ),
                                 startY = 0f,

@@ -694,14 +694,16 @@ private fun TargetSummaryCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    SystemStatusBadge(text = primaryText, tone = tone)
+                    SystemStatusBadge(text = title, tone = tone)
                 }
+                Text(
+                    text = primaryText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     text = secondaryText,
                     style = MaterialTheme.typography.bodyMedium,
