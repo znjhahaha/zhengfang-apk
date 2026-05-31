@@ -42,10 +42,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.drawBehind
@@ -55,6 +57,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -64,6 +67,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -224,11 +234,31 @@ fun SystemTopBar(
     title: String,
     subtitle: String? = null,
     navigationIcon: @Composable (() -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {}
+    actions: @Composable RowScope.() -> Unit = {},
+    backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
-    Column(
-        modifier = Modifier.drawBehind {
-            // 顶部微弱暖光环境渐变
+    val useGlass = backdrop != null && isBackdropSupported()
+    val backgroundModifier = if (useGlass && backdrop != null) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { androidx.compose.ui.graphics.RectangleShape },
+            effects = {
+                vibrancy()
+                blur(GlassRecipe.TopBarBlurDp.dp.toPx())
+                if (isLensSupported()) {
+                    lens(
+                        refractionHeight = GlassRecipe.TopBarLensRefractionHeightDp.dp.toPx(),
+                        refractionAmount = GlassRecipe.TopBarLensRefractionAmountDp.dp.toPx(),
+                        chromaticAberration = true
+                    )
+                }
+            },
+            onDrawSurface = {
+                drawRect(Color.White.copy(alpha = GlassRecipe.TopBarSurfaceAlpha))
+            }
+        )
+    } else {
+        Modifier.drawBehind {
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
@@ -240,6 +270,9 @@ fun SystemTopBar(
                 )
             )
         }
+    }
+    Column(
+        modifier = backgroundModifier
     ) {
         TopAppBar(
             title = {
@@ -309,9 +342,9 @@ fun SystemCard(
     borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(CardPadding),
+    backdrop: Backdrop? = LocalAppBackdrop.current,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // 按压缩放动效：模拟新拟态凹陷反馈
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -325,13 +358,35 @@ fun SystemCard(
         label = "cardElevation"
     )
 
-    val baseModifier = modifier
-        .fillMaxWidth()
-        .scale(pressScale)
-        .neumorphicShadow(
-            cornerRadius = 16.dp,
-            elevation = pressElevation
-        )
+    val cardShape = RoundedCornerShape(32.dp)
+    val useGlass = backdrop != null && isBackdropSupported()
+
+    val baseModifier = if (useGlass && backdrop != null) {
+        modifier
+            .fillMaxWidth()
+            .scale(pressScale)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { cardShape },
+                effects = {
+                    vibrancy()
+                    if (isLensSupported()) {
+                        lens(
+                            refractionHeight = 16f.dp.toPx(),
+                            refractionAmount = 32f.dp.toPx()
+                        )
+                    }
+                }
+            )
+    } else {
+        modifier
+            .fillMaxWidth()
+            .scale(pressScale)
+            .neumorphicShadow(
+                cornerRadius = 16.dp,
+                elevation = pressElevation
+            )
+    }
     val clickableModifier = if (onClick != null) {
         baseModifier.clickable(
             interactionSource = interactionSource,
@@ -342,35 +397,48 @@ fun SystemCard(
         baseModifier
     }
 
-    Surface(
-        modifier = clickableModifier,
-        shape = RoundedCornerShape(16.dp),
-        color = backgroundColor,
-        border = BorderStroke(
-            width = 0.8.dp,
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    GlassBorderLight.copy(alpha = 0.55f),
-                    GlassBorderDark.copy(alpha = 0.25f)
-                ),
-                start = Offset.Zero,
-                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-            )
-        ),
-        shadowElevation = 0.dp
-    ) {
+    if (useGlass) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .glassHighlight()
+            modifier = clickableModifier
+                .padding(contentPadding)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(contentPadding),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 content = content
             )
+        }
+    } else {
+        Surface(
+            modifier = clickableModifier,
+            shape = cardShape,
+            color = backgroundColor,
+            border = BorderStroke(
+                width = 0.8.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        GlassBorderLight.copy(alpha = 0.55f),
+                        GlassBorderDark.copy(alpha = 0.25f)
+                    ),
+                    start = Offset.Zero,
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                )
+            ),
+            shadowElevation = 0.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassHighlight()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(contentPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = content
+                )
+            }
         }
     }
 }
@@ -550,72 +618,194 @@ fun SystemSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    backdrop: Backdrop? = LocalAppBackdrop.current,
     modifier: Modifier = Modifier
 ) {
-    // 新拟态内凹槽背景 + 滑动指示器动画
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = NeuInsetBackground,
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        androidx.compose.foundation.layout.BoxWithConstraints(
-            modifier = Modifier
+    val useGlass = backdrop != null && isBackdropSupported()
+    val trackShape = RoundedCornerShape(14.dp)
+    val indicatorShape = RoundedCornerShape(10.dp)
+
+    if (useGlass && backdrop != null) {
+        // 玻璃模式：轨道用 drawBackdrop 导出，指示器用 combinedBackdrop 融合折射
+        val trackExported = rememberLayerBackdrop()
+        val combinedBackdrop = rememberCombinedBackdrop(backdrop, trackExported)
+
+        Box(
+            modifier = modifier
                 .fillMaxWidth()
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    exportedBackdrop = trackExported,
+                    shape = { trackShape },
+                    effects = {
+                        blur(GlassRecipe.SegTrackBlurDp.dp.toPx())
+                    },
+                    onDrawSurface = {
+                        drawRect(Color.White.copy(alpha = GlassRecipe.SegTrackSurfaceAlpha))
+                    }
+                )
                 .padding(4.dp)
         ) {
-            val optionCount = options.size.coerceAtLeast(1)
-            val gapWidth = 4.dp * (optionCount - 1)
-            val slotWidth = (maxWidth - gapWidth) / optionCount
-
-            // 弹性滑动指示器
-            val indicatorOffset by animateDpAsState(
-                targetValue = slotWidth * selectedIndex + 4.dp * selectedIndex,
-                animationSpec = com.tyust.course.ui.theme.MotionSpring.gentle(),
-                label = "segmentIndicator"
-            )
-
-            // 指示器背景（在文字下方滑动）
-            Box(
-                modifier = Modifier
-                    .offset(x = indicatorOffset)
-                    .width(slotWidth)
-                    .height(40.dp)
-                    .neumorphicShadow(cornerRadius = 10.dp, elevation = 3.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(NeuSurface)
-            )
-
-            // 选项文字行
-            Row(
-                modifier = Modifier.fillMaxWidth().height(40.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            androidx.compose.foundation.layout.BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                options.forEachIndexed { index, label ->
-                    val selected = index == selectedIndex
-                    val textColor by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
-                        label = "segmentTextColor"
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() },
-                                onClick = { onSelect(index) }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = textColor
+                val optionCount = options.size.coerceAtLeast(1)
+                val gapWidth = 4.dp * (optionCount - 1)
+                val slotWidth = (maxWidth - gapWidth) / optionCount
+
+                val indicatorOffset by animateDpAsState(
+                    targetValue = slotWidth * selectedIndex + 4.dp * selectedIndex,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = 0.7f,
+                        stiffness = 400f
+                    ),
+                    label = "segmentIndicator"
+                )
+
+                // 玻璃指示器 — 从 combinedBackdrop 折射背景+轨道
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(slotWidth)
+                        .height(40.dp)
+                        .drawBackdrop(
+                            backdrop = combinedBackdrop,
+                            shape = { indicatorShape },
+                            effects = {
+                                vibrancy()
+                                blur(GlassRecipe.SegIndicatorBlurDp.dp.toPx())
+                                if (isLensSupported()) {
+                                    lens(
+                                        refractionHeight = GlassRecipe.SegIndicatorRefractionHeightDp.dp.toPx(),
+                                        refractionAmount = GlassRecipe.SegIndicatorRefractionAmountDp.dp.toPx(),
+                                        chromaticAberration = true
+                                    )
+                                }
+                            },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = GlassRecipe.SegIndicatorSurfaceAlpha))
+                            }
                         )
+                )
+
+                // 选项文字行
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    options.forEachIndexed { index, label ->
+                        val selected = index == selectedIndex
+                        val textColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
+                            label = "segmentTextColor"
+                        )
+                        val textScale by animateFloatAsState(
+                            targetValue = if (selected) 1.05f else 1f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 500f
+                            ),
+                            label = "segmentTextScale"
+                        )
+                        val textAlpha by animateFloatAsState(
+                            targetValue = if (selected) 1f else 0.6f,
+                            animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
+                            label = "segmentTextAlpha"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(indicatorShape)
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = { onSelect(index) }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp)
+                                    .graphicsLayer {
+                                        scaleX = textScale
+                                        scaleY = textScale
+                                        alpha = textAlpha
+                                    },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = textColor
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // 新拟态兜底
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            color = NeuInsetBackground,
+            shape = trackShape
+        ) {
+            androidx.compose.foundation.layout.BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp)
+            ) {
+                val optionCount = options.size.coerceAtLeast(1)
+                val gapWidth = 4.dp * (optionCount - 1)
+                val slotWidth = (maxWidth - gapWidth) / optionCount
+
+                val indicatorOffset by animateDpAsState(
+                    targetValue = slotWidth * selectedIndex + 4.dp * selectedIndex,
+                    animationSpec = com.tyust.course.ui.theme.MotionSpring.gentle(),
+                    label = "segmentIndicator"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(slotWidth)
+                        .height(40.dp)
+                        .neumorphicShadow(cornerRadius = 10.dp, elevation = 3.dp)
+                        .clip(indicatorShape)
+                        .background(NeuSurface)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    options.forEachIndexed { index, label ->
+                        val selected = index == selectedIndex
+                        val textColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
+                            label = "segmentTextColor"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(indicatorShape)
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = { onSelect(index) }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = textColor
+                            )
+                        }
                     }
                 }
             }
@@ -631,21 +821,47 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .height(52.dp)
-            ,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary),
-        shape = RoundedCornerShape(12.dp),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
-    ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
+    val backdrop = LocalAppBackdrop.current
+    val useGlass = backdrop != null && isBackdropSupported()
+    val activeColor = NeuPrimary
+
+    if (useGlass && backdrop != null) {
+        LiquidButton(
+            onClick = onClick,
+            backdrop = backdrop,
+            modifier = modifier.height(52.dp),
+            isInteractive = enabled,
+            style = LiquidButtonStyle.Tinted,
+            shape = RoundedCornerShape(12.dp),
+            cornerRadius = 12.dp,
+            tint = activeColor
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = modifier.height(52.dp),
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(containerColor = activeColor),
+            shape = RoundedCornerShape(12.dp),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }
 
@@ -657,24 +873,48 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .height(52.dp)
-            ,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = NeuSurface,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
-    ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
+    val backdrop = LocalAppBackdrop.current
+    val useGlass = backdrop != null && isBackdropSupported()
+
+    if (useGlass && backdrop != null) {
+        LiquidButton(
+            onClick = onClick,
+            backdrop = backdrop,
+            modifier = modifier.height(52.dp),
+            isInteractive = enabled,
+            style = LiquidButtonStyle.Surface,
+            shape = RoundedCornerShape(12.dp),
+            cornerRadius = 12.dp
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                fontWeight = FontWeight.SemiBold
+            )
         }
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = modifier.height(52.dp),
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NeuSurface,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            ),
+            shape = RoundedCornerShape(12.dp),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }
 
@@ -686,21 +926,46 @@ fun SystemDestructiveButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .height(52.dp)
-            ,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = SemanticDanger),
-        shape = RoundedCornerShape(12.dp),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
-    ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
+    val backdrop = LocalAppBackdrop.current
+    val useGlass = backdrop != null && isBackdropSupported()
+
+    if (useGlass && backdrop != null) {
+        LiquidButton(
+            onClick = onClick,
+            backdrop = backdrop,
+            modifier = modifier.height(52.dp),
+            isInteractive = enabled,
+            style = LiquidButtonStyle.Tinted,
+            shape = RoundedCornerShape(12.dp),
+            cornerRadius = 12.dp,
+            tint = SemanticDanger
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = modifier.height(52.dp),
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(containerColor = SemanticDanger),
+            shape = RoundedCornerShape(12.dp),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }
 
@@ -779,34 +1044,47 @@ fun SystemActionButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     primary: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
-    val containerColor = if (primary) {
-        NeuPrimary
-    } else {
-        NeuSurface
-    }
     val contentColor = if (primary) {
         Color.White
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
+    val buttonShape = RoundedCornerShape(12.dp)
+    val useGlass = backdrop != null && isBackdropSupported() && !primary
 
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier
-            .defaultMinSize(minHeight = 36.dp)
-            .neumorphicShadow(cornerRadius = 12.dp, elevation = 3.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = containerColor,
-        contentColor = contentColor
-    ) {
+    if (useGlass && backdrop != null) {
+        // 玻璃模式：非 primary 按钮
         Box(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = modifier
+                .defaultMinSize(minHeight = 36.dp)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { buttonShape },
+                    effects = {
+                        vibrancy()
+                        blur(GlassRecipe.ActionBlurDp.dp.toPx())
+                        if (isLensSupported()) {
+                            lens(
+                                refractionHeight = GlassRecipe.ActionRefractionHeightDp.dp.toPx(),
+                                refractionAmount = GlassRecipe.ActionRefractionAmountDp.dp.toPx(),
+                                depthEffect = true,
+                                chromaticAberration = true
+                            )
+                        }
+                    },
+                    onDrawSurface = {
+                        drawRect(Color.White.copy(alpha = GlassRecipe.ActionSurfaceAlpha))
+                    }
+                )
+                .clip(buttonShape)
+                .clickable(enabled = enabled, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
             Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -814,15 +1092,54 @@ fun SystemActionButton(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(14.dp),
+                        tint = contentColor
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                 }
                 Text(
                     text = text,
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor
                 )
+            }
+        }
+    } else {
+        // 新拟态兜底 / primary 按钮
+        val containerColor = if (primary) NeuPrimary else NeuSurface
+        Surface(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier
+                .defaultMinSize(minHeight = 36.dp)
+                .neumorphicShadow(cornerRadius = 12.dp, elevation = 3.dp),
+            shape = buttonShape,
+            color = containerColor,
+            contentColor = contentColor
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (icon != null) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -916,4 +1233,183 @@ fun SystemDivider(
                 )
             )
     )
+}
+
+/**
+ * 物理流体玻璃对话框 — 通过 DialogHost portal 在同窗口内渲染，
+ * 使 backdrop 折射正常工作。当 portal 不可用时回退到 Dialog()。
+ */
+@Composable
+fun SystemDialog(
+    onDismissRequest: () -> Unit,
+    backdrop: Backdrop? = LocalAppBackdrop.current,
+    confirmButton: @Composable (() -> Unit)? = null,
+    dismissButton: @Composable (() -> Unit)? = null,
+    icon: @Composable (() -> Unit)? = null,
+    title: @Composable (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val dialogHost = LocalDialogHost.current
+
+    val dialogBody: @Composable () -> Unit = {
+        SystemDialogContent(
+            backdrop = backdrop,
+            confirmButton = confirmButton,
+            dismissButton = dismissButton,
+            icon = icon,
+            title = title,
+            content = content
+        )
+    }
+
+    if (dialogHost != null) {
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            dialogHost.show(onDismissRequest, dialogBody)
+            onDispose { dialogHost.dismiss() }
+        }
+    } else {
+        Dialog(onDismissRequest = onDismissRequest) {
+            dialogBody()
+        }
+    }
+}
+
+@Composable
+private fun SystemDialogContent(
+    backdrop: Backdrop?,
+    confirmButton: @Composable (() -> Unit)?,
+    dismissButton: @Composable (() -> Unit)?,
+    icon: @Composable (() -> Unit)?,
+    title: @Composable (() -> Unit)?,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val dialogShape = RoundedCornerShape(32.dp)
+    val useGlass = backdrop != null && isBackdropSupported()
+
+    val modifier = if (useGlass && backdrop != null) {
+        Modifier
+            .width(320.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { dialogShape },
+                effects = {
+                    vibrancy()
+                    if (isLensSupported()) {
+                        lens(
+                            refractionHeight = 16f.dp.toPx(),
+                            refractionAmount = 32f.dp.toPx()
+                        )
+                    }
+                }
+            )
+            .padding(24.dp)
+    } else {
+        Modifier
+            .width(320.dp)
+            .neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(24.dp)
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (icon != null) {
+            icon()
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        if (title != null) {
+            CompositionLocalProvider(
+                androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    title()
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        Box(
+            modifier = Modifier
+                .weight(weight = 1f, fill = false)
+                .fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                content = content
+            )
+        }
+        if (confirmButton != null || dismissButton != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (dismissButton != null) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        dismissButton()
+                    }
+                }
+                if (confirmButton != null) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        confirmButton()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 物理流体玻璃确认弹窗 (SystemConfirmDialog)
+ * 快速平替原生的 AlertDialog，内置大圆角取消与确认物理玻璃按钮。
+ */
+@Composable
+fun SystemConfirmDialog(
+    title: String,
+    text: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    confirmText: String = "确定",
+    showCancel: Boolean = true
+) {
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = confirmText,
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        dismissButton = if (showCancel) {
+            {
+                SystemSecondaryButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else null
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }

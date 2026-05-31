@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,10 +38,10 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,7 +52,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -66,12 +71,19 @@ import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
 import com.tyust.course.ui.system.CapsuleNavigationBar
+import com.tyust.course.ui.system.DialogHost
+import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.LocalDialogHost
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
+import com.tyust.course.ui.system.isBackdropSupported
+import com.tyust.course.ui.system.rememberDialogHostState
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 class MainActivity : FragmentActivity() {
 
@@ -208,77 +220,106 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         )
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            CapsuleNavigationBar(
-                items = items,
-                selectedTab = selectedTab,
-                onTabSelect = { selectedTab = it }
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                AnimatedVisibility(
-                    visible = isTokenExpired,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    TokenExpiredBanner(
-                        onClick = {
-                            val intent = Intent(fragmentActivity, LoginActivity::class.java)
-                            intent.putExtra("force_relogin", true)
-                            fragmentActivity.startActivity(intent)
-                        }
-                    )
-                }
+    Box(modifier = Modifier.fillMaxSize()) {
+        val bgColor = MaterialTheme.colorScheme.background
+        val useGlass = isBackdropSupported()
 
-                Box(modifier = Modifier.weight(1f)) {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = {
-                            val offsetTween = MotionSpecs.tabTransition<IntOffset>()
-                            val fadeTween = MotionSpecs.standard<Float>()
-                            if (targetState > initialState) {
-                                (slideInHorizontally(animationSpec = offsetTween) { width -> width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
-                                    (slideOutHorizontally(animationSpec = offsetTween) { width -> -width / 32 } + fadeOut(animationSpec = fadeTween))
-                            } else {
-                                (slideInHorizontally(animationSpec = offsetTween) { width -> -width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
-                                    (slideOutHorizontally(animationSpec = offsetTween) { width -> width / 32 } + fadeOut(animationSpec = fadeTween))
+        val rootBackdrop = if (useGlass) {
+            rememberLayerBackdrop()
+        } else {
+            null
+        }
+
+        // 壁纸背景层 — layerBackdrop 直接应用到壁纸上，使其成为 backdrop 源
+        if (useGlass && rootBackdrop != null) {
+            Canvas(modifier = Modifier.fillMaxSize().layerBackdrop(rootBackdrop)) {
+                drawWallpaperPattern(this)
+            }
+        } else {
+            Box(Modifier.fillMaxSize().background(bgColor))
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            val dialogHostState = rememberDialogHostState()
+            CompositionLocalProvider(
+                LocalAppBackdrop provides rootBackdrop,
+                LocalDialogHost provides dialogHostState
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = isTokenExpired,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        TokenExpiredBanner(
+                            onClick = {
+                                val intent = Intent(fragmentActivity, LoginActivity::class.java)
+                                intent.putExtra("force_relogin", true)
+                                fragmentActivity.startActivity(intent)
                             }
-                        },
-                        label = "MainTabTransition"
-                    ) { targetIndex ->
-                        when (targetIndex) {
-                            0 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                com.tyust.course.ui.route.CourseListRoute()
-                            }
-                            1 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF10B981)) {
-                                com.tyust.course.ui.route.ScheduleRoute()
-                            }
-                            2 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                com.tyust.course.ui.route.GrabProRoute()
-                            }
-                            3 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFFF59E0B)) {
-                                com.tyust.course.ui.route.GradesRoute()
-                            }
-                            4 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF3B82F6)) {
-                                com.tyust.course.ui.route.SettingsRoute()
-                            }
-                            else -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                com.tyust.course.ui.route.CourseListRoute()
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(bottom = 76.dp)
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedTab,
+                            transitionSpec = {
+                                val offsetTween = MotionSpecs.tabTransition<IntOffset>()
+                                val fadeTween = MotionSpecs.standard<Float>()
+                                if (targetState > initialState) {
+                                    (slideInHorizontally(animationSpec = offsetTween) { width -> width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
+                                        (slideOutHorizontally(animationSpec = offsetTween) { width -> -width / 32 } + fadeOut(animationSpec = fadeTween))
+                                } else {
+                                    (slideInHorizontally(animationSpec = offsetTween) { width -> -width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
+                                        (slideOutHorizontally(animationSpec = offsetTween) { width -> width / 32 } + fadeOut(animationSpec = fadeTween))
+                                }
+                            },
+                            label = "MainTabTransition"
+                        ) { targetIndex ->
+                            when (targetIndex) {
+                                0 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                    com.tyust.course.ui.route.CourseListRoute()
+                                }
+                                1 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF10B981)) {
+                                    com.tyust.course.ui.route.ScheduleRoute()
+                                }
+                                2 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                    com.tyust.course.ui.route.GrabProRoute()
+                                }
+                                3 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFFF59E0B)) {
+                                    com.tyust.course.ui.route.GradesRoute()
+                                }
+                                4 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF3B82F6)) {
+                                    com.tyust.course.ui.route.SettingsRoute()
+                                }
+                                else -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
+                                    com.tyust.course.ui.route.CourseListRoute()
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            AppBuildWatermarks(fragmentActivity = fragmentActivity)
+                AppBuildWatermarks(fragmentActivity = fragmentActivity)
+
+                // 底栏：从 LocalAppBackdrop 读取 rootBackdrop，直接获得玻璃折射效果
+                CapsuleNavigationBar(
+                    items = items,
+                    selectedTab = selectedTab,
+                    onTabSelect = { selectedTab = it },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+
+                // Dialog portal overlay — 渲染在最顶层，backdrop 正常工作
+                DialogHost(
+                    state = dialogHostState,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -366,4 +407,8 @@ private fun BoxScope.AppBuildWatermarks(
             }
         }
     }
+}
+
+private fun drawWallpaperPattern(scope: DrawScope) {
+    scope.drawRect(Color(0xFFEEEEEE))
 }

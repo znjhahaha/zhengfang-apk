@@ -1,6 +1,7 @@
 package com.tyust.course.ui.screen
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,7 +49,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
@@ -64,6 +68,12 @@ import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.system.neumorphicShadow
+import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.isBackdropSupported
+import com.tyust.course.ui.system.AnimatedIconButton
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
 
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuDivider
@@ -75,7 +85,7 @@ import java.util.Calendar
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-private val ScheduleTimeColumnWidth = 28.dp
+private val ScheduleTimeColumnWidth = 36.dp
 private val SchedulePeriodHeight = 84.dp
 
 data class ScheduleCourseUi(
@@ -183,7 +193,7 @@ fun ScheduleScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues),
-                    beyondBoundsPageCount = 0,
+                    beyondViewportPageCount = 0,
                     pageSpacing = 0.dp
                 ) { page ->
                     val weekNumber = page + 1
@@ -240,18 +250,10 @@ fun WeekHeaderCompact(
                             color = MaterialTheme.colorScheme.onSurface,
                             letterSpacing = (-0.5).sp
                         )
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = if (isNextSemester) NeuPrimary.copy(alpha = 0.15f) else NeuInsetBackground,
-                            contentColor = if (isNextSemester) NeuPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ) {
-                            Text(
-                                text = if (isNextSemester) "下学期" else "本学期",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        SemesterCapsuleToggle(
+                            isNextSemester = isNextSemester,
+                            onClick = onToggleSemester
+                        )
                     }
                 }
 
@@ -259,35 +261,27 @@ fun WeekHeaderCompact(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    WeekControlButton(
+                    AnimatedIconButton(
                         icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                         contentDescription = "上一周",
                         onClick = onPrevClick,
                         enabled = currentWeek > 1
                     )
-                    WeekControlButton(
+                    AnimatedIconButton(
                         icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = "下一周",
                         onClick = onNextClick,
                         enabled = currentWeek < 25
                     )
-                    WeekControlButton(
-                        icon = Icons.Default.SwapHoriz,
-                        contentDescription = "切换学期",
-                        onClick = onToggleSemester,
-                        enabled = true
-                    )
-                    WeekControlButton(
+                    AnimatedIconButton(
                         icon = Icons.Default.Share,
                         contentDescription = "导出",
-                        onClick = onExportClick,
-                        enabled = true
+                        onClick = onExportClick
                     )
-                    WeekControlButton(
+                    AnimatedIconButton(
                         icon = Icons.Default.Settings,
                         contentDescription = "设置",
-                        onClick = onSettingsClick,
-                        enabled = true
+                        onClick = onSettingsClick
                     )
                 }
             }
@@ -355,34 +349,89 @@ private fun CompactWeekdayLabel(
 }
 
 @Composable
-private fun WeekControlButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean
+private fun SemesterCapsuleToggle(
+    isNextSemester: Boolean,
+    onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
-        color = if (enabled) NeuSurface else NeuInsetBackground,
-        contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-        shadowElevation = 0.dp
+    val indicatorOffset by animateDpAsState(
+        targetValue = if (isNextSemester) 52.dp else 0.dp,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.7f,
+            stiffness = 400f
+        ),
+        label = "semesterToggle"
+    )
+    val backdrop = LocalAppBackdrop.current
+    val useGlass = backdrop != null && isBackdropSupported()
+
+    Box(
+        modifier = Modifier
+            .width(104.dp)
+            .height(30.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .then(
+                if (useGlass && backdrop != null) {
+                    Modifier.drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RoundedCornerShape(15.dp) },
+                        effects = {
+                            vibrancy()
+                            blur(4f.dp.toPx())
+                        },
+                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.15f)) }
+                    )
+                } else {
+                    Modifier.background(NeuInsetBackground, RoundedCornerShape(15.dp))
+                }
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(2.dp)
     ) {
+        // 滑动指示器
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .then(if (enabled) Modifier.neumorphicShadow(cornerRadius = 12.dp, elevation = 3.dp) else Modifier),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(17.dp)
-            )
+                .offset(x = indicatorOffset)
+                .width(50.dp)
+                .height(26.dp)
+                .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(13.dp))
+                .shadow(2.dp, RoundedCornerShape(13.dp))
+        )
+        // 文字层
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "本学期",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (!isNextSemester) FontWeight.Bold else FontWeight.Normal,
+                    color = if (!isNextSemester) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 10.sp
+                )
+            }
+            Box(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "下学期",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isNextSemester) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isNextSemester) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }
+
 
 @Composable
 fun ScheduleGrid(

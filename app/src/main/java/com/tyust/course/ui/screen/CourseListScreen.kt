@@ -53,8 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,7 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -118,21 +116,6 @@ fun CourseListScreen(
     val groupedCourses = remember(courses) {
         courses.groupBy { (it.courseId ?: "") to (it.name ?: "") }.toList()
     }
-    val pullRefreshState = rememberPullToRefreshState(enabled = { !isLoading })
-
-    LaunchedEffect(pullRefreshState.isRefreshing, isLoading) {
-        if (pullRefreshState.isRefreshing && !isLoading) {
-            onRefresh()
-        }
-    }
-
-    LaunchedEffect(isLoading) {
-        if (isLoading) {
-            pullRefreshState.startRefresh()
-        } else {
-            pullRefreshState.endRefresh()
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -156,10 +139,10 @@ fun CourseListScreen(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(pullRefreshState.nestedScrollConnection)
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
         ) {
             when {
                 isLoading && courses.isEmpty() -> {
@@ -223,11 +206,6 @@ fun CourseListScreen(
                     }
                 }
             }
-
-            PullToRefreshContainer(
-                state = pullRefreshState,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
         }
     }
 }

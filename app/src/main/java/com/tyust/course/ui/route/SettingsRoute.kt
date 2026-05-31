@@ -23,7 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemConfirmDialog
+import com.tyust.course.ui.system.SystemSecondaryButton
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.text.font.FontWeight
 import com.tyust.course.LoginActivity
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.SettingsScreen
@@ -278,53 +282,47 @@ fun SettingsRoute() {
             }
         }
 
-        Dialog(onDismissRequest = { dismiss() }) {
-             androidx.compose.animation.AnimatedVisibility(
-                visible = animateTrigger,
-                enter = androidx.compose.animation.scaleIn(animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                )) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-                exit = androidx.compose.animation.scaleOut(animationSpec = androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
+        SystemDialog(
+            onDismissRequest = { dismiss() },
+            title = {
+                Text(
+                    text = "选择学校",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            dismissButton = {
+                SystemSecondaryButton(
+                    text = "取消",
+                    onClick = { dismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        ) {
+            val schools = remember { UserManager.getInstance().supportedSchools }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp) // 限制最大高度，防止学校列表过多时把 Dialog 挤出屏幕外
             ) {
-                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "选择学校",
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                        
-                        val schools = remember { UserManager.getInstance().supportedSchools }
-                        LazyColumn {
-                            items(schools) { school ->
-                                Text(
-                                    text = school.name,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            UserManager.getInstance().clearLoginState()
-                                            UserManager.getInstance().currentSchool = school
-                                            Toast.makeText(context, "已切换到: ${school.name}", Toast.LENGTH_SHORT).show()
-                                            performLogout()
-                                            dismiss()
-                                        }
-                                        .padding(vertical = 12.dp, horizontal = 8.dp),
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
+                items(schools) { school ->
+                    Text(
+                        text = school.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                UserManager.getInstance().clearLoginState()
+                                UserManager.getInstance().currentSchool = school
+                                Toast.makeText(context, "已切换到: ${school.name}", Toast.LENGTH_SHORT).show()
+                                performLogout()
+                                dismiss()
                             }
-                        }
-                        
-                        TextButton(
-                            onClick = { dismiss() },
-                            modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
-                        ) {
-                            Text("取消")
-                        }
-                    }
+                            .padding(vertical = 14.dp, horizontal = 12.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             }
         }
@@ -340,16 +338,13 @@ fun SimpleConfirmDialog(
     confirmText: String = "确定",
     showCancel: Boolean = true
 ) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmText) }
-        },
-        dismissButton = if (showCancel) {
-            { TextButton(onClick = onDismiss) { Text("取消") } }
-        } else null
+    SystemConfirmDialog(
+        title = title,
+        text = text,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+        confirmText = confirmText,
+        showCancel = showCancel
     )
 }
 

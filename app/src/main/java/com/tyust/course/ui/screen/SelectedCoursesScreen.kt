@@ -19,13 +19,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -47,17 +45,6 @@ fun SelectedCoursesScreen(
     onRefresh: () -> Unit,
     onDropCourse: (Course) -> Unit = {}
 ) {
-    val pullRefreshState = rememberPullToRefreshState(enabled = { !isLoading })
-
-    LaunchedEffect(pullRefreshState.isRefreshing, isLoading) {
-        if (pullRefreshState.isRefreshing && !isLoading) {
-            onRefresh()
-        }
-    }
-    LaunchedEffect(isLoading) {
-        if (isLoading) pullRefreshState.startRefresh()
-        else pullRefreshState.endRefresh()
-    }
 
     Box(
         modifier = Modifier
@@ -75,10 +62,10 @@ fun SelectedCoursesScreen(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(pullRefreshState.nestedScrollConnection)
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
         ) {
             when {
                 isLoading && courses.isEmpty() -> {
@@ -139,11 +126,6 @@ fun SelectedCoursesScreen(
                     }
                 }
             }
-
-            PullToRefreshContainer(
-                state = pullRefreshState,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
         }
     }
 }

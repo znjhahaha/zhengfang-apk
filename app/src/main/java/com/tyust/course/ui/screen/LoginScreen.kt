@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +30,21 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.isBackdropSupported
+import com.tyust.course.ui.system.isLensSupported
+import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.theme.*
+
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -79,6 +94,34 @@ fun LoginScreen(
             .fillMaxSize()
             .background(Neutral50)
     ) {
+        val backdrop = if (isBackdropSupported()) {
+            rememberLayerBackdrop {
+                drawRect(Neutral50)
+                drawCircle(
+                    color = BrandPrimary.copy(alpha = 0.18f),
+                    radius = size.minDimension * 0.55f,
+                    center = Offset(size.width * 0.18f, size.height * 0.22f)
+                )
+                drawCircle(
+                    color = SemanticInfo.copy(alpha = 0.12f),
+                    radius = size.minDimension * 0.65f,
+                    center = Offset(size.width * 0.85f, size.height * 0.78f)
+                )
+                drawCircle(
+                    color = SemanticSuccess.copy(alpha = 0.08f),
+                    radius = size.minDimension * 0.40f,
+                    center = Offset(size.width * 0.50f, size.height * 0.50f)
+                )
+                drawContent()
+            }
+        } else {
+            null
+        }
+
+        if (backdrop != null) {
+            Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop))
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -95,20 +138,66 @@ fun LoginScreen(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Surface(
-                        modifier = Modifier.size(90.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = Color.White,
-                        shadowElevation = 8.dp,
-                        tonalElevation = 4.dp
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
+                    val iconShape = RoundedCornerShape(24.dp)
+                    val iconGlassMod = if (backdrop != null && isBackdropSupported()) {
+                        Modifier
+                            .size(90.dp)
+                            .drawBackdrop(
+                                backdrop = backdrop,
+                                shape = { iconShape },
+                                effects = {
+                                    vibrancy()
+                                    blur(2f.dp.toPx())
+                                    if (isLensSupported()) {
+                                        lens(
+                                            refractionHeight = 20f.dp.toPx(),
+                                            refractionAmount = 36f.dp.toPx(),
+                                            depthEffect = true,
+                                            chromaticAberration = true
+                                        )
+                                    }
+                                },
+                                onDrawSurface = {
+                                    drawRect(Color.White.copy(alpha = 0.30f))
+                                    drawRoundRect(
+                                        color = Color.White.copy(alpha = 0.45f),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(24f.dp.toPx()),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f.dp.toPx())
+                                    )
+                                }
+                            )
+                    } else {
+                        Modifier.size(90.dp)
+                    }
+                    
+                    if (backdrop != null && isBackdropSupported()) {
+                        Box(
+                            modifier = iconGlassMod,
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.School,
                                 contentDescription = "School Icon",
                                 modifier = Modifier.size(48.dp),
                                 tint = NeuPrimary
                             )
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier.size(90.dp),
+                            shape = iconShape,
+                            color = Color.White,
+                            shadowElevation = 8.dp,
+                            tonalElevation = 4.dp
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.School,
+                                    contentDescription = "School Icon",
+                                    modifier = Modifier.size(48.dp),
+                                    tint = NeuPrimary
+                                )
+                            }
                         }
                     }
                     
@@ -143,23 +232,40 @@ fun LoginScreen(
                     animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow, dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy)
                 ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
             ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.White
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp)
-                            .padding(top = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Title with Settings Button
+                val sheetShape = RoundedCornerShape(28.dp)
+                val cardGlassMod = if (backdrop != null && isBackdropSupported()) {
+                    Modifier
+                        .fillMaxWidth()
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { sheetShape },
+                            effects = {
+                                vibrancy()
+                                blur(GlassRecipe.SheetBlurDp.dp.toPx())
+                                if (isLensSupported()) {
+                                    lens(
+                                        refractionHeight = GlassRecipe.SheetRefractionHeightDp.dp.toPx(),
+                                        refractionAmount = GlassRecipe.SheetRefractionAmountDp.dp.toPx(),
+                                        depthEffect = true,
+                                        chromaticAberration = true
+                                    )
+                                }
+                            },
+                            onDrawSurface = {
+                                drawRect(Color.White.copy(alpha = GlassRecipe.SheetSurfaceAlpha))
+                                drawRoundRect(
+                                    color = Color.White.copy(alpha = 0.35f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(28f.dp.toPx()),
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f.dp.toPx())
+                                )
+                            }
+                        )
+                } else {
+                    null
+                }
+
+                val cardInner: @Composable ColumnScope.() -> Unit = {
+                    // Title with Settings Button
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -227,18 +333,50 @@ fun LoginScreen(
                             onExpandedChange = { expanded = !expanded },
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            val tfShape = RoundedCornerShape(16.dp)
+                            val tfModifier = if (backdrop != null && isBackdropSupported()) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                                    .drawBackdrop(
+                                        backdrop = backdrop,
+                                        shape = { tfShape },
+                                        effects = {
+                                            vibrancy()
+                                            blur(6f.dp.toPx())
+                                            if (isLensSupported()) {
+                                                lens(
+                                                    refractionHeight = 6f.dp.toPx(),
+                                                    refractionAmount = 8f.dp.toPx(),
+                                                    chromaticAberration = true
+                                                )
+                                            }
+                                        },
+                                        onDrawSurface = {
+                                            drawRect(Color.White.copy(alpha = 0.15f))
+                                            drawRoundRect(
+                                                color = Color.White.copy(alpha = 0.25f),
+                                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f.dp.toPx()),
+                                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8f.dp.toPx())
+                                            )
+                                        }
+                                    )
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            }
+
                             TextField(
                                 value = selectedSchool?.name ?: "请选择学校",
                                 onValueChange = {},
                                 readOnly = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                                shape = RoundedCornerShape(16.dp),
+                                modifier = tfModifier,
+                                shape = tfShape,
                                 colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Neutral100,
-                                    unfocusedContainerColor = Neutral100,
+                                    focusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
+                                    unfocusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
                                     focusedIndicatorColor = Color.Transparent,
                                     unfocusedIndicatorColor = Color.Transparent,
                                     focusedTextColor = Neutral900,
@@ -333,10 +471,44 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         // Cookie Input (Minimalist TextField)
+                        val cookieTfShape = RoundedCornerShape(16.dp)
+                        val cookieTfModifier = if (backdrop != null && isBackdropSupported()) {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .drawBackdrop(
+                                    backdrop = backdrop,
+                                    shape = { cookieTfShape },
+                                    effects = {
+                                        vibrancy()
+                                        blur(6f.dp.toPx())
+                                        if (isLensSupported()) {
+                                            lens(
+                                                refractionHeight = 6f.dp.toPx(),
+                                                refractionAmount = 8f.dp.toPx(),
+                                                chromaticAberration = true
+                                            )
+                                        }
+                                    },
+                                    onDrawSurface = {
+                                        drawRect(Color.White.copy(alpha = 0.15f))
+                                        drawRoundRect(
+                                            color = Color.White.copy(alpha = 0.25f),
+                                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f.dp.toPx()),
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8f.dp.toPx())
+                                        )
+                                    }
+                                )
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                        }
+
                         TextField(
                             value = cookie,
                             onValueChange = { cookie = it },
-                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                            modifier = cookieTfModifier,
                             placeholder = { Text("粘贴 Cookie 字符串...", color = Neutral500) },
                             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -349,11 +521,11 @@ fun LoginScreen(
                                     )
                                 }
                             },
-                            shape = RoundedCornerShape(16.dp),
+                            shape = cookieTfShape,
                             singleLine = false,
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Neutral100,
-                                unfocusedContainerColor = Neutral100,
+                                focusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
+                                unfocusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
                                 focusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
                                 unfocusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
                                 focusedTextColor = Neutral900,
@@ -376,64 +548,34 @@ fun LoginScreen(
                         
                         Spacer(modifier = Modifier.height(32.dp))
                         
-                        // Login Button (Modern Pill shape)
-                        Button(
+                        // Login Button (Liquid Physics Glass Button)
+                        SystemPrimaryButton(
+                            text = if (isLoading) "登入中…" else "登入控制台",
                             onClick = { onLoginClick(cookie) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
-                            enabled = cookie.isNotBlank() && !isLoading,
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NeuPrimary,
-                                disabledContainerColor = Neutral100,
-                                disabledContentColor = Neutral300
-                            )
-                        ) {
-                            if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text(
-                                    text = "登入控制台",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
-                        
+                            enabled = cookie.isNotBlank() && !isLoading
+                        )
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // WebView Cookie Button
-                        OutlinedButton(
-                            onClick = { onOpenWebView() },
+
+                        // WebView Cookie Button (Liquid Physics Glass Button)
+                        SystemSecondaryButton(
+                            text = "内嵌浏览器自动获取",
+                            onClick = onOpenWebView,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Neutral900
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.OpenInBrowser,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = Neutral700
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "内嵌浏览器自动获取",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Neutral700
-                            )
-                        }
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.OpenInBrowser,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = Neutral700
+                                )
+                            }
+                        )
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         
@@ -448,6 +590,37 @@ fun LoginScreen(
                                 color = Neutral500,
                                 fontWeight = FontWeight.SemiBold
                             )
+                        }
+                }
+
+                if (cardGlassMod != null) {
+                    Box(modifier = cardGlassMod) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp)
+                                .padding(top = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            cardInner()
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = sheetShape,
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200.copy(alpha = 0.5f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp)
+                                .padding(top = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            cardInner()
                         }
                     }
                 }
@@ -479,7 +652,6 @@ fun LoginScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BindingConfirmationDialog(
     studentName: String,
@@ -488,131 +660,137 @@ fun BindingConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    SystemDialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false
-        ),
-        modifier = Modifier.padding(16.dp),
-        content = {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight(),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+        title = {
+            Text(
+                text = "🔐 确认绑定账号",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "确认绑定",
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        dismissButton = {
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            val backdrop = LocalAppBackdrop.current
+            val useGlass = backdrop != null && isBackdropSupported()
+            val iconContainerShape = RoundedCornerShape(16.dp)
+            val iconModifier = if (useGlass && backdrop != null) {
+                Modifier
+                    .size(64.dp)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { iconContainerShape },
+                        effects = {
+                            vibrancy()
+                            blur(GlassRecipe.CardBlurDp.dp.toPx())
+                            if (isLensSupported()) {
+                                lens(6f.dp.toPx(), 8f.dp.toPx(), chromaticAberration = true)
+                            }
+                        },
+                        onDrawSurface = {
+                            drawRect(Color.White.copy(alpha = 0.20f))
+                        }
+                    )
+            } else {
+                Modifier.size(64.dp)
+            }
+
+            if (useGlass && backdrop != null) {
+                Box(modifier = iconModifier, contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.School,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = NeuPrimary
+                    )
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.size(64.dp),
+                    shape = iconContainerShape,
+                    color = NeuPrimary.copy(alpha = 0.1f)
                 ) {
-                    // Header Icon
-                    Surface(
-                        modifier = Modifier.size(64.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = NeuPrimary.copy(alpha = 0.1f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Default.School,
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                                tint = NeuPrimary
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Text(
-                        text = "🔐 确认绑定账号",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text(
-                        text = "检测到新账号：「$studentName」",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = NeuPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Info Card
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "📊 绑定配额：",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${usedNames.size} / $maxStudents",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (usedNames.size >= maxStudents) SemanticDanger else SemanticSuccess
-                                )
-                            }
-                            
-                            if (usedNames.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "👥 已绑定：${usedNames.joinToString("、")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    Text(
-                        text = "⚠️ 确认后此账号将与本设备永久绑定，完成后将占用 1 个名额，无法撤销。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    
-                    Spacer(modifier = Modifier.height(32.dp))
-                    
-                    // Action Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                        ) {
-                            Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        
-                        Button(
-                            onClick = onConfirm,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
-                        ) {
-                            Text("确认绑定", fontWeight = FontWeight.Bold)
-                        }
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.School,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = NeuPrimary
+                        )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "检测到新账号：「$studentName」",
+                style = MaterialTheme.typography.titleMedium,
+                color = NeuPrimary,
+                fontWeight = FontWeight.Medium
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Info Card
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "📊 绑定配额：",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${usedNames.size} / $maxStudents",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (usedNames.size >= maxStudents) SemanticDanger else SemanticSuccess
+                        )
+                    }
+
+                    if (usedNames.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "👥 已绑定：${usedNames.joinToString("、")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "⚠️ 确认后此账号将与本设备永久绑定，完成后将占用 1 个名额，无法撤销。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
-    )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

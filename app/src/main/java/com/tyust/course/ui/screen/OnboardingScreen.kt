@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.DateRange
@@ -27,19 +28,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
+import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SectionSpacing
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.theme.NeuPrimary
 import kotlinx.coroutines.launch
 
@@ -86,75 +97,133 @@ fun OnboardingScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = PagePadding, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(SectionSpacing)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                if (!isLastPage) {
-                    TextButton(onClick = onFinish) {
-                        Text("跳过")
-                    }
-                }
-            }
+        Box(Modifier.fillMaxSize()) {
+            val bgColor = MaterialTheme.colorScheme.background
+            val useGlass = isBackdropSupported()
 
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { pageIndex ->
-                OnboardingPageContent(page = pages[pageIndex])
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                pages.forEachIndexed { index, _ ->
-                    val selected = index == pagerState.currentPage
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 4.dp)
-                            .height(8.dp)
-                            .background(
-                                color = if (selected) NeuPrimary else MaterialTheme.colorScheme.outlineVariant,
-                                shape = CircleShape
+            // 彩色渐变背景层 — 为玻璃折射提供彩色内容源
+            if (useGlass) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFFE0E8FF).copy(alpha = 0.3f),
+                                    Color(0xFFD6F0E8).copy(alpha = 0.2f),
+                                    Color(0xFFFFE8F0).copy(alpha = 0.15f),
+                                    Color.Transparent
+                                ),
+                                radius = 1200f
                             )
-                            .then(
-                                if (selected) Modifier.size(width = 28.dp, height = 8.dp)
-                                else Modifier.size(8.dp)
-                            )
-                    )
-                }
-            }
-
-            if (isLastPage) {
-                SystemPrimaryButton(
-                    text = "开始使用",
-                    onClick = onFinish,
-                    modifier = Modifier.fillMaxWidth()
+                        )
                 )
+            }
+
+            val rootBackdrop = if (useGlass) {
+                rememberLayerBackdrop {
+                    drawRect(bgColor)
+                    drawContent()
+                }
             } else {
-                SystemSecondaryButton(
-                    text = "下一步",
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                null
+            }
+
+            // 层1：背景捕获
+            if (rootBackdrop != null) {
+                Box(Modifier.layerBackdrop(rootBackdrop).fillMaxSize())
+            }
+
+            // 层2：玻璃中间层 — exportedBackdrop 给子组件
+            val glassBackdrop = if (useGlass) rememberLayerBackdrop() else null
+            val overlayModifier = if (rootBackdrop != null && glassBackdrop != null) {
+                Modifier
+                    .fillMaxSize()
+                    .drawBackdrop(
+                        backdrop = rootBackdrop,
+                        exportedBackdrop = glassBackdrop,
+                        shape = { RoundedCornerShape(0.dp) },
+                        effects = { vibrancy(); blur(4f.dp.toPx()) },
+                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.03f)) }
+                    )
+            } else {
+                Modifier.fillMaxSize()
+            }
+
+            Box(modifier = overlayModifier) {
+                CompositionLocalProvider(LocalAppBackdrop provides glassBackdrop) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = PagePadding, vertical = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(SectionSpacing)
+                    ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (!isLastPage) {
+                            TextButton(onClick = onFinish) {
+                                Text("跳过")
+                            }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                    }
+
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.weight(1f)
+                    ) { pageIndex ->
+                        OnboardingPageContent(page = pages[pageIndex])
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        pages.forEachIndexed { index, _ ->
+                            val selected = index == pagerState.currentPage
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .height(8.dp)
+                                    .background(
+                                        color = if (selected) NeuPrimary else MaterialTheme.colorScheme.outlineVariant,
+                                        shape = CircleShape
+                                    )
+                                    .then(
+                                        if (selected) Modifier.size(width = 28.dp, height = 8.dp)
+                                        else Modifier.size(8.dp)
+                                    )
+                            )
+                        }
+                    }
+
+                    if (isLastPage) {
+                        SystemPrimaryButton(
+                            text = "开始使用",
+                            onClick = onFinish,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        SystemSecondaryButton(
+                            text = "下一步",
+                            onClick = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
                     }
-                )
+                    }
+                }
             }
         }
     }
