@@ -102,3 +102,8 @@ backdrop_docs_summary.md
 .gitignore
 backdrop_library_guide.md
 demo
+AndroidLiquidGlass
+.gomodcache\cache\download\github.com
+.kotlin
+.gogetcache
+.claude
