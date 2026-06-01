@@ -19,12 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -32,33 +33,31 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
+
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.clearAndSetSemantics
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
+
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.BottomNavItem
@@ -69,7 +68,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
-private val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
 
 @Composable
 fun CapsuleNavigationBar(
@@ -112,18 +110,15 @@ private fun GlassNavigationBar(
     backdrop: Backdrop
 ) {
     val tabsCount = items.size
-    val accentColor = NeuPrimary
-    val containerColor = Color(0xFFFAFAFA).copy(0.15f)
-    val tabsBackdrop = rememberLayerBackdrop()
+    val barExportedBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(
         Modifier.fillMaxWidth(),
         contentAlignment = Alignment.CenterStart
     ) {
         val density = LocalDensity.current
-        val tabWidth = with(density) {
-            (constraints.maxWidth.toFloat() - 8f.dp.toPx()) / tabsCount
-        }
+        val barPaddingPx = with(density) { 12f.dp.toPx() }
+        val tabWidth = (constraints.maxWidth.toFloat() - barPaddingPx * 2f) / tabsCount
 
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density) {
@@ -186,18 +181,25 @@ private fun GlassNavigationBar(
             )
         }
 
-        // Layer 1: Visible container
-        Row(
+        // Glass bar container with exported backdrop for indicator
+        Box(
             Modifier
-                .graphicsLayer { translationX = panelOffset }
+                .graphicsLayer {
+                    translationX = panelOffset
+                    clip = false
+                }
                 .drawBackdrop(
                     backdrop = backdrop,
+                    exportedBackdrop = barExportedBackdrop,
                     shape = { Capsule() },
                     effects = {
                         vibrancy()
-                        blur(8f.dp.toPx())
+                        blur(4f.dp.toPx())
                         if (isLensSupported()) {
-                            lens(24f.dp.toPx(), 24f.dp.toPx())
+                            lens(
+                                refractionHeight = 16f.dp.toPx(),
+                                refractionAmount = 32f.dp.toPx()
+                            )
                         }
                     },
                     layerBlock = {
@@ -206,57 +208,57 @@ private fun GlassNavigationBar(
                         scaleX = scale
                         scaleY = scale
                     },
-                    onDrawSurface = { drawRect(containerColor) }
+                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.5f)) }
                 )
                 .then(interactiveHighlight.modifier)
-                .height(64.dp)
+                .height(76.dp)
                 .fillMaxWidth()
-                .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(12.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            items.forEachIndexed { index, item ->
-                NavTab(
-                    item = item,
-                    selected = selectedTab == index,
-                    onClick = { onTabSelect(index) }
-                )
-            }
-        }
-
-        // Layer 2: Hidden capture layer (alpha=0) for combined backdrop
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
-            }
-        ) {
-            Row(
+            // Indicator: first child = behind tabs in z-order
+            Box(
                 Modifier
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer { translationX = panelOffset }
+                    .graphicsLayer {
+                        clip = false
+                        translationX = dampedDragAnimation.value * tabWidth
+                        scaleX = dampedDragAnimation.scaleX
+                        scaleY = dampedDragAnimation.scaleY
+                        val velocity = dampedDragAnimation.velocity / 10f
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    }
                     .drawBackdrop(
-                        backdrop = backdrop,
+                        backdrop = barExportedBackdrop,
                         shape = { Capsule() },
                         effects = {
-                            val progress = dampedDragAnimation.pressProgress
                             vibrancy()
-                            blur(8f.dp.toPx())
                             if (isLensSupported()) {
-                                lens(24f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                                lens(
+                                    refractionHeight = 12f.dp.toPx(),
+                                    refractionAmount = 16f.dp.toPx(),
+                                    chromaticAberration = true
+                                )
                             }
                         },
-                        highlight = {
+                        shadow = {
                             val progress = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(alpha = progress)
+                            Shadow(alpha = 0.15f + progress * 0.35f)
                         },
-                        onDrawSurface = { drawRect(containerColor) }
+                        onDrawSurface = {
+                            drawRect(Color.White.copy(alpha = 0.12f))
+                        }
                     )
-                    .then(interactiveHighlight.modifier)
-                    .height(56.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
+                    .then(dampedDragAnimation.modifier)
+                    .fillMaxHeight()
+                    .width(Dp(tabWidth / density.density))
+            )
+
+            // Tabs: on top, only highlight gesture (no drag — drag is on the indicator)
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .then(interactiveHighlight.gestureModifier),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 items.forEachIndexed { index, item ->
@@ -268,57 +270,6 @@ private fun GlassNavigationBar(
                 }
             }
         }
-
-        // Layer 3: Indicator with combined backdrop
-        Box(
-            Modifier
-                .padding(horizontal = 4.dp)
-                .graphicsLayer {
-                    translationX = dampedDragAnimation.value * tabWidth + panelOffset
-                }
-                .then(interactiveHighlight.gestureModifier)
-                .then(dampedDragAnimation.modifier)
-                .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = { Capsule() },
-                    effects = {
-                        val progress = dampedDragAnimation.pressProgress
-                        if (isLensSupported()) {
-                            lens(
-                                10f.dp.toPx() * progress,
-                                14f.dp.toPx() * progress,
-                                chromaticAberration = true
-                            )
-                        }
-                    },
-                    highlight = {
-                        val progress = dampedDragAnimation.pressProgress
-                        Highlight.Default.copy(alpha = progress)
-                    },
-                    shadow = {
-                        val progress = dampedDragAnimation.pressProgress
-                        Shadow(alpha = progress)
-                    },
-                    innerShadow = {
-                        val progress = dampedDragAnimation.pressProgress
-                        InnerShadow(radius = 8f.dp * progress, alpha = progress)
-                    },
-                    layerBlock = {
-                        scaleX = dampedDragAnimation.scaleX
-                        scaleY = dampedDragAnimation.scaleY
-                        val velocity = dampedDragAnimation.velocity / 10f
-                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                    },
-                    onDrawSurface = {
-                        val progress = dampedDragAnimation.pressProgress
-                        drawRect(Color.Black.copy(0.1f), alpha = 1f - progress)
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
-                    }
-                )
-                .height(56.dp)
-                .fillMaxWidth(1f / tabsCount)
-        )
     }
 }
 

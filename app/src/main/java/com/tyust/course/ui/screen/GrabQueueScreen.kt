@@ -51,15 +51,7 @@ import com.tyust.course.ui.theme.GlassBorderLight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.MotionSpecs
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.tyust.course.ui.system.GlassRecipe
-import com.tyust.course.ui.system.LocalAppBackdrop
-import com.tyust.course.ui.system.isBackdropSupported
-import com.tyust.course.ui.system.isLensSupported
 import com.tyust.course.ui.system.neumorphicShadow
 /**
  * 抢课队列项状态
@@ -185,33 +177,14 @@ fun GrabQueueHeader(
             }
 
             // 清空队列
-            val clearBackdrop = LocalAppBackdrop.current
             val clearEnabled = queueSize > 0 && !isRunning
             Box(
                 modifier = Modifier
                     .size(30.dp)
-                    .then(
-                        if (clearBackdrop != null && isBackdropSupported() && clearEnabled) {
-                            Modifier.drawBackdrop(
-                                backdrop = clearBackdrop,
-                                shape = { RoundedCornerShape(8.dp) },
-                                effects = {
-                                    vibrancy()
-                                    blur(2f.dp.toPx())
-                                    if (isLensSupported()) lens(8f.dp.toPx(), 16f.dp.toPx())
-                                },
-                                onDrawSurface = {
-                                    drawRect(SemanticDanger.copy(alpha = 0.15f))
-                                }
-                            )
-                        } else {
-                            Modifier
-                                .background(
-                                    if (clearEnabled) SemanticDanger.copy(alpha = 0.12f)
-                                    else NeuInsetBackground.copy(alpha = 0.5f),
-                                    RoundedCornerShape(8.dp)
-                                )
-                        }
+                    .background(
+                        if (clearEnabled) SemanticDanger.copy(alpha = 0.12f)
+                        else NeuInsetBackground.copy(alpha = 0.5f),
+                        RoundedCornerShape(8.dp)
                     )
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(enabled = clearEnabled, onClick = onClearQueue),
@@ -305,13 +278,13 @@ fun GrabQueueItem(
                 .padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧彩色状态指示线
+            // 左侧状态圆点
             Box(
                 modifier = Modifier
-                    .width(3.dp)
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(statusColor)
+                    .padding(start = 12.dp)
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(statusColor.copy(alpha = 0.7f))
             )
         
         Spacer(modifier = Modifier.width(12.dp))
@@ -395,30 +368,12 @@ fun GrabQueueItem(
                         }
                     }
                     // 删除
-                    val delBackdrop = LocalAppBackdrop.current
                     Box(
                         modifier = Modifier
                             .size(30.dp)
-                            .then(
-                                if (delBackdrop != null && isBackdropSupported()) {
-                                    Modifier.drawBackdrop(
-                                        backdrop = delBackdrop,
-                                        shape = { RoundedCornerShape(8.dp) },
-                                        effects = {
-                                            vibrancy()
-                                            blur(2f.dp.toPx())
-                                            if (isLensSupported()) lens(8f.dp.toPx(), 16f.dp.toPx())
-                                        },
-                                        onDrawSurface = {
-                                            drawRect(SemanticDanger.copy(alpha = 0.15f))
-                                        }
-                                    )
-                                } else {
-                                    Modifier.background(
-                                        SemanticDanger.copy(alpha = 0.12f),
-                                        RoundedCornerShape(8.dp)
-                                    )
-                                }
+                            .background(
+                                SemanticDanger.copy(alpha = 0.12f),
+                                RoundedCornerShape(8.dp)
                             )
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onRemove),
@@ -444,7 +399,6 @@ fun GrabQueueItem(
 fun GrabModeSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
     modifier: Modifier = Modifier
 ) {
     val trackWidth = 88.dp
@@ -454,7 +408,6 @@ fun GrabModeSwitch(
     val padding = 3.dp
     val trackShape = RoundedCornerShape(trackHeight / 2)
     val thumbShape = RoundedCornerShape(13.dp)
-    val useGlass = backdrop != null && isBackdropSupported()
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -548,78 +501,23 @@ fun GrabModeSwitch(
         }
     }
 
-    if (useGlass && backdrop != null) {
-        // 玻璃模式：轨道用 drawBackdrop + 色调，滑块用 lens + 色散
-        Box(
-            modifier = modifier
-                .size(trackWidth, trackHeight)
-                .scale(scale)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { trackShape },
-                    effects = {
-                        blur(4f.dp.toPx())
-                    },
-                    onDrawSurface = {
-                        drawRect(trackColor.copy(alpha = 0.3f))
-                    }
-                )
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null
-                ) { onCheckedChange(!checked) },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // 玻璃滑块
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(padding)
-                        .size(width = thumbWidth, height = thumbHeight)
-                        .offset(x = thumbOffset)
-                        .scale(if (isPressed) 0.92f else 1f)
-                        .drawBackdrop(
-                            backdrop = backdrop,
-                            shape = { thumbShape },
-                            effects = {
-                                vibrancy()
-                                blur(4f.dp.toPx())
-                                if (isLensSupported()) {
-                                    lens(
-                                        refractionHeight = 6f.dp.toPx(),
-                                        refractionAmount = 10f.dp.toPx(),
-                                        depthEffect = true,
-                                        chromaticAberration = true
-                                    )
-                                }
-                            },
-                            onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = 0.15f))
-                            }
-                        )
-                )
-                TextOverlay()
-            }
-        }
-    } else {
-        // 新拟态兜底
-        Surface(
+    // 简洁模式
+    Surface(
             shape = trackShape,
             color = trackColor,
             modifier = modifier
                 .size(trackWidth, trackHeight)
                 .scale(scale)
                 .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.2f),
+                    width = 0.5.dp,
+                    color = Color.White.copy(alpha = 0.15f),
                     shape = trackShape
                 )
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null
                 ) { onCheckedChange(!checked) },
-            shadowElevation = 0.dp
+            shadowElevation = 2.dp
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Surface(
@@ -630,16 +528,15 @@ fun GrabModeSwitch(
                         .padding(padding)
                         .size(width = thumbWidth, height = thumbHeight)
                         .offset(x = thumbOffset)
-                        .scale(if (isPressed) 0.92f else 1f)
+                        .scale(if (isPressed) 0.94f else 1f)
                         .border(
                             width = 0.5.dp,
-                            color = Color.Black.copy(alpha = 0.08f),
+                            color = Color.Black.copy(alpha = 0.06f),
                             shape = thumbShape
                         ),
-                    shadowElevation = 3.dp
+                    shadowElevation = 2.dp
                 ) {}
                 TextOverlay()
             }
         }
-    }
 }

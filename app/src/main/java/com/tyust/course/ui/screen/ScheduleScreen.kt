@@ -68,12 +68,7 @@ import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.system.neumorphicShadow
-import com.tyust.course.ui.system.LocalAppBackdrop
-import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.AnimatedIconButton
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
 
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuDivider
@@ -361,8 +356,6 @@ private fun SemesterCapsuleToggle(
         ),
         label = "semesterToggle"
     )
-    val backdrop = LocalAppBackdrop.current
-    val useGlass = backdrop != null && isBackdropSupported()
 
     Box(
         modifier = Modifier
@@ -370,19 +363,7 @@ private fun SemesterCapsuleToggle(
             .height(30.dp)
             .clip(RoundedCornerShape(15.dp))
             .then(
-                if (useGlass && backdrop != null) {
-                    Modifier.drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { RoundedCornerShape(15.dp) },
-                        effects = {
-                            vibrancy()
-                            blur(4f.dp.toPx())
-                        },
-                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.15f)) }
-                    )
-                } else {
-                    Modifier.background(NeuInsetBackground, RoundedCornerShape(15.dp))
-                }
+                Modifier.background(NeuInsetBackground, RoundedCornerShape(15.dp))
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

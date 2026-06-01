@@ -21,17 +21,37 @@ suspend fun PointerInputScope.inspectDragGestures(
     awaitEachGesture {
         val initialDown = awaitFirstDown(false, PointerEventPass.Initial)
         val down = awaitFirstDown(false)
-        val drag = initialDown
 
+        // Don't consume down — let child clickable see it for tap detection
         onDragStart(down)
-        onDrag(drag, Offset.Zero)
+        onDrag(initialDown, Offset.Zero)
+
+        val dragThreshold = viewConfiguration.touchSlop
+        var dragDistance = 0f
+        var dragging = false
+
         val upEvent = drag(
-            pointerId = drag.id,
-            onDrag = { onDrag(it, it.positionChange()) }
+            pointerId = initialDown.id,
+            onDrag = { change ->
+                val moveDist = change.positionChange().getDistance()
+                dragDistance += moveDist
+                if (!dragging && dragDistance > dragThreshold) {
+                    dragging = true
+                }
+                if (dragging) {
+                    // Consume only after exceeding slop — small moves pass through for click
+                    change.consume()
+                }
+                onDrag(change, change.positionChange())
+            }
         )
         if (upEvent == null) {
             onDragCancel()
         } else {
+            // Only consume up if a real drag was detected, otherwise let clickable see it
+            if (dragging) {
+                upEvent.consume()
+            }
             onDragEnd(upEvent)
         }
     }

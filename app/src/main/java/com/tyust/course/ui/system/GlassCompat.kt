@@ -65,7 +65,7 @@ object GlassRecipe {
     val BlurDp = 6f
     val RefractionHeightDp = 14f          // ≤ 28dp 圆角，展现极厚玻璃底座
     val RefractionAmountDp = 32f          // 调高以增强边缘折射彩色拉扯
-    val SurfaceAlpha = 0.08f              // 极低白度，彻底通透
+    val SurfaceAlpha = 0.30f              // 对齐文档示例，保证磨砂可见
     val BarBorderAlpha = 0.40f            // 描边微亮，构筑高光边缘
 
     // 普通卡片（16dp 圆角）

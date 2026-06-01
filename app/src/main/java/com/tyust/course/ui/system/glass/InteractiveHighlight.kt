@@ -12,6 +12,9 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.util.fastCoerceIn
 import com.kyant.backdrop.RuntimeShader
 import com.kyant.backdrop.asComposeShader
@@ -88,28 +91,28 @@ half4 main(float2 coord) {
 
     val gestureModifier: Modifier =
         Modifier.pointerInput(animationScope) {
-            inspectDragGestures(
-                onDragStart = { down ->
-                    startPosition = down.position
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.snapTo(startPosition) }
-                    }
-                },
-                onDragEnd = {
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
-                },
-                onDragCancel = {
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, PointerEventPass.Initial)
+                startPosition = down.position
+                animationScope.launch {
+                    launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
+                    launch { positionAnimation.snapTo(startPosition) }
                 }
-            ) { change, _ ->
-                animationScope.launch { positionAnimation.snapTo(change.position) }
+                // Track pointer position without consuming — click handlers stay unblocked
+                var pointer = down.id
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == pointer }
+                    if (change == null || !change.pressed) break
+                    if (change.previousPosition != change.position) {
+                        animationScope.launch { positionAnimation.snapTo(change.position) }
+                    }
+                    pointer = change.id
+                }
+                animationScope.launch {
+                    launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+                    launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
+                }
             }
         }
 }

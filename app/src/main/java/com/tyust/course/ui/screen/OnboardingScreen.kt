@@ -39,18 +39,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SectionSpacing
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
-import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.theme.NeuPrimary
 import kotlinx.coroutines.launch
 
@@ -98,60 +92,25 @@ fun OnboardingScreen(
         color = MaterialTheme.colorScheme.background
     ) {
         Box(Modifier.fillMaxSize()) {
-            val bgColor = MaterialTheme.colorScheme.background
-            val useGlass = isBackdropSupported()
-
-            // 彩色渐变背景层 — 为玻璃折射提供彩色内容源
-            if (useGlass) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFFE0E8FF).copy(alpha = 0.3f),
-                                    Color(0xFFD6F0E8).copy(alpha = 0.2f),
-                                    Color(0xFFFFE8F0).copy(alpha = 0.15f),
-                                    Color.Transparent
-                                ),
-                                radius = 1200f
-                            )
-                        )
-                )
-            }
-
-            val rootBackdrop = if (useGlass) {
-                rememberLayerBackdrop {
-                    drawRect(bgColor)
-                    drawContent()
-                }
-            } else {
-                null
-            }
-
-            // 层1：背景捕获
-            if (rootBackdrop != null) {
-                Box(Modifier.layerBackdrop(rootBackdrop).fillMaxSize())
-            }
-
-            // 层2：玻璃中间层 — exportedBackdrop 给子组件
-            val glassBackdrop = if (useGlass) rememberLayerBackdrop() else null
-            val overlayModifier = if (rootBackdrop != null && glassBackdrop != null) {
+            // 彩色渐变背景层
+            Box(
                 Modifier
                     .fillMaxSize()
-                    .drawBackdrop(
-                        backdrop = rootBackdrop,
-                        exportedBackdrop = glassBackdrop,
-                        shape = { RoundedCornerShape(0.dp) },
-                        effects = { vibrancy(); blur(4f.dp.toPx()) },
-                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.03f)) }
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFE0E8FF).copy(alpha = 0.3f),
+                                Color(0xFFD6F0E8).copy(alpha = 0.2f),
+                                Color(0xFFFFE8F0).copy(alpha = 0.15f),
+                                Color.Transparent
+                            ),
+                            radius = 1200f
+                        )
                     )
-            } else {
-                Modifier.fillMaxSize()
-            }
+            )
 
-            Box(modifier = overlayModifier) {
-                CompositionLocalProvider(LocalAppBackdrop provides glassBackdrop) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                CompositionLocalProvider(LocalAppBackdrop provides null) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()

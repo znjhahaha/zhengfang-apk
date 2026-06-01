@@ -290,9 +290,9 @@ fun CourseGroupItem(
     )
     val cardBackgroundColor by animateColorAsState(
         targetValue = when {
-            hasSelected -> SemanticSuccess.copy(alpha = 0.04f)
+            hasSelected -> MaterialTheme.colorScheme.surface
             hasAvailableSeat -> MaterialTheme.colorScheme.surface
-            else -> NeuInsetBackground.copy(alpha = 0.60f)
+            else -> NeuInsetBackground
         },
         animationSpec = MotionSpecs.standard(),
         label = "courseGroupBackground"
@@ -506,7 +506,8 @@ fun TeachingClassRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.3f), RoundedCornerShape(12.dp))
+            .border(1.dp, if (isSelectedRow) SemanticSuccess.copy(alpha = 0.25f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.3f), RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 if (isSelectedRow && backgroundAlpha > 0f) {
                     Brush.horizontalGradient(

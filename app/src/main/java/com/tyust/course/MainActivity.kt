@@ -230,22 +230,36 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             null
         }
 
-        // 壁纸背景层 — layerBackdrop 直接应用到壁纸上，使其成为 backdrop 源
-        if (useGlass && rootBackdrop != null) {
-            Canvas(modifier = Modifier.fillMaxSize().layerBackdrop(rootBackdrop)) {
-                drawWallpaperPattern(this)
-            }
+        // 第二个 backdrop：捕获壁纸+页面内容，专供底栏折射
+        // 底栏在此 layer 之外，不会形成循环
+        val navBarBackdrop = if (useGlass) {
+            rememberLayerBackdrop()
         } else {
-            Box(Modifier.fillMaxSize().background(bgColor))
+            null
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            val dialogHostState = rememberDialogHostState()
-            CompositionLocalProvider(
-                LocalAppBackdrop provides rootBackdrop,
-                LocalDialogHost provides dialogHostState
+        val dialogHostState = rememberDialogHostState()
+        CompositionLocalProvider(
+            LocalAppBackdrop provides rootBackdrop,
+            LocalDialogHost provides dialogHostState
+        ) {
+            // navBarBackdrop 捕获壁纸+页面内容，底栏在此 Box 之外折射它
+            Box(
+                modifier = Modifier.fillMaxSize().then(
+                    if (useGlass && navBarBackdrop != null) Modifier.layerBackdrop(navBarBackdrop)
+                    else Modifier
+                )
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+            // 壁纸层：layerBackdrop 只捕获壁纸，给卡片/顶栏用（避免循环）
+            if (useGlass && rootBackdrop != null) {
+                Canvas(modifier = Modifier.fillMaxSize().layerBackdrop(rootBackdrop)) {
+                    drawWallpaperPattern(this)
+                }
+            } else {
+                Box(Modifier.fillMaxSize().background(bgColor))
+            }
+
+            Column(modifier = Modifier.fillMaxSize()) {
                     AnimatedVisibility(
                         visible = isTokenExpired,
                         enter = fadeIn(),
@@ -261,9 +275,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     }
 
                     Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(bottom = 76.dp)
+                        modifier = Modifier.weight(1f)
                     ) {
                         AnimatedContent(
                             targetState = selectedTab,
@@ -302,24 +314,24 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                             }
                         }
                     }
-                }
-
-                AppBuildWatermarks(fragmentActivity = fragmentActivity)
-
-                // 底栏：从 LocalAppBackdrop 读取 rootBackdrop，直接获得玻璃折射效果
-                CapsuleNavigationBar(
-                    items = items,
-                    selectedTab = selectedTab,
-                    onTabSelect = { selectedTab = it },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-
-                // Dialog portal overlay — 渲染在最顶层，backdrop 正常工作
-                DialogHost(
-                    state = dialogHostState,
-                    modifier = Modifier.fillMaxSize()
-                )
             }
+
+            AppBuildWatermarks(fragmentActivity = fragmentActivity)
+            } // 关闭 navBarBackdrop Box
+
+            // 底栏在 navBarBackdrop 之外，折射壁纸+页面内容
+            CapsuleNavigationBar(
+                items = items,
+                selectedTab = selectedTab,
+                onTabSelect = { selectedTab = it },
+                backdrop = navBarBackdrop,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+
+            DialogHost(
+                state = dialogHostState,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -410,5 +422,44 @@ private fun BoxScope.AppBuildWatermarks(
 }
 
 private fun drawWallpaperPattern(scope: DrawScope) {
-    scope.drawRect(Color(0xFFEEEEEE))
+    // 渐变壁纸：模拟文档推荐的"蓝、紫色模糊球"
+    // 需要足够饱和度让 blur+lens 产生可感知的玻璃折射
+    val w = scope.size.width
+    val h = scope.size.height
+
+    // 底色：柔白
+    scope.drawRect(Color(0xFFF5F5FA))
+
+    // 蓝色模糊球（左下）
+    scope.drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0x5599BBFF), Color.Transparent),
+            center = Offset(w * 0.2f, h * 0.8f),
+            radius = w * 0.6f
+        ),
+        radius = w * 0.6f,
+        center = Offset(w * 0.2f, h * 0.8f)
+    )
+
+    // 紫色模糊球（右上）
+    scope.drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0x44BB99FF), Color.Transparent),
+            center = Offset(w * 0.85f, h * 0.15f),
+            radius = w * 0.5f
+        ),
+        radius = w * 0.5f,
+        center = Offset(w * 0.85f, h * 0.15f)
+    )
+
+    // 青色模糊球（中下）— 确保底栏位置有色彩
+    scope.drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0x4488DDCC), Color.Transparent),
+            center = Offset(w * 0.5f, h * 0.9f),
+            radius = w * 0.45f
+        ),
+        radius = w * 0.45f,
+        center = Offset(w * 0.5f, h * 0.9f)
+    )
 }
