@@ -80,7 +80,7 @@ fun SettingsScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = PagePadding, vertical = 20.dp),
+                .padding(start = PagePadding, end = PagePadding, top = 20.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(SectionSpacing)
         ) {
             SettingsHeader(

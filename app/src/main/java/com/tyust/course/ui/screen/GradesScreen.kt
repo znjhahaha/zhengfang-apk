@@ -216,7 +216,7 @@ private fun OverallGradesContent(
         else -> {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
@@ -547,7 +547,7 @@ private fun ExamScheduleContent(
         else -> {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {

@@ -178,7 +178,7 @@ fun GrabProScreen(
                 .fillMaxSize()
                 .padding(paddingValues),
             state = scrollState,
-            contentPadding = PaddingValues(horizontal = PagePadding, vertical = 16.dp),
+            contentPadding = PaddingValues(start = PagePadding, end = PagePadding, top = 16.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {

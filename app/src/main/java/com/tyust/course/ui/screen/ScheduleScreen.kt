@@ -432,7 +432,7 @@ fun ScheduleGrid(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = PagePadding, vertical = 8.dp),
+            .padding(start = PagePadding, end = PagePadding, top = 8.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SystemCard(
