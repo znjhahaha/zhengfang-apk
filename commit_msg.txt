@@ -1,0 +1,5 @@
+fix: 各页面滚动底部增加80dp padding防止导航栏遮挡
+
+CourseListScreen、GrabProScreen、GradesScreen的LazyColumn
+contentPadding底部增至80dp；ScheduleScreen、SettingsScreen的
+Column+verticalScroll padding底部增至80dp
