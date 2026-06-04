@@ -25,17 +25,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Extract Version Info
-        id: version
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION_NAME="${TAG#v}"
-          # 从 build.gradle 提取 versionCode
-          VERSION_CODE=$(grep -oP 'versionCode\s+\K\d+' app/build.gradle)
-          echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
-          echo "Tag: $TAG, Version: $VERSION_NAME, Code: $VERSION_CODE"
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -57,6 +46,17 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
+
+      - name: Extract Version Info
+        id: version
+        run: |
+          # 构建时 version.properties 已自动递增，读取最新值
+          VERSION_CODE=$(grep 'VERSION_CODE' app/version.properties | cut -d'=' -f2 | tr -d ' ')
+          VERSION_NAME=$(grep 'VERSION_NAME' app/version.properties | cut -d'=' -f2 | tr -d ' ')
+          TAG="${GITHUB_REF_NAME}"
+          echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
+          echo "Tag: $TAG, Version: $VERSION_NAME, Code: $VERSION_CODE"
 
       - name: Create GitHub Release
         id: create_release
