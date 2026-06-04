@@ -135,6 +135,7 @@ jobs:
               -F "access_token=${GITEE_TOKEN}" \
               -F "tag_name=${TAG}" \
               -F "name=Release ${TAG}" \
+              -F "target_commitish=main" \
               -F "body=${RELEASE_NOTES:-自动构建发布 ${TAG}}" \
               -F "prerelease=false")
             RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id // empty')
