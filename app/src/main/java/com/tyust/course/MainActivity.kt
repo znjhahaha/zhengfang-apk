@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.tyust.course.activation.ActivationManager
@@ -84,6 +85,11 @@ import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 
 class MainActivity : FragmentActivity() {
 
@@ -173,6 +179,13 @@ sealed class BottomNavItem(
 
 @Composable
 fun MainScreen(fragmentActivity: FragmentActivity) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    
+    val hasStarred = prefs.getBoolean("has_starred", false)
+    val dismissCount = prefs.getInt("star_dismiss_count", 0)
+    var showStarDialog by remember { mutableStateOf(!hasStarred && dismissCount < 3) }
+
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val items = listOf(
         BottomNavItem.Courses,
@@ -332,6 +345,90 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 state = dialogHostState,
                 modifier = Modifier.fillMaxSize()
             )
+
+            if (showStarDialog) {
+                val dialogTitle = when (dismissCount) {
+                    0 -> "点个 Star 支持一下 ⭐"
+                    1 -> "小小的 Star，大大的支持 ⭐"
+                    else -> "最后一次求 Star 支持 ⭐"
+                }
+
+                val dialogText = when (dismissCount) {
+                    0 -> "哈喽！感谢你使用抢课助手。\n\n如果你觉得这个应用对你有帮助，欢迎给我们的 GitHub 仓库点一颗 Star ⭐！你的支持是我们持续优化的最大动力～"
+                    1 -> "嗨，又见面啦！我们一直在努力优化体验。\n\n如果抢课助手帮到了你，不妨花几秒钟去 GitHub 点个 Star ⭐ 支持一下作者吧，非常感谢！"
+                    else -> "这是最后一次打扰啦～\n\n写这个小工具很不容易，如果你喜欢它，真心希望能得到你的一颗 Star ⭐ 鼓励。非常感谢一路以来的陪伴！"
+                }
+
+                Dialog(
+                    onDismissRequest = {}, // 点击外部或按返回键不响应，防止误触
+                    properties = DialogProperties(
+                        dismissOnBackPress = false,
+                        dismissOnClickOutside = false
+                    )
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(320.dp)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(MaterialTheme.colorScheme.surface),
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(28.dp),
+                        tonalElevation = 4.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                text = dialogTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = dialogText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 20.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    SystemSecondaryButton(
+                                        text = "暂不",
+                                        onClick = {
+                                            showStarDialog = false
+                                            prefs.edit().putInt("star_dismiss_count", dismissCount + 1).apply()
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                Box(modifier = Modifier.weight(1f)) {
+                                    SystemPrimaryButton(
+                                        text = "去点 Star",
+                                        onClick = {
+                                            showStarDialog = false
+                                            prefs.edit().putBoolean("has_starred", true).apply()
+                                            try {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/znjhahaha/zhengfang-apk.git")).apply {
+                                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "无法打开浏览器", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

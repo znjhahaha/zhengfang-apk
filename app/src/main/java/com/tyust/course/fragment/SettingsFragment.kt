@@ -43,6 +43,7 @@ class SettingsFragment : Fragment() {
                     onClearCache = { handleClearCache() },
                     onCheckUpdate = { /* Not used in fragment, handled by SettingsRoute */ },
                     onAbout = { handleAbout() },
+                    onCredits = { handleCredits() },
                     onLogout = { handleLogout() },
                     onQuotaClick = { showQuotaDetails() },
                     isSuper = isSuper,
@@ -150,19 +151,43 @@ class SettingsFragment : Fragment() {
     }
 
     private fun handleAbout() {
+        val message = buildString {
+            append("更新日志\n\n")
+            append("• 2026-06-04: 修复平时成绩显示Bug，支持CSV单导出；添加登录平台指引；增加防误触 Star 弹窗（最多弹3次不同内容）；设置页关于改版为更新历史与致谢\n")
+            append("• 2026-06-03: 清理内部文档与更新配置\n")
+            append("• 2026-06-02: 优化滚动体验防止内容遮挡，重构 README\n")
+            append("• 2026-06-01: 修复底栏点击失效与液态裁切问题\n")
+            append("• 2026-05-31: 引入液态玻璃 UI 重构 (v1.0.54)\n")
+            append("• 2026-05-26: 优化卡片，修复退课接口与日历分享崩溃\n")
+            append("• 2026-05-25: 升级新拟态玻璃化 UI，优化课表\n")
+            append("• 2026-04-18: 成绩查询优化，增强限流与指纹安全\n")
+            append("• 2026-04-09: 深度 UI/UX 重构，极简系统工具风\n\n")
+            append("本应用仅供学习交流使用")
+        }
         AlertDialog.Builder(context)
-            .setTitle("关于")
+            .setTitle("更新历史")
+            .setMessage(message)
+            .setPositiveButton("关闭", null)
+            .show()
+    }
+
+    private fun handleCredits() {
+        AlertDialog.Builder(context)
+            .setTitle("致谢与关于")
             .setMessage(
-                "正方教务工具 Android版\n\n" +
-                "版本: 1.0.0\n\n" +
-                "功能特性:\n" +
-                "• 课程信息查询\n" +
-                "• 智能抢课Pro+\n" +
-                "• 课表查看\n" +
-                "• 成绩查询\n\n" +
-                "本应用仅供学习交流使用"
+                "特别致谢\n" +
+                "本应用基于多项优秀的开源技术构建，衷心感谢以下开源项目及社区的支持：\n" +
+                "• Jetpack Compose & Kotlin\n" +
+                "• OkHttp3 & Gson\n" +
+                "• Jsoup (HTML 解析库)\n" +
+                "• Material Design 3\n" +
+                "• AndroidLiquidGlass 动效库\n\n" +
+                "关于作者\n" +
+                "• 作者：znjhahaha\n" +
+                "• GitHub 仓库：https://github.com/znjhahaha/zhengfang-apk\n\n" +
+                "本软件为开源免费项目，仅供个人学习与技术交流使用，严禁用于任何商业目的与倒卖。"
             )
-            .setPositiveButton("确定", null)
+            .setPositiveButton("我知道了", null)
             .show()
     }
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -36,6 +37,7 @@ import com.tyust.course.ui.system.isLensSupported
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.theme.*
 
@@ -48,6 +50,9 @@ import com.kyant.backdrop.effects.vibrancy
 
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.tyust.course.model.SchoolConfig
@@ -65,6 +70,11 @@ fun LoginScreen(
     isLoading: Boolean = false,
     errorMessage: String? = null,
     cookieValue: String = "",
+    // Password login
+    onPasswordLogin: ((username: String, password: String) -> Unit)? = null,
+    captchaImageBytes: ByteArray? = null,
+    onCaptchaSubmit: ((code: String) -> Unit)? = null,
+    onCaptchaRefresh: (() -> Unit)? = null,
     // New parameters for binding dialog
     showBindingDialog: Boolean = false,
     bindingStudentName: String = "",
@@ -74,6 +84,13 @@ fun LoginScreen(
     onCancelBinding: () -> Unit = {}
 ) {
     var cookie by remember { mutableStateOf(cookieValue) }
+    var loginTab by remember { mutableStateOf(if (onPasswordLogin != null) 0 else 1) }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var showCaptchaDialog by remember { mutableStateOf(false) }
+    var captchaInput by remember { mutableStateOf("") }
+    var captchaSubmitting by remember { mutableStateOf(false) }
+    var captchaDismissed by remember { mutableStateOf(false) }
     
     // Update cookie when external value changes
     LaunchedEffect(cookieValue) {
@@ -87,6 +104,19 @@ fun LoginScreen(
     
     LaunchedEffect(Unit) {
         visible = true
+    }
+
+    // 验证码弹窗触发
+    LaunchedEffect(captchaImageBytes) {
+        if (captchaImageBytes != null) {
+            // 新的验证码图片到达，重置所有状态
+            captchaInput = ""
+            captchaSubmitting = false
+            captchaDismissed = false
+            showCaptchaDialog = true
+        } else {
+            showCaptchaDialog = false
+        }
     }
     
     Box(
@@ -460,15 +490,94 @@ fun LoginScreen(
                         }
                         
                         Spacer(modifier = Modifier.height(20.dp))
-                        
-                        Text(
-                            text = "安全会话凭据",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Neutral700,
-                            modifier = Modifier.align(Alignment.Start)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 登录方式切换
+                        if (onPasswordLogin != null) {
+                            SystemSegmentedControl(
+                                options = listOf("密码登录", "Cookie 登录"),
+                                selectedIndex = loginTab,
+                                onSelect = { loginTab = it }
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
+                        if (loginTab == 0 && onPasswordLogin != null) {
+                            // 密码登录表单
+                            Text(
+                                text = "账号密码",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Neutral700,
+                                modifier = Modifier.align(Alignment.Start)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("学号") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeuPrimary,
+                                    unfocusedBorderColor = Neutral300
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("密码") },
+                                singleLine = true,
+                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                trailingIcon = {
+                                    IconButton(onClick = { showPassword = !showPassword }) {
+                                        Icon(
+                                            imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = null,
+                                            tint = Neutral500
+                                        )
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeuPrimary,
+                                    unfocusedBorderColor = Neutral300
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                color = SemanticInfoContainer.copy(alpha = 0.5f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, SemanticInfo.copy(alpha = 0.2f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = SemanticInfo,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "提示：部分学校的教务系统已接入统一身份认证平台。如无法在此直接输入教务密码登录，建议使用“内嵌浏览器自动获取”或“Cookie 登录”方式。",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SemanticInfo,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
+                        } else {
                         
                         // Cookie Input (Minimalist TextField)
                         val cookieTfShape = RoundedCornerShape(16.dp)
@@ -533,6 +642,7 @@ fun LoginScreen(
                                 cursorColor = NeuPrimary
                             )
                         )
+                        } // end else (cookie tab)
                         
                         // Error Message
                         AnimatedVisibility(visible = errorMessage != null) {
@@ -548,34 +658,59 @@ fun LoginScreen(
                         
                         Spacer(modifier = Modifier.height(32.dp))
                         
-                        // Login Button (Liquid Physics Glass Button)
-                        SystemPrimaryButton(
-                            text = if (isLoading) "登入中…" else "登入控制台",
-                            onClick = { onLoginClick(cookie) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            enabled = cookie.isNotBlank() && !isLoading
-                        )
+                        // Login Button
+                        if (loginTab == 0 && onPasswordLogin != null) {
+                            SystemPrimaryButton(
+                                text = if (isLoading) "登入中…" else "密码登录",
+                                onClick = { onPasswordLogin(username, password) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                enabled = username.isNotBlank() && password.isNotBlank() && !isLoading
+                            )
+                        } else {
+                            SystemPrimaryButton(
+                                text = if (isLoading) "登入中…" else "登入控制台",
+                                onClick = { onLoginClick(cookie) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                enabled = cookie.isNotBlank() && !isLoading
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // WebView Cookie Button (Liquid Physics Glass Button)
-                        SystemSecondaryButton(
-                            text = "内嵌浏览器自动获取",
-                            onClick = onOpenWebView,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.OpenInBrowser,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = Neutral700
+                        // WebView Cookie Button - 密码模式下点击自动切换到 Cookie 登录
+                        if (loginTab == 0 && onPasswordLogin != null) {
+                            // 密码模式：不显示内嵌浏览器按钮，显示提示文字
+                            TextButton(
+                                onClick = { loginTab = 1 },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "切换到 Cookie 登录 →",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Neutral500
                                 )
                             }
-                        )
+                        } else {
+                            SystemSecondaryButton(
+                                text = "内嵌浏览器自动获取",
+                                onClick = onOpenWebView,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.OpenInBrowser,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = Neutral700
+                                    )
+                                }
+                            )
+                        }
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         
@@ -648,6 +783,72 @@ fun LoginScreen(
             usedNames = bindingUsedNames,
             onConfirm = onConfirmBinding,
             onDismiss = onCancelBinding
+        )
+    }
+
+    // 验证码弹窗
+    if (showCaptchaDialog && captchaImageBytes != null) {
+        AlertDialog(
+            onDismissRequest = { showCaptchaDialog = false },
+            title = { Text("请输入验证码") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val bitmap = remember(captchaImageBytes) {
+                        BitmapFactory.decodeByteArray(captchaImageBytes, 0, captchaImageBytes.size)
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "验证码",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = { onCaptchaRefresh?.invoke() }) {
+                        Text("看不清？点击刷新")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = captchaInput,
+                        onValueChange = { captchaInput = it },
+                        label = { Text("验证码") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        captchaSubmitting = true
+                        onCaptchaSubmit?.invoke(captchaInput)
+                    },
+                    enabled = captchaInput.isNotBlank() && !captchaSubmitting
+                ) {
+                    if (captchaSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("确认")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showCaptchaDialog = false
+                    captchaDismissed = true
+                    // 不调用 refreshCaptcha，避免更新 captchaImageBytes 触发 LaunchedEffect 重新弹窗
+                }) {
+                    Text("取消")
+                }
+            }
         )
     }
 }

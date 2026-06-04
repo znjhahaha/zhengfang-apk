@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.ContentPasteSearch
 import androidx.compose.material.icons.outlined.Cookie
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
@@ -60,6 +61,7 @@ fun SettingsScreen(
     onClearCache: () -> Unit,
     onCheckUpdate: () -> Unit,
     onAbout: () -> Unit,
+    onCredits: () -> Unit,
     onLogout: () -> Unit,
     onQuotaClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
@@ -136,10 +138,18 @@ fun SettingsScreen(
                 SystemDivider(modifier = Modifier.padding(start = 68.dp))
                 SettingsActionItem(
                     icon = Icons.Outlined.Info,
-                    title = "关于应用",
-                    subtitle = "版本信息与功能说明",
-                    tintColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    title = "更新历史",
+                    subtitle = "应用的更新日志与时间线",
+                    tintColor = NeuPrimary,
                     onClick = onAbout
+                )
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
+                    icon = Icons.Outlined.FavoriteBorder,
+                    title = "致谢与关于",
+                    subtitle = "开源项目致谢与作者声明",
+                    tintColor = NeuPrimary,
+                    onClick = onCredits
                 )
             }
 

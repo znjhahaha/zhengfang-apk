@@ -95,6 +95,13 @@ public class CourseApiClient {
                                                 okhttp3.MediaType contentType = response.body().contentType();
                                                 if (contentType != null
                                                                 && contentType.toString().contains("text/html")) {
+                                                        // ⏭ 跳过登录流程本身的请求（登录页/公钥/验证码返回表单或图片是正常行为）
+                                                        String _urlPath = response.request().url().encodedPath().toLowerCase();
+                                                        boolean _isLoginFlow = _urlPath.contains("login_slogin")
+                                                                || _urlPath.contains("login_getpublickey")
+                                                                || _urlPath.contains("kaptcha");
+                                                        if (!_isLoginFlow) {
+
                                                         // 🔧 修改判定逻辑：引入“高精度反证法”防止误报
                                                         // 1. 扩大检查范围：从 50KB 增加到 256KB，确保能搜到复杂成绩页中的姓名标签
                                                         String bodyPreview = response.peekBody(1024 * 256).string();
@@ -132,6 +139,7 @@ public class CourseApiClient {
                                                                         Log.d(TAG, "🔍 [拦截误报] 虽然包含登录特征，但成功解析到姓名 ["
                                                                                         + possibleName + "]，判定为业务数据页");
                                                                 }
+                                                        }
                                                         }
                                                 }
                                         }
@@ -179,6 +187,11 @@ public class CourseApiClient {
         public void clearDisplayParamsCache() {
                 displayParamsCache.clear();
                 Log.d(TAG, "Cleared display params cache");
+        }
+
+        public void clearCookies() {
+                cookieJar.clear();
+                Log.d(TAG, "Cleared all cookies");
         }
 
         // 设置原始 Cookie 字符串 (e.g., "ASP.NET_SessionId=xyz; JSESSIONID=abc")
@@ -406,12 +419,38 @@ public class CourseApiClient {
 
         // 获取成绩 (单学期)
         public void fetchGrades(SchoolConfig school, String semester, Callback callback) {
-                String url = school.getGradesUrl(semester);
-                Log.d(TAG, "Fetching grades from: " + url);
+                String[] params = school.parseSemester(semester);
+                String url = school.getFullBasePath() + school.gradesPath
+                                + "?doType=query&gnmkdm=" + school.gradeGnmkdm;
+                String postBody = "xnm=" + params[0] + "&xqm=" + params[1]
+                                + "&queryModel.showCount=1500&queryModel.currentPage=1"
+                                + "&queryModel.sortName=&queryModel.sortOrder=asc&time=0";
+                Log.d(TAG, "Fetching grades (POST) from: " + url);
 
                 Request request = createRequestBuilder(school)
                                 .url(url)
+                                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
+                                .post(okhttp3.RequestBody.create(postBody,
+                                                okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
+                                .build();
+                client.newCall(request).enqueue(callback);
+        }
+
+        public void fetchGradeDetails(SchoolConfig school, String semester, Callback callback) {
+                String url = school.getGradeDetailUrl();
+                String[] params = school.parseSemester(semester);
+                String postBody = "xnm=" + params[0] + "&xqm=" + params[1]
+                                + "&queryModel.showCount=1500&queryModel.currentPage=1"
+                                + "&queryModel.sortName=&queryModel.sortOrder=asc&time=0";
+                Log.d(TAG, "Fetching grade details from: " + url);
+
+                Request request = createRequestBuilder(school)
+                                .url(url)
+                                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                                .header("X-Requested-With", "XMLHttpRequest")
+                                .post(okhttp3.RequestBody.create(postBody,
+                                                okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(callback);
         }
@@ -709,5 +748,140 @@ public class CourseApiClient {
                         Log.e(TAG, "dropCourseSync error: " + e.getMessage());
                 }
                 return null;
+        }
+
+        // ============================================
+        // 密码登录相关方法
+        // ============================================
+
+        public OkHttpClient getClient() {
+                return client;
+        }
+
+        public CookieJar getCookieJar() {
+                return cookieJar;
+        }
+
+        public void getLoginPage(SchoolConfig school, Callback callback) {
+                String url = school.getFullBasePath() + school.loginPagePath;
+                Log.d(TAG, "GET login page: " + url);
+
+                Request request = new Request.Builder()
+                                .url(url)
+                                .header("User-Agent",
+                                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+                                .get()
+                                .build();
+                client.newCall(request).enqueue(callback);
+        }
+
+        public void getPublicKey(SchoolConfig school, Callback callback) {
+                String url = school.getFullBasePath() + school.publicKeyPath + "?time=" + System.currentTimeMillis();
+                Log.d(TAG, "GET public key: " + url);
+
+                Request request = new Request.Builder()
+                                .url(url)
+                                .header("User-Agent",
+                                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+                                .header("X-Requested-With", "XMLHttpRequest")
+                                .get()
+                                .build();
+                client.newCall(request).enqueue(callback);
+        }
+
+        public void getCaptchaImage(SchoolConfig school, Callback callback) {
+                String url = school.getFullBasePath() + school.captchaPath + "?time=" + System.currentTimeMillis();
+                Log.d(TAG, "GET captcha: " + url);
+
+                // 记录当前发送的 cookies
+                HttpUrl httpUrl = HttpUrl.parse(url);
+                if (httpUrl != null) {
+                        List<Cookie> cookies = cookieJar.loadForRequest(httpUrl);
+                        StringBuilder sb = new StringBuilder();
+                        for (Cookie c : cookies) {
+                                if (sb.length() > 0) sb.append("; ");
+                                sb.append(c.name()).append("=").append(c.value().substring(0, Math.min(c.value().length(), 8)) + "...");
+                        }
+                        Log.d(TAG, "Captcha cookies: [" + sb.toString() + "]");
+                }
+
+                Request request = new Request.Builder()
+                                .url(url)
+                                .header("User-Agent",
+                                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+                                .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                                .header("Accept-Encoding", "gzip, deflate")
+                                .header("Connection", "keep-alive")
+                                .header("Referer", school.getFullBasePath() + school.loginPagePath)
+                                .header("sec-ch-ua", "\"Chromium\";v=\"139\", \"Google Chrome\";v=\"139\"")
+                                .header("sec-ch-ua-mobile", "?0")
+                                .header("sec-ch-ua-platform", "\"Windows\"")
+                                .header("Sec-Fetch-Site", "same-origin")
+                                .header("Sec-Fetch-Mode", "no-cors")
+                                .header("Sec-Fetch-Dest", "image")
+                                .get()
+                                .build();
+                client.newCall(request).enqueue(new okhttp3.Callback() {
+                        @Override
+                        public void onFailure(okhttp3.Call call, java.io.IOException e) {
+                                Log.e(TAG, "Captcha GET failed: " + e.getMessage());
+                                callback.onFailure(call, e);
+                        }
+                        @Override
+                        public void onResponse(okhttp3.Call call, okhttp3.Response response) throws java.io.IOException {
+                                try {
+                                        Log.d(TAG, "Captcha response: code=" + response.code()
+                                                + ", contentType=" + response.header("Content-Type")
+                                                + ", contentLength=" + response.header("Content-Length")
+                                                + ", url=" + response.request().url());
+
+                                        // 记录服务器返回的 Set-Cookie
+                                        List<String> setCookies = response.headers("Set-Cookie");
+                                        if (!setCookies.isEmpty()) {
+                                                for (String sc : setCookies) {
+                                                        Log.d(TAG, "Captcha Set-Cookie: " + sc);
+                                                }
+                                        }
+
+                                        callback.onResponse(call, response);
+                                } catch (Exception e) {
+                                        Log.e(TAG, "Captcha callback error: " + e.getMessage(), e);
+                                        callback.onFailure(call, new java.io.IOException("Captcha callback error", e));
+                                }
+                        }
+                });
+        }
+
+        public void submitLogin(SchoolConfig school, okhttp3.RequestBody formBody, Callback callback) {
+                String url = school.getFullBasePath() + school.loginPagePath + "?time=" + System.currentTimeMillis();
+                Log.d(TAG, "POST login: " + url);
+
+                OkHttpClient noRedirectClient = client.newBuilder()
+                                .followRedirects(false)
+                                .followSslRedirects(false)
+                                .build();
+
+                Request request = new Request.Builder()
+                                .url(url)
+                                .header("User-Agent",
+                                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("Referer", school.getBaseUrl() + school.loginPagePath)
+                                .post(formBody)
+                                .build();
+                noRedirectClient.newCall(request).enqueue(callback);
+        }
+
+        public String getCookieString(SchoolConfig school) {
+                HttpUrl url = HttpUrl.parse(school.getBaseUrl());
+                if (url == null) return "";
+                List<Cookie> cookies = cookieJar.loadForRequest(url);
+                StringBuilder sb = new StringBuilder();
+                for (Cookie c : cookies) {
+                        if (sb.length() > 0) sb.append("; ");
+                        sb.append(c.name()).append("=").append(c.value());
+                }
+                return sb.toString();
         }
 }

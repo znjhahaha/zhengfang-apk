@@ -28,6 +28,11 @@ public class SchoolConfig {
     public String overallGradesIndexPath = "/xsxy/xsxyqk_cxXsxyqkIndex.html";
     public String overallGradesDataPath = "/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html";
 
+    // 登录相关路径
+    public String captchaPath = "/kaptcha";
+    public String publicKeyPath = "/xtgl/login_getPublicKey.html";
+    public String loginPagePath = "/xtgl/login_slogin.html";
+
     public SchoolConfig(String id, String name, String domain, String protocol) {
         this.id = id;
         this.name = name;
@@ -98,7 +103,27 @@ public class SchoolConfig {
         }
 
         return getFullBasePath() + gradesPath + "?gnmkdm=" + gradeGnmkdm
-                + "&doType=query&xnm=" + xnm + "&xqm=" + xqm;
+                + "&doType=query&xnm=" + xnm + "&xqm=" + xqm
+                + "&queryModel.showCount=1500&queryModel.currentPage=1";
+    }
+
+    // 生成分项成绩详情URL (接口A - 兜底用)
+    public String getGradeDetailUrl() {
+        return getFullBasePath() + "/cjcx/cjjdcx_cxXsjdxmcjIndex.html?doType=query&gnmkdm=N305099";
+    }
+
+    // 从 semester 字符串提取 xnm/xqm
+    public String[] parseSemester(String semester) {
+        String xnm = "2024";
+        String xqm = "3";
+        if (semester != null && semester.contains("-")) {
+            String[] parts = semester.split("-");
+            if (parts.length >= 3) {
+                xnm = parts[0];
+                xqm = parts[2].equals("1") ? "3" : "12";
+            }
+        }
+        return new String[]{xnm, xqm};
     }
 
     // 生成总体成绩查询URL
@@ -134,6 +159,9 @@ public class SchoolConfig {
             json.put("gradesPath", gradesPath);
             json.put("overallGradesIndexPath", overallGradesIndexPath);
             json.put("overallGradesDataPath", overallGradesDataPath);
+            json.put("captchaPath", captchaPath);
+            json.put("publicKeyPath", publicKeyPath);
+            json.put("loginPagePath", loginPagePath);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -165,6 +193,9 @@ public class SchoolConfig {
             config.overallGradesIndexPath = json.optString("overallGradesIndexPath", "/xsxy/xsxyqk_cxXsxyqkIndex.html");
             config.overallGradesDataPath = json.optString("overallGradesDataPath",
                     "/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html");
+            config.captchaPath = json.optString("captchaPath", "/kaptcha");
+            config.publicKeyPath = json.optString("publicKeyPath", "/xtgl/login_getPublicKey.html");
+            config.loginPagePath = json.optString("loginPagePath", "/xtgl/login_slogin.html");
             return config;
         } catch (Exception e) {
             e.printStackTrace();

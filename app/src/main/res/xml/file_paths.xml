@@ -3,5 +3,6 @@
     <cache-path name="cache_root" path="." />
     <cache-path name="logs" path="logs/" />
     <external-cache-path name="ext_logs" path="logs/" />
+    <external-cache-path name="exports" path="exports/" />
     <external-files-path name="downloads" path="Download/" />
 </paths>

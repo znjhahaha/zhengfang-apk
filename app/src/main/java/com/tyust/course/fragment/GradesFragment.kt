@@ -121,6 +121,7 @@ class GradesFragment : Fragment() {
         if (school == null || currentSemester.isEmpty()) return
 
         semesterIsLoading = true
+        // 接口 B: 总评成绩摘要
         CourseApiClient.getInstance().fetchGrades(school, currentSemester, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 activity?.runOnUiThread {
@@ -132,16 +133,94 @@ class GradesFragment : Fragment() {
             override fun onResponse(call: Call, response: Response) {
                 val json = response.body?.string() ?: ""
                 val items = parseGradesJson(json)
-                activity?.runOnUiThread {
-                    semesterIsLoading = false
-                    semesterGrades = items
+
+                // 检查是否所有课程都有完整的分项详情
+                val hasAllDetails = items.isNotEmpty() && items.all { it.detail.isNotEmpty() }
+                if (hasAllDetails) {
+                    activity?.runOnUiThread {
+                        semesterIsLoading = false
+                        semesterGrades = items
+                    }
+                } else {
+                    // 部分或全部课程缺少分项详情，从接口A兜底补充
+                    fetchAndMergeDetails(school, items)
                 }
             }
         })
     }
 
+    private fun fetchAndMergeDetails(school: SchoolConfig, baseGrades: List<GradeItemUi>) {
+        CourseApiClient.getInstance().fetchGradeDetails(school, currentSemester, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                activity?.runOnUiThread {
+                    semesterIsLoading = false
+                    semesterGrades = baseGrades
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val detailJson = response.body?.string() ?: ""
+                val detailEntries = parseDetailEntries(detailJson)
+
+                val merged = baseGrades.map { grade ->
+                    if (grade.detail.isNotEmpty()) return@map grade
+                    val matched = detailEntries.firstOrNull { it.jxbId.isNotEmpty() && it.jxbId == grade.jxbId }
+                        ?: detailEntries.firstOrNull { it.courseCode.isNotEmpty() && it.courseCode == grade.courseCode }
+                        ?: detailEntries.firstOrNull { it.courseName == grade.courseName }
+                        ?: detailEntries.firstOrNull { grade.courseName.startsWith(it.courseName) || it.courseName.startsWith(grade.courseName) }
+                    if (matched != null && matched.detail.isNotEmpty()) grade.copy(detail = matched.detail)
+                    else grade
+                }
+
+                activity?.runOnUiThread {
+                    semesterIsLoading = false
+                    semesterGrades = merged
+                }
+            }
+        })
+    }
+
+    private data class DetailEntry(val courseName: String, val courseCode: String, val jxbId: String, val detail: String)
+
+    private fun parseDetailEntries(json: String): List<DetailEntry> {
+        val result = mutableListOf<DetailEntry>()
+        try {
+            val items = JSONObject(json).optJSONArray("items") ?: return result
+            val grouped = LinkedHashMap<String, MutableList<JSONObject>>()
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                val name = item.optString("kcmc", "").trim()
+                if (name.isEmpty()) continue
+                val jxbId = item.optString("jxb_id", "")
+                    .ifEmpty { item.optString("kch_id", "") }
+                val key = "$name|$jxbId"
+                grouped.getOrPut(key) { mutableListOf() }.add(item)
+            }
+            for ((_, records) in grouped) {
+                val first = records[0]
+                val name = first.optString("kcmc", "").trim()
+                val kch = first.optString("kch", "").trim().ifEmpty { first.optString("kch_id", "").trim() }
+                val jxbId = first.optString("jxb_id", "").ifEmpty { first.optString("kch_id", "") }
+
+                val details = records.mapNotNull { r ->
+                    val xmblmc = r.optString("xmblmc", "").trim()
+                    val xmcj = r.optString("xmcj", "").trim()
+                    if (xmblmc.isEmpty() || xmcj.isEmpty()) return@mapNotNull null
+                    val xmbl = r.optString("xmbl", "").trim()
+                    if (xmbl.isNotEmpty()) "$xmblmc(${xmbl}%): $xmcj"
+                    else "$xmblmc: $xmcj"
+                }.distinct()
+
+                if (details.isNotEmpty()) {
+                    result.add(DetailEntry(name, kch, jxbId, details.joinToString(" | ")))
+                }
+            }
+        } catch (_: Exception) {}
+        return result
+    }
+
     private fun parseGradesJson(json: String): List<GradeItemUi> {
-        val list = mutableListOf<GradeItemUi>()
+        val result = mutableListOf<GradeItemUi>()
         try {
             var items: JSONArray? = null
             try {
@@ -150,28 +229,56 @@ class GradesFragment : Fragment() {
             } catch (e: Exception) {
                 items = JSONArray(json)
             }
+            if (items == null) return result
 
-            if (items != null) {
-                for (i in 0 until items.length()) {
-                    val item = items.getJSONObject(i)
-                    val name = getOptString(item, "kcmc", "KCMC")
-                    if (name.isNotEmpty()) {
-                        list.add(
-                            GradeItemUi(
-                                courseName = name,
-                                grade = getOptString(item, "cj", "CJ", "--"),
-                                credits = getOptString(item, "xf", "XF", "0"),
-                                gpa = getOptString(item, "jd", "JD", "0"),
-                                courseType = getOptString(item, "kcxzmc", "KCXZMC", "")
-                            )
-                        )
-                    }
-                }
+            val grouped = LinkedHashMap<String, MutableList<JSONObject>>()
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                val name = getOptString(item, "kcmc", "KCMC")
+                if (name.isEmpty()) continue
+                val jxbId = item.optString("jxb_id", item.optString("JXB_ID", ""))
+                    .ifEmpty { item.optString("kch_id", item.optString("KCH_ID", "")) }
+                val key = "$name|$jxbId"
+                grouped.getOrPut(key) { mutableListOf() }.add(item)
+            }
+
+            for ((_, records) in grouped) {
+                val first = records[0]
+                val name = getOptString(first, "kcmc", "KCMC")
+
+                val details = records.mapNotNull { r ->
+                    val xmblmc = r.optString("xmblmc", "").trim()
+                    val xmcj = r.optString("xmcj", "").trim()
+                    if (xmblmc.isEmpty() || xmcj.isEmpty()) return@mapNotNull null
+                    val xmbl = r.optString("xmbl", "").trim()
+                    if (xmbl.isNotEmpty()) "$xmblmc(${xmbl}%): $xmcj"
+                    else "$xmblmc: $xmcj"
+                }.distinct()
+
+                val jxbId = first.optString("jxb_id", first.optString("JXB_ID", ""))
+                    .ifEmpty { first.optString("kch_id", first.optString("KCH_ID", "")) }
+
+                result.add(
+                    GradeItemUi(
+                        courseName = name,
+                        grade = getOptString(first, "cj", "CJ", "--"),
+                        credits = getOptString(first, "xf", "XF", "0"),
+                        gpa = getOptString(first, "jd", "JD", "0"),
+                        courseType = getOptString(first, "kcxzmc", "KCXZMC", ""),
+                        year = first.optString("xnm", first.optString("XNM", "")),
+                        term = first.optString("xqm", first.optString("XQM", "")),
+                        college = first.optString("kkbmmc", first.optString("KKBMMC", "")),
+                        courseCode = first.optString("kch", first.optString("KCH", "")),
+                        teachingClass = first.optString("jxbmc", first.optString("JXBMC", "")),
+                        jxbId = jxbId,
+                        detail = details.joinToString(" | ")
+                    )
+                )
             }
         } catch (e: Exception) {
             Log.e("GradesFragment", "Parse error: ${e.message}")
         }
-        return list
+        return result
     }
 
     // ==================== Overall Grades Logic ====================

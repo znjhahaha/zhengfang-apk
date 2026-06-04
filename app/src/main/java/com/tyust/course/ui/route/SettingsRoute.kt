@@ -26,6 +26,10 @@ import androidx.compose.ui.window.Dialog
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemConfirmDialog
 import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.SystemPrimaryButton
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.text.font.FontWeight
 import com.tyust.course.LoginActivity
@@ -77,6 +81,7 @@ fun SettingsRoute() {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showCreditsDialog by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
@@ -211,6 +216,7 @@ fun SettingsRoute() {
         onClearCache = { showClearCacheDialog = true },
         onCheckUpdate = { checkForUpdate() },
         onAbout = { showAboutDialog = true },
+        onCredits = { showCreditsDialog = true },
         onLogout = { showLogoutDialog = true },
         onQuotaClick = { showQuotaDialog = true },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
@@ -244,14 +250,143 @@ fun SettingsRoute() {
     }
     
     if (showAboutDialog) {
-          SimpleConfirmDialog(
-            title = "关于",
-            text = "正方教务工具 Android版\n\n版本: 1.0.0\n\n功能特性:\n• 课程信息查询\n• 智能抢课Pro+\n• 课表查看\n• 成绩查询\n\n本应用仅供学习交流使用",
-            onConfirm = { showAboutDialog = false },
-            onDismiss = { showAboutDialog = false },
-            confirmText = "确定",
-            showCancel = false
-        )
+        SystemDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = {
+                Text(
+                    text = "更新历史",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                SystemPrimaryButton(
+                    text = "关闭",
+                    onClick = { showAboutDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 350.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                val updates = listOf(
+                    "2026-06-04" to "修复平时成绩详情只展示一项的Bug；成绩导出支持导出为 UTF-8 BOM CSV 数据单；优化登录密码输入下的统一认证平台温馨提示；引入防误触式 GitHub Star 引导弹窗，支持最多3次展示不同阶段求赞文案；将原本的关于界面重构为更新历史卡片与开源致谢面板。",
+                    "2026-06-03" to "清理内部文档与更新配置。",
+                    "2026-06-02" to "优化滚动体验，增加页面底部内边距，防止底部导航栏遮挡内容；重构 README 引入 iOS 新拟态玻璃 UI 截图。",
+                    "2026-06-01" to "修复底部导航栏部分情况下点击失效以及液态效果裁切问题，优化过渡动画。",
+                    "2026-05-31" to "引入液态玻璃视觉效果，系统 UI 重构，发布 1.0.54 版本。",
+                    "2026-05-26" to "优化已选列表卡片与切换开关，引入全新五彩新拟态主题与微交互动效；修复退课接口未带加密 ID 导致的问题；修复日历分享配置路径缺失导致的崩溃。",
+                    "2026-05-25" to "升级新拟态玻璃化 UI 设计，优化课程表截断和星期对齐问题，优化数据加载动画。",
+                    "2026-04-18" to "成绩查询 UI 深度优化，增强安全防护（引入限流与安全指纹检测机制）。",
+                    "2026-04-09" to "深度 UI/UX 重构，渲染极简系统工具风，优化性能与细节体验。"
+                )
+
+                updates.forEach { (date, desc) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(com.tyust.course.ui.theme.NeuPrimary, CircleShape)
+                            )
+                            Text(
+                                text = date,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = desc,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp),
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreditsDialog) {
+        SystemDialog(
+            onDismissRequest = { showCreditsDialog = false },
+            title = {
+                Text(
+                    text = "致谢与关于",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                SystemPrimaryButton(
+                    text = "我知道了",
+                    onClick = { showCreditsDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "特别致谢",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "本应用基于多项优秀的开源技术构建，衷心感谢以下开源项目及社区的支持：\n" +
+                            "• Jetpack Compose & Kotlin\n" +
+                            "• OkHttp3 & Gson\n" +
+                            "• Jsoup (HTML 解析库)\n" +
+                            "• Material Design 3\n" +
+                            "• AndroidLiquidGlass 动效库",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
+
+                com.tyust.course.ui.system.SystemDivider()
+
+                Text(
+                    text = "关于作者",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "作者：znjhahaha\n" +
+                            "GitHub 仓库：https://github.com/znjhahaha/zhengfang-apk",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
+
+                com.tyust.course.ui.system.SystemDivider()
+
+                Text(
+                    text = "本软件为开源免费项目，仅供个人学习与技术交流使用，严禁用于任何商业目的与倒卖。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    lineHeight = 16.sp
+                )
+            }
+        }
     }
     
     if (showQuotaDialog) {

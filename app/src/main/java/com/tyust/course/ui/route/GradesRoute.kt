@@ -1,8 +1,12 @@
 package com.tyust.course.ui.route
 
+import android.content.Intent
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.tyust.course.login.PasswordLoginCallback
+import com.tyust.course.login.PasswordLoginManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
@@ -62,11 +66,56 @@ fun GradesRoute() {
         android.os.Handler(android.os.Looper.getMainLooper()).post(action)
     }
 
+    // 检测到Cookie过期时，尝试自动重新登录
+    fun handleExpiredCookie(retryAction: () -> Unit) {
+        val userManager = UserManager.getInstance()
+        if (userManager.canAutoRelogin()) {
+            Toast.makeText(context, "Cookie已过期，正在自动重新登录…", Toast.LENGTH_SHORT).show()
+            val school = userManager.currentSchool!!
+            val username = userManager.username
+            val password = userManager.sessionPassword
+            PasswordLoginManager().login(school, username, password, object : PasswordLoginCallback {
+                override fun onSuccess(cookie: String) {
+                    userManager.saveCookie(cookie)
+                    CourseApiClient.getInstance().setCookie(school.baseUrl, cookie)
+                    Log.d("GradesRoute", "自动重新登录成功，重试操作")
+                    retryAction()
+                }
+                override fun onCaptchaRequired(imageBytes: ByteArray) {
+                    runOnUiThread {
+                        Toast.makeText(context, "自动登录需要验证码，请手动重新登录", Toast.LENGTH_LONG).show()
+                    }
+                }
+                override fun onCaptchaInvalid() {
+                    runOnUiThread {
+                        Toast.makeText(context, "自动登录失败，请手动重新登录", Toast.LENGTH_LONG).show()
+                    }
+                }
+                override fun onInvalidCredentials() {
+                    runOnUiThread {
+                        Toast.makeText(context, "密码已失效，请手动重新登录", Toast.LENGTH_LONG).show()
+                    }
+                }
+                override fun onError(message: String) {
+                    runOnUiThread {
+                        Toast.makeText(context, "自动登录失败: $message", Toast.LENGTH_LONG).show()
+                    }
+                }
+            })
+        } else {
+            Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun isLoginPageHtml(html: String): Boolean {
+        return html.contains("用户登录") || html.contains("登 录") || html.contains("slogin.html")
+    }
+
     // Logic for Semester Grades
-    val loadSemesterGrades = remember {
-        fun() {
-            val school = UserManager.getInstance().currentSchool
-            if (school == null || currentSemester.isEmpty()) return
+    var loadSemesterGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
+    loadSemesterGrades = {
+        val school = UserManager.getInstance().currentSchool
+        if (school != null && currentSemester.isNotEmpty()) {
 
             semesterIsLoading = true
             CourseApiClient.getInstance().fetchGrades(school, currentSemester, object : Callback {
@@ -79,10 +128,46 @@ fun GradesRoute() {
 
                 override fun onResponse(call: Call, response: Response) {
                     val json = response.body?.string() ?: ""
-                    val items = GradesLogic.parseGradesJson(json)
-                    runOnUiThread {
-                        semesterIsLoading = false
-                        semesterGrades = items
+
+                    // 检测Cookie过期
+                    if (json.length < 500 && isLoginPageHtml(json)) {
+                        runOnUiThread { semesterIsLoading = false }
+                        handleExpiredCookie { loadSemesterGrades?.invoke() }
+                        return
+                    }
+
+                    // 先从接口B解析基础成绩（清除接口B返回的不完整分项数据）
+                    val items = GradesLogic.parseGradesJson(json).map { it.copy(detail = "") }
+
+                    if (items.isEmpty()) {
+                        runOnUiThread {
+                            semesterIsLoading = false
+                            semesterGrades = emptyList()
+                        }
+                    } else {
+                        // 始终请求接口A获取完整分项详情
+                        // 接口B可能只返回部分分项（如仅"平时"），不能作为完整分项数据使用
+                        CourseApiClient.getInstance().fetchGradeDetails(school, currentSemester, object : Callback {
+                            override fun onFailure(call: Call, e: IOException) {
+                                Log.w("GradesRoute", "Detail fetch failed: ${e.message}")
+                                // 接口A失败时，尝试用接口B原始数据中的分项作为兜底
+                                val fallbackItems = GradesLogic.parseGradesJson(json)
+                                runOnUiThread {
+                                    semesterIsLoading = false
+                                    semesterGrades = fallbackItems
+                                }
+                            }
+
+                            override fun onResponse(call: Call, response: Response) {
+                                val detailJson = response.body?.string() ?: ""
+                                Log.d("GradesRoute", "Detail response length: ${detailJson.length}")
+                                val merged = GradesLogic.mergeDetails(items, detailJson)
+                                runOnUiThread {
+                                    semesterIsLoading = false
+                                    semesterGrades = merged
+                                }
+                            }
+                        })
                     }
                 }
             })
@@ -91,15 +176,15 @@ fun GradesRoute() {
     
     // Trigger load on semester change
     LaunchedEffect(currentSemester) {
-        if (currentSemester.isNotEmpty()) loadSemesterGrades()
+        if (currentSemester.isNotEmpty()) loadSemesterGrades?.invoke()
     }
 
     // Logic for Overall Grades
-    val loadOverallGrades = remember {
-        fun() {
-            val school = UserManager.getInstance().currentSchool ?: return
-            if (overallIsLoading) return
-            
+    var loadOverallGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
+    loadOverallGrades = {
+        val school = UserManager.getInstance().currentSchool
+        if (school != null && !overallIsLoading) {
+
             overallIsLoading = true
             overallGrades = emptyList() // Clear
 
@@ -115,11 +200,9 @@ fun GradesRoute() {
                     val html = response.body?.string() ?: ""
                     
                     // Parse Index Logic
-                    if (html.contains("用户登录") || html.contains("slogin.html")) {
-                        runOnUiThread {
-                            overallIsLoading = false
-                            Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
-                        }
+                    if (isLoginPageHtml(html)) {
+                        runOnUiThread { overallIsLoading = false }
+                        handleExpiredCookie { loadOverallGrades?.invoke() }
                         return
                     }
 
@@ -158,11 +241,11 @@ fun GradesRoute() {
     }
 
     // Logic for Exam Schedule
-    val loadExamSchedule = remember {
-        fun() {
-            val school = UserManager.getInstance().currentSchool ?: return
-            if (examIsLoading) return
-            
+    var loadExamSchedule by remember { mutableStateOf<(() -> Unit)?>(null) }
+    loadExamSchedule = {
+        val school = UserManager.getInstance().currentSchool
+        if (school != null && !examIsLoading) {
+
             examIsLoading = true
             examList = emptyList()
 
@@ -183,6 +266,14 @@ fun GradesRoute() {
 
                 override fun onResponse(call: Call, response: Response) {
                     val json = response.body?.string() ?: ""
+
+                    // 检测Cookie过期
+                    if (json.length < 500 && isLoginPageHtml(json)) {
+                        runOnUiThread { examIsLoading = false }
+                        handleExpiredCookie { loadExamSchedule?.invoke() }
+                        return
+                    }
+
                     val items = GradesLogic.parseExamJson(json)
                     runOnUiThread {
                         examIsLoading = false
@@ -197,9 +288,9 @@ fun GradesRoute() {
         currentTab = currentTab,
         onTabChange = { 
             currentTab = it
-            if (it == 0 && semesterGrades.isEmpty() && currentSemester.isNotEmpty()) loadSemesterGrades()
-            if (it == 1 && overallGrades.isEmpty()) loadOverallGrades()
-            if (it == 2 && examList.isEmpty()) loadExamSchedule()
+            if (it == 0 && semesterGrades.isEmpty() && currentSemester.isNotEmpty()) loadSemesterGrades?.invoke()
+            if (it == 1 && overallGrades.isEmpty()) loadOverallGrades?.invoke()
+            if (it == 2 && examList.isEmpty()) loadExamSchedule?.invoke()
         },
         semesterGrades = semesterGrades,
         semesters = semesters,
@@ -213,18 +304,84 @@ fun GradesRoute() {
         examIsLoading = examIsLoading,
         onRefresh = {
             when (currentTab) {
-                0 -> loadSemesterGrades()
-                1 -> loadOverallGrades()
-                2 -> loadExamSchedule()
+                0 -> loadSemesterGrades?.invoke()
+                1 -> loadOverallGrades?.invoke()
+                2 -> loadExamSchedule?.invoke()
+            }
+        },
+        onExportGrades = { grades ->
+            try {
+                // 生成 CSV 内容（带 BOM，确保 Excel 正确识别 UTF-8）
+                val csv = buildString {
+                    // UTF-8 BOM
+                    append('\uFEFF')
+                    // 表头 - 与用户截图一致
+                    appendLine("学年,学期,课程名称,课程代码,开课学院,学分,成绩,成绩分项")
+                    // 数据行
+                    grades.forEach { item ->
+                        // 学年: xnm "2024" -> "2024-2025"
+                        val yearRaw = item.year.ifEmpty { "--" }
+                        val yearDisplay = yearRaw.toIntOrNull()?.let { "$it-${it + 1}" } ?: yearRaw
+                        // 学期: xqm "3" -> "1", "12" -> "2"
+                        val termDisplay = when (item.term) {
+                            "3" -> "1"
+                            "12" -> "2"
+                            else -> item.term.ifEmpty { "--" }
+                        }
+                        val year = escapeCsv(yearDisplay)
+                        val term = escapeCsv(termDisplay)
+                        val name = escapeCsv(item.courseName)
+                        val code = escapeCsv(item.courseCode.ifEmpty { "--" })
+                        val college = escapeCsv(item.college.ifEmpty { "--" })
+                        val credits = escapeCsv(item.credits)
+                        val grade = escapeCsv(item.grade)
+                        val detail = escapeCsv(item.detail)
+                        appendLine("$year,$term,$name,$code,$college,$credits,$grade,$detail")
+                    }
+                }
+
+                // 写入外部缓存目录
+                val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                val fileName = "成绩单_$timestamp.csv"
+                val cacheDir = java.io.File(context.externalCacheDir, "exports")
+                cacheDir.mkdirs()
+                val file = java.io.File(cacheDir, fileName)
+                file.writeText(csv, Charsets.UTF_8)
+
+                // 通过 FileProvider 分享
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(intent, "导出成绩单"))
+            } catch (e: Exception) {
+                Log.e("GradesRoute", "导出成绩失败: ${e.message}", e)
+                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     )
 }
 
+// CSV 单元格转义：处理逗号、引号、换行符
+private fun escapeCsv(value: String): String {
+    return if (value.contains(',') || value.contains('"') || value.contains('\n')) {
+        "\"${value.replace("\"", "\"\"")}\""
+    } else {
+        value
+    }
+}
+
 // Logic Object
 private object GradesLogic {
     fun parseGradesJson(json: String): List<GradeItemUi> {
-        val list = mutableListOf<GradeItemUi>()
+        val result = mutableListOf<GradeItemUi>()
         try {
             var items: JSONArray? = null
             try {
@@ -233,26 +390,191 @@ private object GradesLogic {
             } catch (e: Exception) {
                 items = JSONArray(json)
             }
+            if (items == null) return result
 
-            if (items != null) {
-                for (i in 0 until items.length()) {
-                    val item = items.getJSONObject(i)
-                    val name = getOptString(item, "kcmc", "KCMC")
-                    if (name.isNotEmpty()) {
-                        list.add(
-                            GradeItemUi(
-                                courseName = name,
-                                grade = getOptString(item, "cj", "CJ", "--"),
-                                credits = getOptString(item, "xf", "XF", "0"),
-                                gpa = getOptString(item, "jd", "JD", "0"),
-                                courseType = getOptString(item, "kcxzmc", "KCXZMC", "")
-                            )
-                        )
-                    }
-                }
+            // 按 kcmc|jxb_id 分组，合并分项成绩
+            val grouped = LinkedHashMap<String, MutableList<JSONObject>>()
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                val name = getOptString(item, "kcmc", "KCMC")
+                if (name.isEmpty()) continue
+                val jxbId = item.optString("jxb_id", item.optString("JXB_ID", ""))
+                    .ifEmpty { item.optString("kch_id", item.optString("KCH_ID", "")) }
+                val key = "$name|$jxbId"
+                grouped.getOrPut(key) { mutableListOf() }.add(item)
+            }
+
+            for ((_, records) in grouped) {
+                val first = records[0]
+                val name = getOptString(first, "kcmc", "KCMC")
+
+                // 收集分项明细
+                val details = records.mapNotNull { r ->
+                    val xmblmc = r.optString("xmblmc", "").trim()
+                    val xmcj = r.optString("xmcj", "").trim()
+                    if (xmblmc.isEmpty() || xmcj.isEmpty()) return@mapNotNull null
+                    val xmbl = r.optString("xmbl", "").trim()
+                    if (xmbl.isNotEmpty()) "$xmblmc(${xmbl}%): $xmcj"
+                    else "$xmblmc: $xmcj"
+                }.distinct()
+
+                val jxbId = first.optString("jxb_id", first.optString("JXB_ID", ""))
+                    .ifEmpty { first.optString("kch_id", first.optString("KCH_ID", "")) }
+
+                result.add(
+                    GradeItemUi(
+                        courseName = name,
+                        grade = getOptString(first, "cj", "CJ", "--"),
+                        credits = getOptString(first, "xf", "XF", "0"),
+                        gpa = getOptString(first, "jd", "JD", "0"),
+                        courseType = getOptString(first, "kcxzmc", "KCXZMC", ""),
+                        year = first.optString("xnm", first.optString("XNM", "")),
+                        term = first.optString("xqm", first.optString("XQM", "")),
+                        college = first.optString("kkbmmc", first.optString("KKBMMC", "")),
+                        courseCode = first.optString("kch", first.optString("KCH", "")),
+                        teachingClass = first.optString("jxbmc", first.optString("JXBMC", "")),
+                        jxbId = jxbId,
+                        detail = details.joinToString(" | ")
+                    )
+                )
             }
         } catch (e: Exception) { }
-        return list
+        return result
+    }
+
+    fun mergeDetails(baseGrades: List<GradeItemUi>, detailJson: String): List<GradeItemUi> {
+        // 参照 Go 端 fetchViaJsonAPI 策略：
+        // 1. 按 jxb_id 分组接口A的分项数据
+        // 2. 通过 jxb_id / courseCode / courseName 匹配到接口B的基础成绩
+        // 3. 智能推算缺失的期末成绩
+        val detailGroupMap = parseDetailGroupMap(detailJson)
+        if (detailGroupMap.isEmpty()) {
+            Log.d("GradesRoute", "mergeDetails: detailGroupMap is empty, no detail data available")
+            return baseGrades
+        }
+
+        Log.d("GradesRoute", "mergeDetails: ${detailGroupMap.size} detail groups, ${baseGrades.size} base grades")
+
+        return baseGrades.map { grade ->
+            if (grade.detail.isNotEmpty()) return@map grade
+
+            // 按优先级匹配: jxb_id > courseCode > courseName
+            val matchedKey = detailGroupMap.keys.firstOrNull { key ->
+                grade.jxbId.isNotEmpty() && key == grade.jxbId
+            } ?: detailGroupMap.keys.firstOrNull { key ->
+                // 尝试用 courseCode 匹配 (有些学校接口A的 jxb_id 与接口B不同)
+                val entries = detailGroupMap[key] ?: return@firstOrNull false
+                entries.isNotEmpty() && grade.courseCode.isNotEmpty() &&
+                    entries[0].optString("kch", entries[0].optString("kch_id", "")).trim() == grade.courseCode
+            } ?: detailGroupMap.keys.firstOrNull { key ->
+                // 尝试用课程名匹配
+                val entries = detailGroupMap[key] ?: return@firstOrNull false
+                entries.isNotEmpty() && entries[0].optString("kcmc", "").trim() == grade.courseName
+            } ?: detailGroupMap.keys.firstOrNull { key ->
+                val entries = detailGroupMap[key] ?: return@firstOrNull false
+                entries.isNotEmpty() && run {
+                    val entryName = entries[0].optString("kcmc", "").trim()
+                    grade.courseName.startsWith(entryName) || entryName.startsWith(grade.courseName)
+                }
+            }
+
+            if (matchedKey != null) {
+                val records = detailGroupMap[matchedKey] ?: return@map grade
+                val detail = buildDetailString(records, grade.grade)
+                Log.d("GradesRoute", "mergeDetails: matched '${grade.courseName}' -> detail='$detail'")
+                if (detail.isNotEmpty()) grade.copy(detail = detail) else grade
+            } else {
+                Log.d("GradesRoute", "mergeDetails: no match for '${grade.courseName}' (jxbId=${grade.jxbId})")
+                grade
+            }
+        }
+    }
+
+    /**
+     * 参照 Go 端逻辑，从接口A的分项记录构建 detail 字符串
+     * 格式: "平时(30%): 90 | 期末(70%): 97.1"
+     * 包含期末成绩智能推算功能
+     */
+    private fun buildDetailString(records: List<JSONObject>, totalScoreStr: String): String {
+        val totalScore = totalScoreStr.replace("[^0-9.]".toRegex(), "").toDoubleOrNull() ?: 0.0
+        val detailParts = mutableListOf<String>()
+        var sumRatio = 0.0
+        var sumWeightedScore = 0.0
+        var hasQimo = false
+
+        for (r in records) {
+            val typeName = r.optString("xmblmc", "").trim()
+            val ratioStr = r.optString("xmbl", "").trim()
+            val scoreStr = r.optString("xmcj", "").trim()
+
+            if (typeName.isEmpty() || scoreStr.isEmpty()) continue
+
+            if (typeName.contains("期末")) hasQimo = true
+
+            val ratio = ratioStr.toDoubleOrNull() ?: 0.0
+            val score = scoreStr.toDoubleOrNull() ?: 0.0
+            sumRatio += ratio
+            sumWeightedScore += score * ratio / 100.0
+
+            if (ratio > 0) {
+                detailParts.add("$typeName(${ratio.toInt()}%): $scoreStr")
+            } else {
+                detailParts.add("$typeName: $scoreStr")
+            }
+        }
+
+        // 智能推算期末成绩（参照 Go 端逻辑）
+        if (!hasQimo && sumRatio < 100 && sumRatio > 0 && totalScore > 0) {
+            val remainingRatio = 100 - sumRatio
+            if (remainingRatio > 0) {
+                val qimoScore = (totalScore - sumWeightedScore) / (remainingRatio / 100.0)
+                val qimoFmt = if (qimoScore % 1.0 != 0.0) {
+                    String.format("%.1f", qimoScore)
+                } else {
+                    qimoScore.toInt().toString()
+                }
+                detailParts.add("期末(${remainingRatio.toInt()}%): $qimoFmt")
+            }
+        }
+
+        return detailParts.joinToString(" | ")
+    }
+
+    /**
+     * 解析接口A的JSON数据，按 jxb_id 分组返回原始 JSONObject 列表
+     * 与 Go 端 detailsGroup 逻辑一致
+     */
+    private fun parseDetailGroupMap(json: String): Map<String, List<JSONObject>> {
+        val grouped = LinkedHashMap<String, MutableList<JSONObject>>()
+        try {
+            var items: JSONArray? = null
+            try {
+                val obj = JSONObject(json)
+                items = obj.optJSONArray("items")
+            } catch (e: Exception) {
+                try { items = JSONArray(json) } catch (_: Exception) {}
+            }
+            if (items == null) {
+                Log.w("GradesRoute", "parseDetailGroupMap: no 'items' array found in detail JSON")
+                return grouped
+            }
+
+            Log.d("GradesRoute", "parseDetailGroupMap: ${items.length()} raw items from API A")
+
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                // 接口A的 jxb_id 是关联分项和总评的 key
+                val jxbId = item.optString("jxb_id", "").trim()
+                    .ifEmpty { item.optString("JXB_ID", "").trim() }
+                if (jxbId.isEmpty()) continue
+                grouped.getOrPut(jxbId) { mutableListOf() }.add(item)
+            }
+
+            Log.d("GradesRoute", "parseDetailGroupMap: ${grouped.size} groups by jxb_id")
+        } catch (e: Exception) {
+            Log.e("GradesRoute", "parseDetailGroupMap error: ${e.message}")
+        }
+        return grouped
     }
     
     fun extractSummaryInfo(doc: Document, html: String): Triple<String, Double, Int> {

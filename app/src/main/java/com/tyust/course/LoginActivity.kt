@@ -19,6 +19,8 @@ import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.LoginScreen
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.utils.CourseParser
+import com.tyust.course.login.PasswordLoginCallback
+import com.tyust.course.login.PasswordLoginManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,6 +46,10 @@ class LoginActivity : ComponentActivity() {
     private var bindingMaxStudents by mutableStateOf(0)
     private var bindingUsedNames by mutableStateOf<Set<String>>(emptySet())
     private var pendingCookie by mutableStateOf("")
+
+    // Password Login State
+    private val passwordLoginManager = PasswordLoginManager()
+    private var captchaImageBytes by mutableStateOf<ByteArray?>(null)
 
     // WebView result launcher
     private val webViewLauncher = registerForActivityResult(
@@ -124,6 +130,16 @@ class LoginActivity : ComponentActivity() {
                     },
                     onDemoMode = {
                         handleDemoMode()
+                    },
+                    onPasswordLogin = { username, password ->
+                        handlePasswordLogin(username, password)
+                    },
+                    captchaImageBytes = captchaImageBytes,
+                    onCaptchaSubmit = { code ->
+                        handleCaptchaSubmit(code)
+                    },
+                    onCaptchaRefresh = {
+                        refreshCaptcha()
                     },
                     isLoading = isLoading || isAutoValidating,
                     errorMessage = if (isAutoValidating) "正在验证登录状态..." else errorMessage,
@@ -344,5 +360,148 @@ class LoginActivity : ComponentActivity() {
         
         startActivity(Intent(this@LoginActivity, MainActivity::class.java))
         finish()
+    }
+
+    // ============ 密码登录 ============
+
+    private fun handlePasswordLogin(username: String, password: String) {
+        val school = UserManager.getInstance().currentSchool
+        Log.d(TAG, "handlePasswordLogin: school=${school?.name}, baseUrl=${school?.getBaseUrl()}, fullPath=${school?.getFullBasePath()}")
+        if (school == null) {
+            errorMessage = "请先选择学校"
+            return
+        }
+        if (username.isBlank() || password.isBlank()) {
+            errorMessage = "请输入学号和密码"
+            return
+        }
+
+        isLoading = true
+        errorMessage = null
+        captchaImageBytes = null
+
+        passwordLoginManager.login(school, username, password, object : PasswordLoginCallback {
+            override fun onSuccess(cookie: String) {
+                runOnUiThread {
+                    isLoading = false
+                    Log.d(TAG, "密码登录成功")
+                    // 保存密码到内存，用于会话期间Cookie过期自动刷新
+                    UserManager.getInstance().savePasswordLogin(username, cookie, password)
+                    // 复用现有验证流程
+                    lifecycleScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
+                            }
+                        } catch (_: Exception) {}
+                        performLoginValidation(school, cookie)
+                    }
+                }
+            }
+
+            override fun onCaptchaRequired(imageBytes: ByteArray) {
+                runOnUiThread {
+                    isLoading = false
+                    captchaImageBytes = imageBytes
+                    Log.d(TAG, "Captcha received: ${imageBytes.size} bytes, dialog should show")
+                }
+            }
+
+            override fun onCaptchaInvalid() {
+                runOnUiThread {
+                    isLoading = false
+                    errorMessage = "验证码错误，请重新输入"
+                    refreshCaptcha()
+                }
+            }
+
+            override fun onInvalidCredentials() {
+                runOnUiThread {
+                    isLoading = false
+                    errorMessage = "用户名或密码不正确"
+                    Log.d(TAG, "onInvalidCredentials called")
+                }
+            }
+
+            override fun onError(message: String) {
+                runOnUiThread {
+                    isLoading = false
+                    errorMessage = message
+                    Log.e(TAG, "onError called: $message")
+                }
+            }
+        })
+    }
+
+    private fun handleCaptchaSubmit(code: String) {
+        isLoading = true
+        errorMessage = null
+        // 不清除 captchaImageBytes，保持弹窗可见直到收到响应
+
+        passwordLoginManager.submitCaptcha(code, object : PasswordLoginCallback {
+            override fun onSuccess(cookie: String) {
+                Log.d(TAG, "Captcha submit: login SUCCESS, cookie=${cookie.take(30)}...")
+                runOnUiThread {
+                    isLoading = false
+                    captchaImageBytes = null  // 成功时清除
+                    val school = UserManager.getInstance().currentSchool ?: return@runOnUiThread
+                    // 保存密码到内存，用于会话期间Cookie过期自动刷新
+                    UserManager.getInstance().savePasswordLogin(
+                        passwordLoginManager.getCurrentUsername(), cookie, passwordLoginManager.getCurrentPassword()
+                    )
+                    lifecycleScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
+                            }
+                        } catch (_: Exception) {}
+                        performLoginValidation(school, cookie)
+                    }
+                }
+            }
+
+            override fun onCaptchaRequired(imageBytes: ByteArray) {
+                Log.d(TAG, "Captcha submit: server returned new captcha, size=${imageBytes.size}")
+                runOnUiThread {
+                    isLoading = false
+                    captchaImageBytes = imageBytes  // 刷新图片
+                }
+            }
+
+            override fun onCaptchaInvalid() {
+                Log.d(TAG, "Captcha submit: captcha INVALID")
+                runOnUiThread {
+                    isLoading = false
+                    errorMessage = "验证码错误，请重新输入"
+                    refreshCaptcha()
+                }
+            }
+
+            override fun onInvalidCredentials() {
+                Log.d(TAG, "Captcha submit: INVALID credentials")
+                runOnUiThread {
+                    isLoading = false
+                    errorMessage = "账号密码错误或验证码错误，请重新输入"
+                    refreshCaptcha()
+                }
+            }
+
+            override fun onError(message: String) {
+                Log.e(TAG, "Captcha submit error: $message")
+                runOnUiThread {
+                    isLoading = false
+                    captchaImageBytes = null
+                    errorMessage = message
+                }
+            }
+        })
+    }
+
+    private fun refreshCaptcha() {
+        passwordLoginManager.refreshCaptcha { bytes ->
+            runOnUiThread {
+                if (bytes != null) captchaImageBytes = bytes
+            }
+        }
     }
 }

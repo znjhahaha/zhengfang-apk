@@ -20,6 +20,7 @@ public class UserManager {
     private boolean isLoggedIn = false;
     private boolean isDemoMode = false;
     private String savedCookie = "";
+    private String sessionPassword = ""; // 内存中保存，用于会话期间自动刷新Cookie，不持久化
     private List<Course> selectedCourses = new ArrayList<>();
 
     private static final String PREFS_NAME = "course_selector_prefs";
@@ -30,6 +31,8 @@ public class UserManager {
     private static final String KEY_STUDENT_ID = "student_id";
     private static final String KEY_CURRENT_SCHOOL_ID = "current_school_id";
     private static final String KEY_COOKIE_SAVE_TIME = "cookie_save_time";
+    private static final String KEY_USERNAME = "saved_username";
+    private static final String KEY_LOGIN_MODE = "login_mode";
 
     private Context appContext;
 
@@ -259,6 +262,42 @@ public class UserManager {
         saveLoginState();
     }
 
+    public void savePasswordLogin(String username, String cookie, String password) {
+        this.savedCookie = cookie;
+        this.sessionPassword = password != null ? password : "";
+        if (appContext != null) {
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit()
+                    .putString(KEY_USERNAME, username)
+                    .putString(KEY_LOGIN_MODE, "password")
+                    .apply();
+        }
+        saveLoginState();
+    }
+
+    /** 获取会话期间保存的密码（仅内存，不持久化） */
+    public String getSessionPassword() { return sessionPassword; }
+
+    /** 是否可以通过密码模式自动刷新 Cookie */
+    public boolean canAutoRelogin() {
+        return "password".equals(getLoginMode())
+                && !getUsername().isEmpty()
+                && !sessionPassword.isEmpty()
+                && currentSchool != null;
+    }
+
+    public String getUsername() {
+        if (appContext == null) return "";
+        SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_USERNAME, "");
+    }
+
+    public String getLoginMode() {
+        if (appContext == null) return "cookie";
+        SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_LOGIN_MODE, "cookie");
+    }
+
     // 获取已保存的 Cookie
     public String getSavedCookie() {
         return savedCookie != null ? savedCookie : "";
@@ -275,6 +314,7 @@ public class UserManager {
         studentName = "";
         studentId = "";
         savedCookie = "";
+        sessionPassword = "";
 
         if (appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -284,6 +324,8 @@ public class UserManager {
                     .remove(KEY_STUDENT_ID)
                     .remove(KEY_COOKIE)
                     .remove(KEY_COOKIE_SAVE_TIME)
+                    .remove(KEY_USERNAME)
+                    .remove(KEY_LOGIN_MODE)
                     .apply(); // 🔧 注意：这里不再 remove KEY_CURRENT_SCHOOL_ID，实现学校记忆
         }
 
