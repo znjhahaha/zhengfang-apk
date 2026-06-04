@@ -17,6 +17,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version_code: ${{ steps.version.outputs.version_code }}
+      version_name: ${{ steps.version.outputs.version_name }}
 
     steps:
       - name: Checkout Code
@@ -43,6 +46,23 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
+
+      - name: Extract Version Info
+        id: version
+        run: |
+          # 构建时 version.properties 已自动递增，读取最终值
+          VC=$(grep 'VERSION_CODE' app/version.properties | cut -d'=' -f2 | tr -d ' ')
+          VN=$(grep 'VERSION_NAME' app/version.properties | cut -d'=' -f2 | tr -d ' ')
+          echo "version_code=${VC}" >> $GITHUB_OUTPUT
+          echo "version_name=${VN}" >> $GITHUB_OUTPUT
+          echo "Final version: code=${VC}, name=${VN}"
+
+      - name: Upload version.properties
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-info
+          path: app/version.properties
+          retention-days: 3
 
       - name: Create GitHub Release
         id: create_release
@@ -85,6 +105,12 @@ jobs:
           name: release-apk
           path: ./apk
 
+      - name: Download Version Info
+        uses: actions/download-artifact@v4
+        with:
+          name: version-info
+          path: ./version
+
       - name: Sync to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -100,16 +126,9 @@ jobs:
             exit 1
           fi
 
-          # 从 version.properties 读取（构建时已自动递增）
-          # 注意：checkout 是构建前的代码，version.properties 可能还是旧值
-          # 所以直接用 tag 名作为版本号更可靠
-          VERSION_NAME="${TAG#v}"
-          # 从 tag 提取 versionCode：v1.0.57 -> 57 作为 patch，计算完整 code
-          PATCH=$(echo "$VERSION_NAME" | awk -F. '{print $3}')
-          MAJOR=$(echo "$VERSION_NAME" | awk -F. '{print $1}')
-          MINOR=$(echo "$VERSION_NAME" | awk -F. '{print $2}')
-          # versionCode = major*10000 + minor*100 + patch (与 build.gradle 逻辑一致)
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          # 从构建产物 version.properties 读取真实版本号
+          VERSION_CODE=$(grep 'VERSION_CODE' ./version/version.properties | cut -d'=' -f2 | tr -d ' ')
+          VERSION_NAME=$(grep 'VERSION_NAME' ./version/version.properties | cut -d'=' -f2 | tr -d ' ')
 
           echo "=== Syncing to Gitee ==="
           echo "TAG: $TAG"
