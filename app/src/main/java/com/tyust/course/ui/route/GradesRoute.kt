@@ -108,7 +108,9 @@ fun GradesRoute() {
     }
 
     fun isLoginPageHtml(html: String): Boolean {
-        return html.contains("用户登录") || html.contains("登 录") || html.contains("slogin.html")
+        return html.contains("用户登录") || html.contains("登 录") ||
+               html.contains("slogin.html") || html.contains("id=\"pwd\"") ||
+               html.contains("name=\"yhm\"") || html.contains("notLogin")
     }
 
     // Logic for Semester Grades
@@ -130,7 +132,7 @@ fun GradesRoute() {
                     val json = response.body?.string() ?: ""
 
                     // 检测Cookie过期
-                    if (json.length < 500 && isLoginPageHtml(json)) {
+                    if (isLoginPageHtml(json)) {
                         runOnUiThread { semesterIsLoading = false }
                         handleExpiredCookie { loadSemesterGrades?.invoke() }
                         return
@@ -268,7 +270,7 @@ fun GradesRoute() {
                     val json = response.body?.string() ?: ""
 
                     // 检测Cookie过期
-                    if (json.length < 500 && isLoginPageHtml(json)) {
+                    if (isLoginPageHtml(json)) {
                         runOnUiThread { examIsLoading = false }
                         handleExpiredCookie { loadExamSchedule?.invoke() }
                         return

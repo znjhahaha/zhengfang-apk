@@ -216,7 +216,13 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        // 启动全局 Cookie 定期检查
+        val school = com.tyust.course.manager.UserManager.getInstance().currentSchool
+        if (school != null && com.tyust.course.manager.UserManager.getInstance().isLoggedIn) {
+            com.tyust.course.utils.CookieWatchdog.start(fragmentActivity)
+        }
         onDispose {
+            com.tyust.course.utils.CookieWatchdog.stop()
             fragmentActivity.unregisterReceiver(receiver)
         }
     }

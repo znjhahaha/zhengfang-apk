@@ -276,6 +276,7 @@ fun SettingsRoute() {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 val updates = listOf(
+                    "2026-06-05" to "新增全局 Cookie 有效性定期检查（CookieWatchdog），提升后台长效稳定性；优化接口响应拦截，捕获 JSON 响应中的失效状态并自动唤起登录提示，显著增强会话失效处理的鲁棒性。",
                     "2026-06-04" to "修复平时成绩详情只展示一项的Bug；成绩导出支持导出为 UTF-8 BOM CSV 数据单；优化登录密码输入下的统一认证平台温馨提示；引入防误触式 GitHub Star 引导弹窗，支持最多3次展示不同阶段求赞文案；将原本的关于界面重构为更新历史卡片与开源致谢面板。",
                     "2026-06-03" to "清理内部文档与更新配置。",
                     "2026-06-02" to "优化滚动体验，增加页面底部内边距，防止底部导航栏遮挡内容；重构 README 引入 iOS 新拟态玻璃 UI 截图。",

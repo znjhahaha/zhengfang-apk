@@ -310,7 +310,8 @@ class GradesFragment : Fragment() {
             val doc = Jsoup.parse(html)
             
             // Check login
-            if (html.contains("用户登录") || html.contains("slogin.html")) {
+            if (html.contains("用户登录") || html.contains("登 录") ||
+                html.contains("slogin.html") || html.contains("notLogin")) {
                 activity?.runOnUiThread {
                     overallIsLoading = false
                     Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()

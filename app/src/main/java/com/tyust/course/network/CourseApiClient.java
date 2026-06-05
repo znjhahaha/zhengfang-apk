@@ -143,6 +143,30 @@ public class CourseApiClient {
                                                         }
                                                 }
                                         }
+                                        // JSON 响应过期检测：部分正方系统 Cookie 过期返回 JSON 错误
+                                        if (response.isSuccessful() && response.body() != null) {
+                                                okhttp3.MediaType _ct = response.body().contentType();
+                                                if (_ct != null
+                                                                && (_ct.toString().contains("application/json")
+                                                                || _ct.toString().contains("text/json"))) {
+                                                        String _jp = response.request().url().encodedPath().toLowerCase();
+                                                        if (!_jp.contains("login_slogin")) {
+                                                                String _jb = response.peekBody(2048).string();
+                                                                if (_jb.contains("\"notLogin\"")
+                                                                        || _jb.contains("\"sessionExpired\"")
+                                                                        || _jb.contains("\"\u672a\u767b\u5f55\"")
+                                                                        || (_jb.contains("\"code\"") && _jb.contains("\"401\""))) {
+                                                                        Log.e(TAG, "[Cookie\u8fc7\u671f] JSON\u68c0\u6d4b\u5230\u672a\u767b\u5f55: " + response.request().url());
+                                                                        if (appContext != null) {
+                                                                                Intent _i = new Intent(ACTION_COOKIE_EXPIRED);
+                                                                                _i.setPackage(appContext.getPackageName());
+                                                                                appContext.sendBroadcast(_i);
+                                                                                UserManager.getInstance().setLoggedIn(false);
+                                                                        }
+                                                                }
+                                                        }
+                                                }
+                                        }
                                         return response;
                                 });
 
