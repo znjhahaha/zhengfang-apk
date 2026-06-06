@@ -69,6 +69,13 @@ fun GradesRoute() {
     // 检测到Cookie过期时，尝试自动重新登录
     fun handleExpiredCookie(retryAction: () -> Unit) {
         val userManager = UserManager.getInstance()
+        val sendExpiredBroadcast = {
+            val intent = Intent(CourseApiClient.ACTION_COOKIE_EXPIRED).apply {
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(intent)
+        }
+
         if (userManager.canAutoRelogin()) {
             runOnUiThread {
                 Toast.makeText(context, "Cookie已过期，正在自动重新登录…", Toast.LENGTH_SHORT).show()
@@ -86,27 +93,32 @@ fun GradesRoute() {
                 override fun onCaptchaRequired(imageBytes: ByteArray) {
                     runOnUiThread {
                         Toast.makeText(context, "自动登录需要验证码，请手动重新登录", Toast.LENGTH_LONG).show()
+                        sendExpiredBroadcast()
                     }
                 }
                 override fun onCaptchaInvalid() {
                     runOnUiThread {
                         Toast.makeText(context, "自动登录失败，请手动重新登录", Toast.LENGTH_LONG).show()
+                        sendExpiredBroadcast()
                     }
                 }
                 override fun onInvalidCredentials() {
                     runOnUiThread {
                         Toast.makeText(context, "密码已失效，请手动重新登录", Toast.LENGTH_LONG).show()
+                        sendExpiredBroadcast()
                     }
                 }
                 override fun onError(message: String) {
                     runOnUiThread {
                         Toast.makeText(context, "自动登录失败: $message", Toast.LENGTH_LONG).show()
+                        sendExpiredBroadcast()
                     }
                 }
             })
         } else {
             runOnUiThread {
                 Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
+                sendExpiredBroadcast()
             }
         }
     }

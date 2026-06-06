@@ -42,26 +42,15 @@ def quoteForBuildConfig = { String value ->
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
-// 在配置阶段就递增版本号（这样 defaultConfig 能获取到正确的值）
-// 只在 Release 构建时递增，Debug 不递增
+// 版本号完全由 version.properties 静态控制，发版前由开发者手动修改并 commit
+// 不再在构建时自动自增，避免 CI 容器中的改动无法同步回 Git 仓库导致版本锁死
+
 def isReleaseTask = gradle.startParameter.taskNames.any { taskName ->
     def lower = taskName.toLowerCase()
     (lower.contains('release') && (lower.contains('assemble') || lower.contains('bundle')))
 }
 
-if (isReleaseTask) {
-    code++
-    // 自动递增 versionName 的 patch 版本 (1.0.x)
-    def parts = name.split('\\.')
-    if (parts.length >= 3) {
-        parts[2] = (parts[2].toInteger() + 1).toString()
-        name = parts.join('.')
-    }
-    versionProps['VERSION_CODE'] = code.toString()
-    versionProps['VERSION_NAME'] = name
-    versionProps.store(versionPropsFile.newWriter(), 'Auto-incremented on build')
-    println "📦 版本号已更新: versionCode=$code, versionName=$name"
-}
+println "📦 当前版本: versionCode=$code, versionName=$name (isRelease=$isReleaseTask)"
 
 def releaseKeystoreFile = System.getenv("RELEASE_SIGNING_CONFIG_FILE") != null
     ? file(System.getenv("RELEASE_SIGNING_CONFIG_FILE"))

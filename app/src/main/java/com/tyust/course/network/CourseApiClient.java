@@ -90,6 +90,23 @@ public class CourseApiClient {
 
                                         Response response = chain.proceed(request);
 
+                                        // 🌐 【高精度重定向检测】若原请求非登录相关，但响应 URL 变为登录相关，判定为 Cookie 过期重定向
+                                        String originalUrl = request.url().toString().toLowerCase();
+                                        String finalUrl = response.request().url().toString().toLowerCase();
+                                        boolean isOriginalLogin = originalUrl.contains("login") || originalUrl.contains("kaptcha");
+                                        boolean isFinalLogin = finalUrl.contains("login") || finalUrl.contains("slogin") 
+                                                || finalUrl.contains("cas/") || finalUrl.contains("oauth");
+                                        
+                                        if (!isOriginalLogin && isFinalLogin) {
+                                                Log.e(TAG, "🚨 [检测到重定向登录] Cookie 已过期! 原URL: " + originalUrl + " -> 最终URL: " + finalUrl);
+                                                if (appContext != null) {
+                                                        Intent intent = new Intent(ACTION_COOKIE_EXPIRED);
+                                                        intent.setPackage(appContext.getPackageName());
+                                                        appContext.sendBroadcast(intent);
+                                                        UserManager.getInstance().setLoggedIn(false);
+                                                }
+                                        }
+
                                         // 只处理成功返回的 HTML 类型响应
                                         if (response.isSuccessful() && response.body() != null) {
                                                 okhttp3.MediaType contentType = response.body().contentType();
