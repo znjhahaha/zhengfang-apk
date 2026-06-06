@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -206,6 +207,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
                 if (intent?.action == com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED) {
                     isTokenExpired = true
+                    // 全局即时 Toast 强提醒，确保用户在任何页面都能感知
+                    android.widget.Toast.makeText(
+                        fragmentActivity,
+                        "登录状态已过期，请重新登录",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -282,7 +289,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     AnimatedVisibility(
                         visible = isTokenExpired,
                         enter = fadeIn(),
-                        exit = fadeOut()
+                        exit = fadeOut(),
+                        // 规避刘海屏和系统状态栏遮挡
+                        modifier = Modifier.statusBarsPadding()
                     ) {
                         TokenExpiredBanner(
                             onClick = {

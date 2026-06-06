@@ -153,7 +153,7 @@ class SettingsFragment : Fragment() {
     private fun handleAbout() {
         val message = buildString {
             append("更新日志\n\n")
-            append("• 2026-06-06: 修复后台子线程弹出 Toast 导致 Cookie 过期时应用闪退的问题\n")
+            append("• 2026-06-06: 修复 Cookie 过期闪退；修复全局过期提醒横幅被状态栏遮挡，新增全局即时 Toast 强提醒\n")
             append("• 2026-06-05: 引入全局 Cookie 有效性检查器提升稳定性；优化 JSON 响应过期拦截与自动唤起登录提示\n")
             append("• 2026-06-04: 修复平时成绩显示Bug，支持CSV单导出；添加登录平台指引；增加防误触 Star 弹窗（最多弹3次不同内容）；设置页关于改版为更新历史与致谢\n")
             append("• 2026-06-03: 清理内部文档与更新配置\n")
