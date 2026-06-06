@@ -70,7 +70,9 @@ fun GradesRoute() {
     fun handleExpiredCookie(retryAction: () -> Unit) {
         val userManager = UserManager.getInstance()
         if (userManager.canAutoRelogin()) {
-            Toast.makeText(context, "Cookie已过期，正在自动重新登录…", Toast.LENGTH_SHORT).show()
+            runOnUiThread {
+                Toast.makeText(context, "Cookie已过期，正在自动重新登录…", Toast.LENGTH_SHORT).show()
+            }
             val school = userManager.currentSchool!!
             val username = userManager.username
             val password = userManager.sessionPassword
@@ -103,7 +105,9 @@ fun GradesRoute() {
                 }
             })
         } else {
-            Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
+            runOnUiThread {
+                Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
