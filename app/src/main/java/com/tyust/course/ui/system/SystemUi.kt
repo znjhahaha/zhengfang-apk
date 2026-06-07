@@ -238,26 +238,29 @@ fun SystemTopBar(
     backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
+    val fallbackModifier = Modifier.background(MaterialTheme.colorScheme.surface)
     val backgroundModifier = if (useGlass && backdrop != null) {
-        Modifier.drawBackdrop(
-            backdrop = backdrop,
-            shape = { androidx.compose.ui.graphics.RectangleShape },
-            effects = {
-                vibrancy()
-                blur(GlassRecipe.TopBarBlurDp.dp.toPx())
-                if (isLensSupported()) {
-                    lens(
-                        refractionHeight = GlassRecipe.TopBarLensRefractionHeightDp.dp.toPx(),
-                        refractionAmount = GlassRecipe.TopBarLensRefractionAmountDp.dp.toPx()
-                    )
+        runCatching {
+            Modifier.drawBackdrop(
+                backdrop = backdrop,
+                shape = { androidx.compose.ui.graphics.RectangleShape },
+                effects = {
+                    vibrancy()
+                    blur(GlassRecipe.TopBarBlurDp.dp.toPx())
+                    if (isLensSupported()) {
+                        lens(
+                            refractionHeight = GlassRecipe.TopBarLensRefractionHeightDp.dp.toPx(),
+                            refractionAmount = GlassRecipe.TopBarLensRefractionAmountDp.dp.toPx()
+                        )
+                    }
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = GlassRecipe.TopBarSurfaceAlpha))
                 }
-            },
-            onDrawSurface = {
-                drawRect(Color.White.copy(alpha = GlassRecipe.TopBarSurfaceAlpha))
-            }
-        )
+            )
+        }.getOrElse { fallbackModifier }
     } else {
-        Modifier.background(MaterialTheme.colorScheme.surface)
+        fallbackModifier
     }
     Column(
         modifier = backgroundModifier
@@ -1020,30 +1023,33 @@ private fun SystemDialogContent(
     val dialogShape = RoundedCornerShape(32.dp)
     val useGlass = backdrop != null && isBackdropSupported()
 
+    val fallbackModifier = Modifier
+        .width(320.dp)
+        .neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
+        .clip(RoundedCornerShape(32.dp))
+        .background(MaterialTheme.colorScheme.surface)
+        .padding(24.dp)
     val modifier = if (useGlass && backdrop != null) {
-        Modifier
-            .width(320.dp)
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { dialogShape },
-                effects = {
-                    vibrancy()
-                    if (isLensSupported()) {
-                        lens(
-                            refractionHeight = 16f.dp.toPx(),
-                            refractionAmount = 32f.dp.toPx()
-                        )
+        runCatching {
+            Modifier
+                .width(320.dp)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { dialogShape },
+                    effects = {
+                        vibrancy()
+                        if (isLensSupported()) {
+                            lens(
+                                refractionHeight = 16f.dp.toPx(),
+                                refractionAmount = 32f.dp.toPx()
+                            )
+                        }
                     }
-                }
-            )
-            .padding(24.dp)
+                )
+                .padding(24.dp)
+        }.getOrElse { fallbackModifier }
     } else {
-        Modifier
-            .width(320.dp)
-            .neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(24.dp)
+        fallbackModifier
     }
 
     Column(

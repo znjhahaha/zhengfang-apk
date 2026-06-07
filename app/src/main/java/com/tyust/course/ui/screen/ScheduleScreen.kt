@@ -778,41 +778,67 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
 internal fun isInWeek(weeks: String?, week: Int): Boolean {
     if (weeks.isNullOrEmpty()) return true
 
-    val isOddOnly = weeks.contains("单")
-    val isEvenOnly = weeks.contains("双")
+    // 按逗号分段，每段独立解析周次范围和奇偶约束
+    // 例: "1-4周,6-14周(双),15-16周" → ["1-4周", "6-14周(双)", "15-16周"]
+    val segments = weeks.split(",", "，").map { it.trim() }.filter { it.isNotEmpty() }
 
-    if (isOddOnly && week % 2 == 0) return false
-    if (isEvenOnly && week % 2 == 1) return false
-
-    val cleanWeeks =
-        weeks.replace("周", "")
-            .replace("单", "")
-            .replace("双", "")
-            .replace("(", "")
-            .replace(")", "")
-            .replace("（", "")
-            .replace("）", "")
-            .trim()
-
-    return try {
-        when {
-            cleanWeeks.contains("-") -> {
-                val parts = cleanWeeks.split("-")
-                val start = parts[0].trim().toInt()
-                val end = parts[1].trim().replace("[^0-9]".toRegex(), "").toInt()
-                week in start..end
-            }
-            cleanWeeks.contains(",") -> {
-                cleanWeeks.split(",").any {
-                    it.trim().replace("[^0-9]".toRegex(), "").toIntOrNull() == week
-                }
-            }
-            cleanWeeks.isNotEmpty() -> {
-                cleanWeeks.replace("[^0-9]".toRegex(), "").toIntOrNull() == week
-            }
-            else -> true
-        }
-    } catch (e: Exception) {
-        true
+    return segments.any { segment ->
+        parseWeekSegment(segment, week)
     }
+}
+
+/**
+ * 解析单个周次段，判断目标周是否匹配。
+ * 支持格式:
+ *   - "1-16周"        → 第1~16周
+ *   - "1-13周,16周"   → 第1~13周 + 第16周
+ *   - "6-14周(双)"    → 第6~14周中的偶数周
+ *   - "1-16周(单)"    → 第1~16周中的奇数周
+ *   - "16周"          → 仅第16周
+ *   - "1-2"           → 无"周"后缀也兼容
+ */
+private fun parseWeekSegment(segment: String, week: Int): Boolean {
+    val s = segment.trim()
+    if (s.isEmpty()) return true
+
+    // 提取奇偶约束: (单) (双) （单） （双）
+    val hasOdd = s.contains("单")
+    val hasEven = s.contains("双")
+
+    // 清理: 去掉 "周"、括号、奇偶标记，只留数字和分隔符
+    val cleaned = s
+        .replace("周", "")
+        .replace("单", "")
+        .replace("双", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("（", "")
+        .replace("）", "")
+        .trim()
+
+    if (cleaned.isEmpty()) return true
+
+    // 解析范围: "1-13" 或 "16"
+    val range = cleaned.split("-")
+    val start: Int
+    val end: Int
+    try {
+        start = range[0].trim().toInt()
+        end = if (range.size > 1) {
+            range.last().trim().replace(Regex("[^0-9]"), "").toInt()
+        } else {
+            start
+        }
+    } catch (_: Exception) {
+        return true // 解析失败时保守返回 true，避免漏课
+    }
+
+    // 先检查是否在范围内
+    if (week !in start..end) return false
+
+    // 再检查奇偶约束（仅对该段生效）
+    if (hasOdd && week % 2 == 0) return false
+    if (hasEven && week % 2 == 1) return false
+
+    return true
 }

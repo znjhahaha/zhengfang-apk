@@ -26,6 +26,19 @@ private fun isEmulator(): Boolean =
     Build.PRODUCT.contains("emulator")
 
 fun isBackdropSupported(): Boolean {
+    // API < 31 无 RenderEffect，直接禁用
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+    // 模拟器 ARM 翻译层不兼容 native 代码
+    if (isEmulator()) return false
+    // 已知 GPU 驱动不兼容 RenderEffect / RuntimeShader 的厂商
+    val manufacturer = Build.MANUFACTURER.lowercase()
+    val incompatibleVendors = listOf(
+        "vivo",     // OriginOS — GPU shader 兼容性问题
+        "oppo",     // ColorOS
+        "oneplus",  // OxygenOS（OPPO 旗下）
+        "realme",   // realme UI（OPPO 旗下）
+    )
+    if (incompatibleVendors.any { manufacturer.contains(it) }) return false
     return true
 }
 
