@@ -1,0 +1,79 @@
+name: Bug 报告
+description: 提交一个 Bug 或闪退问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你反馈问题！请尽量填写以下信息，帮助我们快速定位和修复。
+
+  - type: input
+    id: app-version
+    attributes:
+      label: 应用版本
+      description: 在「设置 - 更新历史」中查看版本号
+      placeholder: "例如 1.0.62"
+    validations:
+      required: true
+
+  - type: input
+    id: device-model
+    attributes:
+      label: 设备型号
+      description: 手机品牌和型号
+      placeholder: "例如 vivo X200s / OPPO Find X7"
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android 版本
+      placeholder: "例如 Android 15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: page
+    attributes:
+      label: 问题发生的页面
+      options:
+        - 课表页面
+        - 抢课页面
+        - 成绩/考试页面
+        - 设置页面
+        - 登录页面
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请详细描述问题现象，包括复现步骤
+      placeholder: |
+        1. 打开应用
+        2. 点击 ...
+        3. 出现 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的行为
+      description: 你期望应用应该怎么做？
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 截图或录屏
+      description: 如果方便的话，附上截图或录屏帮助我们理解问题
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志信息（可选）
+      description: 可在「设置 - 导出日志」中获取，直接粘贴关键报错信息即可
+      render: text
