@@ -35,21 +35,62 @@ class ScheduleSettingsManager private constructor() {
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
     }
+
+    private fun accountStorageKey(): String {
+        return UserManager.getInstance().currentAccountStorageKey.ifBlank { "default" }
+    }
+
+    private fun scopedKey(key: String): String {
+        return "${key}_${accountStorageKey()}"
+    }
+
+    private fun getScopedInt(key: String, defaultValue: Int): Int {
+        val scoped = scopedKey(key)
+        val p = prefs ?: return defaultValue
+        if (!p.contains(scoped) && p.contains(key)) {
+            val value = p.getInt(key, defaultValue)
+            p.edit().putInt(scoped, value).remove(key).apply()
+            return value
+        }
+        return p.getInt(scoped, defaultValue)
+    }
+
+    private fun getScopedLong(key: String, defaultValue: Long): Long {
+        val scoped = scopedKey(key)
+        val p = prefs ?: return defaultValue
+        if (!p.contains(scoped) && p.contains(key)) {
+            val value = p.getLong(key, defaultValue)
+            p.edit().putLong(scoped, value).remove(key).apply()
+            return value
+        }
+        return p.getLong(scoped, defaultValue)
+    }
+
+    private fun getScopedString(key: String): String? {
+        val scoped = scopedKey(key)
+        val p = prefs ?: return null
+        if (!p.contains(scoped) && p.contains(key)) {
+            val value = p.getString(key, null)
+            p.edit().putString(scoped, value).remove(key).apply()
+            return value
+        }
+        return p.getString(scoped, null)
+    }
     
     // ============ 节次数量 ============
     
     var periodCount: Int
-        get() = prefs?.getInt(KEY_PERIOD_COUNT, 12) ?: 12
+        get() = getScopedInt(KEY_PERIOD_COUNT, 12)
         set(value) {
-            prefs?.edit()?.putInt(KEY_PERIOD_COUNT, value)?.apply()
+            prefs?.edit()?.putInt(scopedKey(KEY_PERIOD_COUNT), value)?.remove(KEY_PERIOD_COUNT)?.apply()
         }
     
     // ============ 第一周日期 ============
     
     var semesterStartDate: Long
-        get() = prefs?.getLong(KEY_SEMESTER_START, 0L) ?: 0L
+        get() = getScopedLong(KEY_SEMESTER_START, 0L)
         set(value) {
-            prefs?.edit()?.putLong(KEY_SEMESTER_START, value)?.apply()
+            prefs?.edit()?.putLong(scopedKey(KEY_SEMESTER_START), value)?.remove(KEY_SEMESTER_START)?.apply()
         }
     
     /**
@@ -94,7 +135,7 @@ class ScheduleSettingsManager private constructor() {
     )
     
     fun getPeriodTimes(): List<PeriodTime> {
-        val json = prefs?.getString(KEY_PERIOD_TIMES, null)
+        val json = getScopedString(KEY_PERIOD_TIMES)
         if (json != null) {
             try {
                 val array = JSONArray(json)
@@ -124,7 +165,10 @@ class ScheduleSettingsManager private constructor() {
             obj.put("end", pt.endTime)
             array.put(obj)
         }
-        prefs?.edit()?.putString(KEY_PERIOD_TIMES, array.toString())?.apply()
+        prefs?.edit()
+            ?.putString(scopedKey(KEY_PERIOD_TIMES), array.toString())
+            ?.remove(KEY_PERIOD_TIMES)
+            ?.apply()
     }
     
     fun getDefaultPeriodTimes(): List<PeriodTime> {
@@ -158,12 +202,18 @@ class ScheduleSettingsManager private constructor() {
     )
     
     private fun customCoursesKey(): String {
-        return "${KEY_CUSTOM_COURSES}_${UserManager.getInstance().currentAccountStorageKey}"
+        return scopedKey(KEY_CUSTOM_COURSES)
     }
     
     fun getCustomCourses(): List<CustomCourse> {
-        val json = prefs?.getString(customCoursesKey(), null)
-            ?: prefs?.getString(KEY_CUSTOM_COURSES, null)
+        val scoped = customCoursesKey()
+        val json = prefs?.getString(scoped, null)
+            ?: prefs?.getString(KEY_CUSTOM_COURSES, null)?.also { legacy ->
+                prefs?.edit()
+                    ?.putString(scoped, legacy)
+                    ?.remove(KEY_CUSTOM_COURSES)
+                    ?.apply()
+            }
             ?: return emptyList()
         try {
             val array = JSONArray(json)

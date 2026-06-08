@@ -66,12 +66,24 @@ fun GradesRoute() {
         android.os.Handler(android.os.Looper.getMainLooper()).post(action)
     }
 
+    fun isCurrentAccount(accountKey: String): Boolean {
+        return UserManager.getInstance().currentAccountStorageKey == accountKey
+    }
+
+    fun runOnUiThreadForAccount(accountKey: String, action: () -> Unit) {
+        runOnUiThread {
+            if (isCurrentAccount(accountKey)) action()
+        }
+    }
+
     // 检测到Cookie过期时，尝试自动重新登录
-    fun handleExpiredCookie(retryAction: () -> Unit) {
+    fun handleExpiredCookie(requestAccountKey: String, retryAction: () -> Unit) {
+        if (!isCurrentAccount(requestAccountKey)) return
         val userManager = UserManager.getInstance()
         val sendExpiredBroadcast = {
             val intent = Intent(CourseApiClient.ACTION_COOKIE_EXPIRED).apply {
                 setPackage(context.packageName)
+                putExtra(CourseApiClient.EXTRA_ACCOUNT_STORAGE_KEY, requestAccountKey)
             }
             context.sendBroadcast(intent)
         }
@@ -85,6 +97,7 @@ fun GradesRoute() {
             val password = userManager.sessionPassword
             PasswordLoginManager().login(school, username, password, object : PasswordLoginCallback {
                 override fun onSuccess(cookie: String) {
+                    if (!isCurrentAccount(requestAccountKey)) return
                     userManager.saveCookie(cookie)
                     CourseApiClient.getInstance().setCookie(school.baseUrl, cookie)
                     Log.d("GradesRoute", "自动重新登录成功，重试操作")
@@ -132,13 +145,16 @@ fun GradesRoute() {
     // Logic for Semester Grades
     var loadSemesterGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
     loadSemesterGrades = {
-        val school = UserManager.getInstance().currentSchool
-        if (school != null && currentSemester.isNotEmpty()) {
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        val requestAccountKey = userManager.currentAccountStorageKey
+        val requestSemester = currentSemester
+        if (school != null && requestSemester.isNotEmpty()) {
 
             semesterIsLoading = true
-            CourseApiClient.getInstance().fetchGrades(school, currentSemester, object : Callback {
+            CourseApiClient.getInstance().fetchGrades(school, requestSemester, object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         semesterIsLoading = false
                         Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -149,8 +165,8 @@ fun GradesRoute() {
 
                     // 检测Cookie过期
                     if (isLoginPageHtml(json)) {
-                        runOnUiThread { semesterIsLoading = false }
-                        handleExpiredCookie { loadSemesterGrades?.invoke() }
+                        runOnUiThreadForAccount(requestAccountKey) { semesterIsLoading = false }
+                        handleExpiredCookie(requestAccountKey) { loadSemesterGrades?.invoke() }
                         return
                     }
 
@@ -158,19 +174,19 @@ fun GradesRoute() {
                     val items = GradesLogic.parseGradesJson(json).map { it.copy(detail = "") }
 
                     if (items.isEmpty()) {
-                        runOnUiThread {
+                        runOnUiThreadForAccount(requestAccountKey) {
                             semesterIsLoading = false
                             semesterGrades = emptyList()
                         }
                     } else {
                         // 始终请求接口A获取完整分项详情
                         // 接口B可能只返回部分分项（如仅"平时"），不能作为完整分项数据使用
-                        CourseApiClient.getInstance().fetchGradeDetails(school, currentSemester, object : Callback {
+                        CourseApiClient.getInstance().fetchGradeDetails(school, requestSemester, object : Callback {
                             override fun onFailure(call: Call, e: IOException) {
                                 Log.w("GradesRoute", "Detail fetch failed: ${e.message}")
                                 // 接口A失败时，尝试用接口B原始数据中的分项作为兜底
                                 val fallbackItems = GradesLogic.parseGradesJson(json)
-                                runOnUiThread {
+                                runOnUiThreadForAccount(requestAccountKey) {
                                     semesterIsLoading = false
                                     semesterGrades = fallbackItems
                                 }
@@ -180,7 +196,7 @@ fun GradesRoute() {
                                 val detailJson = response.body?.string() ?: ""
                                 Log.d("GradesRoute", "Detail response length: ${detailJson.length}")
                                 val merged = GradesLogic.mergeDetails(items, detailJson)
-                                runOnUiThread {
+                                runOnUiThreadForAccount(requestAccountKey) {
                                     semesterIsLoading = false
                                     semesterGrades = merged
                                 }
@@ -200,7 +216,9 @@ fun GradesRoute() {
     // Logic for Overall Grades
     var loadOverallGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
     loadOverallGrades = {
-        val school = UserManager.getInstance().currentSchool
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        val requestAccountKey = userManager.currentAccountStorageKey
         if (school != null && !overallIsLoading) {
 
             overallIsLoading = true
@@ -208,7 +226,7 @@ fun GradesRoute() {
 
             CourseApiClient.getInstance().fetchOverallGradesIndex(school, object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         overallIsLoading = false
                         Toast.makeText(context, "获取参数失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -219,8 +237,8 @@ fun GradesRoute() {
                     
                     // Parse Index Logic
                     if (isLoginPageHtml(html)) {
-                        runOnUiThread { overallIsLoading = false }
-                        handleExpiredCookie { loadOverallGrades?.invoke() }
+                        runOnUiThreadForAccount(requestAccountKey) { overallIsLoading = false }
+                        handleExpiredCookie(requestAccountKey) { loadOverallGrades?.invoke() }
                         return
                     }
 
@@ -228,7 +246,7 @@ fun GradesRoute() {
                     val (gpa, credits, count) = GradesLogic.extractSummaryInfo(doc, html)
                     
                     // Update initial stats from summary
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         overallStats = OverallStatsUi(gpa, credits.toString(), count, 0, 0, 0, 0)
                     }
 
@@ -238,7 +256,7 @@ fun GradesRoute() {
                     val cjlrxq = doc.selectFirst("input[name=cjlrxq]")?.attr("value") ?: ""
 
                     if (xfyqjdIds.isEmpty()) {
-                        runOnUiThread { overallIsLoading = false }
+                        runOnUiThreadForAccount(requestAccountKey) { overallIsLoading = false }
                         return
                     }
                     
@@ -246,7 +264,7 @@ fun GradesRoute() {
                     GradesLogic.fetchGradesDetailsRecursive(
                         school, xfyqjdIds.toList(), 0, xh_id, cjlrxn, cjlrxq, mutableListOf(),
                         onComplete = { resultGrades ->
-                             runOnUiThread {
+                             runOnUiThreadForAccount(requestAccountKey) {
                                  overallIsLoading = false
                                  overallGrades = resultGrades
                                  overallStats = GradesLogic.calculateStats(resultGrades, gpa, credits, count)
@@ -261,7 +279,9 @@ fun GradesRoute() {
     // Logic for Exam Schedule
     var loadExamSchedule by remember { mutableStateOf<(() -> Unit)?>(null) }
     loadExamSchedule = {
-        val school = UserManager.getInstance().currentSchool
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        val requestAccountKey = userManager.currentAccountStorageKey
         if (school != null && !examIsLoading) {
 
             examIsLoading = true
@@ -276,7 +296,7 @@ fun GradesRoute() {
 
             CourseApiClient.getInstance().fetchExamSchedule(school, xnm, xqm, object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         examIsLoading = false
                         Toast.makeText(context, "获取考试安排失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -287,13 +307,13 @@ fun GradesRoute() {
 
                     // 检测Cookie过期
                     if (isLoginPageHtml(json)) {
-                        runOnUiThread { examIsLoading = false }
-                        handleExpiredCookie { loadExamSchedule?.invoke() }
+                        runOnUiThreadForAccount(requestAccountKey) { examIsLoading = false }
+                        handleExpiredCookie(requestAccountKey) { loadExamSchedule?.invoke() }
                         return
                     }
 
                     val items = GradesLogic.parseExamJson(json)
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         examIsLoading = false
                         examList = items
                     }

@@ -126,6 +126,8 @@ fun CourseListScreen(
     onFilterApply: () -> Unit = {},
     onFilterClear: () -> Unit = {},
     isFilterLoading: Boolean = false,
+    isFilterOptionsLoading: Boolean = false,
+    filterOptionsMessage: String = "筛选条件加载失败，请下拉刷新重试",
     filterCategories: List<CourseParser.FilterCategory> = emptyList()
 ) {
     val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
@@ -179,7 +181,9 @@ fun CourseListScreen(
                     onFilterChange = onDraftFilterChange,
                     onApply = onFilterApply,
                     onClear = onFilterClear,
-                    filterCategories = filterCategories
+                    filterCategories = filterCategories,
+                    isLoading = isFilterOptionsLoading,
+                    emptyMessage = filterOptionsMessage
                 )
                 FilterToggleHandle(
                     expanded = true,
@@ -194,6 +198,7 @@ fun CourseListScreen(
         if (activeFilter != null && !activeFilter.isEmpty()) {
             ActiveFilterBar(
                 filter = activeFilter,
+                filterCategories = filterCategories,
                 onClear = onFilterClear,
                 isLoading = isFilterLoading
             )
@@ -847,10 +852,11 @@ private fun CourseDetailLine(
 @Composable
 private fun ActiveFilterBar(
     filter: com.tyust.course.model.CourseFilter,
+    filterCategories: List<CourseParser.FilterCategory>,
     onClear: () -> Unit,
     isLoading: Boolean
 ) {
-    val tags = filter.toDisplayTags()
+    val tags = remember(filter, filterCategories) { filter.toDynamicDisplayTags(filterCategories) }
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier.fillMaxWidth()
@@ -901,5 +907,37 @@ private fun ActiveFilterBar(
                 )
             }
         }
+    }
+}
+
+private fun com.tyust.course.model.CourseFilter.toDynamicDisplayTags(
+    filterCategories: List<CourseParser.FilterCategory>
+): List<String> {
+    val labelByParamAndKey = filterCategories.associate { category ->
+        category.paramName to category.options.associate { option -> option.key to option.label }
+    }
+
+    fun MutableList<String>.appendLabels(paramName: String, values: List<String>?) {
+        val labels = labelByParamAndKey[paramName].orEmpty()
+        values.orEmpty()
+            .filter { it.isNotBlank() }
+            .forEach { key -> add(labels[key] ?: key) }
+    }
+
+    return buildList {
+        appendLabels("kkbm_id_list", kkbmIdList)
+        appendLabels("njdm_id_list", njdmIdList)
+        appendLabels("jg_id_list", jgIdList)
+        appendLabels("zyh_id_list", zyhIdList)
+        appendLabels("kclb_id_list", kclbIdList)
+        appendLabels("kcxzdm_list", kcxzdmList)
+        appendLabels("kcgs_list", kcgsList)
+        appendLabels("jxms_list", jxmsList)
+        appendLabels("sksj_list", sksjList)
+        appendLabels("skjc_list", skjcList)
+        appendLabels("cxbj_list", cxbjList)
+        appendLabels("yl_list", ylList)
+        appendLabels("jxbmc_list", jxbmcList)
+        if (!searchInput.isNullOrBlank()) add("\"$searchInput\"")
     }
 }

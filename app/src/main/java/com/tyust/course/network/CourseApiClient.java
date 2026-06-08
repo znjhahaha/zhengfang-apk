@@ -23,12 +23,21 @@ import com.tyust.course.manager.UserManager;
 
 public class CourseApiClient {
         private static final String TAG = "CourseApiClient";
+        private static final String DEFAULT_ACCOUNT_STORAGE_KEY = "default";
+        private static final String INTERNAL_ACCOUNT_HEADER = "X-Course-Account-Storage-Key";
+        private static final ThreadLocal<String> REQUEST_ACCOUNT_STORAGE_KEY = new ThreadLocal<>();
+        private static final ThreadLocal<String> ACCOUNT_OVERRIDE_STORAGE_KEY = new ThreadLocal<>();
         private static volatile CourseApiClient instance;
         private final OkHttpClient client;
         private final CookieJarImpl cookieJar;
         private Context appContext;
 
         public static final String ACTION_COOKIE_EXPIRED = "com.tyust.course.ACTION_COOKIE_EXPIRED";
+        public static final String EXTRA_ACCOUNT_STORAGE_KEY = "extra_account_storage_key";
+
+        public interface AccountScopedOperation<T> {
+                T run();
+        }
 
         // ============= Web版兼容: Display参数缓存 (按xkkz_id) =============
         private final Map<String, Map<String, String>> displayParamsCache = new ConcurrentHashMap<>();
@@ -64,6 +73,12 @@ public class CourseApiClient {
                                 .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                                 .addInterceptor(chain -> {
                                         Request request = chain.request();
+                                        String requestAccountStorageKey = getRequestAccountStorageKey(request);
+                                        request = request.newBuilder()
+                                                        .removeHeader(INTERNAL_ACCOUNT_HEADER)
+                                                        .build();
+                                        REQUEST_ACCOUNT_STORAGE_KEY.set(requestAccountStorageKey);
+                                        try {
                                         
                                         // 🔒 【防盗架构深层哨兵】缓存一致性与签名校验拦截层
                                         if (appContext != null) {
@@ -100,10 +115,7 @@ public class CourseApiClient {
                                         if (!isOriginalLogin && isFinalLogin) {
                                                 Log.e(TAG, "🚨 [检测到重定向登录] Cookie 已过期! 原URL: " + originalUrl + " -> 最终URL: " + finalUrl);
                                                 if (appContext != null) {
-                                                        Intent intent = new Intent(ACTION_COOKIE_EXPIRED);
-                                                        intent.setPackage(appContext.getPackageName());
-                                                        appContext.sendBroadcast(intent);
-                                                        UserManager.getInstance().setLoggedIn(false);
+                                                        notifyCookieExpired(requestAccountStorageKey);
                                                 }
                                         }
 
@@ -144,13 +156,7 @@ public class CourseApiClient {
                                                                         Log.e(TAG, "🚨 [确认失效] 拦截器确认 Cookie 已过期! URL: "
                                                                                         + currentUrl);
                                                                         if (appContext != null) {
-                                                                                Intent intent = new Intent(
-                                                                                                ACTION_COOKIE_EXPIRED);
-                                                                                intent.setPackage(appContext
-                                                                                                .getPackageName());
-                                                                                appContext.sendBroadcast(intent);
-                                                                                UserManager.getInstance()
-                                                                                                .setLoggedIn(false);
+                                                                                notifyCookieExpired(requestAccountStorageKey);
                                                                         }
                                                                 } else {
                                                                         Log.d(TAG, "🔍 [拦截误报] 虽然包含登录特征，但成功解析到姓名 ["
@@ -175,16 +181,16 @@ public class CourseApiClient {
                                                                         || (_jb.contains("\"code\"") && _jb.contains("\"401\""))) {
                                                                         Log.e(TAG, "[Cookie\u8fc7\u671f] JSON\u68c0\u6d4b\u5230\u672a\u767b\u5f55: " + response.request().url());
                                                                         if (appContext != null) {
-                                                                                Intent _i = new Intent(ACTION_COOKIE_EXPIRED);
-                                                                                _i.setPackage(appContext.getPackageName());
-                                                                                appContext.sendBroadcast(_i);
-                                                                                UserManager.getInstance().setLoggedIn(false);
+                                                                                notifyCookieExpired(requestAccountStorageKey);
                                                                         }
                                                                 }
                                                         }
                                                 }
                                         }
                                         return response;
+                                        } finally {
+                                                REQUEST_ACCOUNT_STORAGE_KEY.remove();
+                                        }
                                 });
 
                 try {
@@ -215,33 +221,109 @@ public class CourseApiClient {
                 this.appContext = context.getApplicationContext();
         }
 
+        public <T> T runWithAccount(String accountStorageKey, AccountScopedOperation<T> operation) {
+                String previous = ACCOUNT_OVERRIDE_STORAGE_KEY.get();
+                ACCOUNT_OVERRIDE_STORAGE_KEY.set(normalizeAccountStorageKey(accountStorageKey));
+                try {
+                        return operation.run();
+                } finally {
+                        if (previous != null) {
+                                ACCOUNT_OVERRIDE_STORAGE_KEY.set(previous);
+                        } else {
+                                ACCOUNT_OVERRIDE_STORAGE_KEY.remove();
+                        }
+                }
+        }
+
+        private static String normalizeAccountStorageKey(String accountStorageKey) {
+                if (accountStorageKey == null || accountStorageKey.trim().isEmpty()) {
+                        return DEFAULT_ACCOUNT_STORAGE_KEY;
+                }
+                return accountStorageKey.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
+        }
+
+        private String getCurrentAccountStorageKeySafely() {
+                String overrideKey = ACCOUNT_OVERRIDE_STORAGE_KEY.get();
+                if (overrideKey != null && !overrideKey.isEmpty()) {
+                        return normalizeAccountStorageKey(overrideKey);
+                }
+                try {
+                        return normalizeAccountStorageKey(UserManager.getInstance().getCurrentAccountStorageKey());
+                } catch (Exception e) {
+                        return DEFAULT_ACCOUNT_STORAGE_KEY;
+                }
+        }
+
+        private String getRequestAccountStorageKey(Request request) {
+                String headerKey = request.header(INTERNAL_ACCOUNT_HEADER);
+                if (headerKey != null && !headerKey.trim().isEmpty()) {
+                        return normalizeAccountStorageKey(headerKey);
+                }
+                return getCurrentAccountStorageKeySafely();
+        }
+
+        private Request.Builder accountAwareRequestBuilder() {
+                return new Request.Builder()
+                                .header(INTERNAL_ACCOUNT_HEADER, getCurrentAccountStorageKeySafely());
+        }
+
+        private String displayParamsCacheKey(String xkkzId) {
+                return getCurrentAccountStorageKeySafely() + "::" + (xkkzId != null ? xkkzId : "");
+        }
+
+        public void notifyCookieExpired(String accountStorageKey) {
+                if (appContext == null) return;
+                Intent intent = new Intent(ACTION_COOKIE_EXPIRED);
+                intent.setPackage(appContext.getPackageName());
+                if (accountStorageKey != null && !accountStorageKey.isEmpty()) {
+                        intent.putExtra(EXTRA_ACCOUNT_STORAGE_KEY, accountStorageKey);
+                }
+                appContext.sendBroadcast(intent);
+
+                String currentAccountStorageKey = getCurrentAccountStorageKeySafely();
+                if (accountStorageKey == null || accountStorageKey.isEmpty() || accountStorageKey.equals(currentAccountStorageKey)) {
+                        UserManager.getInstance().setLoggedIn(false);
+                }
+        }
+
         // ============= Display参数缓存方法 =============
         public Map<String, String> getDisplayParamsFromCache(String xkkz_id) {
-                return displayParamsCache.get(xkkz_id);
+                return displayParamsCache.get(displayParamsCacheKey(xkkz_id));
         }
 
         public void setDisplayParamsCache(String xkkz_id, Map<String, String> params) {
-                displayParamsCache.put(xkkz_id, new HashMap<>(params));
+                displayParamsCache.put(displayParamsCacheKey(xkkz_id), new HashMap<>(params));
                 Log.d(TAG, "Cached display params for xkkz_id=" + xkkz_id + ", count=" + params.size());
         }
 
         public void clearDisplayParamsCache() {
-                displayParamsCache.clear();
-                Log.d(TAG, "Cleared display params cache");
+                String prefix = getCurrentAccountStorageKeySafely() + "::";
+                displayParamsCache.keySet().removeIf(key -> key.startsWith(prefix));
+                Log.d(TAG, "Cleared display params cache for account=" + getCurrentAccountStorageKeySafely());
         }
 
         public void clearCookies() {
-                cookieJar.clear();
-                Log.d(TAG, "Cleared all cookies");
+                clearCookies(getCurrentAccountStorageKeySafely());
+        }
+
+        public void clearCookies(String accountStorageKey) {
+                String normalizedAccountKey = normalizeAccountStorageKey(accountStorageKey);
+                cookieJar.clearAccount(normalizedAccountKey);
+                Log.d(TAG, "Cleared cookies for account=" + normalizedAccountKey);
         }
 
         // 设置原始 Cookie 字符串 (e.g., "ASP.NET_SessionId=xyz; JSESSIONID=abc")
         public void setCookie(String baseUrl, String cookieString) {
+                setCookie(baseUrl, cookieString, getCurrentAccountStorageKeySafely());
+        }
+
+        public void setCookie(String baseUrl, String cookieString, String accountStorageKey) {
                 HttpUrl url = HttpUrl.parse(baseUrl);
                 if (url == null)
                         return;
 
-                cookieJar.clear(); // 清除旧的
+                String normalizedAccountKey = normalizeAccountStorageKey(accountStorageKey);
+                cookieJar.clear(url, normalizedAccountKey); // 清除旧的
 
                 // Sanitize: remove newlines, carriage returns, and other control characters
                 String sanitized = cookieString
@@ -267,7 +349,7 @@ public class CourseApiClient {
                                                         .domain(url.host())
                                                         .path("/")
                                                         .build();
-                                        cookieJar.addCookie(url, cookie);
+                                        cookieJar.addCookie(url, cookie, normalizedAccountKey);
                                         Log.d(TAG, "Added cookie: " + name + "=<redacted>");
                                 } catch (Exception e) {
                                         Log.w(TAG, "Skipped invalid cookie: " + name + " - " + e.getMessage());
@@ -278,7 +360,7 @@ public class CourseApiClient {
 
         // 创建带有正确请求头的Request.Builder
         private Request.Builder createRequestBuilder(SchoolConfig school) {
-                return new Request.Builder()
+                return accountAwareRequestBuilder()
                                 .header("Accept",
                                                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
                                 .header("Accept-Language", "zh-CN,zh;q=0.9")
@@ -299,6 +381,13 @@ public class CourseApiClient {
                 client.newCall(request).enqueue(callback);
         }
 
+        public void validateCookie(SchoolConfig school, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        validateCookie(school, callback);
+                        return null;
+                });
+        }
+
         // 获取选课页面参数 (Index页面) - 强制网络刷新
         public void fetchCourseParams(SchoolConfig school, Callback callback) {
                 String url = school.getCourseSelectionParamsUrl();
@@ -309,6 +398,13 @@ public class CourseApiClient {
                                 .cacheControl(okhttp3.CacheControl.FORCE_NETWORK) // Prevent caching
                                 .build();
                 client.newCall(request).enqueue(callback);
+        }
+
+        public void fetchCourseParams(SchoolConfig school, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        fetchCourseParams(school, callback);
+                        return null;
+                });
         }
 
         // 获取完整参数 (Display页面) - Web版本的 getCompleteParameters
@@ -336,6 +432,14 @@ public class CourseApiClient {
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(callback);
+        }
+
+        public void fetchCourseDisplayParams(SchoolConfig school, String xkkz_id, String kklxdm,
+                        String njdm_id, String zyh_id, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        fetchCourseDisplayParams(school, xkkz_id, kklxdm, njdm_id, zyh_id, callback);
+                        return null;
+                });
         }
 
         public String fetchCourseDisplayParamsSync(SchoolConfig school, String xkkz_id, String kklxdm,
@@ -412,16 +516,56 @@ public class CourseApiClient {
                 return null;
         }
 
+        public String fetchCourseFilterDataSync(SchoolConfig school, String pathOrUrl) {
+                String url = buildAbsoluteCourseUrl(school, pathOrUrl);
+                Log.d(TAG, "Sync fetching course filter data from: " + url);
+
+                Request request = createRequestBuilder(school)
+                                .url(url)
+                                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                                .header("X-Requested-With", "XMLHttpRequest")
+                                .get()
+                                .build();
+
+                try (okhttp3.Response response = client.newCall(request).execute()) {
+                        if (!response.isSuccessful()) {
+                                Log.w(TAG, "Course filter data request failed: code=" + response.code() + ", url=" + url);
+                        }
+                        if (response.body() != null) {
+                                return response.body().string();
+                        }
+                } catch (Exception e) {
+                        Log.e(TAG, "fetchCourseFilterDataSync error: " + e.getMessage());
+                }
+                return null;
+        }
+
+        private String buildAbsoluteCourseUrl(SchoolConfig school, String pathOrUrl) {
+                if (pathOrUrl == null || pathOrUrl.isEmpty()) {
+                        return school.getFullBasePath();
+                }
+                if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+                        return pathOrUrl;
+                }
+                if (pathOrUrl.startsWith(school.basePath + "/")) {
+                        return school.getBaseUrl() + pathOrUrl;
+                }
+                if (pathOrUrl.startsWith("/")) {
+                        return school.getFullBasePath() + pathOrUrl;
+                }
+                return school.getFullBasePath() + "/" + pathOrUrl;
+        }
+
         /**
          * 带筛选条件获取可选课程列表。
-         * 在 baseParams 基础上追加 CourseFilter 的 POST 参数。
+         * 与页面查询一致：筛选数组字段放在基础参数前。
          */
         public void fetchFilteredCourses(SchoolConfig school, String baseParams,
                         com.tyust.course.model.CourseFilter filter, Callback callback) {
                 String filterParams = filter.toPostParams();
                 String postBody = baseParams;
                 if (filterParams != null && !filterParams.isEmpty()) {
-                        postBody = baseParams + "&" + filterParams;
+                        postBody = filterParams + "&" + baseParams;
                 }
                 Log.d(TAG, "Fetching filtered courses, filter: " + filterParams);
                 fetchAvailableCourses(school, postBody, callback);
@@ -445,6 +589,13 @@ public class CourseApiClient {
                 client.newCall(builder.build()).enqueue(callback);
         }
 
+        public void fetchAvailableCourses(SchoolConfig school, String postBody, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        fetchAvailableCourses(school, postBody, callback);
+                        return null;
+                });
+        }
+
         // 执行选课 (Step 3: 使用加密的jxb_ids)
         public void selectCourse(SchoolConfig school, String postBody, Callback callback) {
                 String url = school.getSelectCourseUrl();
@@ -463,6 +614,13 @@ public class CourseApiClient {
                 client.newCall(request).enqueue(callback);
         }
 
+        public void selectCourse(SchoolConfig school, String postBody, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        selectCourse(school, postBody, callback);
+                        return null;
+                });
+        }
+
         // 获取选课详情 (Step 2: 获取加密的do_jxb_id) - 完整参数版本
         public void fetchCourseSelectionDetails(SchoolConfig school, String postBody, Callback callback) {
                 String url = school.getCourseSelectionDetailsUrl();
@@ -479,6 +637,13 @@ public class CourseApiClient {
                                 .build();
 
                 client.newCall(request).enqueue(callback);
+        }
+
+        public void fetchCourseSelectionDetails(SchoolConfig school, String postBody, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        fetchCourseSelectionDetails(school, postBody, callback);
+                        return null;
+                });
         }
 
         // 获取选课详情 (Step 2: 获取加密的do_jxb_id) - 简化参数版本 (旧版兼容)
@@ -617,7 +782,7 @@ public class CourseApiClient {
         // 旧的接口 - 兼容性 (已弃用)
         public void fetchCourses(String baseUrl, String studentId, String name, Callback callback) {
                 Log.d(TAG, "Fetching courses for: " + studentId);
-                Request request = new Request.Builder()
+                Request request = accountAwareRequestBuilder()
                                 .url(baseUrl + "/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512")
                                 .header("User-Agent", "Mozilla/5.0")
                                 .build();
@@ -626,16 +791,46 @@ public class CourseApiClient {
 
         // 内部类 CookieJar (线程安全版)
         private static class CookieJarImpl implements CookieJar {
-                private final HashMap<String, List<Cookie>> cookieStore = new HashMap<>();
+                private final HashMap<String, HashMap<String, List<Cookie>>> cookieStore = new HashMap<>();
                 private final Object lock = new Object();
+
+                private HashMap<String, List<Cookie>> accountStore(String accountStorageKey) {
+                        String normalizedAccountKey = normalizeAccountStorageKey(accountStorageKey);
+                        HashMap<String, List<Cookie>> store = cookieStore.get(normalizedAccountKey);
+                        if (store == null) {
+                                store = new HashMap<>();
+                                cookieStore.put(normalizedAccountKey, store);
+                        }
+                        return store;
+                }
+
+                private String requestAccountStorageKey() {
+                        String key = REQUEST_ACCOUNT_STORAGE_KEY.get();
+                        if (key == null || key.isEmpty()) {
+                                key = ACCOUNT_OVERRIDE_STORAGE_KEY.get();
+                        }
+                        if (key == null || key.isEmpty()) {
+                                try {
+                                        key = UserManager.getInstance().getCurrentAccountStorageKey();
+                                } catch (Exception ignored) {
+                                        key = DEFAULT_ACCOUNT_STORAGE_KEY;
+                                }
+                        }
+                        return normalizeAccountStorageKey(key);
+                }
 
                 @Override
                 public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
+                        saveFromResponse(url, cookies, requestAccountStorageKey());
+                }
+
+                public void saveFromResponse(HttpUrl url, List<Cookie> cookies, String accountStorageKey) {
                         synchronized (lock) {
-                                List<Cookie> existing = cookieStore.get(url.host());
+                                HashMap<String, List<Cookie>> store = accountStore(accountStorageKey);
+                                List<Cookie> existing = store.get(url.host());
                                 if (existing == null) {
                                         existing = new ArrayList<>();
-                                        cookieStore.put(url.host(), existing);
+                                        store.put(url.host(), existing);
                                 }
                                 for (Cookie cookie : cookies) {
                                         // 使用 Iterator 避免 ConcurrentModificationException
@@ -652,18 +847,24 @@ public class CourseApiClient {
 
                 @Override
                 public List<Cookie> loadForRequest(HttpUrl url) {
+                        return loadForRequest(url, requestAccountStorageKey());
+                }
+
+                public List<Cookie> loadForRequest(HttpUrl url, String accountStorageKey) {
                         synchronized (lock) {
-                                List<Cookie> cookies = cookieStore.get(url.host());
+                                HashMap<String, List<Cookie>> store = cookieStore.get(normalizeAccountStorageKey(accountStorageKey));
+                                List<Cookie> cookies = store != null ? store.get(url.host()) : null;
                                 return cookies != null ? new ArrayList<>(cookies) : new ArrayList<>();
                         }
                 }
 
-                public void addCookie(HttpUrl url, Cookie cookie) {
+                public void addCookie(HttpUrl url, Cookie cookie, String accountStorageKey) {
                         synchronized (lock) {
-                                List<Cookie> cookies = cookieStore.get(url.host());
+                                HashMap<String, List<Cookie>> store = accountStore(accountStorageKey);
+                                List<Cookie> cookies = store.get(url.host());
                                 if (cookies == null) {
                                         cookies = new ArrayList<>();
-                                        cookieStore.put(url.host(), cookies);
+                                        store.put(url.host(), cookies);
                                 }
                                 java.util.Iterator<Cookie> it = cookies.iterator();
                                 while (it.hasNext()) {
@@ -675,9 +876,18 @@ public class CourseApiClient {
                         }
                 }
 
-                public void clear() {
+                public void clear(HttpUrl url, String accountStorageKey) {
                         synchronized (lock) {
-                                cookieStore.clear();
+                                HashMap<String, List<Cookie>> store = cookieStore.get(normalizeAccountStorageKey(accountStorageKey));
+                                if (store != null) {
+                                        store.remove(url.host());
+                                }
+                        }
+                }
+
+                public void clearAccount(String accountStorageKey) {
+                        synchronized (lock) {
+                                cookieStore.remove(normalizeAccountStorageKey(accountStorageKey));
                         }
                 }
         }
@@ -800,6 +1010,10 @@ public class CourseApiClient {
                 return null;
         }
 
+        public String fetchPageHiddenParamsSync(SchoolConfig school, String accountStorageKey) {
+                return runWithAccount(accountStorageKey, () -> fetchPageHiddenParamsSync(school));
+        }
+
         // 同步获取已选课程 (用于验证选课是否成功)
         public String fetchSelectedCoursesSync(SchoolConfig school, String postBody) {
                 String url = school.getSelectedCoursesUrl();
@@ -827,6 +1041,10 @@ public class CourseApiClient {
                         Log.e(TAG, "fetchSelectedCoursesSync error: " + e.getMessage());
                 }
                 return null;
+        }
+
+        public String fetchSelectedCoursesSync(SchoolConfig school, String postBody, String accountStorageKey) {
+                return runWithAccount(accountStorageKey, () -> fetchSelectedCoursesSync(school, postBody));
         }
 
         // 同步退课 (Drop course synchronously)
@@ -878,7 +1096,7 @@ public class CourseApiClient {
                 String url = school.getFullBasePath() + school.loginPagePath;
                 Log.d(TAG, "GET login page: " + url);
 
-                Request request = new Request.Builder()
+                Request request = accountAwareRequestBuilder()
                                 .url(url)
                                 .header("User-Agent",
                                                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
@@ -891,7 +1109,7 @@ public class CourseApiClient {
                 String url = school.getFullBasePath() + school.publicKeyPath + "?time=" + System.currentTimeMillis();
                 Log.d(TAG, "GET public key: " + url);
 
-                Request request = new Request.Builder()
+                Request request = accountAwareRequestBuilder()
                                 .url(url)
                                 .header("User-Agent",
                                                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
@@ -917,7 +1135,7 @@ public class CourseApiClient {
                         Log.d(TAG, "Captcha cookies: [" + sb.toString() + "]");
                 }
 
-                Request request = new Request.Builder()
+                Request request = accountAwareRequestBuilder()
                                 .url(url)
                                 .header("User-Agent",
                                                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
@@ -974,7 +1192,7 @@ public class CourseApiClient {
                                 .followSslRedirects(false)
                                 .build();
 
-                Request request = new Request.Builder()
+                Request request = accountAwareRequestBuilder()
                                 .url(url)
                                 .header("User-Agent",
                                                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")

@@ -194,6 +194,9 @@ fun ScheduleRoute() {
             }
             
             val accountKey = UserManager.getInstance().currentAccountStorageKey
+            fun isRequestAccountActive(): Boolean {
+                return UserManager.getInstance().currentAccountStorageKey == accountKey
+            }
             val cacheKey = "schedule_${accountKey}_${school.id}_${xnm}_${xqm}"
 
             if (!forceRefresh) {
@@ -210,6 +213,7 @@ fun ScheduleRoute() {
             CourseApiClient.getInstance().fetchSchedule(school, "xnm=$xnm&xqm=$xqm", object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     scope.launch(Dispatchers.Main) {
+                        if (!isRequestAccountActive()) return@launch
                         isLoading = false
                         if (courses.isEmpty()) Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -219,6 +223,7 @@ fun ScheduleRoute() {
                     val json = response.body?.string() ?: ""
                     if (json.contains("用户登录")) {
                          scope.launch(Dispatchers.Main) { 
+                             if (!isRequestAccountActive()) return@launch
                              isLoading = false
                              Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show() 
                          }
@@ -226,6 +231,7 @@ fun ScheduleRoute() {
                     }
                     val parsed = parseSchedule(json)
                     scope.launch(Dispatchers.Main) {
+                        if (!isRequestAccountActive()) return@launch
                         isLoading = false
                         if (parsed.isNotEmpty()) {
                             saveScheduleToCache(cacheKey, json)

@@ -319,27 +319,14 @@ class CourseListFragment : Fragment() {
         
         // ⚠️ 关键修复：根据 kklxdm 设置正确的 rwlx 和 xklc (与Web版一致)
         val kklxdm = tab.kklxdm
-        val rwlx = when {
-            mergedParams["rwlx"]?.isNotEmpty() == true -> mergedParams["rwlx"]!!
-            kklxdm == "01" -> "1"
-            kklxdm == "10" -> "2"
-            kklxdm == "05" -> "2"
-            else -> "1"
-        }
-        val xklc = when {
-            mergedParams["xklc"]?.isNotEmpty() == true -> mergedParams["xklc"]!!
-            kklxdm == "01" -> "2"
-            kklxdm == "10" -> "4"
-            kklxdm == "05" -> "3"
-            else -> "2"
-        }
+        val rwlx = mergedParams["rwlx"]?.takeIf { it.isNotEmpty() } ?: "1"
+        val xklc = mergedParams["xklc"]?.takeIf { it.isNotEmpty() } ?: "2"
         
         mergedParams["rwlx"] = rwlx
         mergedParams["xklc"] = xklc
         
-        // ⚠️ 关键修复：分页参数 (与Web版一致)
-        // Web版: kspage=0, jspage=10 (每页10条)
-        mergedParams["kspage"] = "0"
+        // 分页参数与自主选课页面查询保持一致
+        mergedParams["kspage"] = "1"
         mergedParams["jspage"] = "10"
         
         // ⚠️ 其他必需参数 (与Web版一致)
@@ -370,7 +357,7 @@ class CourseListFragment : Fragment() {
         mergedParams.putIfAbsent("bjgkczxbbjwcx", if (kklxdm == "05") "1" else "0")
         mergedParams.putIfAbsent("xkxskcgskg", displayParams["xkxskcgskg"] ?: "")
         
-        Log.d("CourseListFragment", "fetchCategoryList params: rwlx=$rwlx, xklc=$xklc, kspage=0, jspage=10")
+        Log.d("CourseListFragment", "fetchCategoryList params: rwlx=$rwlx, xklc=$xklc, kspage=1, jspage=10")
         
         val postBody = mergedParams.entries.joinToString("&") { "${java.net.URLEncoder.encode(it.key, "UTF-8")}=${java.net.URLEncoder.encode(it.value, "UTF-8")}" }
         

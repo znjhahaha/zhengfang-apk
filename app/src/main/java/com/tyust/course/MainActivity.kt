@@ -46,6 +46,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -188,6 +189,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     var showStarDialog by remember { mutableStateOf(!hasStarred && dismissCount < 3) }
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var currentAccountStorageKey by remember { mutableStateOf(UserManager.getInstance().currentAccountStorageKey) }
     val items = listOf(
         BottomNavItem.Courses,
         BottomNavItem.Schedule,
@@ -206,6 +208,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
                 if (intent?.action == com.tyust.course.network.CourseApiClient.ACTION_COOKIE_EXPIRED) {
+                    val eventAccountKey = intent.getStringExtra(com.tyust.course.network.CourseApiClient.EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
+                    val currentAccountKey = UserManager.getInstance().currentAccountStorageKey
+                    if (eventAccountKey.isNotEmpty() && eventAccountKey != currentAccountKey) return
                     isTokenExpired = true
                     // 全局即时 Toast 强提醒，确保用户在任何页面都能感知
                     android.widget.Toast.makeText(
@@ -305,7 +310,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     Box(
                         modifier = Modifier.weight(1f)
                     ) {
-                        AnimatedContent(
+                        key(currentAccountStorageKey) {
+                            AnimatedContent(
                             targetState = selectedTab,
                             transitionSpec = {
                                 val offsetTween = MotionSpecs.tabTransition<IntOffset>()
@@ -334,7 +340,11 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                     com.tyust.course.ui.route.GradesRoute()
                                 }
                                 4 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF3B82F6)) {
-                                    com.tyust.course.ui.route.SettingsRoute()
+                                    com.tyust.course.ui.route.SettingsRoute(
+                                        onAccountChanged = {
+                                            currentAccountStorageKey = UserManager.getInstance().currentAccountStorageKey
+                                        }
+                                    )
                                 }
                                 else -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
                                     com.tyust.course.ui.route.CourseListRoute()
@@ -342,6 +352,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                             }
                         }
                     }
+                }
             }
 
             AppBuildWatermarks(fragmentActivity = fragmentActivity)

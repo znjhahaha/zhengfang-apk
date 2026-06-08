@@ -3,6 +3,7 @@ package com.tyust.course.ui.route
 import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.tyust.course.manager.CourseCacheManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.Course
 import com.tyust.course.network.CourseApiClient
@@ -25,8 +26,14 @@ fun SelectedCoursesRoute() {
     var xkxnm by remember { mutableStateOf("") }
     var xkxqm by remember { mutableStateOf("") }
 
+    fun isCurrentAccount(accountKey: String): Boolean {
+        return UserManager.getInstance().currentAccountStorageKey == accountKey
+    }
+
     fun loadSelectedCourses() {
-        val school = UserManager.getInstance().currentSchool ?: return
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool ?: return
+        val requestAccountKey = userManager.currentAccountStorageKey
         isLoading = true
         
         scope.launch(Dispatchers.IO) {
@@ -37,8 +44,12 @@ fun SelectedCoursesRoute() {
                     if (response != null) {
                         val paramsMap = CourseParser.parseCourseParams(response)
                         // 缓存学年学期参数供退课使用
-                        xkxnm = paramsMap["xkxnm"] ?: ""
-                        xkxqm = paramsMap["xkxqm"] ?: ""
+                        withContext(Dispatchers.Main) {
+                            if (isCurrentAccount(requestAccountKey)) {
+                                xkxnm = paramsMap["xkxnm"] ?: ""
+                                xkxqm = paramsMap["xkxqm"] ?: ""
+                            }
+                        }
                         
                         // 构建符合 Web 版要求的 POST Body
                         val sb = StringBuilder()
@@ -62,17 +73,20 @@ fun SelectedCoursesRoute() {
                     val parsedCourses = CourseParser.parseCourseListFromJson(response)
                     
                     withContext(Dispatchers.Main) {
+                        if (!isCurrentAccount(requestAccountKey)) return@withContext
                         courses = parsedCourses
                         isLoading = false
                     }
                 } else {
                     withContext(Dispatchers.Main) {
+                        if (!isCurrentAccount(requestAccountKey)) return@withContext
                         isLoading = false
                         Toast.makeText(context, "未获取到已选课程数据", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isLoading = false
                     Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -82,11 +96,15 @@ fun SelectedCoursesRoute() {
     
     // 退课逻辑
     fun performDropCourse(course: Course) {
-        val school = UserManager.getInstance().currentSchool ?: return
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool ?: return
+        val requestAccountKey = userManager.currentAccountStorageKey
+        val requestXkxnm = xkxnm
+        val requestXkxqm = xkxqm
         val kchId = course.courseId ?: return
         val jxbIds = (if (!course.doJxbId.isNullOrEmpty()) course.doJxbId else course.classId) ?: return
         
-        if (xkxnm.isEmpty() || xkxqm.isEmpty()) {
+        if (requestXkxnm.isEmpty() || requestXkxqm.isEmpty()) {
             Toast.makeText(context, "学年学期参数缺失，请刷新后重试", Toast.LENGTH_SHORT).show()
             return
         }
@@ -94,19 +112,20 @@ fun SelectedCoursesRoute() {
         isDropping = true
         scope.launch(Dispatchers.IO) {
             try {
-                val result = CourseApiClient.getInstance().dropCourseSync(school, kchId, jxbIds, xkxnm, xkxqm)
+                val result = CourseApiClient.getInstance().dropCourseSync(school, kchId, jxbIds, requestXkxnm, requestXkxqm)
                 withContext(Dispatchers.Main) {
+                    if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isDropping = false
                     // 服务器返回 "1" 或 {"flag":"1"} 都表示成功
                     if (result != null && (result.trim() == "\"1\"" || result.contains("\"flag\":\"1\""))) {
                         Toast.makeText(context, "退课成功: ${course.name}", Toast.LENGTH_SHORT).show()
                         // 同步更新本地缓存的 isSelected 状态
-                        val cached = com.tyust.course.manager.CourseCacheManager.getCachedCourses(context)
+                        val cached = CourseCacheManager.getCachedCourses(context, requestAccountKey)
                         if (cached != null) {
                             cached.forEach { c ->
                                 if (c.classId == course.classId) c.isSelected = false
                             }
-                            com.tyust.course.manager.CourseCacheManager.saveCourses(context, cached)
+                            CourseCacheManager.saveCourses(context, cached, requestAccountKey)
                         }
                         loadSelectedCourses() // 刷新列表
                     } else {
@@ -120,6 +139,7 @@ fun SelectedCoursesRoute() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isDropping = false
                     Toast.makeText(context, "退课异常: ${e.message}", Toast.LENGTH_SHORT).show()
                 }

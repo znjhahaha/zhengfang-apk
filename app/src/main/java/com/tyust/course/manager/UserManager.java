@@ -634,6 +634,7 @@ public class UserManager {
 
     // 清除登录状态（退出登录时调用）
     public void clearLoginState() {
+        String accountStorageKeyToClear = getCurrentAccountStorageKey();
         isLoggedIn = false;
         studentName = "";
         studentId = "";
@@ -653,6 +654,12 @@ public class UserManager {
                     .remove(KEY_LOGIN_MODE)
                     .remove(KEY_CURRENT_ACCOUNT_KEY)
                     .apply(); // 注意：这里不再 remove KEY_CURRENT_SCHOOL_ID，实现学校记忆
+        }
+
+        try {
+            CourseApiClient.getInstance().clearCookies(accountStorageKeyToClear);
+        } catch (Exception e) {
+            Log.w(TAG, "清理账号运行期 Cookie 失败: " + e.getMessage());
         }
 
         Log.d(TAG, "登录状态已清除");

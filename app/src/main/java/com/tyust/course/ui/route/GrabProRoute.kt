@@ -50,8 +50,13 @@ fun GrabProRoute() {
     
     // Settings State (Persisted in SharedPreferences)
     val prefs = remember { context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE) }
-    val accountStorageKey = remember { UserManager.getInstance().currentAccountStorageKey }
+    val accountKey = UserManager.getInstance().currentAccountKey
+    val accountStorageKey = UserManager.getInstance().currentAccountStorageKey
     fun scopedPrefKey(key: String) = "${key}_${accountStorageKey}"
+    fun Intent.putGrabAccountExtras() {
+        putExtra(GrabService.EXTRA_ACCOUNT_KEY, accountKey)
+        putExtra(GrabService.EXTRA_ACCOUNT_STORAGE_KEY, accountStorageKey)
+    }
     
     // UI State - 从持久化存储加载
     var isRunning by remember { mutableStateOf(false) }
@@ -171,6 +176,9 @@ fun GrabProRoute() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == GrabService.BROADCAST_UPDATE) {
+                    val eventAccountStorageKey = intent.getStringExtra(GrabService.EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
+                    if (eventAccountStorageKey.isNotBlank() && eventAccountStorageKey != accountStorageKey) return
+
                     val logMessage = intent.getStringExtra(GrabService.EXTRA_LOG_MESSAGE) ?: ""
                     successCount = intent.getIntExtra(GrabService.EXTRA_SUCCESS_COUNT, successCount)
                     failCount = intent.getIntExtra(GrabService.EXTRA_FAIL_COUNT, failCount)
@@ -279,6 +287,7 @@ fun GrabProRoute() {
             
             val serviceIntent = Intent(context, GrabService::class.java).apply {
                 action = GrabService.ACTION_START_QUEUE // 🔧 使用新开发的直接队列模式
+                putGrabAccountExtras()
                 putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 1500)
                 putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry.toIntOrNull() ?: 100)
             }
@@ -303,6 +312,7 @@ fun GrabProRoute() {
             
             val serviceIntent = Intent(context, GrabService::class.java).apply {
                 action = GrabService.ACTION_START
+                putGrabAccountExtras()
                 putExtra(GrabService.EXTRA_COURSE_NAME, targetCourse.name)
                 putExtra(GrabService.EXTRA_COURSE_ID, targetCourse.courseId)
                 putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 1500)
@@ -344,6 +354,7 @@ fun GrabProRoute() {
         
         val serviceIntent = Intent(context, GrabService::class.java).apply {
             action = GrabService.ACTION_START_FUZZY_MATCH
+            putGrabAccountExtras()
             putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 2000)
             putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry.toIntOrNull() ?: 999)
         }
@@ -362,6 +373,7 @@ fun GrabProRoute() {
     fun stopGrabbing() {
         val serviceIntent = Intent(context, GrabService::class.java).apply {
             action = GrabService.ACTION_STOP
+            putGrabAccountExtras()
         }
         context.startService(serviceIntent)
         SmartSelector.getInstance().stop()
@@ -394,44 +406,6 @@ fun GrabProRoute() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
-    }
-    
-    // Helper: 执行定时抢课
-    fun executeScheduledGrab(ctx: Context, log: (String) -> Unit) {
-        val school = UserManager.getInstance().currentSchool
-        if (school == null) {
-            log("❌ 定时任务失败: 未登录")
-            return
-        }
-        
-        // 🔧 使用队列模式抢课，确保正确使用每门课的 classId
-        val queueList = SmartSelector.getInstance().queue
-        if (queueList.isNotEmpty()) {
-            log("⏰ 定时任务触发，开始队列抢课: ${queueList.size} 门课程")
-            
-            // 设置抢课参数（使用 setter 方法）
-            SmartSelector.getInstance().setInterval(interval.toIntOrNull() ?: 1500)
-            SmartSelector.getInstance().setMaxRetry(maxRetry.toIntOrNull() ?: 100)
-            
-            // 🔧 使用 startWithQueue 方法，它会正确使用队列中每门课的 classId/doJxbId
-            SmartSelector.getInstance().startWithQueue(school)
-        } else {
-            // 向后兼容：如果队列为空，使用目标课程
-            val targetCourse = SmartSelector.getInstance().targetCourse
-            if (targetCourse == null) {
-                log("⚠️ 队列为空且未设置目标课程")
-                return
-            }
-            
-            log("⏰ 定时任务触发，开始单课程抢课: ${targetCourse.name}")
-            
-            // 设置抢课参数（使用 setter 方法）
-            SmartSelector.getInstance().setInterval(interval.toIntOrNull() ?: 1500)
-            SmartSelector.getInstance().setMaxRetry(maxRetry.toIntOrNull() ?: 100)
-            
-            // 使用 start 方法进行单课程抢课
-            SmartSelector.getInstance().start(targetCourse, school)
-        }
     }
     
     fun createScheduledTask() {
@@ -523,9 +497,20 @@ fun GrabProRoute() {
                 Log.d("GrabProRoute", "协程触发定时任务")
                 val activeManager = UserManager.getInstance()
                 if (scheduledAccountKey.isBlank() || scheduledAccountKey == activeManager.currentAccountKey || activeManager.switchToAccount(scheduledAccountKey)) {
-                    SmartSelector.getInstance().setInterval(scheduledInterval)
-                    SmartSelector.getInstance().setMaxRetry(scheduledMaxRetry)
-                    executeScheduledGrab(context) { msg: String -> appendLog(msg) }
+                    val serviceIntent = Intent(context, GrabService::class.java).apply {
+                        action = GrabService.ACTION_START_QUEUE
+                        putExtra(GrabService.EXTRA_ACCOUNT_KEY, scheduledAccountKey)
+                        putExtra(GrabService.EXTRA_ACCOUNT_STORAGE_KEY, scheduledAccountStorageKey)
+                        putExtra(GrabService.EXTRA_INTERVAL, scheduledInterval)
+                        putExtra(GrabService.EXTRA_MAX_RETRY, scheduledMaxRetry)
+                        putExtra(GrabService.EXTRA_PARALLEL_MODE, isParallelMode)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent)
+                    } else {
+                        context.startService(serviceIntent)
+                    }
+                    appendLog("定时任务触发，已启动队列抢课服务")
                     isRunning = true
                 } else {
                     appendLog("定时任务失败：找不到创建任务的账号，请重新登录")

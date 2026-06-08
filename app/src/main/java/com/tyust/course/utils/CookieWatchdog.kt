@@ -1,7 +1,6 @@
 package com.tyust.course.utils
 
 import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -26,13 +25,17 @@ object CookieWatchdog {
     private var running = false
     private var intervalMs = DEFAULT_INTERVAL_MS
     private var context: Context? = null
+    private var watchedSchool: SchoolConfig? = null
+    private var watchedAccountStorageKey: String = ""
 
     private val checkRunnable = object : Runnable {
         override fun run() {
             if (!running) return
-            val school = UserManager.getInstance().currentSchool
+            val userManager = UserManager.getInstance()
+            val school = watchedSchool ?: userManager.currentSchool
+            val requestAccountStorageKey = watchedAccountStorageKey.ifBlank { userManager.currentAccountStorageKey }
             if (school != null) {
-                check(school)
+                check(school, requestAccountStorageKey)
             } else {
                 Log.w(TAG, "No school configured, skipping check")
                 scheduleNext()
@@ -45,6 +48,9 @@ object CookieWatchdog {
         if (running) return
         this.context = ctx.applicationContext
         this.intervalMs = intervalMs
+        val userManager = UserManager.getInstance()
+        this.watchedSchool = userManager.currentSchool
+        this.watchedAccountStorageKey = userManager.currentAccountStorageKey
         this.running = true
         Log.d(TAG, "Watchdog started, interval=${intervalMs}ms")
         // 首次检查延迟 30 秒（避免刚登录就检查）
@@ -55,12 +61,14 @@ object CookieWatchdog {
     fun stop() {
         running = false
         handler.removeCallbacks(checkRunnable)
+        watchedSchool = null
+        watchedAccountStorageKey = ""
         Log.d(TAG, "Watchdog stopped")
     }
 
-    private fun check(school: SchoolConfig) {
+    private fun check(school: SchoolConfig, requestAccountStorageKey: String) {
         Log.d(TAG, "Checking cookie validity...")
-        CourseApiClient.getInstance().validateCookie(school, object : Callback {
+        CourseApiClient.getInstance().validateCookie(school, requestAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.w(TAG, "Check failed (network error): ${e.message}")
                 scheduleNext()
@@ -77,11 +85,7 @@ object CookieWatchdog {
 
                     if (isExpired) {
                         Log.e(TAG, "Cookie expired! Sending broadcast...")
-                        val ctx = context ?: return
-                        val intent = Intent(CourseApiClient.ACTION_COOKIE_EXPIRED)
-                        intent.setPackage(ctx.packageName)
-                        ctx.sendBroadcast(intent)
-                        UserManager.getInstance().setLoggedIn(false)
+                        CourseApiClient.getInstance().notifyCookieExpired(requestAccountStorageKey)
                         // 过期后停止检查（等用户重新登录后会重新启动）
                         running = false
                         return

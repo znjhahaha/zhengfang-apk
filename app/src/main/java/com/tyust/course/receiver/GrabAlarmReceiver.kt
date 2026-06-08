@@ -75,10 +75,12 @@ class GrabAlarmReceiver : BroadcastReceiver() {
             prefs.getBoolean(scopedKey("parallel_mode", accountStorageKey), prefs.getBoolean("parallel_mode", false))
         }
         
-        // 🔧 使用 GrabService 的关键词模式
-        // GrabService.fetchCourseDetailsAndMatch 已修改为优先使用队列中保存的 classId
+        // 🔧 使用 GrabService 的队列模式
+        // 服务启动后会绑定定时任务创建账号，并读取该账号自己的队列槽
         val serviceIntent = Intent(context, GrabService::class.java).apply {
-            action = GrabService.ACTION_START_KEYWORD
+            action = GrabService.ACTION_START_QUEUE
+            putExtra(GrabService.EXTRA_ACCOUNT_KEY, scheduledAccountKey)
+            putExtra(GrabService.EXTRA_ACCOUNT_STORAGE_KEY, accountStorageKey)
             putExtra(GrabService.EXTRA_COURSE_KEYWORDS, courseKeywords)
             putExtra(GrabService.EXTRA_INTERVAL, interval)
             putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry)

@@ -343,17 +343,23 @@ public class CourseParser {
     }
 
     /**
-     * 从页面 HTML 中解析筛选分类和选项。
-     * 真实页面可能把筛选项放在 Index、Display 或脚本渲染后的不同容器里；解析不到动态项时回退到已抓包确认的稳定选项。
+     * 从自主选课页面 HTML 中解析筛选分类和选项。
+     * 筛选项以页面实际返回的 DOM 为准；解析不到时返回空列表，由界面保持加载/空状态，不用固定分类顶替。
      */
     public static List<FilterCategory> parseFilterOptions(String html) {
         List<FilterCategory> categories = new ArrayList<>();
+        if (html == null || html.trim().isEmpty()) {
+            return categories;
+        }
+
         try {
             Document doc = Jsoup.parse(html);
             Map<String, FilterCategoryBuilder> builders = new LinkedHashMap<>();
 
             Elements rows = doc.select("div.condition-row, div[class*=condition], div[class*=tj], div[class*=filter]");
             for (Element row : rows) {
+                appendIndexedFilterOptions(builders, row);
+
                 Element namedContainer = row.selectFirst("[name$=_list]");
                 if (namedContainer == null) continue;
 
@@ -382,6 +388,21 @@ public class CourseParser {
                 }
             }
 
+            Elements indexedOptions = doc.select("li[index], a[index], span[index]");
+            for (Element optionEl : indexedOptions) {
+                String paramName = extractFilterParamNameFromIndex(optionEl.attr("index").trim());
+                if (!isSupportedFilterParam(paramName) || builders.containsKey(paramName)) continue;
+
+                Element row = optionEl.closest("div.condition-row, div[class*=condition], div[class*=tj], div[class*=filter]");
+                FilterCategoryBuilder builder = new FilterCategoryBuilder(
+                        row != null ? extractFilterCategoryName(row, paramName) : filterTitleForParam(paramName),
+                        paramName
+                );
+                builders.put(paramName, builder);
+                Element container = row != null ? row : doc;
+                appendIndexedFilterOptionsForParam(builder, container, paramName);
+            }
+
             for (FilterCategoryBuilder builder : builders.values()) {
                 if (!builder.options.isEmpty()) {
                     categories.add(new FilterCategory(builder.name, builder.paramName, builder.options));
@@ -390,17 +411,71 @@ public class CourseParser {
             }
 
             if (categories.isEmpty()) {
-                categories.addAll(defaultFilterCategories());
-                Log.w(TAG, "No dynamic filter categories parsed, using verified default categories");
+                Log.w(TAG, "No dynamic filter categories parsed from page HTML");
             }
 
             Log.d(TAG, "Total filter categories parsed: " + categories.size());
         } catch (Exception e) {
             Log.e(TAG, "Error parsing filter options: " + e.getMessage());
             categories.clear();
-            categories.addAll(defaultFilterCategories());
         }
         return categories;
+    }
+
+    public static List<FilterOption> parseFilterOptionsFromJson(String json, String keyField, String labelField) {
+        List<FilterOption> options = new ArrayList<>();
+        if (json == null || json.trim().isEmpty() || keyField == null || labelField == null) {
+            return options;
+        }
+
+        try {
+            JSONArray array = null;
+            String trimmed = json.trim();
+            if (trimmed.startsWith("[")) {
+                array = new JSONArray(trimmed);
+            } else if (trimmed.startsWith("{")) {
+                JSONObject obj = new JSONObject(trimmed);
+                array = obj.optJSONArray("items");
+                if (array == null) array = obj.optJSONArray("rows");
+                if (array == null) array = obj.optJSONArray("list");
+                if (array == null) {
+                    Object data = obj.opt("data");
+                    if (data instanceof JSONArray) {
+                        array = (JSONArray) data;
+                    } else if (data instanceof JSONObject) {
+                        JSONObject dataObj = (JSONObject) data;
+                        array = dataObj.optJSONArray("items");
+                        if (array == null) array = dataObj.optJSONArray("rows");
+                        if (array == null) array = dataObj.optJSONArray("list");
+                    }
+                }
+            }
+
+            if (array == null) {
+                Log.w(TAG, "No option array found in filter JSON");
+                return options;
+            }
+
+            Map<String, Boolean> seenKeys = new LinkedHashMap<>();
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject item = array.optJSONObject(i);
+                if (item == null) continue;
+
+                String key = item.optString(keyField, "").trim();
+                String label = item.optString(labelField, "").trim();
+                if (key.isEmpty()) continue;
+                if (label.isEmpty()) label = key;
+                if ("全部".equals(label) || "确定".equals(label) || "取消".equals(label)) continue;
+                if (seenKeys.containsKey(key)) continue;
+
+                seenKeys.put(key, true);
+                options.add(new FilterOption(key, label));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing filter JSON options: " + e.getMessage());
+            options.clear();
+        }
+        return options;
     }
 
     private static void appendFilterOptions(FilterCategoryBuilder builder, Element container, String paramName) {
@@ -412,6 +487,55 @@ public class CourseParser {
             if (label.equals("确定") || label.equals("取消") || label.equals("全部")) continue;
             builder.addOption(key, label);
         }
+    }
+
+    private static void appendIndexedFilterOptions(Map<String, FilterCategoryBuilder> builders, Element container) {
+        Elements optionElements = container.select("li[index], a[index], span[index]");
+        for (Element optionEl : optionElements) {
+            String paramName = extractFilterParamNameFromIndex(optionEl.attr("index").trim());
+            if (!isSupportedFilterParam(paramName)) continue;
+
+            FilterCategoryBuilder builder = builders.get(paramName);
+            if (builder == null) {
+                builder = new FilterCategoryBuilder(extractFilterCategoryName(container, paramName), paramName);
+                builders.put(paramName, builder);
+            }
+
+            String key = extractFilterOptionKey(optionEl, paramName);
+            String label = extractFilterOptionLabel(optionEl);
+            if (key.isEmpty() || label.isEmpty()) continue;
+            if (label.equals("确定") || label.equals("取消") || label.equals("全部")) continue;
+            builder.addOption(key, label);
+        }
+    }
+
+    private static void appendIndexedFilterOptionsForParam(FilterCategoryBuilder builder, Element container, String paramName) {
+        Elements optionElements = container.select("li[index], a[index], span[index]");
+        for (Element optionEl : optionElements) {
+            String optionParamName = extractFilterParamNameFromIndex(optionEl.attr("index").trim());
+            if (!paramName.equals(optionParamName)) continue;
+
+            String key = extractFilterOptionKey(optionEl, paramName);
+            String label = extractFilterOptionLabel(optionEl);
+            if (key.isEmpty() || label.isEmpty()) continue;
+            if (label.equals("确定") || label.equals("取消") || label.equals("全部")) continue;
+            builder.addOption(key, label);
+        }
+    }
+
+    private static String extractFilterParamNameFromIndex(String index) {
+        if (index == null || index.isEmpty()) return "";
+        String[] supportedParams = {
+                "kkbm_id_list", "njdm_id_list", "jg_id_list", "zyh_id_list",
+                "kclb_id_list", "kcxzdm_list", "kcgs_list", "jxms_list",
+                "sksj_list", "skjc_list", "jxbmc_list", "cxbj_list", "yl_list"
+        };
+        for (String paramName : supportedParams) {
+            if (index.equals(paramName) || index.startsWith(paramName + "_")) {
+                return paramName;
+            }
+        }
+        return "";
     }
 
     private static String extractFilterOptionKey(Element optionEl, String paramName) {
@@ -460,12 +584,16 @@ public class CourseParser {
 
     private static boolean isSupportedFilterParam(String paramName) {
         return "kkbm_id_list".equals(paramName)
+                || "njdm_id_list".equals(paramName)
+                || "jg_id_list".equals(paramName)
+                || "zyh_id_list".equals(paramName)
                 || "kclb_id_list".equals(paramName)
                 || "kcxzdm_list".equals(paramName)
                 || "kcgs_list".equals(paramName)
                 || "jxms_list".equals(paramName)
                 || "sksj_list".equals(paramName)
                 || "skjc_list".equals(paramName)
+                || "jxbmc_list".equals(paramName)
                 || "cxbj_list".equals(paramName)
                 || "yl_list".equals(paramName);
     }
@@ -473,55 +601,20 @@ public class CourseParser {
     private static String filterTitleForParam(String paramName) {
         switch (paramName) {
             case "kkbm_id_list": return "开课学院";
+            case "njdm_id_list": return "年级";
+            case "jg_id_list": return "学院";
+            case "zyh_id_list": return "专业";
             case "kclb_id_list": return "课程类别";
             case "kcxzdm_list": return "课程性质";
             case "kcgs_list": return "课程归属";
             case "jxms_list": return "教学模式";
             case "sksj_list": return "上课星期";
             case "skjc_list": return "上课节次";
+            case "jxbmc_list": return "教学班";
             case "cxbj_list": return "是否重修";
             case "yl_list": return "有无余量";
             default: return "筛选条件";
         }
-    }
-
-    private static List<FilterCategory> defaultFilterCategories() {
-        List<FilterCategory> defaults = new ArrayList<>();
-        defaults.add(category("课程类别", "kclb_id_list", new String[][]{
-                {"01", "必修"}, {"02", "限选"}, {"03", "任选"}, {"04", "辅修"}, {"05", "实践"}, {"06", "其他"}
-        }));
-        defaults.add(category("课程性质", "kcxzdm_list", new String[][]{
-                {"10", "通识选修课"}, {"11", "微专业必修课"}, {"3", "专业选修课"},
-                {"6", "专业必修课"}, {"7", "教学环节"}, {"8", "通识必修课"}
-        }));
-        defaults.add(category("课程归属", "kcgs_list", new String[][]{
-                {"1", "公共选修课"}, {"2", "院级公共选修课"}
-        }));
-        defaults.add(category("教学模式", "jxms_list", new String[][]{
-                {"1", "双语教学"}, {"2", "中文教学"}
-        }));
-        defaults.add(category("上课星期", "sksj_list", new String[][]{
-                {"1", "周一"}, {"2", "周二"}, {"3", "周三"}, {"4", "周四"}, {"5", "周五"}, {"6", "周六"}, {"7", "周日"}
-        }));
-        defaults.add(category("上课节次", "skjc_list", new String[][]{
-                {"1", "1"}, {"2", "2"}, {"3", "3"}, {"4", "4"}, {"5", "5"},
-                {"6", "6"}, {"7", "7"}, {"8", "8"}, {"9", "9"}, {"10", "10"}
-        }));
-        defaults.add(category("是否重修", "cxbj_list", new String[][]{
-                {"0", "否"}, {"1", "是"}
-        }));
-        defaults.add(category("有无余量", "yl_list", new String[][]{
-                {"1", "有"}, {"0", "无"}
-        }));
-        return defaults;
-    }
-
-    private static FilterCategory category(String name, String paramName, String[][] pairs) {
-        List<FilterOption> options = new ArrayList<>();
-        for (String[] pair : pairs) {
-            options.add(new FilterOption(pair[0], pair[1]));
-        }
-        return new FilterCategory(name, paramName, options);
     }
 
     private static class FilterCategoryBuilder {

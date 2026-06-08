@@ -56,7 +56,6 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import android.util.Log
 import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Close
@@ -82,7 +81,9 @@ import com.tyust.course.ui.theme.SemanticWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsRoute() {
+fun SettingsRoute(
+    onAccountChanged: () -> Unit = {}
+) {
     val context = LocalContext.current
     
     var studentName by remember { mutableStateOf("") }
@@ -96,8 +97,6 @@ fun SettingsRoute() {
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCreditsDialog by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
-    
-    val scope = rememberCoroutineScope()
     
     // Quota States
     var isSuper by remember { mutableStateOf(false) }
@@ -213,17 +212,38 @@ fun SettingsRoute() {
             return
         }
 
-        val username = userManager.username
-        val password = userManager.sessionPassword
+        val requestAccountKey = userManager.currentAccountStorageKey
+        val requestSchoolId = school.id
+        val requestUsername = userManager.username
+        val requestPassword = userManager.sessionPassword
         isRefreshingCookie = true
-        PasswordLoginManager().login(school, username, password, object : PasswordLoginCallback {
+        PasswordLoginManager().login(school, requestUsername, requestPassword, object : PasswordLoginCallback {
+            private var hasNotifiedCancellation = false
+
+            private fun isRequestCurrent(): Boolean {
+                val currentSchool = userManager.currentSchool
+                return userManager.currentAccountStorageKey == requestAccountKey &&
+                    currentSchool?.id == requestSchoolId &&
+                    userManager.username == requestUsername
+            }
+
             private fun postToUi(block: () -> Unit) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+                android.os.Handler(android.os.Looper.getMainLooper()).post post@{
+                    if (!isRequestCurrent()) {
+                        isRefreshingCookie = false
+                        if (!hasNotifiedCancellation) {
+                            hasNotifiedCancellation = true
+                            Toast.makeText(context, "账号已切换，本次 Cookie 更新已取消", Toast.LENGTH_SHORT).show()
+                        }
+                        return@post
+                    }
+                    block()
+                }
             }
 
             override fun onSuccess(cookie: String) {
                 postToUi {
-                    userManager.savePasswordLogin(username, cookie, password)
+                    userManager.savePasswordLogin(requestUsername, cookie, requestPassword)
                     userManager.refreshRuntimeForCurrentAccount()
                     isRefreshingCookie = false
                     refreshAccountUiState()
@@ -349,6 +369,8 @@ fun SettingsRoute() {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 val updates = listOf(
+                    "2026-06-08" to "修复课程筛选条件无法显示问题：改为按自主选课页面真实运行来源获取动态筛选项，支持年级、学院、专业、开课学院、课程类别、课程性质、课程归属、教学模式、上课星期/节次、教学班、是否重修和有无余量等筛选条件；筛选请求参数与网页端保持一致。",
+                    "2026-06-08" to "完善多账号数据隔离：课程缓存、课表、已选课程、成绩、设置页 Cookie 更新、Cookie 过期广播、抢课队列、抢课服务日志与服务广播均按账号分槽；切换账号后页面状态自动重置，旧账号请求不会写入当前账号界面。",
                     "2026-06-07" to "修复 vivo/oppo 等设备上抢课、成绩、设置页面闪退问题（Backdrop 液态玻璃 GPU 兼容性）；修复复杂周次格式（如\"1-4周,6-14周(双),15-16周\"）无法正确识别的 Bug；新增缺失的 ProGuard 规则文件，修复 Theme 安全转型。",
                     "2026-06-05" to "新增全局 Cookie 有效性定期检查（CookieWatchdog），提升后台长效稳定性；优化接口响应拦截，捕获 JSON 响应中的失效状态并自动唤起登录提示，显著增强会话失效处理的鲁棒性。",
                     "2026-06-04" to "修复平时成绩详情只展示一项的Bug；成绩导出支持导出为 UTF-8 BOM CSV 数据单；优化登录密码输入下的统一认证平台温馨提示；引入防误触式 GitHub Star 引导弹窗，支持最多3次展示不同阶段求赞文案；将原本的关于界面重构为更新历史卡片与开源致谢面板。",
@@ -477,6 +499,8 @@ fun SettingsRoute() {
                 val switched = UserManager.getInstance().switchToAccount(accountKey)
                 if (switched) {
                     refreshAccountUiState()
+                    showQuotaDialog = false
+                    onAccountChanged()
                     Toast.makeText(context, "已切换账号", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(context, "账号切换失败，请重新登录", Toast.LENGTH_LONG).show()

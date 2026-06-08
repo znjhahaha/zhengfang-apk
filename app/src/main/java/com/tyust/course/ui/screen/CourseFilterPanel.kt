@@ -43,6 +43,8 @@ fun CourseFilterPanel(
     onApply: () -> Unit,
     onClear: () -> Unit,
     filterCategories: List<CourseParser.FilterCategory> = emptyList(),
+    isLoading: Boolean = false,
+    emptyMessage: String = "筛选条件加载失败，请下拉刷新重试",
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -83,7 +85,7 @@ fun CourseFilterPanel(
 
             if (filterCategories.isEmpty()) {
                 Text(
-                    text = "正在加载筛选条件...",
+                    text = if (isLoading) "正在加载筛选条件..." else emptyMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp)
@@ -124,9 +126,9 @@ fun CourseFilterPanel(
 private fun getSelectedKeys(filter: CourseFilter, paramName: String): List<String> {
     return when (paramName) {
         "kkbm_id_list" -> filter.kkbmIdList.orEmpty()
-        "njdm_id_list" -> emptyList() // 年级不参与筛选
-        "jg_id_list" -> emptyList() // 学院不参与筛选
-        "zyh_id_list" -> emptyList() // 专业不参与筛选
+        "njdm_id_list" -> filter.njdmIdList.orEmpty()
+        "jg_id_list" -> filter.jgIdList.orEmpty()
+        "zyh_id_list" -> filter.zyhIdList.orEmpty()
         "kclb_id_list" -> filter.kclbIdList.orEmpty()
         "kcxzdm_list" -> filter.kcxzdmList.orEmpty()
         "kcgs_list" -> filter.kcgsList.orEmpty()
@@ -143,11 +145,16 @@ private fun getSelectedKeys(filter: CourseFilter, paramName: String): List<Strin
 /** 单选切换：更新 CourseFilter 中对应 paramName 的字段 */
 private fun updateFilterSingle(filter: CourseFilter, paramName: String, key: String): CourseFilter {
     return when (paramName) {
+        "kkbm_id_list" -> filter.copy(kkbmIdList = toggleSingle(filter.kkbmIdList, key))
+        "njdm_id_list" -> filter.copy(njdmIdList = toggleSingle(filter.njdmIdList, key))
+        "jg_id_list" -> filter.copy(jgIdList = toggleSingle(filter.jgIdList, key))
+        "zyh_id_list" -> filter.copy(zyhIdList = toggleSingle(filter.zyhIdList, key))
         "kclb_id_list" -> filter.copy(kclbIdList = toggleSingle(filter.kclbIdList, key))
         "kcxzdm_list" -> filter.copy(kcxzdmList = toggleSingle(filter.kcxzdmList, key))
         "kcgs_list" -> filter.copy(kcgsList = toggleSingle(filter.kcgsList, key))
         "jxms_list" -> filter.copy(jxmsList = toggleSingle(filter.jxmsList, key))
         "sksj_list" -> filter.copy(sksjList = toggleSingle(filter.sksjList, key))
+        "skjc_list" -> filter.copy(skjcList = toggleSingle(filter.skjcList, key))
         "cxbj_list" -> filter.copy(cxbjList = toggleSingle(filter.cxbjList, key))
         "yl_list" -> filter.copy(ylList = toggleSingle(filter.ylList, key))
         else -> filter

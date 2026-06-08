@@ -81,6 +81,91 @@ private fun parseInputParamsFromHtml(html: String): Map<String, String> {
     return params
 }
 
+private data class RuntimeFilterSource(
+    val switchName: String,
+    val name: String,
+    val paramName: String,
+    val url: String,
+    val keyField: String,
+    val labelField: String
+)
+
+private fun runtimeFilterSources(indexParams: Map<String, String>): List<RuntimeFilterSource> {
+    val locale = indexParams["localeKey"]?.takeIf { it.isNotBlank() } ?: "zh_CN"
+    val njdmForModel = if (indexParams["zzxkgjcxkg_tjbj"] == "1") {
+        indexParams["njdm_id"]?.takeIf { it.isNotBlank() } ?: "w"
+    } else {
+        "w"
+    }
+
+    return listOf(
+        RuntimeFilterSource("zzxkgjcxkg_kkxy", "开课学院", "kkbm_id_list", "/jwglxt/xkgl/common_queryKkbmPaged.html?localeKey=$locale", "jg_id", "jgmc"),
+        RuntimeFilterSource("zzxkgjcxkg_nj", "年级", "njdm_id_list", "/jwglxt/xkgl/common_queryNjPaged.html?njdm_id=$njdmForModel", "njdm_id", "njmc"),
+        RuntimeFilterSource("zzxkgjcxkg_xy", "学院", "jg_id_list", "/jwglxt/xkgl/common_queryXyPaged.html?localeKey=$locale&jg_id=w", "jg_id", "jgmc"),
+        RuntimeFilterSource("zzxkgjcxkg_zy", "专业", "zyh_id_list", "/jwglxt/xkgl/common_queryZyPaged.html?localeKey=$locale&zyh_id=w", "zyh_id", "zymc"),
+        RuntimeFilterSource("zzxkgjcxkg_kclb", "课程类别", "kclb_id_list", "/jwglxt/xkgl/common_queryKclbListPaged.html", "kclbdm", "kclbmc"),
+        RuntimeFilterSource("zzxkgjcxkg_kcxz", "课程性质", "kcxzdm_list", "/jwglxt/xkgl/common_queryKcxzPaged.html", "dm", "mc"),
+        RuntimeFilterSource("zzxkgjcxkg_kcgs", "课程归属", "kcgs_list", "/jwglxt/xkgl/common_queryKcgsPaged.html", "kcgsdm", "kcgsmc"),
+        RuntimeFilterSource("zzxkgjcxkg_jxms", "教学模式", "jxms_list", "/jwglxt/xtgl/comm_cxJcsjList.html?lxdm=0032", "dm", "mc"),
+        RuntimeFilterSource("zzxkgjcxkg_skxq", "上课星期", "sksj_list", "/jwglxt/xtgl/comm_cxJcsjList.html?lxdm=0036", "dm", "mc"),
+        RuntimeFilterSource("zzxkgjcxkg_skjc", "上课节次", "skjc_list", "/jwglxt/xkgl/common_querySkjcList.html", "dm", "dm")
+    )
+}
+
+private fun loadFilterCategoriesFromRuntimeSource(
+    school: SchoolConfig,
+    indexHtml: String,
+    parsedFromHtml: List<CourseParser.FilterCategory> = CourseParser.parseFilterOptions(indexHtml)
+): List<CourseParser.FilterCategory> {
+    if (parsedFromHtml.isNotEmpty()) return parsedFromHtml
+
+    val indexParams = parseInputParamsFromHtml(indexHtml)
+    val categories = mutableListOf<CourseParser.FilterCategory>()
+    val api = CourseApiClient.getInstance()
+
+    runtimeFilterSources(indexParams).forEach { source ->
+        if (indexParams[source.switchName] != "1") return@forEach
+        val json = api.fetchCourseFilterDataSync(school, source.url)
+        if (json.isNullOrBlank() || json.trimStart().startsWith("<")) {
+            android.util.Log.w("CourseListRoute", "筛选项接口无有效 JSON: ${source.paramName}")
+            return@forEach
+        }
+
+        val options = CourseParser.parseFilterOptionsFromJson(json, source.keyField, source.labelField)
+        if (options.isNotEmpty()) {
+            categories.add(CourseParser.FilterCategory(source.name, source.paramName, options))
+        }
+    }
+
+    if (indexParams["zzxkgjcxkg_sfcx"] == "1") {
+        categories.add(
+            CourseParser.FilterCategory(
+                "是否重修",
+                "cxbj_list",
+                listOf(
+                    CourseParser.FilterOption("1", "是"),
+                    CourseParser.FilterOption("0", "否")
+                )
+            )
+        )
+    }
+    if (indexParams["zzxkgjcxkg_ywyl"] == "1") {
+        categories.add(
+            CourseParser.FilterCategory(
+                "有无余量",
+                "yl_list",
+                listOf(
+                    CourseParser.FilterOption("1", "有"),
+                    CourseParser.FilterOption("0", "无")
+                )
+            )
+        )
+    }
+
+    android.util.Log.d("CourseListRoute", "动态筛选条件加载完成: ${categories.size} 类")
+    return categories
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CourseListRoute() {
@@ -118,7 +203,9 @@ fun CourseListRoute() {
     var activeFilter by remember { mutableStateOf<com.tyust.course.model.CourseFilter?>(null) }
     var draftFilter by remember { mutableStateOf(com.tyust.course.model.CourseFilter()) }
     var isFilterLoading by remember { mutableStateOf(false) }
-    var filterCategories by remember { mutableStateOf<List<CourseParser.FilterCategory>>(CourseParser.parseFilterOptions("")) }
+    var isFilterOptionsLoading by remember { mutableStateOf(false) }
+    var filterOptionsMessage by remember { mutableStateOf("筛选条件加载失败，请下拉刷新重试") }
+    var filterCategories by remember { mutableStateOf<List<CourseParser.FilterCategory>>(emptyList()) }
     
     // 🔧 交互锁：只有不在加载中 且 displayParams 包含关键参数时才允许展开详情
     val isDetailsReady = !isLoading && displayParams.containsKey("bklx_id")
@@ -149,24 +236,45 @@ fun CourseListRoute() {
         }
     }
 
+    fun isCurrentAccount(accountKey: String): Boolean {
+        return UserManager.getInstance().currentAccountStorageKey == accountKey
+    }
+
+    fun runOnUiThreadForAccount(accountKey: String, action: () -> Unit) {
+        runOnUiThread {
+            if (isCurrentAccount(accountKey)) action()
+        }
+    }
+
     // Load initial params
     LaunchedEffect(Unit) {
-        val school = UserManager.getInstance().currentSchool
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        val requestAccountKey = userManager.currentAccountStorageKey
         if (school != null) {
             isLoading = true
+            isFilterOptionsLoading = true
+            filterOptionsMessage = "正在加载筛选条件..."
             CourseApiClient.getInstance().fetchCourseParams(school, object : Callback {
-                override fun onFailure(call: Call, e: IOException) {}
+                override fun onFailure(call: Call, e: IOException) {
+                    runOnUiThreadForAccount(requestAccountKey) {
+                        isFilterOptionsLoading = false
+                        filterOptionsMessage = "筛选条件加载失败，请下拉刷新重试"
+                    }
+                }
                 override fun onResponse(call: Call, response: Response) {
                     val html = response.body?.string() ?: ""
-                    val params = CourseParser.parseCourseParams(html)
-                    val tabs = parseCourseTabParamsFromIndexHtml(html, params)
-                    // 解析筛选选项
-                    val categories = CourseParser.parseFilterOptions(html)
-                    scope.launch(Dispatchers.Main) {
-                        courseParams = params
-                        courseTabs = tabs
-                        if (categories.isNotEmpty()) {
+                    scope.launch(Dispatchers.IO) {
+                        val params = CourseParser.parseCourseParams(html)
+                        val tabs = parseCourseTabParamsFromIndexHtml(html, params)
+                        val parsedFromHtml = CourseParser.parseFilterOptions(html)
+                        val categories = loadFilterCategoriesFromRuntimeSource(school, html, parsedFromHtml)
+                        runOnUiThreadForAccount(requestAccountKey) {
+                            courseParams = params
+                            courseTabs = tabs
                             filterCategories = categories
+                            isFilterOptionsLoading = false
+                            filterOptionsMessage = if (categories.isEmpty()) "筛选条件加载失败，请下拉刷新重试" else ""
                         }
                     }
                 }
@@ -176,13 +284,15 @@ fun CourseListRoute() {
 
     // 🔧 课程缓存机制：加载课程（支持缓存和强制刷新）
     fun loadCoursesInternal(forceRefresh: Boolean) {
-        val school = UserManager.getInstance().currentSchool ?: return
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool ?: return
+        val requestAccountKey = userManager.currentAccountStorageKey
         
         // 如果不是强制刷新，先检查缓存
         if (!forceRefresh) {
-            val cached = CourseCacheManager.getCachedCourses(context)
+            val cached = CourseCacheManager.getCachedCourses(context, requestAccountKey)
             if (cached != null && cached.isNotEmpty()) {
-                val remaining = CourseCacheManager.getRemainingMinutes()
+                val remaining = CourseCacheManager.getRemainingMinutes(context, requestAccountKey)
                 android.util.Log.d("CourseListRoute", "使用缓存: ${cached.size} 门课程，剩余 $remaining 分钟")
                 allCourses = cached
                 courses = cached
@@ -191,11 +301,18 @@ fun CourseListRoute() {
                 
                 // 🔧 关键修复：缓存模式下，后台获取 Display 参数
                 // 这样展开课程详情时才能使用完整参数
+                isFilterOptionsLoading = true
+                filterOptionsMessage = "正在加载筛选条件..."
                 val tmpSchool = school
                 scope.launch(Dispatchers.IO) {
                     // Step 1: 获取 Index 页面参数
                     CourseApiClient.getInstance().fetchCourseParams(tmpSchool, object : Callback {
-                        override fun onFailure(call: Call, e: IOException) {}
+                        override fun onFailure(call: Call, e: IOException) {
+                            runOnUiThreadForAccount(requestAccountKey) {
+                                isFilterOptionsLoading = false
+                                filterOptionsMessage = "筛选条件加载失败，请下拉刷新重试"
+                            }
+                        }
                         override fun onResponse(call: Call, response: Response) {
                             val html = response.body?.string() ?: ""
                             val indexParams = mutableMapOf<String, String>()
@@ -208,14 +325,14 @@ fun CourseListRoute() {
                             val njdm_id = indexParams["njdm_id"] ?: "2024"
                             val zyh_id = indexParams["zyh_id"] ?: ""
                             
-                            // 解析筛选选项
-                            val categories = CourseParser.parseFilterOptions(html)
-                            runOnUiThread { 
+                            val parsedFromHtml = CourseParser.parseFilterOptions(html)
+                            val categories = loadFilterCategoriesFromRuntimeSource(tmpSchool, html, parsedFromHtml)
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 courseParams = indexParams
                                 courseTabs = parsedTabs
-                                if (categories.isNotEmpty()) {
-                                    filterCategories = categories
-                                }
+                                filterCategories = categories
+                                isFilterOptionsLoading = false
+                                filterOptionsMessage = if (categories.isEmpty()) "筛选条件加载失败，请下拉刷新重试" else ""
                             }
                             
                             if (xkkz_id.isNotEmpty()) {
@@ -229,7 +346,7 @@ fun CourseListRoute() {
                                             val newDisplayParams = mutableMapOf<String, String>()
                                             pattern.findAll(displayHtml).forEach { m -> newDisplayParams[m.groupValues[1]] = m.groupValues[2] }
                                             android.util.Log.d("CourseListRoute", "✅ 后台获取 Display 参数: bklx_id=${newDisplayParams["bklx_id"]}, jg_id=${newDisplayParams["jg_id"]}")
-                                            runOnUiThread { displayParams = newDisplayParams }
+                                            runOnUiThreadForAccount(requestAccountKey) {displayParams = newDisplayParams }
                                         }
                                     }
                                 )
@@ -242,6 +359,8 @@ fun CourseListRoute() {
         }
         
         isLoading = true
+        isFilterOptionsLoading = true
+        filterOptionsMessage = "正在加载筛选条件..."
         courses = emptyList()
         displayParams = emptyMap() // 🔧 刷新时清除旧参数，防止交互锁误判
         if (forceRefresh) {
@@ -250,8 +369,10 @@ fun CourseListRoute() {
 
         CourseApiClient.getInstance().fetchCourseParams(school, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                runOnUiThread {
+                runOnUiThreadForAccount(requestAccountKey) {
                     isLoading = false
+                    isFilterOptionsLoading = false
+                    filterOptionsMessage = "筛选条件加载失败，请下拉刷新重试"
                     Toast.makeText(context, "获取选课参数失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -259,11 +380,18 @@ fun CourseListRoute() {
             override fun onResponse(call: Call, response: Response) {
                 val html = response.body?.string() ?: ""
                 scope.launch(Dispatchers.IO) {
+                    val categories = loadFilterCategoriesFromRuntimeSource(school, html)
+                    runOnUiThreadForAccount(requestAccountKey) {
+                        filterCategories = categories
+                        isFilterOptionsLoading = false
+                        filterOptionsMessage = if (categories.isEmpty()) "筛选条件加载失败，请下拉刷新重试" else ""
+                    }
                     val helper = CourseListLogicHelper(context, school, 
-                        onSuccess = { newCourses ->
+                        onSuccess = onSuccess@ { newCourses ->
+                            if (!isCurrentAccount(requestAccountKey)) return@onSuccess
                             // 保存到缓存
-                            CourseCacheManager.saveCourses(context, newCourses)
-                            runOnUiThread {
+                            CourseCacheManager.saveCourses(context, newCourses, requestAccountKey)
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 allCourses = newCourses
                                 courses = newCourses
                                 isLoading = false
@@ -273,14 +401,14 @@ fun CourseListRoute() {
                             }
                         },
                         onError = { msg ->
-                            runOnUiThread {
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 isLoading = false
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             }
                         },
                         // 🔧 渐进式加载：每个分类完成后立即更新UI
                         onProgress = { currentCourses, completedTabs, totalTabs ->
-                            runOnUiThread {
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 allCourses = currentCourses
                                 courses = currentCourses
                                 android.util.Log.d("CourseListRoute", "📊 渐进加载: $completedTabs/$totalTabs 分类完成，已获取 ${currentCourses.size} 门课程")
@@ -288,13 +416,13 @@ fun CourseListRoute() {
                         },
                         // 🔧 新增：接收 displayParams 更新状态
                         onDisplayParams = { params ->
-                            runOnUiThread {
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 displayParams = params
                                 android.util.Log.d("CourseListRoute", "✅ 更新 displayParams: ${params.size} 个参数, bklx_id=${params["bklx_id"]}")
                             }
                         },
                         onTabParams = { tabs ->
-                            runOnUiThread {
+                            runOnUiThreadForAccount(requestAccountKey) {
                                 courseTabs = tabs
                                 android.util.Log.d("CourseListRoute", "✅ 更新选课分类入口: ${tabs.size} 个")
                             }
@@ -325,7 +453,9 @@ fun CourseListRoute() {
             activeFilter = null
         } else {
             isFilterLoading = true
-            val school = UserManager.getInstance().currentSchool
+            val userManager = UserManager.getInstance()
+            val school = userManager.currentSchool
+            val requestAccountKey = userManager.currentAccountStorageKey
             if (school == null) {
                 isFilterLoading = false
                 activeFilter = null
@@ -343,6 +473,7 @@ fun CourseListRoute() {
                     var lastError: String? = null
 
                     for (tab in tabs) {
+                        if (!isCurrentAccount(requestAccountKey)) return@launch
                         val displayHtml = CourseApiClient.getInstance().fetchCourseDisplayParamsSync(
                             school,
                             tab.xkkzId,
@@ -392,13 +523,13 @@ fun CourseListRoute() {
                             "tykczgxdcs" to if (kklxdm == "05") "8" else "0"
                         )
 
-                        var kspage = 0
-                        var jspage = 1000
+                        var kspage = 1
+                        var jspage = 10
                         var pageGuard = 0
                         do {
                             val formData = mutableMapOf<String, String>()
-                            val rwlx = mergedParams["rwlx"] ?: when (kklxdm) { "01" -> "1"; "10", "05" -> "2"; else -> "1" }
-                            val xklc = mergedParams["xklc"] ?: when (kklxdm) { "01" -> "2"; "10" -> "4"; "05" -> "3"; else -> "2" }
+                            val rwlx = mergedParams["rwlx"] ?: "1"
+                            val xklc = mergedParams["xklc"] ?: "2"
 
                             formData["rwlx"] = rwlx
                             formData["xklc"] = xklc
@@ -428,7 +559,7 @@ fun CourseListRoute() {
                             formData["jxbzb"] = ""
 
                             val baseParams = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
-                            val postBody = if (filterParams.isEmpty()) baseParams else "$baseParams&$filterParams"
+                            val postBody = if (filterParams.isEmpty()) baseParams else "$filterParams&$baseParams"
                             val json = CourseApiClient.getInstance().fetchAvailableCoursesSync(school, postBody)
                             if (json == null) {
                                 lastError = "课程筛选请求失败"
@@ -457,7 +588,7 @@ fun CourseListRoute() {
                     }
 
                     val uniqueCourses = filteredCourses.distinctBy { "${it.courseId}_${it.classId}_${it.doJxbId}" }
-                    runOnUiThread {
+                    runOnUiThreadForAccount(requestAccountKey) {
                         isFilterLoading = false
                         courses = uniqueCourses
                         val message = if (uniqueCourses.isNotEmpty()) {
@@ -654,16 +785,19 @@ fun CourseListRoute() {
     
     // 🔧 后台并行预加载所有课程详情
     suspend fun preloadAllCourseDetails(school: SchoolConfig, courseList: List<Course>) {
+        val requestAccountKey = UserManager.getInstance().currentAccountStorageKey
         // 按课程ID分组
         val grouped = courseList.groupBy { it.courseId ?: "" }.filter { it.key.isNotEmpty() }
         val totalGroups = grouped.size
-        if (totalGroups == 0) return
+        if (totalGroups == 0 || !isCurrentAccount(requestAccountKey)) return
         
         withContext(Dispatchers.Main) {
+            if (!isCurrentAccount(requestAccountKey)) return@withContext
             isPreloading = true
             preloadProgress = 0f
             preloadedGroupIds = emptySet()
         }
+        if (!isCurrentAccount(requestAccountKey)) return
         
         android.util.Log.d("CourseListRoute", "🚀 开始并行预加载 $totalGroups 个课程组")
         
@@ -676,10 +810,12 @@ fun CourseListRoute() {
             scope.launch(Dispatchers.IO) {
                 semaphore.acquire()
                 try {
+                    if (!isCurrentAccount(requestAccountKey)) return@launch
                     val firstCourse = classes.firstOrNull() ?: return@launch
                     val postBody = buildDetailsRequestBody(firstCourse)
                     
                     val response = CourseApiClient.getInstance().fetchCourseSelectionDetailsSync(school, postBody)
+                    if (!isCurrentAccount(requestAccountKey)) return@launch
                     if (response != null) {
                         try {
                             val array = JSONArray(response)
@@ -718,7 +854,8 @@ fun CourseListRoute() {
                         completedCount++
                         val progress = completedCount.toFloat() / totalGroups
                         
-                        scope.launch(Dispatchers.Main) {
+                        scope.launch(Dispatchers.Main) updateProgress@ {
+                            if (!isCurrentAccount(requestAccountKey)) return@updateProgress
                             preloadProgress = progress
                             preloadedGroupIds = preloadedGroupIds + courseId
                             
@@ -736,12 +873,13 @@ fun CourseListRoute() {
         jobs.forEach { it.join() }
         
         withContext(Dispatchers.Main) {
+            if (!isCurrentAccount(requestAccountKey)) return@withContext
             isPreloading = false
             preloadProgress = 1f
             hasPreloadedOnce = true // 🔧 标记已完成预加载
             // 最终刷新并保存缓存
             courses = allCourses.toList()
-            CourseCacheManager.saveCourses(context, allCourses)
+            CourseCacheManager.saveCourses(context, allCourses, requestAccountKey)
             android.util.Log.d("CourseListRoute", "🎉 并行预加载全部完成！共 $totalGroups 个课程组")
         }
     }
@@ -752,12 +890,15 @@ fun CourseListRoute() {
     // 🔧 获取课程详情（展开时调用，40参数请求）
     // 回调参数：Boolean 表示是否成功获取详情
     val fetchDetailsForClasses: (List<Course>, (Boolean) -> Unit) -> Unit = { classesList, onComplete ->
-        val school = UserManager.getInstance().currentSchool
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        val requestAccountKey = userManager.currentAccountStorageKey
         if (school == null) {
             Toast.makeText(context, "未登录，无法获取详情", Toast.LENGTH_SHORT).show()
             onComplete(false)
         } else {
             scope.launch(Dispatchers.IO) {
+                if (!isCurrentAccount(requestAccountKey)) return@launch
                 var success = false
                 try {
                     // 只需要请求一次（所有教学班属于同一个课程）
@@ -767,6 +908,7 @@ fun CourseListRoute() {
                         android.util.Log.d("CourseListRoute", "请求详情, kch_id=${firstCourse.courseId}, 共${classesList.size}个教学班")
                         
                         val response = CourseApiClient.getInstance().fetchCourseSelectionDetailsSync(school, postBody)
+                        if (!isCurrentAccount(requestAccountKey)) return@launch
                         if (response != null && response.isNotEmpty()) {
                             android.util.Log.d("CourseListRoute", "详情响应长度: ${response.length}")
                             
@@ -814,6 +956,7 @@ fun CourseListRoute() {
                     }
                     
                     withContext(Dispatchers.Main) {
+                        if (!isCurrentAccount(requestAccountKey)) return@withContext
                         if (!success) {
                             Toast.makeText(context, "❗获取详情失败，请重新点击展开", Toast.LENGTH_SHORT).show()
                         }
@@ -822,6 +965,7 @@ fun CourseListRoute() {
                 } catch (e: Exception) {
                     android.util.Log.e("CourseListRoute", "获取详情失败: ${e.message}")
                     withContext(Dispatchers.Main) {
+                        if (!isCurrentAccount(requestAccountKey)) return@withContext
                         Toast.makeText(context, "❗网络错误: ${e.message}", Toast.LENGTH_SHORT).show()
                         onComplete(false)
                     }
@@ -833,22 +977,27 @@ fun CourseListRoute() {
     // Selection Logic
     val performSelection = remember {
         fun(course: Course) {
-            val school = UserManager.getInstance().currentSchool ?: return
+            val userManager = UserManager.getInstance()
+            val school = userManager.currentSchool ?: return
+            val requestAccountKey = userManager.currentAccountStorageKey
+            val paramsSnapshot = courseParams?.toMap()
             Toast.makeText(context, "正在选课: ${course.name}...", Toast.LENGTH_SHORT).show()
             
             // 使用协程异步执行选课，完成后显示结果
             scope.launch(Dispatchers.IO) {
-                val logic = CourseSelectionLogic(context, school, courseParams)
+                if (!isCurrentAccount(requestAccountKey)) return@launch
+                val logic = CourseSelectionLogic(context, school, paramsSnapshot, requestAccountKey)
                 val result = logic.performSelectionSync(course)
                 
                 withContext(Dispatchers.Main) {
+                    if (!isCurrentAccount(requestAccountKey)) return@withContext
                     if (result) {
                         Toast.makeText(context, "✅ 选课成功: ${course.name}", Toast.LENGTH_LONG).show()
                         course.isSelected = true
                         // 🔧 强制刷新 UI 并保存到持久化缓存
                         courses = courses.toList()
                         allCourses = allCourses.toList()
-                        CourseCacheManager.saveCourses(context, allCourses)
+                        CourseCacheManager.saveCourses(context, allCourses, requestAccountKey)
                     } else {
                         // 失败消息已经在 performSelectionSync 中显示
                     }
@@ -860,27 +1009,35 @@ fun CourseListRoute() {
     // Batch Selection Logic
     val performBatchSelection = remember {
         fun(selectedCourses: List<Course>) {
-            val school = UserManager.getInstance().currentSchool ?: return
+            val userManager = UserManager.getInstance()
+            val school = userManager.currentSchool ?: return
+            val requestAccountKey = userManager.currentAccountStorageKey
+            val paramsSnapshot = courseParams?.toMap()
             isBatchSelecting = true
             Toast.makeText(context, "开始批量抢课，共 ${selectedCourses.size} 门课程", Toast.LENGTH_SHORT).show()
             
             scope.launch(Dispatchers.IO) {
-                val logic = CourseSelectionLogic(context, school, courseParams)
+                if (!isCurrentAccount(requestAccountKey)) return@launch
+                val logic = CourseSelectionLogic(context, school, paramsSnapshot, requestAccountKey)
                 var successCount = 0
                 var failCount = 0
                 
                 selectedCourses.forEachIndexed { index, course ->
+                    if (!isCurrentAccount(requestAccountKey)) return@launch
                     withContext(Dispatchers.Main) {
+                        if (!isCurrentAccount(requestAccountKey)) return@withContext
                         Toast.makeText(context, "正在抢课 (${index + 1}/${selectedCourses.size}): ${course.name}", Toast.LENGTH_SHORT).show()
                     }
                     
                     val result = logic.performSelectionSync(course)
+                    if (!isCurrentAccount(requestAccountKey)) return@launch
                     if (result) successCount++ else failCount++
                     
                     Thread.sleep(500)
                 }
                 
                 withContext(Dispatchers.Main) {
+                    if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isBatchSelecting = false
                     Toast.makeText(context, "批量抢课完成！成功: $successCount 门，失败: $failCount 门", Toast.LENGTH_LONG).show()
                 }
@@ -1138,6 +1295,8 @@ fun CourseListRoute() {
                         onFilterApply = { onFilterApply(draftFilter) },
                         onFilterClear = onFilterClear,
                         isFilterLoading = isFilterLoading,
+                        isFilterOptionsLoading = isFilterOptionsLoading,
+                        filterOptionsMessage = filterOptionsMessage,
                         filterCategories = filterCategories
                     )
                 }
@@ -1265,21 +1424,11 @@ private class CourseListLogicHelper(
         currentMergedParams["njdm_id"] = tab.njdmId
         currentMergedParams["zyh_id"] = tab.zyhId
         
-        // rwlx 逻辑
-        val kklxdm = tab.kklxdm
-        if (kklxdm == "01") {
-            currentMergedParams["rwlx"] = "1"
-        } else if (kklxdm == "10" || kklxdm == "05") {
-            currentMergedParams["rwlx"] = "2"
-        }
+        currentKspage = 1
+        currentJspage = 10
+        currentRetryCount = 0
         
-        // 🔧 快速获取：初始jspage=1000一次获取大量课程，同时保留递增验证防止漏课
-        // 如果服务器支持大页面，会一次返回很多课程；如果不支持，递增机制会继续获取
-        currentKspage = 0
-        currentJspage = 1000 // 初始值改为1000，快速获取
-        currentRetryCount = 0 // 🔧 重置重试计数器
-        
-        android.util.Log.d("CourseListRoute", "🚀 开始快速获取分类 ${tab.kklxdm} (一次获取最多1000条)...")
+        android.util.Log.d("CourseListRoute", "开始获取分类 ${tab.kklxdm}: kspage=$currentKspage, jspage=$currentJspage")
         fetchCategoryPage()
     }
     
@@ -1304,8 +1453,8 @@ private class CourseListLogicHelper(
         
         // 基础参数
         val kklxdm = tab.kklxdm
-        val rwlx = currentMergedParams["rwlx"] ?: when(kklxdm) { "01" -> "1"; "10", "05" -> "2"; else -> "1" }
-        val xklc = currentMergedParams["xklc"] ?: when(kklxdm) { "01" -> "2"; "10" -> "4"; "05" -> "3"; else -> "2" }
+        val rwlx = currentMergedParams["rwlx"] ?: "1"
+        val xklc = currentMergedParams["xklc"] ?: "2"
         
         formData["rwlx"] = rwlx
         formData["xklc"] = xklc
@@ -1441,8 +1590,19 @@ private class CourseListLogicHelper(
 private class CourseSelectionLogic(
     val context: android.content.Context,
     val school: SchoolConfig,
-    val baseParams: Map<String, String>?
+    val baseParams: Map<String, String>?,
+    val accountKey: String? = null
 ) {
+    private fun isCurrentAccount(): Boolean {
+        return accountKey == null || UserManager.getInstance().currentAccountStorageKey == accountKey
+    }
+
+    private fun postToCurrentAccount(action: () -> Unit) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            if (isCurrentAccount()) action()
+        }
+    }
+
     // 选课详情解析结果（与Web版 selectionDetails 结构一致）
     data class SelectionDetails(
         val doJxbId: String,
@@ -1460,6 +1620,7 @@ private class CourseSelectionLogic(
     )
     
     fun performSelection(course: Course) {
+        if (!isCurrentAccount()) return
         if (course.courseId.isNullOrEmpty()) {
             Toast.makeText(context, "缺少课程ID", Toast.LENGTH_SHORT).show()
             return
@@ -1538,24 +1699,26 @@ private class CourseSelectionLogic(
         CourseApiClient.getInstance().fetchCourseSelectionDetails(school, postBody,
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    postToCurrentAccount {
                         Toast.makeText(context, "获取选课详情失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     val json = response.body?.string() ?: ""
+                    if (!isCurrentAccount()) return
                     android.util.Log.d("CourseSelectionLogic", "选课详情响应(前500字符): ${json.take(500)}")
                     // 🔧 传入 course.classId 以匹配正确的教学班
                     val details = parseSelectionDetails(json, njdm_id, zyh_id, xkkz_id, course.classId)
 
                     if (details == null) {
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        postToCurrentAccount {
                             Toast.makeText(context, "获取选课参数失败", Toast.LENGTH_SHORT).show()
                         }
                         return
                     }
 
+                    if (!isCurrentAccount()) return
                     executeSelectionWithDetails(school, course, details, kklxdm, rwlx, xklc)
                 }
             }
@@ -1563,6 +1726,7 @@ private class CourseSelectionLogic(
     }
     // 完整的3步选课流程（与Web版 selectCourseWithVerification 完全一致）
     fun performSelectionSync(course: Course): Boolean {
+        if (!isCurrentAccount()) return false
         val xkkz_id = course._xkkz_id ?: baseParams?.get("xkkz_id") ?: ""
         val njdm_id = course.njdm_id ?: baseParams?.get("njdm_id") ?: "2024"
         val zyh_id = course.zyh_id ?: baseParams?.get("zyh_id") ?: ""
@@ -1580,6 +1744,7 @@ private class CourseSelectionLogic(
         android.util.Log.d("CourseSelectionLogic", "Step 0: 获取页面隐藏参数...")
         val hiddenParamsHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school)
         val hiddenParams = parseHiddenParams(hiddenParamsHtml ?: "")
+        if (!isCurrentAccount()) return false
         android.util.Log.d("CourseSelectionLogic", "隐藏参数: $hiddenParams")
         
         // 合并隐藏参数（优先使用课程数据中的参数）
@@ -1652,6 +1817,7 @@ private class CourseSelectionLogic(
         val detailsResponse = CourseApiClient.getInstance().fetchCourseSelectionDetailsSync(
             school, detailsPostBody
         )
+        if (!isCurrentAccount()) return false
         
         if (detailsResponse == null) {
             android.util.Log.e("CourseSelectionLogic", "Step 1 失败: 获取选课详情返回 null")
@@ -1670,6 +1836,7 @@ private class CourseSelectionLogic(
         android.util.Log.d("CourseSelectionLogic", "Step 2: 执行选课...")
         val postBody = buildSelectionBodyWithDetails(course, details, kklxdm, rwlx, xklc)
         val result = CourseApiClient.getInstance().selectCourseSync(school, postBody)
+        if (!isCurrentAccount()) return false
         
         val success = result != null && (result.contains("\"flag\":\"1\"") || result.contains("成功"))
         android.util.Log.d("CourseSelectionLogic", "Step 2 结果: success=$success, response=${result?.take(200)}")
@@ -1679,12 +1846,13 @@ private class CourseSelectionLogic(
             val errorMsg = parseServerErrorMessage(result)
             android.util.Log.e("CourseSelectionLogic", "Step 2 失败: $errorMsg")
             // 在主线程显示 Toast
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
+            postToCurrentAccount {
                 android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
             }
             return false
         }
         
+        if (!isCurrentAccount()) return false
         // Step 3: 验证选课结果 (Web版 verifyCourseSelection)
         android.util.Log.d("CourseSelectionLogic", "Step 3: 验证选课结果...")
         val verified = verifySelection(course.courseId ?: "")
@@ -1852,11 +2020,12 @@ private class CourseSelectionLogic(
         school: SchoolConfig, course: Course, details: SelectionDetails,
         kklxdm: String, rwlx: String, xklc: String
     ) {
+         if (!isCurrentAccount()) return
          val postBody = buildSelectionBodyWithDetails(course, details, kklxdm, rwlx, xklc)
 
          CourseApiClient.getInstance().selectCourse(school, postBody, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                postToCurrentAccount {
                     Toast.makeText(context, "请求失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -1865,7 +2034,7 @@ private class CourseSelectionLogic(
                 val result = response.body?.string() ?: ""
                 val success = result.contains("\"flag\":\"1\"") || result.contains("成功")
                 
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                postToCurrentAccount {
                     if (success) {
                         Toast.makeText(context, "✅ 选课请求成功，请刷新列表确认", Toast.LENGTH_LONG).show()
                     } else {

@@ -25,110 +25,139 @@ object CourseCacheManager {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
 
-    private fun accountKey(): String = UserManager.getInstance().currentAccountStorageKey
+    private fun normalizeAccountKey(accountKey: String): String {
+        val key = accountKey.ifBlank { "default" }
+        return key.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+    }
 
-    private fun coursesKey(): String = "${KEY_COURSES}_${accountKey()}"
+    private fun currentAccountKey(): String = normalizeAccountKey(UserManager.getInstance().currentAccountStorageKey)
 
-    private fun timestampKey(): String = "${KEY_TIMESTAMP}_${accountKey()}"
+    private fun coursesKey(accountKey: String): String = "${KEY_COURSES}_${normalizeAccountKey(accountKey)}"
+
+    private fun timestampKey(accountKey: String): String = "${KEY_TIMESTAMP}_${normalizeAccountKey(accountKey)}"
+
+    private fun courseToJson(course: Course): JSONObject {
+        return JSONObject().apply {
+            put("courseId", course.courseId ?: "")
+            put("classId", course.classId ?: "")
+            put("doJxbId", course.doJxbId ?: "")
+            put("name", course.name ?: "")
+            put("teacher", course.teacher ?: "")
+            put("jxbmc", course.jxbmc ?: "")
+            put("time", course.time ?: "")
+            put("location", course.location ?: "")
+            put("capacity", course.capacity)
+            put("selected", course.selected)
+            put("isSelected", course.isSelected)
+            put("credit", course.credit ?: "")
+            put("kklxdm", course.kklxdm ?: "")
+            put("_xkkz_id", course._xkkz_id ?: "")
+            put("njdm_id", course.njdm_id ?: "")
+            put("zyh_id", course.zyh_id ?: "")
+            put("_rwlx", course._rwlx ?: "")
+            put("_xklc", course._xklc ?: "")
+            put("_sfkxq", course._sfkxq ?: "")
+            put("_xkxskcgskg", course._xkxskcgskg ?: "")
+        }
+    }
+
+    private fun courseFromJson(obj: JSONObject): Course {
+        return Course().apply {
+            courseId = obj.optString("courseId", "")
+            classId = obj.optString("classId", "")
+            doJxbId = obj.optString("doJxbId", "")
+            name = obj.optString("name", "")
+            teacher = obj.optString("teacher", "")
+            jxbmc = obj.optString("jxbmc", "")
+            time = obj.optString("time", "")
+            location = obj.optString("location", "")
+            capacity = obj.optInt("capacity", 0)
+            selected = obj.optInt("selected", 0)
+            isSelected = obj.optBoolean("isSelected", false)
+            credit = obj.optString("credit", "")
+            kklxdm = obj.optString("kklxdm", "")
+            _xkkz_id = obj.optString("_xkkz_id", "")
+            njdm_id = obj.optString("njdm_id", "")
+            zyh_id = obj.optString("zyh_id", "")
+            _rwlx = obj.optString("_rwlx", "")
+            _xklc = obj.optString("_xklc", "")
+            _sfkxq = obj.optString("_sfkxq", "")
+            _xkxskcgskg = obj.optString("_xkxskcgskg", "")
+        }
+    }
+
+    private fun isTimestampValid(timestamp: Long): Boolean {
+        if (timestamp == 0L) return false
+        val elapsed = System.currentTimeMillis() - timestamp
+        return elapsed < CACHE_DURATION_MS
+    }
     
     /**
-     * 保存课程列表到缓存
+     * 保存课程列表到当前账号缓存。
      */
     fun saveCourses(context: Context, courses: List<Course>) {
+        saveCourses(context, courses, currentAccountKey())
+    }
+
+    /**
+     * 保存课程列表到指定账号缓存。
+     */
+    fun saveCourses(context: Context, courses: List<Course>, accountKey: String) {
+        val normalizedAccountKey = normalizeAccountKey(accountKey)
+        val now = System.currentTimeMillis()
         cachedCourses = courses
-        cacheTimestamp = System.currentTimeMillis()
-        cachedAccountKey = accountKey()
+        cacheTimestamp = now
+        cachedAccountKey = normalizedAccountKey
         
         try {
             val prefs = getPrefs(context)
             val jsonArray = JSONArray()
-            courses.forEach { course ->
-                val obj = JSONObject()
-                obj.put("courseId", course.courseId ?: "")
-                obj.put("classId", course.classId ?: "")  // 🔧 修复：添加 classId
-                obj.put("doJxbId", course.doJxbId ?: "") // 🔧 修复：添加 doJxbId
-                obj.put("name", course.name ?: "")
-                obj.put("teacher", course.teacher ?: "")
-                obj.put("jxbmc", course.jxbmc ?: "") // 🔧 修复：保存 jxbmc
-                obj.put("time", course.time ?: "")
-                obj.put("location", course.location ?: "")
-                obj.put("capacity", course.capacity)  // int
-                obj.put("selected", course.selected)  // int
-                obj.put("isSelected", course.isSelected) // 🔧 新增：保存选课状态
-                obj.put("credit", course.credit ?: "")
-                obj.put("kklxdm", course.kklxdm ?: "")
-                obj.put("_xkkz_id", course._xkkz_id ?: "")
-                obj.put("njdm_id", course.njdm_id ?: "")
-                obj.put("zyh_id", course.zyh_id ?: "")
-                obj.put("_rwlx", course._rwlx ?: "")
-                obj.put("_xklc", course._xklc ?: "")
-                obj.put("_sfkxq", course._sfkxq ?: "")
-                obj.put("_xkxskcgskg", course._xkxskcgskg ?: "")
-                jsonArray.put(obj)
-            }
+            courses.forEach { course -> jsonArray.put(courseToJson(course)) }
             prefs.edit()
-                .putString(coursesKey(), jsonArray.toString())
-                .putLong(timestampKey(), cacheTimestamp)
+                .putString(coursesKey(normalizedAccountKey), jsonArray.toString())
+                .putLong(timestampKey(normalizedAccountKey), now)
                 .apply()
-            android.util.Log.d("CourseCacheManager", "缓存了 ${courses.size} 门课程")
+            android.util.Log.d("CourseCacheManager", "缓存了 ${courses.size} 门课程: $normalizedAccountKey")
         } catch (e: Exception) {
             android.util.Log.e("CourseCacheManager", "保存缓存失败: ${e.message}")
         }
     }
     
     /**
-     * 获取缓存的课程列表（如果有效）
-     * @return 缓存的课程列表，如果缓存无效则返回null
+     * 获取当前账号缓存的课程列表（如果有效）。
      */
     fun getCachedCourses(context: Context): List<Course>? {
-        // 先检查内存缓存
-        if (cachedAccountKey == accountKey() && cachedCourses != null && isCacheValid()) {
+        return getCachedCourses(context, currentAccountKey())
+    }
+
+    /**
+     * 获取指定账号缓存的课程列表（如果有效）。
+     */
+    fun getCachedCourses(context: Context, accountKey: String): List<Course>? {
+        val normalizedAccountKey = normalizeAccountKey(accountKey)
+        if (cachedAccountKey == normalizedAccountKey && cachedCourses != null && isTimestampValid(cacheTimestamp)) {
             android.util.Log.d("CourseCacheManager", "使用内存缓存: ${cachedCourses?.size} 门课程")
             return cachedCourses
         }
         
-        // 尝试从 SharedPreferences 恢复
         try {
             val prefs = getPrefs(context)
-            cacheTimestamp = prefs.getLong(timestampKey(), 0L)
-            
-            if (!isCacheValid()) {
-                android.util.Log.d("CourseCacheManager", "缓存已过期或不存在")
+            val timestamp = prefs.getLong(timestampKey(normalizedAccountKey), 0L)
+            if (!isTimestampValid(timestamp)) {
+                android.util.Log.d("CourseCacheManager", "缓存已过期或不存在: $normalizedAccountKey")
                 return null
             }
             
-            val json = prefs.getString(coursesKey(), null) ?: return null
+            val json = prefs.getString(coursesKey(normalizedAccountKey), null) ?: return null
             val jsonArray = JSONArray(json)
             val courses = mutableListOf<Course>()
-            
             for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val course = Course()
-                course.courseId = obj.optString("courseId", "")
-                course.classId = obj.optString("classId", "")  // 🔧 修复：恢复 classId
-                course.doJxbId = obj.optString("doJxbId", "") // 🔧 修复：恢复 doJxbId
-                course.name = obj.optString("name", "")
-                course.teacher = obj.optString("teacher", "")
-                course.jxbmc = obj.optString("jxbmc", "") // 🔧 修复：恢复 jxbmc
-                course.time = obj.optString("time", "")
-                course.location = obj.optString("location", "")
-                course.capacity = obj.optInt("capacity", 0)
-                course.selected = obj.optInt("selected", 0)
-                course.isSelected = obj.optBoolean("isSelected", false) // 🔧 新增：恢复选课状态
-                course.credit = obj.optString("credit", "")
-                course.kklxdm = obj.optString("kklxdm", "")
-                course._xkkz_id = obj.optString("_xkkz_id", "")
-                course.njdm_id = obj.optString("njdm_id", "")
-                course.zyh_id = obj.optString("zyh_id", "")
-                course._rwlx = obj.optString("_rwlx", "")
-                course._xklc = obj.optString("_xklc", "")
-                course._sfkxq = obj.optString("_sfkxq", "")
-                course._xkxskcgskg = obj.optString("_xkxskcgskg", "")
-                courses.add(course)
+                courses.add(courseFromJson(jsonArray.getJSONObject(i)))
             }
             
             cachedCourses = courses
-            cachedAccountKey = accountKey()
+            cacheTimestamp = timestamp
+            cachedAccountKey = normalizedAccountKey
             android.util.Log.d("CourseCacheManager", "从磁盘恢复缓存: ${courses.size} 门课程")
             return courses
         } catch (e: Exception) {
@@ -138,45 +167,109 @@ object CourseCacheManager {
     }
     
     /**
-     * 检查缓存是否有效（未过期）
+     * 检查当前账号缓存是否有效（未过期）。
      */
     fun isCacheValid(): Boolean {
-        if (cacheTimestamp == 0L) return false
-        val elapsed = System.currentTimeMillis() - cacheTimestamp
-        return elapsed < CACHE_DURATION_MS
+        return isTimestampValid(cacheTimestamp)
+    }
+
+    /**
+     * 检查指定账号缓存是否有效（未过期）。
+     */
+    fun isCacheValid(context: Context, accountKey: String): Boolean {
+        val normalizedAccountKey = normalizeAccountKey(accountKey)
+        val timestamp = if (cachedAccountKey == normalizedAccountKey && cacheTimestamp != 0L) {
+            cacheTimestamp
+        } else {
+            getPrefs(context).getLong(timestampKey(normalizedAccountKey), 0L)
+        }
+        return isTimestampValid(timestamp)
     }
     
     /**
-     * 获取缓存剩余有效时间（分钟）
+     * 获取当前账号缓存剩余有效时间（分钟）。
      */
     fun getRemainingMinutes(): Int {
-        if (!isCacheValid()) return 0
-        val elapsed = System.currentTimeMillis() - cacheTimestamp
-        val remaining = CACHE_DURATION_MS - elapsed
+        if (!isTimestampValid(cacheTimestamp)) return 0
+        val remaining = CACHE_DURATION_MS - (System.currentTimeMillis() - cacheTimestamp)
+        return (remaining / 1000 / 60).toInt()
+    }
+
+    /**
+     * 获取指定账号缓存剩余有效时间（分钟）。
+     */
+    fun getRemainingMinutes(context: Context, accountKey: String): Int {
+        val normalizedAccountKey = normalizeAccountKey(accountKey)
+        val timestamp = if (cachedAccountKey == normalizedAccountKey && cacheTimestamp != 0L) {
+            cacheTimestamp
+        } else {
+            getPrefs(context).getLong(timestampKey(normalizedAccountKey), 0L)
+        }
+        if (!isTimestampValid(timestamp)) return 0
+        val remaining = CACHE_DURATION_MS - (System.currentTimeMillis() - timestamp)
         return (remaining / 1000 / 60).toInt()
     }
     
     /**
-     * 清除缓存
+     * 清除全部课程缓存。
      */
     fun clearCache(context: Context) {
         cachedCourses = null
         cacheTimestamp = 0L
+        cachedAccountKey = ""
         
         try {
             val prefs = getPrefs(context)
             prefs.edit().clear().apply()
-            android.util.Log.d("CourseCacheManager", "缓存已清除")
+            android.util.Log.d("CourseCacheManager", "全部课程缓存已清除")
         } catch (e: Exception) {
             android.util.Log.e("CourseCacheManager", "清除缓存失败: ${e.message}")
         }
     }
+
+    /**
+     * 清除当前账号课程缓存。
+     */
+    fun clearCurrentAccountCache(context: Context) {
+        clearAccountCache(context, currentAccountKey())
+    }
+
+    /**
+     * 清除指定账号课程缓存。
+     */
+    fun clearAccountCache(context: Context, accountKey: String) {
+        val normalizedAccountKey = normalizeAccountKey(accountKey)
+        if (cachedAccountKey == normalizedAccountKey) {
+            cachedCourses = null
+            cacheTimestamp = 0L
+            cachedAccountKey = ""
+        }
+
+        try {
+            val prefs = getPrefs(context)
+            prefs.edit()
+                .remove(coursesKey(normalizedAccountKey))
+                .remove(timestampKey(normalizedAccountKey))
+                .apply()
+            android.util.Log.d("CourseCacheManager", "账号课程缓存已清除: $normalizedAccountKey")
+        } catch (e: Exception) {
+            android.util.Log.e("CourseCacheManager", "清除账号缓存失败: ${e.message}")
+        }
+    }
     
     /**
-     * 更新内存缓存（不保存到磁盘）
+     * 更新当前账号内存缓存（不保存到磁盘）。
      */
     fun updateMemoryCache(courses: List<Course>) {
+        updateMemoryCache(courses, currentAccountKey())
+    }
+
+    /**
+     * 更新指定账号内存缓存（不保存到磁盘）。
+     */
+    fun updateMemoryCache(courses: List<Course>, accountKey: String) {
         cachedCourses = courses
-        cachedAccountKey = accountKey()
+        cachedAccountKey = normalizeAccountKey(accountKey)
+        cacheTimestamp = System.currentTimeMillis()
     }
 }
