@@ -193,7 +193,8 @@ fun ScheduleRoute() {
                 }
             }
             
-            val cacheKey = "schedule_${school.id}_${xnm}_${xqm}"
+            val accountKey = UserManager.getInstance().currentAccountStorageKey
+            val cacheKey = "schedule_${accountKey}_${school.id}_${xnm}_${xqm}"
 
             if (!forceRefresh) {
                 // Try cache

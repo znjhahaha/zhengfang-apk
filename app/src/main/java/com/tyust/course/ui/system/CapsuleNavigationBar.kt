@@ -5,6 +5,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +44,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 
 import androidx.compose.ui.text.font.FontWeight
@@ -172,7 +177,7 @@ private fun GlassNavigationBar(
         val interactiveHighlight = remember(animationScope) {
             InteractiveHighlight(
                 animationScope = animationScope,
-                position = { size, offset ->
+                position = { size, _ ->
                     Offset(
                         (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
                         size.height / 2f
@@ -249,15 +254,72 @@ private fun GlassNavigationBar(
                             drawRect(Color.White.copy(alpha = 0.12f))
                         }
                     )
-                    .then(dampedDragAnimation.modifier)
                     .fillMaxHeight()
                     .width(Dp(tabWidth / density.density))
             )
 
-            // Tabs: on top, only highlight gesture (no drag — drag is on the indicator)
             Row(
                 Modifier
                     .fillMaxSize()
+                    .then(
+                        Modifier.pointerInput(tabsCount, tabWidth) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val startValue = dampedDragAnimation.value
+                                val startX = down.position.x
+                                val touchSlop = viewConfiguration.touchSlop
+                                var totalDragX = 0f
+                                var dragging = false
+                                var pointerId = down.id
+
+                                dampedDragAnimation.press()
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                    if (change.changedToUpIgnoreConsumed()) {
+                                        if (dragging) change.consume()
+                                        break
+                                    }
+
+                                    val dragAmount = change.positionChange()
+                                    if (dragAmount != Offset.Zero) {
+                                        totalDragX += dragAmount.x
+                                        if (!dragging && abs(totalDragX) > touchSlop) {
+                                            dragging = true
+                                        }
+                                        if (dragging) {
+                                            change.consume()
+                                            dampedDragAnimation.updateValue(
+                                                (startValue + totalDragX / tabWidth)
+                                                    .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                                            )
+                                            animationScope.launch {
+                                                offsetAnimation.snapTo(totalDragX)
+                                            }
+                                        }
+                                    }
+                                    pointerId = change.id
+                                }
+
+                                val targetIndex = if (dragging) {
+                                    dampedDragAnimation.targetValue
+                                        .fastRoundToInt()
+                                        .fastCoerceIn(0, tabsCount - 1)
+                                } else {
+                                    (startX / tabWidth)
+                                        .toInt()
+                                        .fastCoerceIn(0, tabsCount - 1)
+                                }
+                                currentIndex = targetIndex
+                                onTabSelect(targetIndex)
+                                dampedDragAnimation.animateToValue(targetIndex.toFloat())
+                                animationScope.launch {
+                                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                                }
+                            }
+                        }
+                    )
                     .then(interactiveHighlight.gestureModifier),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -265,7 +327,7 @@ private fun GlassNavigationBar(
                     NavTab(
                         item = item,
                         selected = selectedTab == index,
-                        onClick = { onTabSelect(index) }
+                        onClick = null
                     )
                 }
             }
@@ -306,7 +368,7 @@ private fun FallbackNavigationBar(
 private fun RowScope.NavTab(
     item: BottomNavItem,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?
 ) {
     val iconTint by animateColorAsState(
         targetValue = if (selected) NeuPrimary
@@ -318,15 +380,20 @@ private fun RowScope.NavTab(
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
         label = "navLabelColor"
     )
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier
+    }
 
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
+            .then(clickModifier)
             .fillMaxHeight()
             .weight(1f),
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),

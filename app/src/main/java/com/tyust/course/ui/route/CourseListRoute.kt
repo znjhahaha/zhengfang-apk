@@ -44,6 +44,43 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 
+private data class CourseTabParam(
+    val kklxdm: String,
+    val xkkzId: String,
+    val njdmId: String,
+    val zyhId: String
+)
+
+private fun parseCourseTabParamsFromIndexHtml(html: String, indexParams: Map<String, String>): List<CourseTabParam> {
+    val tabs = mutableListOf<CourseTabParam>()
+    val queryCoursePattern = """queryCourse\s*\(\s*this\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*\)""".toRegex()
+    queryCoursePattern.findAll(html).forEach { match ->
+        tabs.add(CourseTabParam(match.groupValues[1], match.groupValues[2], match.groupValues[3], match.groupValues[4]))
+    }
+    if (tabs.isNotEmpty()) return tabs.distinctBy { "${it.kklxdm}_${it.xkkzId}_${it.njdmId}_${it.zyhId}" }
+
+    return listOf(
+        CourseTabParam(
+            indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10",
+            indexParams["firstXkkzId"] ?: indexParams["xkkz_id"] ?: "",
+            indexParams["njdm_id"] ?: "2024",
+            indexParams["zyh_id"] ?: ""
+        )
+    )
+}
+
+private fun parseInputParamsFromHtml(html: String): Map<String, String> {
+    val params = mutableMapOf<String, String>()
+    val pattern = """<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"[^>]*>""".toRegex()
+    pattern.findAll(html).forEach { match -> params[match.groupValues[1]] = match.groupValues[2] }
+    val reversePattern = """<input[^>]*value="([^"]*)"[^>]*name="([^"]+)"[^>]*>""".toRegex()
+    reversePattern.findAll(html).forEach { match ->
+        val name = match.groupValues[2]
+        if (!params.containsKey(name)) params[name] = match.groupValues[1]
+    }
+    return params
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CourseListRoute() {
@@ -74,6 +111,14 @@ fun CourseListRoute() {
     // Logic State
     var courseParams by remember { mutableStateOf<Map<String, String>?>(null) }
     var displayParams by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // 🔧 新增：Display 页面参数
+    var courseTabs by remember { mutableStateOf<List<CourseTabParam>>(emptyList()) }
+    
+    // Filter State
+    var showFilterPanel by remember { mutableStateOf(false) }
+    var activeFilter by remember { mutableStateOf<com.tyust.course.model.CourseFilter?>(null) }
+    var draftFilter by remember { mutableStateOf(com.tyust.course.model.CourseFilter()) }
+    var isFilterLoading by remember { mutableStateOf(false) }
+    var filterCategories by remember { mutableStateOf<List<CourseParser.FilterCategory>>(CourseParser.parseFilterOptions("")) }
     
     // 🔧 交互锁：只有不在加载中 且 displayParams 包含关键参数时才允许展开详情
     val isDetailsReady = !isLoading && displayParams.containsKey("bklx_id")
@@ -114,8 +159,15 @@ fun CourseListRoute() {
                 override fun onResponse(call: Call, response: Response) {
                     val html = response.body?.string() ?: ""
                     val params = CourseParser.parseCourseParams(html)
+                    val tabs = parseCourseTabParamsFromIndexHtml(html, params)
+                    // 解析筛选选项
+                    val categories = CourseParser.parseFilterOptions(html)
                     scope.launch(Dispatchers.Main) {
                         courseParams = params
+                        courseTabs = tabs
+                        if (categories.isNotEmpty()) {
+                            filterCategories = categories
+                        }
                     }
                 }
             })
@@ -149,13 +201,22 @@ fun CourseListRoute() {
                             val indexParams = mutableMapOf<String, String>()
                             val pattern = """<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"[^>]*>""".toRegex()
                             pattern.findAll(html).forEach { m -> indexParams[m.groupValues[1]] = m.groupValues[2] }
+                            val parsedTabs = parseCourseTabParamsFromIndexHtml(html, indexParams)
                             
                             val xkkz_id = indexParams["firstXkkzId"] ?: indexParams["xkkz_id"] ?: ""
                             val kklxdm = indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10"
                             val njdm_id = indexParams["njdm_id"] ?: "2024"
                             val zyh_id = indexParams["zyh_id"] ?: ""
                             
-                            runOnUiThread { courseParams = indexParams }
+                            // 解析筛选选项
+                            val categories = CourseParser.parseFilterOptions(html)
+                            runOnUiThread { 
+                                courseParams = indexParams
+                                courseTabs = parsedTabs
+                                if (categories.isNotEmpty()) {
+                                    filterCategories = categories
+                                }
+                            }
                             
                             if (xkkz_id.isNotEmpty()) {
                                 // Step 2: 获取 Display 页面参数
@@ -231,6 +292,12 @@ fun CourseListRoute() {
                                 displayParams = params
                                 android.util.Log.d("CourseListRoute", "✅ 更新 displayParams: ${params.size} 个参数, bklx_id=${params["bklx_id"]}")
                             }
+                        },
+                        onTabParams = { tabs ->
+                            runOnUiThread {
+                                courseTabs = tabs
+                                android.util.Log.d("CourseListRoute", "✅ 更新选课分类入口: ${tabs.size} 个")
+                            }
                         }
                     )
                     helper.parseIndexParamsAndFetch(html)
@@ -243,8 +310,173 @@ fun CourseListRoute() {
     val loadCourses = remember {
         fun() {
             hasPreloadedOnce = false // 🔧 强制刷新时重置，允许重新预加载
+            activeFilter = null // 清除筛选
+            showFilterPanel = false
             loadCoursesInternal(forceRefresh = true)
         }
+    }
+
+    // 筛选应用回调
+    val onFilterApply: (com.tyust.course.model.CourseFilter) -> Unit = { filter ->
+        activeFilter = filter
+        showFilterPanel = false
+        if (filter.isEmpty()) {
+            courses = allCourses
+            activeFilter = null
+        } else {
+            isFilterLoading = true
+            val school = UserManager.getInstance().currentSchool
+            if (school == null) {
+                isFilterLoading = false
+                activeFilter = null
+                Toast.makeText(context, "未找到当前学校配置", Toast.LENGTH_SHORT).show()
+            } else {
+                val baseIndexParams = mutableMapOf<String, String>()
+                courseParams?.let { baseIndexParams.putAll(it) }
+                val tabs = courseTabs.ifEmpty {
+                    parseCourseTabParamsFromIndexHtml("", baseIndexParams)
+                }
+                val filterParams = filter.toPostParams()
+
+                scope.launch(Dispatchers.IO) {
+                    val filteredCourses = mutableListOf<Course>()
+                    var lastError: String? = null
+
+                    for (tab in tabs) {
+                        val displayHtml = CourseApiClient.getInstance().fetchCourseDisplayParamsSync(
+                            school,
+                            tab.xkkzId,
+                            tab.kklxdm,
+                            tab.njdmId,
+                            tab.zyhId
+                        )
+                        val tabDisplayParams = parseInputParamsFromHtml(displayHtml ?: "")
+                        if (displayHtml == null) {
+                            lastError = "Display 参数请求失败"
+                        }
+
+                        val mergedParams = mutableMapOf<String, String>()
+                        mergedParams.putAll(baseIndexParams)
+                        mergedParams.putAll(displayParams)
+                        mergedParams.putAll(tabDisplayParams)
+                        mergedParams["xkkz_id"] = tab.xkkzId
+                        mergedParams["kklxdm"] = tab.kklxdm
+                        mergedParams["njdm_id"] = tab.njdmId
+                        mergedParams["zyh_id"] = tab.zyhId
+
+                        fun getParam(baseName: String): String {
+                            mergedParams[baseName]?.takeIf { it.isNotEmpty() }?.let { return it }
+                            for (i in 1..5) {
+                                mergedParams["${baseName}_$i"]?.takeIf { it.isNotEmpty() }?.let { return it }
+                            }
+                            return ""
+                        }
+
+                        val kklxdm = tab.kklxdm
+                        val defaultValues = mapOf(
+                            "jg_id" to "05",
+                            "gnjkxdnj" to "0",
+                            "bjgkczxbbjwcx" to if (kklxdm == "05") "1" else "0",
+                            "sfkknj" to "0",
+                            "sfkkzy" to "0",
+                            "kzybkxy" to "0",
+                            "sfznkx" to "0",
+                            "zdkxms" to "0",
+                            "sfkxq" to "0",
+                            "sfkcfx" to if (kklxdm == "05") "1" else "0",
+                            "kkbk" to "0",
+                            "kkbkdj" to "0",
+                            "bklbkcj" to "0",
+                            "sfkgbcx" to if (kklxdm == "05") "1" else "0",
+                            "sfrxtgkcxd" to if (kklxdm == "05") "1" else "0",
+                            "tykczgxdcs" to if (kklxdm == "05") "8" else "0"
+                        )
+
+                        var kspage = 0
+                        var jspage = 1000
+                        var pageGuard = 0
+                        do {
+                            val formData = mutableMapOf<String, String>()
+                            val rwlx = mergedParams["rwlx"] ?: when (kklxdm) { "01" -> "1"; "10", "05" -> "2"; else -> "1" }
+                            val xklc = mergedParams["xklc"] ?: when (kklxdm) { "01" -> "2"; "10" -> "4"; "05" -> "3"; else -> "2" }
+
+                            formData["rwlx"] = rwlx
+                            formData["xklc"] = xklc
+                            formData["xkly"] = mergedParams["xkly"] ?: "0"
+                            formData["bklx_id"] = mergedParams["bklx_id"] ?: "0"
+                            formData["sfkkjyxdxnxq"] = mergedParams["sfkkjyxdxnxq"] ?: "0"
+                            formData["kzkcgs"] = mergedParams["kzkcgs"] ?: "0"
+
+                            val dynamicFields = listOf(
+                                "xqh_id", "jg_id", "njdm_id_1", "zyh_id_1", "gnjkxdnj", "zyh_id",
+                                "zyfx_id", "njdm_id", "bh_id", "bjgkczxbbjwcx", "xbm", "xslbdm", "mzm", "xz",
+                                "ccdm", "xsbj", "sfkknj", "sfkkzy", "kzybkxy", "sfznkx", "zdkxms",
+                                "sfkxq", "sfkcfx", "kkbk", "kkbkdj", "bklbkcj", "sfkgbcx",
+                                "sfrxtgkcxd", "tykczgxdcs", "xkxnm", "xkxqm", "xkxskcgskg"
+                            )
+                            for (field in dynamicFields) {
+                                formData[field] = getParam(field).ifEmpty { defaultValues[field] ?: "" }
+                            }
+
+                            formData["kklxdm"] = tab.kklxdm
+                            formData["xkkz_id"] = tab.xkkzId
+                            formData["kspage"] = kspage.toString()
+                            formData["jspage"] = jspage.toString()
+                            formData["bbhzxjxb"] = "0"
+                            formData["rlkz"] = "0"
+                            formData["xkzgbj"] = "0"
+                            formData["jxbzb"] = ""
+
+                            val baseParams = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
+                            val postBody = if (filterParams.isEmpty()) baseParams else "$baseParams&$filterParams"
+                            val json = CourseApiClient.getInstance().fetchAvailableCoursesSync(school, postBody)
+                            if (json == null) {
+                                lastError = "课程筛选请求失败"
+                                break
+                            }
+                            if (json.trimStart().startsWith("<")) {
+                                lastError = "课程筛选返回了页面而不是 JSON"
+                                android.util.Log.e("CourseListRoute", "❌ 筛选返回 HTML: ${json.take(300)}")
+                                break
+                            }
+
+                            val requestParams = mergedParams.toMutableMap().apply { putAll(formData) }
+                            val parsed = CourseParser.parseCourseListFromJson(json, requestParams, tabDisplayParams)
+                            parsed.forEach { course ->
+                                course.kklxdm = tab.kklxdm
+                                course._xkkz_id = tab.xkkzId
+                            }
+                            filteredCourses.addAll(parsed)
+
+                            if (parsed.isEmpty()) break
+                            val fetchedCount = parsed.size
+                            kspage = jspage + 1
+                            jspage = kspage + fetchedCount - 1
+                            pageGuard++
+                        } while (pageGuard < 20)
+                    }
+
+                    val uniqueCourses = filteredCourses.distinctBy { "${it.courseId}_${it.classId}_${it.doJxbId}" }
+                    runOnUiThread {
+                        isFilterLoading = false
+                        courses = uniqueCourses
+                        val message = if (uniqueCourses.isNotEmpty()) {
+                            "筛选完成: ${uniqueCourses.size} 门课程"
+                        } else {
+                            lastError ?: "筛选完成: 0 门课程"
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    // 筛选清除回调
+    val onFilterClear: () -> Unit = {
+        activeFilter = null
+        draftFilter = com.tyust.course.model.CourseFilter()
+        courses = allCourses
     }
 
 
@@ -852,7 +1084,8 @@ fun CourseListRoute() {
                                 // 🔧 重置该课程在 UI 中的状态，防止显示之前的抢课结果
                                 try {
                                     val prefs = context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE)
-                                    val savedStatuses = prefs.getString("queue_item_statuses", "") ?: ""
+                                    val statusKey = "queue_item_statuses_${UserManager.getInstance().currentAccountStorageKey}"
+                                    val savedStatuses = prefs.getString(statusKey, "") ?: ""
                                     val courseKey = "${course.name ?: ""}_${course.teacher ?: ""}_${course.time ?: ""}"
                                     
                                     val statusMap = mutableMapOf<String, String>()
@@ -865,7 +1098,7 @@ fun CourseListRoute() {
                                     statusMap[courseKey] = "WAITING"
                                     
                                     val newSaved = statusMap.entries.joinToString(";") { "${it.key}=${it.value}" }
-                                    prefs.edit().putString("queue_item_statuses", newSaved).apply()
+                                    prefs.edit().putString(statusKey, newSaved).apply()
                                 } catch (e: Exception) {
                                     Log.e("CourseListRoute", "Error resetting queue status: ${e.message}")
                                 }
@@ -895,7 +1128,17 @@ fun CourseListRoute() {
                         onEnterMultiSelect = { classId ->
                             isMultiSelectMode = true
                             selectedClassIds = setOf(classId)
-                        }
+                        },
+                        // 筛选相关
+                        showFilterPanel = showFilterPanel,
+                        onToggleFilterPanel = { showFilterPanel = !showFilterPanel },
+                        activeFilter = activeFilter,
+                        draftFilter = draftFilter,
+                        onDraftFilterChange = { draftFilter = it },
+                        onFilterApply = { onFilterApply(draftFilter) },
+                        onFilterClear = onFilterClear,
+                        isFilterLoading = isFilterLoading,
+                        filterCategories = filterCategories
                     )
                 }
             }
@@ -912,13 +1155,13 @@ private class CourseListLogicHelper(
     // 🔧 渐进式加载回调：每加载一批就立即回调
     val onProgress: ((List<Course>, Int, Int) -> Unit)? = null, // (累积课程, 已完成Tab数, 总Tab数)
     // 🔧 新增：暴露 displayParams 给外部使用
-    val onDisplayParams: ((Map<String, String>) -> Unit)? = null
+    val onDisplayParams: ((Map<String, String>) -> Unit)? = null,
+    val onTabParams: ((List<CourseTabParam>) -> Unit)? = null
 ) {
     private var indexParams = mutableMapOf<String, String>()
     var displayParams = mutableMapOf<String, String>()  // 🔧 改为公开
     
-    data class TabParam(val kklxdm: String, val xkkz_id: String, val njdm_id: String, val zyh_id: String)
-    private var tabParamsList = mutableListOf<TabParam>()
+    private var tabParamsList = mutableListOf<CourseTabParam>()
     private var currentTabIndex = 0
     private var allCourses = mutableListOf<Course>()
     
@@ -936,19 +1179,9 @@ private class CourseListLogicHelper(
                  if (!indexParams.containsKey(name)) indexParams[name] = match.groupValues[1]
             }
 
-            val queryCoursePattern = """queryCourse\s*\(\s*this\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*\)""".toRegex()
-            queryCoursePattern.findAll(html).forEach { match ->
-                tabParamsList.add(TabParam(match.groupValues[1], match.groupValues[2], match.groupValues[3], match.groupValues[4]))
-            }
-            
-            if (tabParamsList.isEmpty()) {
-                 tabParamsList.add(TabParam(
-                     indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10",
-                     indexParams["firstXkkzId"] ?: indexParams["xkkz_id"] ?: "",
-                     indexParams["njdm_id"] ?: "2024",
-                     indexParams["zyh_id"] ?: ""
-                 ))
-            }
+            tabParamsList.clear()
+            tabParamsList.addAll(parseCourseTabParamsFromIndexHtml(html, indexParams))
+            onTabParams?.invoke(tabParamsList.toList())
             
             fetchDisplayPage()
         } catch (e: Exception) {
@@ -974,7 +1207,7 @@ private class CourseListLogicHelper(
         currentTabIndex++
         
         CourseApiClient.getInstance().fetchCourseDisplayParams(
-            school, tab.xkkz_id, tab.kklxdm, tab.njdm_id, tab.zyh_id,
+            school, tab.xkkzId, tab.kklxdm, tab.njdmId, tab.zyhId,
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                      // Try fetch list anyway (fallback)
@@ -1009,7 +1242,7 @@ private class CourseListLogicHelper(
     // 分页状态变量（与 Web 版 course-fetcher.ts 一致）
     private var currentKspage = 0
     private var currentJspage = 10
-    private var currentTab: TabParam? = null
+    private var currentTab: CourseTabParam? = null
     private var currentMergedParams = mutableMapOf<String, String>()
     
     // 🔧 服务器延迟检测：重试配置
@@ -1017,7 +1250,7 @@ private class CourseListLogicHelper(
     private val MAX_RETRY_COUNT = 3 // 最大重试次数
     private val RETRY_DELAY_MS = 2000L // 重试延迟（毫秒）
     
-    private fun fetchCategoryList(tab: TabParam) {
+    private fun fetchCategoryList(tab: CourseTabParam) {
         currentTab = tab
         
         // 合并参数
@@ -1027,10 +1260,10 @@ private class CourseListLogicHelper(
         
         android.util.Log.d("CourseListRoute", "📊 参数统计: indexParams=${indexParams.size}个, displayParams=${displayParams.size}个, 合并后=${currentMergedParams.size}个")
         
-        currentMergedParams["xkkz_id"] = tab.xkkz_id
+        currentMergedParams["xkkz_id"] = tab.xkkzId
         currentMergedParams["kklxdm"] = tab.kklxdm
-        currentMergedParams["njdm_id"] = tab.njdm_id
-        currentMergedParams["zyh_id"] = tab.zyh_id
+        currentMergedParams["njdm_id"] = tab.njdmId
+        currentMergedParams["zyh_id"] = tab.zyhId
         
         // rwlx 逻辑
         val kklxdm = tab.kklxdm
@@ -1117,7 +1350,7 @@ private class CourseListLogicHelper(
         
         // 选项卡参数
         formData["kklxdm"] = tab.kklxdm
-        formData["xkkz_id"] = tab.xkkz_id
+        formData["xkkz_id"] = tab.xkkzId
         
         // 分页参数
         formData["kspage"] = currentKspage.toString()
@@ -1176,7 +1409,7 @@ private class CourseListLogicHelper(
                     // 补充分类参数
                     parsed.forEach { c -> 
                         c.kklxdm = tab.kklxdm
-                        c._xkkz_id = tab.xkkz_id 
+                        c._xkkz_id = tab.xkkzId 
                     }
                     allCourses.addAll(parsed)
                     

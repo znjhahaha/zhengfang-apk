@@ -19,10 +19,17 @@ object CourseCacheManager {
     
     private var cachedCourses: List<Course>? = null
     private var cacheTimestamp: Long = 0L
+    private var cachedAccountKey: String = ""
     
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
+
+    private fun accountKey(): String = UserManager.getInstance().currentAccountStorageKey
+
+    private fun coursesKey(): String = "${KEY_COURSES}_${accountKey()}"
+
+    private fun timestampKey(): String = "${KEY_TIMESTAMP}_${accountKey()}"
     
     /**
      * 保存课程列表到缓存
@@ -30,6 +37,7 @@ object CourseCacheManager {
     fun saveCourses(context: Context, courses: List<Course>) {
         cachedCourses = courses
         cacheTimestamp = System.currentTimeMillis()
+        cachedAccountKey = accountKey()
         
         try {
             val prefs = getPrefs(context)
@@ -59,8 +67,8 @@ object CourseCacheManager {
                 jsonArray.put(obj)
             }
             prefs.edit()
-                .putString(KEY_COURSES, jsonArray.toString())
-                .putLong(KEY_TIMESTAMP, cacheTimestamp)
+                .putString(coursesKey(), jsonArray.toString())
+                .putLong(timestampKey(), cacheTimestamp)
                 .apply()
             android.util.Log.d("CourseCacheManager", "缓存了 ${courses.size} 门课程")
         } catch (e: Exception) {
@@ -74,7 +82,7 @@ object CourseCacheManager {
      */
     fun getCachedCourses(context: Context): List<Course>? {
         // 先检查内存缓存
-        if (cachedCourses != null && isCacheValid()) {
+        if (cachedAccountKey == accountKey() && cachedCourses != null && isCacheValid()) {
             android.util.Log.d("CourseCacheManager", "使用内存缓存: ${cachedCourses?.size} 门课程")
             return cachedCourses
         }
@@ -82,14 +90,14 @@ object CourseCacheManager {
         // 尝试从 SharedPreferences 恢复
         try {
             val prefs = getPrefs(context)
-            cacheTimestamp = prefs.getLong(KEY_TIMESTAMP, 0L)
+            cacheTimestamp = prefs.getLong(timestampKey(), 0L)
             
             if (!isCacheValid()) {
                 android.util.Log.d("CourseCacheManager", "缓存已过期或不存在")
                 return null
             }
             
-            val json = prefs.getString(KEY_COURSES, null) ?: return null
+            val json = prefs.getString(coursesKey(), null) ?: return null
             val jsonArray = JSONArray(json)
             val courses = mutableListOf<Course>()
             
@@ -120,6 +128,7 @@ object CourseCacheManager {
             }
             
             cachedCourses = courses
+            cachedAccountKey = accountKey()
             android.util.Log.d("CourseCacheManager", "从磁盘恢复缓存: ${courses.size} 门课程")
             return courses
         } catch (e: Exception) {
@@ -168,5 +177,6 @@ object CourseCacheManager {
      */
     fun updateMemoryCache(courses: List<Course>) {
         cachedCourses = courses
+        cachedAccountKey = accountKey()
     }
 }

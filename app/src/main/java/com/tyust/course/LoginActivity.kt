@@ -43,9 +43,11 @@ class LoginActivity : ComponentActivity() {
     // Binding Dialog State
     private var showBindingDialog by mutableStateOf(false)
     private var bindingStudentName by mutableStateOf("")
+    private var bindingStudentId by mutableStateOf("")
     private var bindingMaxStudents by mutableStateOf(0)
     private var bindingUsedNames by mutableStateOf<Set<String>>(emptySet())
     private var pendingCookie by mutableStateOf("")
+    private var pendingPasswordLogin by mutableStateOf(false)
 
     // Password Login State
     private val passwordLoginManager = PasswordLoginManager()
@@ -150,7 +152,13 @@ class LoginActivity : ComponentActivity() {
                     bindingUsedNames = bindingUsedNames,
                     onConfirmBinding = {
                         showBindingDialog = false
-                        com.tyust.course.manager.StudentLimitManager.recordStudentName(this@LoginActivity, bindingStudentName)
+                        com.tyust.course.manager.StudentLimitManager.recordStudent(
+                            context = this@LoginActivity,
+                            schoolId = UserManager.getInstance().currentSchool?.id.orEmpty(),
+                            schoolName = UserManager.getInstance().currentSchool?.name.orEmpty(),
+                            studentName = bindingStudentName,
+                            studentId = bindingStudentId
+                        )
                         proceedToMain(UserManager.getInstance(), bindingStudentName, pendingCookie)
                     },
                     onCancelBinding = {
@@ -237,6 +245,7 @@ class LoginActivity : ComponentActivity() {
 
         isLoading = true
         errorMessage = null
+        pendingPasswordLogin = false
 
         // 🔄 先同步云端激活配置（获取最新的 max_students）
         lifecycleScope.launch {
@@ -250,6 +259,7 @@ class LoginActivity : ComponentActivity() {
             }
             
             // 同步完成后继续登录流程
+            pendingPasswordLogin = false
             performLoginValidation(currentSchool, cookieStr)
         }
     }
@@ -299,33 +309,39 @@ class LoginActivity : ComponentActivity() {
                         }
                         
                         val maxStudents = com.tyust.course.activation.ActivationManager.getMaxStudents(this@LoginActivity)
-                        val usedNames = com.tyust.course.manager.StudentLimitManager.getUsedStudentNames(this@LoginActivity)
-                        
-                        // 检查是否是已绑定的学生（直接放行）
-                        if (usedNames.contains(studentNameParsed)) {
-                            // 已绑定的学生，直接进入
+                        val bindingCheck = com.tyust.course.manager.StudentLimitManager.checkCanUseStudent(
+                            context = this@LoginActivity,
+                            schoolId = currentSchool.id,
+                            schoolName = currentSchool.name,
+                            studentName = studentNameParsed,
+                            studentId = studentIdParsed,
+                            maxStudents = maxStudents
+                        )
+
+                        if (!bindingCheck.allowed) {
+                            errorMessage = bindingCheck.reason
+                            return@runOnUiThread
+                        }
+
+                        if (bindingCheck.alreadyBound || maxStudents <= 0) {
+                            if (!bindingCheck.alreadyBound) {
+                                Log.d(TAG, "超级账户，无需绑定确认")
+                                com.tyust.course.manager.StudentLimitManager.recordStudent(
+                                    context = this@LoginActivity,
+                                    schoolId = currentSchool.id,
+                                    schoolName = currentSchool.name,
+                                    studentName = studentNameParsed,
+                                    studentId = studentIdParsed
+                                )
+                            }
                             proceedToMain(userManager, studentNameParsed, cookieStr)
                             return@runOnUiThread
                         }
-                        
-                        // 超级账户无需绑定确认，直接进入
-                        if (maxStudents <= 0) {
-                            Log.d(TAG, "超级账户，无需绑定确认")
-                            com.tyust.course.manager.StudentLimitManager.recordStudentName(this@LoginActivity, studentNameParsed)
-                            proceedToMain(userManager, studentNameParsed, cookieStr)
-                            return@runOnUiThread
-                        }
-                        
-                        // 检查是否超过限制
-                        if (usedNames.size >= maxStudents) {
-                            errorMessage = "⚠️ 该设备已绑定 ${usedNames.size} 个账号\n已达上限（最多 $maxStudents 个）\n\n已绑定账号：${usedNames.joinToString("、")}"
-                            return@runOnUiThread
-                        }
-                        
-                        // 新学生，设置状态以显示 Compose 弹窗
+
                         bindingStudentName = studentNameParsed
+                        bindingStudentId = studentIdParsed
                         bindingMaxStudents = maxStudents
-                        bindingUsedNames = usedNames
+                        bindingUsedNames = bindingCheck.usedNames
                         pendingCookie = cookieStr
                         showBindingDialog = true
 
@@ -349,7 +365,12 @@ class LoginActivity : ComponentActivity() {
         userManager.studentName = studentName
         
         // 保存 Cookie 用于下次自动登录
-        userManager.saveCookie(cookieStr.trim())
+        if (pendingPasswordLogin) {
+            userManager.saveCookie(cookieStr.trim())
+        } else {
+            userManager.saveCookieLogin(cookieStr.trim())
+        }
+        pendingPasswordLogin = false
         Log.d(TAG, "Cookie 已保存，下次可自动登录")
         
         Toast.makeText(
@@ -387,6 +408,7 @@ class LoginActivity : ComponentActivity() {
                     Log.d(TAG, "密码登录成功")
                     // 保存密码到内存，用于会话期间Cookie过期自动刷新
                     UserManager.getInstance().savePasswordLogin(username, cookie, password)
+                    pendingPasswordLogin = true
                     // 复用现有验证流程
                     lifecycleScope.launch {
                         try {
@@ -449,6 +471,7 @@ class LoginActivity : ComponentActivity() {
                     UserManager.getInstance().savePasswordLogin(
                         passwordLoginManager.getCurrentUsername(), cookie, passwordLoginManager.getCurrentPassword()
                     )
+                    pendingPasswordLogin = true
                     lifecycleScope.launch {
                         try {
                             withContext(Dispatchers.IO) {

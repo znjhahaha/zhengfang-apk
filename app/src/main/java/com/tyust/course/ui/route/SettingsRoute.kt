@@ -32,8 +32,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.tyust.course.LoginActivity
+import com.tyust.course.login.PasswordLoginCallback
+import com.tyust.course.login.PasswordLoginManager
 import com.tyust.course.manager.UserManager
+import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.SettingsScreen
 import com.tyust.course.update.UpdateManager
 import com.tyust.course.update.UpdateDialog
@@ -66,6 +70,15 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.LinearProgressIndicator
+import com.tyust.course.ui.system.SystemDivider
+import com.tyust.course.ui.system.SystemStatusBadge
+import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.theme.NeuPrimary
+import com.tyust.course.ui.theme.Neutral500
+import com.tyust.course.ui.theme.SemanticSuccess
+import com.tyust.course.ui.theme.SemanticWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +102,13 @@ fun SettingsRoute() {
     // Quota States
     var isSuper by remember { mutableStateOf(false) }
     var quotaInfo by remember { mutableStateOf("") }
-    var quotaDialogMessage by remember { mutableStateOf("") }
+    var quotaUsedCount by remember { mutableIntStateOf(0) }
+    var quotaMaxCount by remember { mutableIntStateOf(0) }
+    var quotaBoundNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    var quotaAccounts by remember { mutableStateOf<List<UserManager.AccountRecord>>(emptyList()) }
+    var currentAccountKey by remember { mutableStateOf("") }
+    var canRefreshCookie by remember { mutableStateOf(false) }
+    var isRefreshingCookie by remember { mutableStateOf(false) }
     
     // Update States
     val updateManager = remember { UpdateManager.getInstance(context) }
@@ -101,48 +120,34 @@ fun SettingsRoute() {
     val currentVersion = remember { updateManager.getCurrentVersionName() }
 
 
-    LaunchedEffect(Unit) {
-        val name = UserManager.getInstance().studentName
-        val school = UserManager.getInstance().currentSchool
+    fun refreshAccountUiState() {
+        val userManager = UserManager.getInstance()
+        val name = userManager.studentName
+        val school = userManager.currentSchool
 
         studentName = name ?: "同学"
         deviceId = ActivationManager.getSavedDeviceId(context)
         schoolName = school?.name ?: "未选择"
-        
-        // Load quota info
-        val maxStudents = ActivationManager.getMaxStudents(context)
-        isSuper = maxStudents <= 0
-        if (isSuper) {
-            quotaInfo = "无限制"
-        } else {
-            val usedCount = StudentLimitManager.getUsedCount(context)
-            quotaInfo = "$usedCount / $maxStudents"
-        }
-        
-        // Prepare quota dialog message
-        val usedNames = StudentLimitManager.getUsedStudentNames(context)
-        quotaDialogMessage = buildString {
-            append("📊 设备绑定详情\n\n")
-            if (isSuper) {
-                append("✨ 身份：超级用户\n")
-                append("📈 配额：无限制\n")
-            } else {
-                append("📈 配额：${usedNames.size} / $maxStudents\n")
-            }
-            append("━━━━━━━━━━━━━━━\n")
-            if (usedNames.isNotEmpty()) {
-                append("👥 已绑定账号：\n")
-                usedNames.forEachIndexed { index, n ->
-                    append("${index + 1}. $n\n")
-                }
-            } else {
-                append("ℹ️ 暂未绑定任何账号\n")
-            }
-            append("━━━━━━━━━━━━━━━\n\n")
-            append("💡 说明：激活名额一旦绑定无法自行解绑。")
-        }
-        
 
+        val maxStudents = ActivationManager.getMaxStudents(context)
+        val usedNames = StudentLimitManager.getUsedStudentNames(context)
+        val usedCount = StudentLimitManager.getUsedCount(context)
+        isSuper = maxStudents <= 0
+        quotaUsedCount = usedCount
+        quotaMaxCount = maxStudents
+        quotaBoundNames = usedNames.toList()
+        quotaAccounts = userManager.accountsForCurrentSchool
+        currentAccountKey = userManager.currentAccountKey
+        canRefreshCookie = userManager.loginMode == "password"
+        quotaInfo = if (isSuper) {
+            "无限制"
+        } else {
+            "$usedCount / $maxStudents"
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshAccountUiState()
     }
     
     fun performLogout() {
@@ -190,6 +195,71 @@ fun SettingsRoute() {
             }
         )
     }
+
+    fun refreshCookieManually() {
+        val userManager = UserManager.getInstance()
+        val school = userManager.currentSchool
+        if (isRefreshingCookie) return
+        if (school == null) {
+            Toast.makeText(context, "请先选择学校", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (userManager.loginMode != "password") {
+            Toast.makeText(context, "仅密码登录账号支持手动更新 Cookie", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!userManager.canAutoRelogin()) {
+            Toast.makeText(context, "当前会话未保存密码，请重新使用密码登录后再更新", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val username = userManager.username
+        val password = userManager.sessionPassword
+        isRefreshingCookie = true
+        PasswordLoginManager().login(school, username, password, object : PasswordLoginCallback {
+            private fun postToUi(block: () -> Unit) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+            }
+
+            override fun onSuccess(cookie: String) {
+                postToUi {
+                    userManager.savePasswordLogin(username, cookie, password)
+                    userManager.refreshRuntimeForCurrentAccount()
+                    isRefreshingCookie = false
+                    refreshAccountUiState()
+                    Toast.makeText(context, "Cookie 已更新", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onCaptchaRequired(imageBytes: ByteArray) {
+                postToUi {
+                    isRefreshingCookie = false
+                    Toast.makeText(context, "更新 Cookie 需要验证码，请重新使用密码登录", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            override fun onCaptchaInvalid() {
+                postToUi {
+                    isRefreshingCookie = false
+                    Toast.makeText(context, "验证码校验失败，请重新使用密码登录", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            override fun onInvalidCredentials() {
+                postToUi {
+                    isRefreshingCookie = false
+                    Toast.makeText(context, "密码已失效，请重新登录", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            override fun onError(message: String) {
+                postToUi {
+                    isRefreshingCookie = false
+                    Toast.makeText(context, "更新失败：$message", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+    }
     
     // Update Dialog
     if (showUpdateDialog && updateInfo != null) {
@@ -219,9 +289,12 @@ fun SettingsRoute() {
         onCredits = { showCreditsDialog = true },
         onLogout = { showLogoutDialog = true },
         onQuotaClick = { showQuotaDialog = true },
+        onRefreshCookieClick = { refreshCookieManually() },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
         isSuper = isSuper,
-        quotaInfo = quotaInfo
+        quotaInfo = quotaInfo,
+        canRefreshCookie = canRefreshCookie,
+        isRefreshingCookie = isRefreshingCookie
     )
     
     // Dialogs
@@ -392,13 +465,24 @@ fun SettingsRoute() {
     }
     
     if (showQuotaDialog) {
-        SimpleConfirmDialog(
-            title = "当前账号配额",
-            text = quotaDialogMessage,
-            onConfirm = { showQuotaDialog = false },
-            onDismiss = { showQuotaDialog = false },
-            confirmText = "我知道了",
-            showCancel = false
+        QuotaStatusDialog(
+            isSuper = isSuper,
+            usedCount = quotaUsedCount,
+            maxCount = quotaMaxCount,
+            boundNames = quotaBoundNames,
+            accounts = quotaAccounts,
+            currentAccountKey = currentAccountKey,
+            onSwitchAccount = { accountKey ->
+                if (accountKey == currentAccountKey) return@QuotaStatusDialog
+                val switched = UserManager.getInstance().switchToAccount(accountKey)
+                if (switched) {
+                    refreshAccountUiState()
+                    Toast.makeText(context, "已切换账号", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "账号切换失败，请重新登录", Toast.LENGTH_LONG).show()
+                }
+            },
+            onDismiss = { showQuotaDialog = false }
         )
     }
 
@@ -463,6 +547,233 @@ fun SettingsRoute() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuotaStatusDialog(
+    isSuper: Boolean,
+    usedCount: Int,
+    maxCount: Int,
+    boundNames: List<String>,
+    accounts: List<UserManager.AccountRecord>,
+    currentAccountKey: String,
+    onSwitchAccount: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val safeMax = maxCount.coerceAtLeast(0)
+    val safeUsed = usedCount.coerceAtLeast(0)
+    val usageRatio = if (!isSuper && safeMax > 0) {
+        (safeUsed.toFloat() / safeMax.toFloat()).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
+    val statusText = if (isSuper) "超级用户" else "普通用户"
+    val quotaText = if (isSuper) "无限制" else "$safeUsed / $safeMax"
+
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "当前账号配额",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "设备绑定与名额使用情况",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "知道了",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    QuotaInfoRow(label = "身份", value = statusText)
+                    QuotaInfoRow(label = "配额", value = quotaText)
+                    if (!isSuper) {
+                        LinearProgressIndicator(
+                            progress = { usageRatio },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(999.dp)),
+                            color = if (usageRatio >= 1f) SemanticWarning else NeuPrimary,
+                            trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+
+            SystemDivider(alpha = 0.5f)
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "已绑定账号",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (boundNames.isEmpty()) {
+                    Text(
+                        text = "当前设备尚未绑定账号。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        boundNames.forEachIndexed { index, name ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.size(24.dp),
+                                        color = NeuPrimary.copy(alpha = 0.12f),
+                                        shape = CircleShape
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "${index + 1}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = NeuPrimary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (accounts.isNotEmpty()) {
+                SystemDivider(alpha = 0.5f)
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "切换账号",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    accounts.forEach { account ->
+                        val isCurrent = account.key == currentAccountKey
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isCurrent) { onSwitchAccount(account.key) },
+                            color = if (isCurrent) NeuPrimary.copy(alpha = 0.12f)
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = account.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "${account.accountIdText} · ${if (account.loginMode == "password") "密码登录" else "Cookie 登录"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                SystemStatusBadge(
+                                    text = if (isCurrent) "当前" else "切换",
+                                    tone = if (isCurrent) SystemTone.Info else SystemTone.Neutral
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "说明：同一设备仅允许绑定同一学校账号，普通配额最多 3 个；切换账号会同步切换 Cookie 与本地账号上下文。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuotaInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

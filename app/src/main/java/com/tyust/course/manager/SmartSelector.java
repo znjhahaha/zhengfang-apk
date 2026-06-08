@@ -24,6 +24,14 @@ public class SmartSelector {
     private static final String KEY_TARGET_COURSE = "target_course_json";
     private static final String KEY_COURSE_QUEUE = "course_queue_json";
 
+    private String accountStorageKey() {
+        return UserManager.getInstance().getCurrentAccountStorageKey();
+    }
+
+    private String scopedKey(String key) {
+        return key + "_" + accountStorageKey();
+    }
+
     private static SmartSelector instance;
     private boolean isRunning = false;
     private Handler handler = new Handler(Looper.getMainLooper());
@@ -70,8 +78,26 @@ public class SmartSelector {
     // 初始化 Context (需要在 Application 或 MainActivity 中调用)
     public void init(Context context) {
         this.appContext = context.getApplicationContext();
+        reloadForCurrentAccount();
+    }
+
+    public void reloadForCurrentAccount() {
+        if (isRunning) {
+            stop();
+        }
+        this.targetCourse = null;
+        this.courseQueue.clear();
+        this.currentQueueIndex = 0;
+        this.courseParams = null;
+        this.fuzzyMatchCourseId = null;
+        this.fuzzyMatchCourseName = null;
+        this.fuzzyMatchXkkzId = null;
+        this.fuzzyMatchKklxdm = null;
+        this.fuzzyMatchEnabled = false;
+        this.lastSelectedSnapshot.clear();
         restoreTargetCourse();
         restoreCourseQueue();
+        restoreFuzzyMatchSettings();
     }
 
     public void setListener(OnStatusUpdateListener listener) {
@@ -225,8 +251,11 @@ public class SmartSelector {
                 JSONObject json = courseToJson(course);
                 jsonArray.put(json);
             }
-            prefs.edit().putString(KEY_COURSE_QUEUE, jsonArray.toString()).apply();
-            Log.d(TAG, "✅ 队列已保存, 共 " + courseQueue.size() + " 门课程");
+            prefs.edit()
+                    .putString(scopedKey(KEY_COURSE_QUEUE), jsonArray.toString())
+                    .remove(KEY_COURSE_QUEUE)
+                    .apply();
+            Log.d(TAG, "✅ 当前账号队列已保存, 共 " + courseQueue.size() + " 门课程");
         } catch (Exception e) {
             Log.e(TAG, "保存队列失败: " + e.getMessage());
         }
@@ -238,7 +267,18 @@ public class SmartSelector {
             return;
         try {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            String jsonStr = prefs.getString(KEY_COURSE_QUEUE, null);
+            String storageKey = scopedKey(KEY_COURSE_QUEUE);
+            String jsonStr = prefs.getString(storageKey, null);
+            if ((jsonStr == null || jsonStr.isEmpty()) && prefs.contains(KEY_COURSE_QUEUE)) {
+                jsonStr = prefs.getString(KEY_COURSE_QUEUE, null);
+                if (jsonStr != null && !jsonStr.isEmpty()) {
+                    prefs.edit()
+                            .putString(storageKey, jsonStr)
+                            .remove(KEY_COURSE_QUEUE)
+                            .apply();
+                }
+            }
+            courseQueue.clear();
             if (jsonStr == null || jsonStr.isEmpty())
                 return;
 
@@ -609,12 +649,15 @@ public class SmartSelector {
         try {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             if (targetCourse == null) {
-                prefs.edit().remove(KEY_TARGET_COURSE).apply();
+                prefs.edit().remove(scopedKey(KEY_TARGET_COURSE)).remove(KEY_TARGET_COURSE).apply();
                 return;
             }
             JSONObject json = courseToJson(targetCourse);
-            prefs.edit().putString(KEY_TARGET_COURSE, json.toString()).apply();
-            Log.d(TAG, "✅ 目标课程已保存: " + targetCourse.name);
+            prefs.edit()
+                    .putString(scopedKey(KEY_TARGET_COURSE), json.toString())
+                    .remove(KEY_TARGET_COURSE)
+                    .apply();
+            Log.d(TAG, "✅ 当前账号目标课程已保存: " + targetCourse.name);
         } catch (Exception e) {
             Log.e(TAG, "保存目标课程失败: " + e.getMessage());
         }
@@ -697,7 +740,18 @@ public class SmartSelector {
             return;
         try {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            String jsonStr = prefs.getString(KEY_TARGET_COURSE, null);
+            String storageKey = scopedKey(KEY_TARGET_COURSE);
+            String jsonStr = prefs.getString(storageKey, null);
+            if ((jsonStr == null || jsonStr.isEmpty()) && prefs.contains(KEY_TARGET_COURSE)) {
+                jsonStr = prefs.getString(KEY_TARGET_COURSE, null);
+                if (jsonStr != null && !jsonStr.isEmpty()) {
+                    prefs.edit()
+                            .putString(storageKey, jsonStr)
+                            .remove(KEY_TARGET_COURSE)
+                            .apply();
+                }
+            }
+            this.targetCourse = null;
             if (jsonStr == null || jsonStr.isEmpty())
                 return;
 
@@ -714,7 +768,7 @@ public class SmartSelector {
         this.targetCourse = null;
         if (appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            prefs.edit().remove(KEY_TARGET_COURSE).apply();
+            prefs.edit().remove(scopedKey(KEY_TARGET_COURSE)).remove(KEY_TARGET_COURSE).apply();
         }
     }
 
@@ -949,17 +1003,23 @@ public class SmartSelector {
         if (appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = prefs.edit()
-                    .putString("fuzzy_match_course_id", courseId)
-                    .putString("fuzzy_match_course_name", courseName);
+                    .putString(scopedKey("fuzzy_match_course_id"), courseId)
+                    .putString(scopedKey("fuzzy_match_course_name"), courseName)
+                    .remove("fuzzy_match_course_id")
+                    .remove("fuzzy_match_course_name");
             if (xkkzId != null) {
-                editor.putString("fuzzy_match_xkkz_id", xkkzId);
+                editor.putString(scopedKey("fuzzy_match_xkkz_id"), xkkzId)
+                        .remove("fuzzy_match_xkkz_id");
             } else {
-                editor.remove("fuzzy_match_xkkz_id");
+                editor.remove(scopedKey("fuzzy_match_xkkz_id"))
+                        .remove("fuzzy_match_xkkz_id");
             }
             if (kklxdm != null) {
-                editor.putString("fuzzy_match_kklxdm", kklxdm);
+                editor.putString(scopedKey("fuzzy_match_kklxdm"), kklxdm)
+                        .remove("fuzzy_match_kklxdm");
             } else {
-                editor.remove("fuzzy_match_kklxdm");
+                editor.remove(scopedKey("fuzzy_match_kklxdm"))
+                        .remove("fuzzy_match_kklxdm");
             }
             editor.apply();
         }
@@ -1008,6 +1068,10 @@ public class SmartSelector {
         if (appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             prefs.edit()
+                    .remove(scopedKey("fuzzy_match_course_id"))
+                    .remove(scopedKey("fuzzy_match_course_name"))
+                    .remove(scopedKey("fuzzy_match_xkkz_id"))
+                    .remove(scopedKey("fuzzy_match_kklxdm"))
                     .remove("fuzzy_match_course_id")
                     .remove("fuzzy_match_course_name")
                     .remove("fuzzy_match_xkkz_id")
@@ -1083,10 +1147,26 @@ public class SmartSelector {
             return;
         try {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            fuzzyMatchCourseId = prefs.getString("fuzzy_match_course_id", null);
-            fuzzyMatchCourseName = prefs.getString("fuzzy_match_course_name", null);
-            fuzzyMatchXkkzId = prefs.getString("fuzzy_match_xkkz_id", null);
-            fuzzyMatchKklxdm = prefs.getString("fuzzy_match_kklxdm", null);
+            fuzzyMatchCourseId = prefs.getString(scopedKey("fuzzy_match_course_id"), null);
+            fuzzyMatchCourseName = prefs.getString(scopedKey("fuzzy_match_course_name"), null);
+            fuzzyMatchXkkzId = prefs.getString(scopedKey("fuzzy_match_xkkz_id"), null);
+            fuzzyMatchKklxdm = prefs.getString(scopedKey("fuzzy_match_kklxdm"), null);
+            if (fuzzyMatchCourseId == null && prefs.contains("fuzzy_match_course_id")) {
+                fuzzyMatchCourseId = prefs.getString("fuzzy_match_course_id", null);
+                fuzzyMatchCourseName = prefs.getString("fuzzy_match_course_name", null);
+                fuzzyMatchXkkzId = prefs.getString("fuzzy_match_xkkz_id", null);
+                fuzzyMatchKklxdm = prefs.getString("fuzzy_match_kklxdm", null);
+                SharedPreferences.Editor editor = prefs.edit()
+                        .remove("fuzzy_match_course_id")
+                        .remove("fuzzy_match_course_name")
+                        .remove("fuzzy_match_xkkz_id")
+                        .remove("fuzzy_match_kklxdm");
+                if (fuzzyMatchCourseId != null) editor.putString(scopedKey("fuzzy_match_course_id"), fuzzyMatchCourseId);
+                if (fuzzyMatchCourseName != null) editor.putString(scopedKey("fuzzy_match_course_name"), fuzzyMatchCourseName);
+                if (fuzzyMatchXkkzId != null) editor.putString(scopedKey("fuzzy_match_xkkz_id"), fuzzyMatchXkkzId);
+                if (fuzzyMatchKklxdm != null) editor.putString(scopedKey("fuzzy_match_kklxdm"), fuzzyMatchKklxdm);
+                editor.apply();
+            }
             if (fuzzyMatchCourseId != null) {
                 Log.d(TAG, "✅ 模糊匹配目标已恢复: " + fuzzyMatchCourseName + " (xkkz_id=" + fuzzyMatchXkkzId + ", kklxdm="
                         + fuzzyMatchKklxdm + ")");

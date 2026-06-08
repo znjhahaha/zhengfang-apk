@@ -146,7 +146,8 @@ class ScheduleFragment : Fragment() {
         val xnm = if (month >= 7) year.toString() else (year - 1).toString()
         val xqm = if (month >= 7 || month <= 0) "3" else "12"
         
-        val cacheKey = "schedule_${school.id}_${xnm}_${xqm}"
+        val accountKey = UserManager.getInstance().currentAccountStorageKey
+        val cacheKey = "schedule_${accountKey}_${school.id}_${xnm}_${xqm}"
 
         // 如果不是强制刷新，先尝试从缓存加载
         if (!forceRefresh) {

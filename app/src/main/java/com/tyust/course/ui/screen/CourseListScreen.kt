@@ -10,14 +10,16 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,14 +29,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Group
@@ -48,6 +50,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -61,12 +64,18 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
+import com.tyust.course.utils.CourseParser
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemActionButton
 import com.tyust.course.ui.system.SystemCapacityIndicator
@@ -107,7 +116,17 @@ fun CourseListScreen(
     isMultiSelectMode: Boolean = false,
     selectedClassIds: Set<String> = emptySet(),
     onToggleSelection: (String, Boolean) -> Unit = { _, _ -> },
-    onEnterMultiSelect: (String) -> Unit = {}
+    onEnterMultiSelect: (String) -> Unit = {},
+    // 筛选相关
+    showFilterPanel: Boolean = false,
+    onToggleFilterPanel: () -> Unit = {},
+    activeFilter: com.tyust.course.model.CourseFilter? = null,
+    draftFilter: com.tyust.course.model.CourseFilter = com.tyust.course.model.CourseFilter(),
+    onDraftFilterChange: (com.tyust.course.model.CourseFilter) -> Unit = {},
+    onFilterApply: () -> Unit = {},
+    onFilterClear: () -> Unit = {},
+    isFilterLoading: Boolean = false,
+    filterCategories: List<CourseParser.FilterCategory> = emptyList()
 ) {
     val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
     val loadingGroups = remember { mutableStateMapOf<String, Boolean>() }
@@ -136,6 +155,47 @@ fun CourseListScreen(
             PreloadBanner(
                 preloadProgress = preloadProgress,
                 readyCount = preloadedGroupIds.size
+            )
+        }
+
+        if (!showFilterPanel) {
+            FilterToggleHandle(
+                expanded = false,
+                active = activeFilter != null && !activeFilter.isEmpty(),
+                onClick = onToggleFilterPanel,
+                modifier = Modifier.padding(horizontal = PagePadding)
+            )
+        }
+
+        // 筛选面板（可展开/收起）
+        AnimatedVisibility(
+            visible = showFilterPanel,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                CourseFilterPanel(
+                    filter = draftFilter,
+                    onFilterChange = onDraftFilterChange,
+                    onApply = onFilterApply,
+                    onClear = onFilterClear,
+                    filterCategories = filterCategories
+                )
+                FilterToggleHandle(
+                    expanded = true,
+                    active = activeFilter != null && !activeFilter.isEmpty(),
+                    onClick = onToggleFilterPanel,
+                    modifier = Modifier.padding(horizontal = PagePadding)
+                )
+            }
+        }
+
+        // 已激活筛选标签栏
+        if (activeFilter != null && !activeFilter.isEmpty()) {
+            ActiveFilterBar(
+                filter = activeFilter,
+                onClear = onFilterClear,
+                isLoading = isFilterLoading
             )
         }
 
@@ -205,6 +265,115 @@ fun CourseListScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterToggleHandle(
+    expanded: Boolean,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accentColor = if (active) {
+        NeuPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val lineColor = accentColor.copy(alpha = if (expanded) 0.34f else 0.26f)
+    val buttonWidth = if (expanded) 94.dp else 76.dp
+    val buttonHeight = if (expanded) 22.dp else 32.dp
+    val buttonShape = if (expanded) {
+        RoundedCornerShape(
+            topStart = 2.dp,
+            topEnd = 2.dp,
+            bottomStart = 5.dp,
+            bottomEnd = 5.dp
+        )
+    } else {
+        RoundedCornerShape(16.dp)
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(if (expanded) 28.dp else 38.dp),
+        contentAlignment = if (expanded) Alignment.TopCenter else Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerX = size.width / 2f
+            val tabHalfWidth = buttonWidth.toPx() / 2f
+            val lineY = if (expanded) 1.dp.toPx() else size.height / 2f
+            val gap = if (expanded) 0f else 5.dp.toPx()
+            val strokeWidth = 1.dp.toPx()
+
+            drawLine(
+                color = lineColor,
+                start = androidx.compose.ui.geometry.Offset(0f, lineY),
+                end = androidx.compose.ui.geometry.Offset(centerX - tabHalfWidth - gap, lineY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = lineColor,
+                start = androidx.compose.ui.geometry.Offset(centerX + tabHalfWidth + gap, lineY),
+                end = androidx.compose.ui.geometry.Offset(size.width, lineY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.45f),
+                start = androidx.compose.ui.geometry.Offset(0f, lineY + 0.7.dp.toPx()),
+                end = androidx.compose.ui.geometry.Offset(centerX - tabHalfWidth - gap, lineY + 0.7.dp.toPx()),
+                strokeWidth = 0.5.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.45f),
+                start = androidx.compose.ui.geometry.Offset(centerX + tabHalfWidth + gap, lineY + 0.7.dp.toPx()),
+                end = androidx.compose.ui.geometry.Offset(size.width, lineY + 0.7.dp.toPx()),
+                strokeWidth = 0.5.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+
+        Surface(
+            modifier = Modifier
+                .width(buttonWidth)
+                .height(buttonHeight)
+                .border(
+                    width = 1.dp,
+                    color = accentColor.copy(alpha = if (expanded) 0.36f else 0.28f),
+                    shape = buttonShape
+                ),
+            shape = buttonShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = if (expanded) 0.98f else 0.92f),
+            shadowElevation = if (expanded) 0.dp else 3.dp,
+            tonalElevation = if (expanded) 0.dp else 1.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(buttonShape)
+                    .clickable(onClick = onClick),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (expanded) 13.dp else 14.dp),
+                    tint = accentColor.copy(alpha = 0.78f)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (expanded) "收起" else "展开",
+                    color = accentColor.copy(alpha = 0.78f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
@@ -671,5 +840,66 @@ private fun CourseDetailLine(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ActiveFilterBar(
+    filter: com.tyust.course.model.CourseFilter,
+    onClear: () -> Unit,
+    isLoading: Boolean
+) {
+    val tags = filter.toDisplayTags()
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = NeuPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                tags.forEach { tag ->
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = NeuPrimary.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            text = tag,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeuPrimary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+            IconButton(
+                onClick = onClear,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "清除筛选",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

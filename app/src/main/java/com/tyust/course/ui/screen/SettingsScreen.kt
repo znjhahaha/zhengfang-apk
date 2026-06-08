@@ -1,5 +1,6 @@
 package com.tyust.course.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,9 +65,12 @@ fun SettingsScreen(
     onCredits: () -> Unit,
     onLogout: () -> Unit,
     onQuotaClick: () -> Unit = {},
+    onRefreshCookieClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
     isSuper: Boolean = false,
-    quotaInfo: String = ""
+    quotaInfo: String = "",
+    canRefreshCookie: Boolean = false,
+    isRefreshingCookie: Boolean = false
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -90,7 +94,11 @@ fun SettingsScreen(
                 studentId = studentId,
                 school = schoolName,
                 isSuper = isSuper,
-                quotaInfo = quotaInfo
+                quotaInfo = quotaInfo,
+                canRefreshCookie = canRefreshCookie,
+                isRefreshingCookie = isRefreshingCookie,
+                onQuotaClick = onQuotaClick,
+                onRefreshCookieClick = onRefreshCookieClick
             )
 
             SettingsSection(title = "账号与教务") {
@@ -192,7 +200,11 @@ private fun SettingsHeader(
     studentId: String,
     school: String,
     isSuper: Boolean,
-    quotaInfo: String
+    quotaInfo: String,
+    canRefreshCookie: Boolean,
+    isRefreshingCookie: Boolean,
+    onQuotaClick: () -> Unit,
+    onRefreshCookieClick: () -> Unit
 ) {
     SystemCard(
         modifier = Modifier.fillMaxWidth(),
@@ -266,10 +278,25 @@ private fun SettingsHeader(
                 )
             }
             if (quotaInfo.isNotBlank()) {
-                SystemStatusBadge(
-                    text = if (isSuper) "无限制" else "配额 $quotaInfo",
-                    tone = if (isSuper) SystemTone.Info else SystemTone.Neutral
-                )
+                Box(modifier = Modifier.clickable(onClick = onQuotaClick)) {
+                    SystemStatusBadge(
+                        text = if (isSuper) "无限制" else "配额 $quotaInfo",
+                        tone = if (isSuper) SystemTone.Info else SystemTone.Neutral
+                    )
+                }
+            }
+            if (canRefreshCookie) {
+                Box(
+                    modifier = Modifier.clickable(
+                        enabled = !isRefreshingCookie,
+                        onClick = onRefreshCookieClick
+                    )
+                ) {
+                    SystemStatusBadge(
+                        text = if (isRefreshingCookie) "更新中" else "更新 Cookie",
+                        tone = SystemTone.Info
+                    )
+                }
             }
         }
     }

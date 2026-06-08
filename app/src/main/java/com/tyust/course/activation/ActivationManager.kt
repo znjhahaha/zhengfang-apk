@@ -45,9 +45,9 @@ object ActivationManager {
     
     /**
      * 获取最大允许学生数
-     * 需求要求限制从 2 改为 1
+     * 开源版默认允许同一学校绑定 3 个账号。
      */
     fun getMaxStudents(context: Context): Int {
-        return 1
+        return 3
     }
 }

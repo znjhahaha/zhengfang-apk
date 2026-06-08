@@ -50,6 +50,8 @@ fun GrabProRoute() {
     
     // Settings State (Persisted in SharedPreferences)
     val prefs = remember { context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE) }
+    val accountStorageKey = remember { UserManager.getInstance().currentAccountStorageKey }
+    fun scopedPrefKey(key: String) = "${key}_${accountStorageKey}"
     
     // UI State - 从持久化存储加载
     var isRunning by remember { mutableStateOf(false) }
@@ -58,24 +60,24 @@ fun GrabProRoute() {
     var retryCount by remember { mutableIntStateOf(0) }
     var targetCourseName by remember { mutableStateOf<String?>(null) }
     var targetCourseTeacher by remember { mutableStateOf<String?>(null) }
-    var logText by remember { mutableStateOf(prefs.getString("log_text", "") ?: "") }  // 持久化日志
+    var logText by remember { mutableStateOf(prefs.getString(scopedPrefKey("log_text"), "") ?: "") }  // 持久化日志
     
-    var interval by remember { mutableStateOf(prefs.getString("interval", "1500") ?: "1500") }
-    var maxRetry by remember { mutableStateOf(prefs.getString("max_retry", "100") ?: "100") }
-    var courseKeywords by remember { mutableStateOf(prefs.getString("course_keywords", "") ?: "") }
-    var scheduledDateTime by remember { mutableStateOf(prefs.getString("scheduled_datetime", "") ?: "") }
-    var isScheduledMode by remember { mutableStateOf(prefs.getBoolean("scheduled_mode", false)) }
-    var hasScheduledTask by remember { mutableStateOf(prefs.getBoolean("has_scheduled_task", false)) }
-    var scheduledTaskInfo by remember { mutableStateOf(prefs.getString("scheduled_task_info", "") ?: "") }
+    var interval by remember { mutableStateOf(prefs.getString(scopedPrefKey("interval"), "1500") ?: "1500") }
+    var maxRetry by remember { mutableStateOf(prefs.getString(scopedPrefKey("max_retry"), "100") ?: "100") }
+    var courseKeywords by remember { mutableStateOf(prefs.getString(scopedPrefKey("course_keywords"), "") ?: "") }
+    var scheduledDateTime by remember { mutableStateOf(prefs.getString(scopedPrefKey("scheduled_datetime"), "") ?: "") }
+    var isScheduledMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("scheduled_mode"), false)) }
+    var hasScheduledTask by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("has_scheduled_task"), false)) }
+    var scheduledTaskInfo by remember { mutableStateOf(prefs.getString(scopedPrefKey("scheduled_task_info"), "") ?: "") }
     
     // 队列相关状态
     var queue by remember { mutableStateOf(SmartSelector.getInstance().queue.toList()) }
     var queueVersion by remember { mutableIntStateOf(0) }  // 🔧 强制刷新计数器
-    var isParallelMode by remember { mutableStateOf(prefs.getBoolean("parallel_mode", false)) }
-    var isExactModeGlobal by remember { mutableStateOf(prefs.getBoolean("exact_mode_global", true)) } // 🔧 全局模式状态持久化
+    var isParallelMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("parallel_mode"), false)) }
+    var isExactModeGlobal by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("exact_mode_global"), true)) } // 🔧 全局模式状态持久化
     
     // 🔧 模糊匹配捡漏模式
-    var isFuzzyMatchMode by remember { mutableStateOf(prefs.getBoolean("fuzzy_match_mode", false)) }
+    var isFuzzyMatchMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("fuzzy_match_mode"), false)) }
     var fuzzyMatchTarget by remember { mutableStateOf<String?>(SmartSelector.getInstance().fuzzyMatchCourseName) }
 
     // 🔧 辅助函数：添加日志并限制在 100 条以内，防止变卡
@@ -88,7 +90,7 @@ fun GrabProRoute() {
     
     // 使用课程ID作为key的状态Map，支持持久化
     var queueItemStatuses by remember { 
-        val savedStatuses = prefs.getString("queue_item_statuses", null)
+        val savedStatuses = prefs.getString(scopedPrefKey("queue_item_statuses"), null)
         val loaded = if (savedStatuses != null) {
             try {
                 val map = mutableMapOf<String, com.tyust.course.ui.screen.GrabQueueItemStatus>()
@@ -118,30 +120,30 @@ fun GrabProRoute() {
     var selectedPeriod by remember { mutableStateOf("") }
     
     // 警告对话框控制
-    var showScheduleWarning by remember { mutableStateOf(prefs.getBoolean("show_schedule_warning", true)) }
+    var showScheduleWarning by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("show_schedule_warning"), true)) }
     
     // 保存队列状态的辅助函数
     fun saveQueueStatuses() {
         val statusString = queueItemStatuses.entries
             .filter { it.value != com.tyust.course.ui.screen.GrabQueueItemStatus.WAITING }
             .joinToString(";") { "${it.key}=${it.value.name}" }
-        prefs.edit().putString("queue_item_statuses", statusString).apply()
+        prefs.edit().putString(scopedPrefKey("queue_item_statuses"), statusString).apply()
     }
     
     // Save state helper - 保存所有状态包括日志
     fun saveState() {
         saveQueueStatuses()
         prefs.edit()
-            .putString("interval", interval)
-            .putString("max_retry", maxRetry)
-            .putString("course_keywords", courseKeywords)
-            .putString("scheduled_datetime", scheduledDateTime)
-            .putBoolean("scheduled_mode", isScheduledMode)
-            .putBoolean("has_scheduled_task", hasScheduledTask)
-            .putString("scheduled_task_info", scheduledTaskInfo)
-            .putString("log_text", logText)
-            .putBoolean("parallel_mode", isParallelMode)  // 保存并行模式
-            .putBoolean("exact_mode_global", isExactModeGlobal) // 🔧 保存全局模式状态
+            .putString(scopedPrefKey("interval"), interval)
+            .putString(scopedPrefKey("max_retry"), maxRetry)
+            .putString(scopedPrefKey("course_keywords"), courseKeywords)
+            .putString(scopedPrefKey("scheduled_datetime"), scheduledDateTime)
+            .putBoolean(scopedPrefKey("scheduled_mode"), isScheduledMode)
+            .putBoolean(scopedPrefKey("has_scheduled_task"), hasScheduledTask)
+            .putString(scopedPrefKey("scheduled_task_info"), scheduledTaskInfo)
+            .putString(scopedPrefKey("log_text"), logText)
+            .putBoolean(scopedPrefKey("parallel_mode"), isParallelMode)  // 保存并行模式
+            .putBoolean(scopedPrefKey("exact_mode_global"), isExactModeGlobal) // 🔧 保存全局模式状态
             .apply()
     }
     
@@ -375,6 +377,11 @@ fun GrabProRoute() {
     
     // AlarmManager PendingIntent request code
     val ALARM_REQUEST_CODE = 9999
+
+    fun alarmRequestCodeFor(accountStorageKey: String): Int {
+        val hash = accountStorageKey.hashCode() and 0x0FFFFFFF
+        return ALARM_REQUEST_CODE + hash
+    }
     
     // Helper: 取消已设置的闹钟
     fun cancelScheduledAlarm(ctx: Context, requestCode: Int) {
@@ -443,7 +450,14 @@ fun GrabProRoute() {
         val delayMs = targetTime.time - now.time
         if (delayMs <= 0) { Toast.makeText(context, "开始时间必须在当前时间之后", Toast.LENGTH_SHORT).show(); return }
         
-        // Cancel any existing scheduled alarm
+        val userManager = UserManager.getInstance()
+        val scheduledAccountKey = userManager.currentAccountKey
+        val scheduledAccountStorageKey = userManager.currentAccountStorageKey
+        val scheduledInterval = interval.toIntOrNull() ?: 1500
+        val scheduledMaxRetry = maxRetry.toIntOrNull() ?: 100
+
+        // Cancel any existing scheduled alarm for this account and legacy global alarm
+        cancelScheduledAlarm(context, alarmRequestCodeFor(scheduledAccountStorageKey))
         cancelScheduledAlarm(context, ALARM_REQUEST_CODE)
         scheduledJob?.cancel()
         
@@ -456,24 +470,28 @@ fun GrabProRoute() {
         saveState()
         
         val delayMinutes = delayMs / 60000
-        Toast.makeText(context, "✅ 定时任务已创建，将在 ${delayMinutes} 分钟后开始", Toast.LENGTH_LONG).show()
-        appendLog("⏰ 定时任务已设置，将在 $scheduledDateTime 开始抢课")
+        Toast.makeText(context, "定时任务已创建，将在 ${delayMinutes} 分钟后开始", Toast.LENGTH_LONG).show()
+        appendLog("定时任务已设置，将在 $scheduledDateTime 开始抢课")
         if (queue.isNotEmpty()) {
-            appendLog("📋 队列包含 ${queue.size} 门课程")
+            appendLog("队列包含 ${queue.size} 门课程")
         }
-        appendLog("📱 使用 AlarmManager 实现，后台也能可靠触发")
+        appendLog("使用 AlarmManager 实现，后台也能可靠触发")
         
         // 使用 AlarmManager 设置可靠的定时任务
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, GrabAlarmReceiver::class.java).apply {
             action = GrabAlarmReceiver.ACTION_SCHEDULED_GRAB
             putExtra(GrabAlarmReceiver.EXTRA_COURSE_KEYWORDS, queueKeywords)
-            putExtra("parallel_mode", isParallelMode)  // 传递并行模式设置
+            putExtra(GrabAlarmReceiver.EXTRA_ACCOUNT_KEY, scheduledAccountKey)
+            putExtra(GrabAlarmReceiver.EXTRA_ACCOUNT_STORAGE_KEY, scheduledAccountStorageKey)
+            putExtra(GrabAlarmReceiver.EXTRA_INTERVAL, scheduledInterval)
+            putExtra(GrabAlarmReceiver.EXTRA_MAX_RETRY, scheduledMaxRetry)
+            putExtra(GrabAlarmReceiver.EXTRA_PARALLEL_MODE, isParallelMode)
         }
         
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            ALARM_REQUEST_CODE,
+            alarmRequestCodeFor(scheduledAccountStorageKey),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -503,10 +521,18 @@ fun GrabProRoute() {
             // 如果协程先触发（App在前台），直接启动
             if (hasScheduledTask) {
                 Log.d("GrabProRoute", "协程触发定时任务")
-                executeScheduledGrab(context) { msg: String -> appendLog(msg) }
+                val activeManager = UserManager.getInstance()
+                if (scheduledAccountKey.isBlank() || scheduledAccountKey == activeManager.currentAccountKey || activeManager.switchToAccount(scheduledAccountKey)) {
+                    SmartSelector.getInstance().setInterval(scheduledInterval)
+                    SmartSelector.getInstance().setMaxRetry(scheduledMaxRetry)
+                    executeScheduledGrab(context) { msg: String -> appendLog(msg) }
+                    isRunning = true
+                } else {
+                    appendLog("定时任务失败：找不到创建任务的账号，请重新登录")
+                    Toast.makeText(context, "定时任务账号已失效，请重新登录", Toast.LENGTH_LONG).show()
+                }
                 
                 hasScheduledTask = false
-                isRunning = true
                 saveState()
             }
         }
@@ -537,7 +563,7 @@ fun GrabProRoute() {
         isFuzzyMatchMode = isFuzzyMatchMode,
         onFuzzyMatchModeChange = { mode ->
             isFuzzyMatchMode = mode
-            prefs.edit().putBoolean("fuzzy_match_mode", mode).apply()
+            prefs.edit().putBoolean(scopedPrefKey("fuzzy_match_mode"), mode).apply()
         },
         fuzzyMatchTarget = fuzzyMatchTarget,
         onStartFuzzyMatch = { startFuzzyMatchGrabbing() },
@@ -555,6 +581,10 @@ fun GrabProRoute() {
         hasScheduledTask = hasScheduledTask,
         scheduledTaskInfo = scheduledTaskInfo,
         onCancelScheduledTask = { 
+            val currentStorageKey = UserManager.getInstance().currentAccountStorageKey
+            cancelScheduledAlarm(context, alarmRequestCodeFor(currentStorageKey))
+            cancelScheduledAlarm(context, ALARM_REQUEST_CODE)
+            scheduledJob?.cancel()
             hasScheduledTask = false
             scheduledTaskInfo = ""
             saveState()
@@ -611,7 +641,7 @@ fun GrabProRoute() {
         showScheduleWarning = showScheduleWarning,
         onDismissWarningForever = {
             showScheduleWarning = false
-            prefs.edit().putBoolean("show_schedule_warning", false).apply()
+            prefs.edit().putBoolean(scopedPrefKey("show_schedule_warning"), false).apply()
         }
     )
     

@@ -338,6 +338,37 @@ public class CourseApiClient {
                 client.newCall(request).enqueue(callback);
         }
 
+        public String fetchCourseDisplayParamsSync(SchoolConfig school, String xkkz_id, String kklxdm,
+                        String njdm_id, String zyh_id) {
+                String url = school.getFullBasePath() + school.courseDisplayPath + "?gnmkdm=" + school.courseGnmkdm;
+                String postBody = "xkkz_id=" + (xkkz_id != null ? xkkz_id : "") +
+                                "&kklxdm=" + (kklxdm != null ? kklxdm : "01") +
+                                "&xszxzt=1" +
+                                "&njdm_id=" + (njdm_id != null ? njdm_id : "2024") +
+                                "&zyh_id=" + (zyh_id != null ? zyh_id : "") +
+                                "&kspage=0" +
+                                "&jspage=0";
+
+                Log.d(TAG, "Sync fetching display params from: " + url);
+                Log.d(TAG, "Sync display POST body: " + postBody);
+
+                Request request = createRequestBuilder(school)
+                                .url(url)
+                                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                                .post(okhttp3.RequestBody.create(postBody,
+                                                okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
+                                .build();
+
+                try (okhttp3.Response response = client.newCall(request).execute()) {
+                        if (response.body() != null) {
+                                return response.body().string();
+                        }
+                } catch (Exception e) {
+                        Log.e(TAG, "fetchCourseDisplayParamsSync error: " + e.getMessage());
+                }
+                return null;
+        }
+
         // 获取可选课程列表
         public void fetchAvailableCourses(SchoolConfig school, String postBody, Callback callback) {
                 String url = school.getAvailableCoursesUrl();
@@ -354,6 +385,46 @@ public class CourseApiClient {
                 }
 
                 client.newCall(builder.build()).enqueue(callback);
+        }
+
+        public String fetchAvailableCoursesSync(SchoolConfig school, String postBody) {
+                String url = school.getAvailableCoursesUrl();
+                Log.d(TAG, "Sync fetching available courses from: " + url);
+                Log.d(TAG, "Sync available courses POST body: " + postBody);
+
+                Request.Builder builder = createRequestBuilder(school)
+                                .url(url)
+                                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                                .header("X-Requested-With", "XMLHttpRequest");
+
+                if (postBody != null && !postBody.isEmpty()) {
+                        builder.post(okhttp3.RequestBody.create(postBody,
+                                        okhttp3.MediaType.parse("application/x-www-form-urlencoded")));
+                }
+
+                try (okhttp3.Response response = client.newCall(builder.build()).execute()) {
+                        if (response.body() != null) {
+                                return response.body().string();
+                        }
+                } catch (Exception e) {
+                        Log.e(TAG, "fetchAvailableCoursesSync error: " + e.getMessage());
+                }
+                return null;
+        }
+
+        /**
+         * 带筛选条件获取可选课程列表。
+         * 在 baseParams 基础上追加 CourseFilter 的 POST 参数。
+         */
+        public void fetchFilteredCourses(SchoolConfig school, String baseParams,
+                        com.tyust.course.model.CourseFilter filter, Callback callback) {
+                String filterParams = filter.toPostParams();
+                String postBody = baseParams;
+                if (filterParams != null && !filterParams.isEmpty()) {
+                        postBody = baseParams + "&" + filterParams;
+                }
+                Log.d(TAG, "Fetching filtered courses, filter: " + filterParams);
+                fetchAvailableCourses(school, postBody, callback);
         }
 
         // 获取已选课程列表

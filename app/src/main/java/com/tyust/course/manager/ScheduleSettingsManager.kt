@@ -157,8 +157,14 @@ class ScheduleSettingsManager private constructor() {
         val weeks: String
     )
     
+    private fun customCoursesKey(): String {
+        return "${KEY_CUSTOM_COURSES}_${UserManager.getInstance().currentAccountStorageKey}"
+    }
+    
     fun getCustomCourses(): List<CustomCourse> {
-        val json = prefs?.getString(KEY_CUSTOM_COURSES, null) ?: return emptyList()
+        val json = prefs?.getString(customCoursesKey(), null)
+            ?: prefs?.getString(KEY_CUSTOM_COURSES, null)
+            ?: return emptyList()
         try {
             val array = JSONArray(json)
             val list = mutableListOf<CustomCourse>()
@@ -206,6 +212,9 @@ class ScheduleSettingsManager private constructor() {
             obj.put("weeks", c.weeks)
             array.put(obj)
         }
-        prefs?.edit()?.putString(KEY_CUSTOM_COURSES, array.toString())?.apply()
+        prefs?.edit()
+            ?.putString(customCoursesKey(), array.toString())
+            ?.remove(KEY_CUSTOM_COURSES)
+            ?.apply()
     }
 }

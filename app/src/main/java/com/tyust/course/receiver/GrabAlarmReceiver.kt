@@ -20,32 +20,60 @@ class GrabAlarmReceiver : BroadcastReceiver() {
         private const val TAG = "GrabAlarmReceiver"
         const val ACTION_SCHEDULED_GRAB = "com.tyust.course.action.SCHEDULED_GRAB"
         const val EXTRA_COURSE_KEYWORDS = "course_keywords"
+        const val EXTRA_ACCOUNT_KEY = "account_key"
+        const val EXTRA_ACCOUNT_STORAGE_KEY = "account_storage_key"
+        const val EXTRA_INTERVAL = "interval"
+        const val EXTRA_MAX_RETRY = "max_retry"
+        const val EXTRA_PARALLEL_MODE = "parallel_mode"
     }
     
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "⏰ 定时抢课触发!")
         
         if (intent.action != ACTION_SCHEDULED_GRAB) return
-        
+
+        val userManager = UserManager.getInstance()
+        val scheduledAccountKey = intent.getStringExtra(EXTRA_ACCOUNT_KEY).orEmpty()
+        if (scheduledAccountKey.isNotBlank() && scheduledAccountKey != userManager.currentAccountKey) {
+            val switched = userManager.switchToAccount(scheduledAccountKey)
+            if (!switched) {
+                val fallbackStorageKey = intent.getStringExtra(EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
+                appendLog(context, fallbackStorageKey, "定时任务失败：找不到创建任务的账号，请重新登录")
+                Log.e(TAG, "找不到定时任务账号: $scheduledAccountKey")
+                return
+            }
+        }
+
+        val accountStorageKey = intent.getStringExtra(EXTRA_ACCOUNT_STORAGE_KEY)
+            ?: userManager.currentAccountStorageKey
         val courseKeywords = intent.getStringExtra(EXTRA_COURSE_KEYWORDS) ?: ""
         Log.d(TAG, "关键词: $courseKeywords")
         
-        // 检查登录状态
-        val school = UserManager.getInstance().currentSchool
+        val school = userManager.currentSchool
         if (school == null) {
             Log.e(TAG, "❌ 未登录，无法执行定时任务")
-            appendLog(context, "❌ 未登录，无法执行定时任务")
+            appendLog(context, accountStorageKey, "未登录，无法执行定时任务")
             return
         }
         
-        // 保存日志
-        appendLog(context, "⏰ 定时任务触发! 关键词: $courseKeywords")
+        appendLog(context, accountStorageKey, "定时任务触发，关键词: $courseKeywords")
         
-        // 获取抢课参数
         val prefs = context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE)
-        val interval = prefs.getString("interval", "1500")?.toIntOrNull() ?: 1500
-        val maxRetry = prefs.getString("max_retry", "100")?.toIntOrNull() ?: 100
-        val isParallelMode = prefs.getBoolean("parallel_mode", false)
+        val interval = if (intent.hasExtra(EXTRA_INTERVAL)) {
+            intent.getIntExtra(EXTRA_INTERVAL, 1500)
+        } else {
+            prefs.getString(scopedKey("interval", accountStorageKey), prefs.getString("interval", "1500"))?.toIntOrNull() ?: 1500
+        }
+        val maxRetry = if (intent.hasExtra(EXTRA_MAX_RETRY)) {
+            intent.getIntExtra(EXTRA_MAX_RETRY, 100)
+        } else {
+            prefs.getString(scopedKey("max_retry", accountStorageKey), prefs.getString("max_retry", "100"))?.toIntOrNull() ?: 100
+        }
+        val isParallelMode = if (intent.hasExtra(EXTRA_PARALLEL_MODE)) {
+            intent.getBooleanExtra(EXTRA_PARALLEL_MODE, false)
+        } else {
+            prefs.getBoolean(scopedKey("parallel_mode", accountStorageKey), prefs.getBoolean("parallel_mode", false))
+        }
         
         // 🔧 使用 GrabService 的关键词模式
         // GrabService.fetchCourseDetailsAndMatch 已修改为优先使用队列中保存的 classId
@@ -65,16 +93,24 @@ class GrabAlarmReceiver : BroadcastReceiver() {
             context.startService(serviceIntent)
         }
         
-        // 清除定时任务标志
-        prefs.edit().putBoolean("has_scheduled_task", false).apply()
+        // 清除当前账号的定时任务标志
+        prefs.edit()
+            .putBoolean(scopedKey("has_scheduled_task", accountStorageKey), false)
+            .remove("has_scheduled_task")
+            .apply()
+    }
+
+    private fun scopedKey(key: String, accountStorageKey: String): String {
+        return if (accountStorageKey.isBlank()) key else "${key}_${accountStorageKey}"
     }
     
-    private fun appendLog(context: Context, message: String) {
+    private fun appendLog(context: Context, accountStorageKey: String, message: String) {
         val prefs = context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE)
-        val currentLog = prefs.getString("log_text", "") ?: ""
+        val logKey = scopedKey("log_text", accountStorageKey)
+        val currentLog = prefs.getString(logKey, prefs.getString("log_text", "")) ?: ""
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         val newLog = "$currentLog[$timestamp] $message\n"
-        prefs.edit().putString("log_text", newLog).apply()
+        prefs.edit().putString(logKey, newLog).apply()
     }
 }
 
