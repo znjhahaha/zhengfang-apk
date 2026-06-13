@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.tyust.course.MainActivity
@@ -79,6 +80,12 @@ class GrabService : Service() {
     // 服务器健康检查相关
     private val pingTimeoutMs = 3000L  // 服务器响应超时阈值（毫秒）
     private var skipCount = 0  // 因服务器卡顿跳过的次数
+
+    private sealed class ServerHealthCheckResult {
+        data class Healthy(val responseTimeMs: Long) : ServerHealthCheckResult()
+        data class Slow(val responseTimeMs: Long) : ServerHealthCheckResult()
+        data class Failed(val responseTimeMs: Long, val reason: String) : ServerHealthCheckResult()
+    }
     
     // 多关键词队列支持 (用分号或换行分隔多组关键词)
     private var keywordQueue = mutableListOf<String>()
@@ -701,25 +708,36 @@ class GrabService : Service() {
 
     private fun proceedToServerHealthCheck(school: SchoolConfig, course: Course) {
         broadcastLog("🔍 检测服务器状态...")
-        checkServerHealth(school) { isHealthy, responseTime ->
+        checkServerHealth(school) { result ->
             if (!isRunning) return@checkServerHealth
-            
-            if (isHealthy) {
-                // 服务器正常，开始抢课
-                retryCount++
-                broadcastLog("🔄 第 $retryCount 次尝试 (响应: ${responseTime}ms)")
-                updateNotification("第 $retryCount 次尝试 | 成功: $successCount | 失败: $failCount | 跳过: $skipCount")
-                
-                // Step 0: 获取隐藏参数
-                fetchHiddenParamsAndProceed(school, course)
-            } else {
-                // 服务器响应慢或超时，跳过本次尝试
-                skipCount++
-                broadcastLog("⏸️ 服务器响应慢 (${responseTime}ms > ${pingTimeoutMs}ms)，跳过本次，已跳过 $skipCount 次")
-                updateNotification("等待服务器恢复 | 跳过: $skipCount | 剩余尝试: ${maxRetry - retryCount}")
-                
-                // 等待后重试，但不计入重试次数
-                scheduleNextAttempt()
+
+            when (result) {
+                is ServerHealthCheckResult.Healthy -> {
+                    // 服务器正常，开始抢课
+                    retryCount++
+                    broadcastLog("🔄 第 $retryCount 次尝试 (响应: ${result.responseTimeMs}ms)")
+                    updateNotification("第 $retryCount 次尝试 | 成功: $successCount | 失败: $failCount | 跳过: $skipCount")
+
+                    // Step 0: 获取隐藏参数
+                    fetchHiddenParamsAndProceed(school, course)
+                }
+                is ServerHealthCheckResult.Slow -> {
+                    // 只有真实超过阈值时才跳过本次尝试
+                    skipCount++
+                    broadcastLog("⏸️ 服务器响应慢 (${result.responseTimeMs}ms > ${pingTimeoutMs}ms)，跳过本次，已跳过 $skipCount 次")
+                    updateNotification("等待服务器恢复 | 跳过: $skipCount | 剩余尝试: ${maxRetry - retryCount}")
+
+                    // 等待后重试，但不计入重试次数
+                    scheduleNextAttempt()
+                }
+                is ServerHealthCheckResult.Failed -> {
+                    // 快速失败不等同于响应慢，继续交给真实抢课接口判断
+                    retryCount++
+                    broadcastLog("健康检查失败 (${result.responseTimeMs}ms)：${result.reason}，改为直接尝试")
+                    broadcastLog("第 $retryCount 次尝试 (健康探针异常)")
+                    updateNotification("第 $retryCount 次尝试 | 成功: $successCount | 失败: $failCount | 跳过: $skipCount")
+                    fetchHiddenParamsAndProceed(school, course)
+                }
             }
         }
     }
@@ -784,38 +802,41 @@ class GrabService : Service() {
         broadcastUpdate("❌ Cookie 已失效，请重新登录")
     }
 
-    // 检查服务器健康状态（通过获取首页响应时间判断）
-    private fun checkServerHealth(school: SchoolConfig, callback: (isHealthy: Boolean, responseTime: Long) -> Unit) {
-        val startTime = System.currentTimeMillis()
-        
-        Thread {
-            try {
-                // 使用简单的 HEAD 请求检测服务器响应
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(pingTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    .readTimeout(pingTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    .build()
-                
-                val request = okhttp3.Request.Builder()
-                    .url(school.baseUrl)
-                    .head()
-                    .build()
-                
-                val response = client.newCall(request).execute()
-                val responseTime = System.currentTimeMillis() - startTime
-                response.close()
-                
+    // 检查服务器健康状态（复用 CourseApiClient 的统一网络栈，探测真实教务路径）
+    private fun checkServerHealth(school: SchoolConfig, callback: (ServerHealthCheckResult) -> Unit) {
+        val startTime = SystemClock.elapsedRealtime()
+
+        CourseApiClient.getInstance().checkServerHealth(school, serviceAccountStorageKey, pingTimeoutMs, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                val responseTime = SystemClock.elapsedRealtime() - startTime
+                val reason = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                Log.w(TAG, "Server health check failed: $reason (${responseTime}ms)")
                 handler.post {
-                    callback(responseTime < pingTimeoutMs, responseTime)
-                }
-            } catch (e: Exception) {
-                val responseTime = System.currentTimeMillis() - startTime
-                Log.w(TAG, "Server health check failed: ${e.message}")
-                handler.post {
-                    callback(false, responseTime)
+                    if (responseTime >= pingTimeoutMs) {
+                        callback(ServerHealthCheckResult.Slow(responseTime))
+                    } else {
+                        callback(ServerHealthCheckResult.Failed(responseTime, reason))
+                    }
                 }
             }
-        }.start()
+
+            override fun onResponse(call: Call, response: Response) {
+                val responseTime = SystemClock.elapsedRealtime() - startTime
+                val code = response.code
+                val isSuccessful = response.isSuccessful
+                response.close()
+
+                handler.post {
+                    if (responseTime >= pingTimeoutMs) {
+                        callback(ServerHealthCheckResult.Slow(responseTime))
+                    } else if (isSuccessful || code in 300..399) {
+                        callback(ServerHealthCheckResult.Healthy(responseTime))
+                    } else {
+                        callback(ServerHealthCheckResult.Failed(responseTime, "HTTP $code"))
+                    }
+                }
+            }
+        })
     }
     
     // Step 0: 获取页面隐藏参数后继续选课流程

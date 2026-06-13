@@ -388,6 +388,32 @@ public class CourseApiClient {
                 });
         }
 
+        // 轻量服务器健康检查：复用账号 Cookie、SSL 兼容和统一请求头，探测真实教务路径。
+        public void checkServerHealth(SchoolConfig school, long timeoutMs, Callback callback) {
+                String url = school.getCourseSelectionParamsUrl();
+                Log.d(TAG, "Checking server health from: " + url + ", timeoutMs=" + timeoutMs);
+
+                Request request = createRequestBuilder(school)
+                                .url(url)
+                                .cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
+                                .get()
+                                .build();
+
+                OkHttpClient healthClient = client.newBuilder()
+                                .connectTimeout(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                .readTimeout(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                .callTimeout(timeoutMs + 500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                .build();
+                healthClient.newCall(request).enqueue(callback);
+        }
+
+        public void checkServerHealth(SchoolConfig school, String accountStorageKey, long timeoutMs, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        checkServerHealth(school, timeoutMs, callback);
+                        return null;
+                });
+        }
+
         // 获取选课页面参数 (Index页面) - 强制网络刷新
         public void fetchCourseParams(SchoolConfig school, Callback callback) {
                 String url = school.getCourseSelectionParamsUrl();
