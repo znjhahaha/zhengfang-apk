@@ -86,6 +86,25 @@ class GrabService : Service() {
         data class Slow(val responseTimeMs: Long) : ServerHealthCheckResult()
         data class Failed(val responseTimeMs: Long, val reason: String) : ServerHealthCheckResult()
     }
+
+    private data class GrabTaskContext(
+        val workerId: Int,
+        val origin: String,
+        val course: Course,
+        var params: Map<String, String>,
+        val courseKey: String,
+        var retryCount: Int = 0,
+        var skipCount: Int = 0,
+        var cancelled: Boolean = false
+    )
+
+    private val pendingGrabTasks = java.util.ArrayDeque<GrabTaskContext>()
+    private val activeGrabTasks = mutableMapOf<Int, GrabTaskContext>()
+    private var nextParallelWorkerId = 1
+    private var isParallelTaskPoolRunning = false
+    private var parallelTaskOrigin = ""
+    private var parallelTaskHadSuccess = false
+    private var parallelTaskTotal = 0
     
     // 多关键词队列支持 (用分号或换行分隔多组关键词)
     private var keywordQueue = mutableListOf<String>()
@@ -422,6 +441,7 @@ class GrabService : Service() {
                 // 🔧 直接队列模式：利用 SmartSelector.queue 中的现有参数
                 interval = intent.getIntExtra(EXTRA_INTERVAL, 1500)
                 maxRetry = intent.getIntExtra(EXTRA_MAX_RETRY, 100)
+                isParallelMode = intent.getBooleanExtra(EXTRA_PARALLEL_MODE, false)
                 currentSchool = UserManager.getInstance().currentSchool
                 
                 SmartSelector.getInstance().init(this)
@@ -440,20 +460,26 @@ class GrabService : Service() {
                 checkCookieValidity(currentSchool!!) { isValid ->
                     if (!isValid) return@checkCookieValidity
                     
+                    val modeText = if (isParallelMode && queue.size > 1) "并行队列抢课" else "直接队列抢课"
                     startForeground(NOTIFICATION_ID, createNotification("正在准备队列抢课..."))
-                    broadcastLog("🚀 启动直接队列抢课 (共 ${queue.size} 门)")
+                    broadcastLog("启动$modeText (共 ${queue.size} 门，仅当前账号)")
                     
                     isQueueMode = true
                     currentQueueIndex = 0
                     totalQueueSuccess = 0
                     
-                    startNextQueueItem()
+                    if (isParallelMode && queue.size > 1) {
+                        startParallelCourseTasks(queue, origin = "queue", label = "队列抢课")
+                    } else {
+                        startNextQueueItem()
+                    }
                 }
             }
             ACTION_START_FUZZY_MATCH -> {
                 // 🔧 模糊匹配捡漏模式：监控课程类别人数变化
                 interval = intent.getIntExtra(EXTRA_INTERVAL, 2000) // 默认2秒间隔
                 maxRetry = intent.getIntExtra(EXTRA_MAX_RETRY, 999) // 模糊匹配模式默认持续监控
+                isParallelMode = intent.getBooleanExtra(EXTRA_PARALLEL_MODE, false)
                 currentSchool = UserManager.getInstance().currentSchool
                 
                 SmartSelector.getInstance().init(this)
@@ -560,6 +586,454 @@ class GrabService : Service() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, notification)
     }
+
+    private fun buildParallelCourseKey(course: Course): String {
+        return listOf(
+            course.uuid,
+            course.classId.orEmpty(),
+            course.doJxbId.orEmpty(),
+            course.courseId.orEmpty(),
+            course.name.orEmpty(),
+            course.teacher.orEmpty(),
+            course.time.orEmpty()
+        ).firstOrNull { it.isNotBlank() } ?: "course_${SystemClock.elapsedRealtime()}"
+    }
+
+    private fun courseDisplayName(course: Course): String {
+        return course.name?.takeIf { it.isNotBlank() } ?: course.courseId ?: "未知课程"
+    }
+
+    private fun keywordToCourse(keyword: String): Course {
+        val parts = keyword.split(",", "，", ";", "；", " ").map { it.trim() }.filter { it.isNotEmpty() }
+        return Course().apply {
+            name = parts.firstOrNull() ?: keyword
+            teacher = parts.drop(1).firstOrNull().orEmpty()
+            courseId = ""
+            useExactMatch = false
+        }
+    }
+
+    private fun startParallelCourseTasks(courses: List<Course>, origin: String, label: String) {
+        val school = currentSchool ?: return
+        if (courses.isEmpty()) {
+            broadcastLog("并行任务为空，无法启动")
+            stopSelf()
+            return
+        }
+
+        pendingGrabTasks.clear()
+        activeGrabTasks.clear()
+        activeWorkers.clear()
+        nextParallelWorkerId = 1
+        parallelTaskOrigin = origin
+        parallelTaskHadSuccess = false
+        parallelTaskTotal = courses.size
+        isParallelTaskPoolRunning = true
+        isRunning = true
+        successCount = 0
+        failCount = 0
+        retryCount = 0
+        skipCount = 0
+
+        val baseParams = courseParams?.toMap() ?: emptyMap()
+        courses.map { it.copy() }.forEach { course ->
+            val workerId = nextParallelWorkerId++
+            pendingGrabTasks.add(
+                GrabTaskContext(
+                    workerId = workerId,
+                    origin = origin,
+                    course = course,
+                    params = baseParams,
+                    courseKey = buildParallelCourseKey(course)
+                )
+            )
+        }
+
+        val workerLimit = minOf(parallelWorkerCount, pendingGrabTasks.size)
+        startForeground(NOTIFICATION_ID, createNotification("$label：并行 $workerLimit/$parallelTaskTotal"))
+        broadcastLog("启动并行抢课：$label，共 $parallelTaskTotal 门，仅使用当前账号")
+        fillParallelTaskSlots(school)
+    }
+
+    private fun fillParallelTaskSlots(school: SchoolConfig) {
+        if (!isRunning || !isParallelTaskPoolRunning) return
+        val workerLimit = parallelWorkerCount.coerceAtLeast(1)
+        while (activeGrabTasks.size < workerLimit && pendingGrabTasks.isNotEmpty()) {
+            val task = pendingGrabTasks.removeFirst()
+            activeGrabTasks[task.workerId] = task
+            activeWorkers.add(task.workerId)
+            broadcastQueueUpdate(courseDisplayName(task.course), "grabbing", task.course.courseId ?: task.course.classId ?: task.courseKey)
+            broadcastLog("线程 ${task.workerId} 开始处理：${courseDisplayName(task.course)}")
+            runParallelTaskLoop(school, task)
+        }
+        updateNotification("并行抢课中 | 运行: ${activeGrabTasks.size} | 等待: ${pendingGrabTasks.size} | 成功: $successCount | 失败: $failCount")
+        finishParallelPoolIfIdle()
+    }
+
+    private fun runParallelTaskLoop(school: SchoolConfig, task: GrabTaskContext) {
+        if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return
+        if (task.retryCount >= maxRetry) {
+            finishParallelTask(task, success = false, message = "已达最大重试次数")
+            return
+        }
+
+        if (task.retryCount == 0 || task.retryCount % 200 == 0) {
+            checkCookieValidity(school) { isValid ->
+                if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return@checkCookieValidity
+                if (!isValid) return@checkCookieValidity
+                proceedParallelHealthCheck(school, task)
+            }
+        } else {
+            proceedParallelHealthCheck(school, task)
+        }
+    }
+
+    private fun proceedParallelHealthCheck(school: SchoolConfig, task: GrabTaskContext) {
+        checkServerHealth(school) { result ->
+            if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return@checkServerHealth
+            when (result) {
+                is ServerHealthCheckResult.Healthy -> {
+                    task.retryCount++
+                    retryCount++
+                    broadcastLog("线程 ${task.workerId} 第 ${task.retryCount} 次尝试：${courseDisplayName(task.course)} (${result.responseTimeMs}ms)")
+                    fetchHiddenParamsAndProceed(school, task)
+                }
+                is ServerHealthCheckResult.Slow -> {
+                    task.skipCount++
+                    skipCount++
+                    broadcastLog("线程 ${task.workerId} 服务器响应慢 (${result.responseTimeMs}ms > ${pingTimeoutMs}ms)，延后重试")
+                    scheduleParallelTaskRetry(school, task)
+                }
+                is ServerHealthCheckResult.Failed -> {
+                    task.retryCount++
+                    retryCount++
+                    broadcastLog("线程 ${task.workerId} 健康检查失败 (${result.responseTimeMs}ms)：${result.reason}，直接尝试")
+                    fetchHiddenParamsAndProceed(school, task)
+                }
+            }
+            updateNotification("并行抢课中 | 成功: $successCount | 失败: $failCount | 尝试: $retryCount")
+        }
+    }
+
+    private fun fetchHiddenParamsAndProceed(school: SchoolConfig, task: GrabTaskContext) {
+        Thread {
+            val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school, serviceAccountStorageKey)
+            val hiddenParams = parseHiddenParams(hiddenHtml ?: "")
+            val merged = task.params.toMutableMap()
+            hiddenParams.forEach { (key, value) ->
+                if (value.isNotEmpty() && merged[key].isNullOrEmpty()) {
+                    merged[key] = value
+                }
+            }
+            task.params = merged
+
+            handler.post {
+                if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return@post
+                if (task.course.useExactMatch && !task.course.classId.isNullOrEmpty()) {
+                    fetchSelectionDetails(school, task)
+                } else {
+                    smartModeMatchFromAllCourses(school, task)
+                }
+            }
+        }.start()
+    }
+
+    private fun getTaskParam(params: Map<String, String>, baseName: String): String {
+        params[baseName]?.takeIf { it.isNotEmpty() }?.let { return it }
+        for (i in 1..5) {
+            params["${baseName}_$i"]?.takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        return ""
+    }
+
+    private fun buildCourseListBody(params: Map<String, String>, course: Course): String {
+        fun getParam(baseName: String) = getTaskParam(params, baseName)
+        val formData = mutableMapOf<String, String>()
+        formData["rwlx"] = course._rwlx?.takeIf { it.isNotEmpty() } ?: params["rwlx"] ?: "1"
+        formData["xkly"] = params["xkly"] ?: "0"
+        formData["bklx_id"] = params["bklx_id"] ?: "0"
+        formData["sfkkjyxdxnxq"] = params["sfkkjyxdxnxq"] ?: "0"
+        formData["kzkcgs"] = params["kzkcgs"] ?: "0"
+        formData["xqh_id"] = getParam("xqh_id").ifEmpty { "1" }
+        formData["jg_id"] = getParam("jg_id").ifEmpty { "05" }
+        formData["zyh_id"] = course.zyh_id?.takeIf { it.isNotEmpty() } ?: getParam("zyh_id")
+        formData["zyfx_id"] = getParam("zyfx_id").ifEmpty { "wfx" }
+        formData["txbsfrl"] = params["txbsfrl"] ?: "0"
+        formData["njdm_id"] = course.njdm_id?.takeIf { it.isNotEmpty() } ?: params["njdm_id"] ?: "2024"
+        formData["bh_id"] = getParam("bh_id")
+        formData["xbm"] = getParam("xbm").ifEmpty { "1" }
+        formData["xslbdm"] = getParam("xslbdm").ifEmpty { "421" }
+        formData["mzm"] = getParam("mzm").ifEmpty { "01" }
+        formData["xz"] = getParam("xz").ifEmpty { "4" }
+        formData["ccdm"] = getParam("ccdm").ifEmpty { "3" }
+        formData["xsbj"] = getParam("xsbj").ifEmpty { "0" }
+        formData["sfkknj"] = params["sfkknj"] ?: "0"
+        formData["gnjkxdnj"] = params["gnjkxdnj"] ?: "0"
+        formData["sfkkzy"] = params["sfkkzy"] ?: "0"
+        formData["kzybkxy"] = params["kzybkxy"] ?: "0"
+        formData["sfznkx"] = params["sfznkx"] ?: "0"
+        formData["zdkxms"] = params["zdkxms"] ?: "0"
+        formData["sfkxq"] = params["sfkxq"] ?: "0"
+        formData["sfkcfx"] = params["sfkcfx"] ?: "0"
+        formData["bbhzxjxb"] = params["bbhzxjxb"] ?: "0"
+        formData["kkbk"] = params["kkbk"] ?: "0"
+        formData["kkbkdj"] = params["kkbkdj"] ?: "0"
+        formData["bklbkcj"] = params["bklbkcj"] ?: "0"
+        formData["xkxnm"] = getParam("xkxnm").ifEmpty { "2025" }
+        formData["xkxqm"] = getParam("xkxqm").ifEmpty { "12" }
+        formData["xkxskcgskg"] = params["xkxskcgskg"] ?: "0"
+        formData["rlkz"] = params["rlkz"] ?: "0"
+        formData["cdrlkz"] = params["cdrlkz"] ?: "0"
+        formData["rlzlkz"] = params["rlzlkz"] ?: "1"
+        formData["kklxdm"] = course.kklxdm?.takeIf { it.isNotEmpty() } ?: params["kklxdm"] ?: "01"
+        formData["kch_id"] = course.courseId?.takeIf { it.isNotEmpty() } ?: ""
+        formData["jxbzcxskg"] = params["jxbzcxskg"] ?: "0"
+        formData["xklc"] = course._xklc?.takeIf { it.isNotEmpty() } ?: params["xklc"] ?: "2"
+        formData["xkkz_id"] = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: params["xkkz_id"] ?: ""
+        formData["cxbj"] = params["cxbj"] ?: "0"
+        formData["fxbj"] = params["fxbj"] ?: "0"
+        formData["kspage"] = "0"
+        formData["jspage"] = "10000"
+        return formData.entries.joinToString("&") { "${it.key}=${it.value}" }
+    }
+
+    private fun smartModeMatchFromAllCourses(school: SchoolConfig, task: GrabTaskContext) {
+        val targetName = task.course.name ?: ""
+        if (targetName.isEmpty()) {
+            finishParallelTask(task, success = false, message = "课程名为空")
+            return
+        }
+
+        CourseApiClient.getInstance().fetchAvailableCourses(school, buildCourseListBody(task.params, task.course), serviceAccountStorageKey, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                broadcastLog("线程 ${task.workerId} 获取课程列表失败: ${e.message}")
+                scheduleParallelTaskRetry(school, task)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val json = response.body?.string() ?: ""
+                try {
+                    val courses = com.tyust.course.utils.CourseParser.parseCourseListFromJson(json)
+                    val targetNameLower = targetName.lowercase()
+                    val targetTeacher = task.course.teacher?.lowercase() ?: ""
+                    val matched = courses.mapNotNull { c ->
+                        val courseName = c.name?.lowercase() ?: ""
+                        var score = 0
+                        if (courseName == targetNameLower) score = 1000
+                        else if (courseName.contains(targetNameLower)) score = 100
+                        else if (targetNameLower.contains(courseName) && courseName.isNotEmpty()) score = 80
+                        if (score > 0 && targetTeacher.isNotEmpty()) {
+                            val teacher = c.teacher?.lowercase() ?: ""
+                            if (teacher.contains(targetTeacher) || targetTeacher.contains(teacher)) score += 20
+                        }
+                        if (score > 0) c to score else null
+                    }.maxByOrNull { it.second }?.first
+
+                    if (matched == null) {
+                        broadcastLog("线程 ${task.workerId} 未找到课程：$targetName")
+                        scheduleParallelTaskRetry(school, task)
+                        return
+                    }
+
+                    task.course.courseId = matched.courseId
+                    task.course.kklxdm = matched.kklxdm
+                    task.course._xkkz_id = matched._xkkz_id
+                    task.course._rwlx = matched._rwlx
+                    task.course._xklc = matched._xklc
+                    task.course.zyh_id = matched.zyh_id
+                    task.course.njdm_id = matched.njdm_id
+                    task.course.useExactMatch = false
+                    broadcastLog("线程 ${task.workerId} 匹配到：${matched.name}")
+                    handler.post { fetchSelectionDetails(school, task) }
+                } catch (e: Exception) {
+                    broadcastLog("线程 ${task.workerId} 解析课程列表失败")
+                    scheduleParallelTaskRetry(school, task)
+                }
+            }
+        })
+    }
+
+    private fun fetchSelectionDetails(school: SchoolConfig, task: GrabTaskContext) {
+        val course = task.course
+        val params = task.params
+        val xkkzId = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: params["xkkz_id"] ?: ""
+        val njdmId = course.njdm_id?.takeIf { it.isNotEmpty() } ?: params["njdm_id"] ?: "2024"
+        val zyhId = course.zyh_id?.takeIf { it.isNotEmpty() } ?: params["zyh_id"] ?: ""
+        val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: params["kklxdm"] ?: "01"
+        val rwlx = course._rwlx?.takeIf { it.isNotEmpty() } ?: params["rwlx"] ?: "1"
+        val xklc = course._xklc?.takeIf { it.isNotEmpty() } ?: params["xklc"] ?: "2"
+
+        val formData = buildCourseListBody(params, course).split("&")
+            .mapNotNull { pair -> pair.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+            .toMap()
+            .toMutableMap()
+        formData.remove("kspage")
+        formData.remove("jspage")
+        formData["rwlx"] = rwlx
+        formData["zyh_id"] = zyhId
+        formData["njdm_id"] = njdmId
+        formData["kklxdm"] = kklxdm
+        formData["xklc"] = xklc
+        formData["xkkz_id"] = xkkzId
+        formData["kch_id"] = course.courseId ?: ""
+        val postBody = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
+
+        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, postBody, serviceAccountStorageKey, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                broadcastLog("线程 ${task.workerId} 获取详情失败: ${e.message}")
+                scheduleParallelTaskRetry(school, task)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val json = response.body?.string() ?: ""
+                val targetClassId = if (course.useExactMatch) course.classId else null
+                val details = parseSelectionDetails(json, targetClassId, course.teacher)
+                if (details != null) {
+                    executeSelection(school, task, details, rwlx, xklc)
+                } else if (!course.doJxbId.isNullOrEmpty() && !course.classId.isNullOrEmpty()) {
+                    val fallbackDetails = SelectionDetails(
+                        doJxbId = course.doJxbId!!,
+                        njdmId = course.njdm_id ?: "2024",
+                        zyhId = course.zyh_id ?: "",
+                        rlkz = course.rlkz ?: "0",
+                        rlzlkz = course.rlzlkz ?: "1",
+                        sxbj = course.sxbj ?: "0",
+                        xxkbj = course.xxkbj ?: "0",
+                        cxbj = "0",
+                        xkxnm = task.params["xkxnm"] ?: "2025",
+                        xkxqm = task.params["xkxqm"] ?: "12",
+                        jcxxId = course.jcxx_id ?: "",
+                        xkkzId = course._xkkz_id ?: ""
+                    )
+                    executeSelection(school, task, fallbackDetails, rwlx, xklc)
+                } else {
+                    broadcastLog("线程 ${task.workerId} 获取加密 ID 失败：${courseDisplayName(course)}")
+                    scheduleParallelTaskRetry(school, task)
+                }
+            }
+        })
+    }
+
+    private fun executeSelection(school: SchoolConfig, task: GrabTaskContext, details: SelectionDetails, rwlx: String, xklc: String) {
+        val course = task.course
+        val finalRwlx = if (course._rwlx?.isNotEmpty() == true) course._rwlx else rwlx
+        val finalXklc = if (course._xklc?.isNotEmpty() == true) course._xklc else xklc
+        val finalXkkzId = if (course._xkkz_id?.isNotEmpty() == true) course._xkkz_id else details.xkkzId
+        val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
+        val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
+        val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else "01"
+        val postBody = StringBuilder()
+            .append("jxb_ids=").append(details.doJxbId)
+            .append("&kch_id=").append(course.courseId)
+            .append("&kcmc=(").append(course.courseId).append(")").append(course.name ?: "")
+            .append("&rwlx=").append(finalRwlx)
+            .append("&rlkz=").append(details.rlkz)
+            .append("&rlzlkz=").append(details.rlzlkz)
+            .append("&sxbj=").append(details.sxbj)
+            .append("&xxkbj=").append(details.xxkbj)
+            .append("&qz=0")
+            .append("&cxbj=").append(details.cxbj)
+            .append("&xkkz_id=").append(finalXkkzId)
+            .append("&njdm_id=").append(finalNjdmId)
+            .append("&zyh_id=").append(finalZyhId)
+            .append("&kklxdm=").append(finalKklxdm)
+            .append("&xklc=").append(finalXklc)
+            .append("&xkxnm=").append(details.xkxnm)
+            .append("&xkxqm=").append(details.xkxqm)
+            .append("&jcxx_id=").append(details.jcxxId)
+            .toString()
+
+        CourseApiClient.getInstance().selectCourse(school, postBody, serviceAccountStorageKey, object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                broadcastLog("线程 ${task.workerId} 选课请求失败: ${e.message}")
+                scheduleParallelTaskRetry(school, task)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val result = response.body?.string() ?: ""
+                val success = result.contains("\"flag\":\"1\"") || result.contains("成功")
+                if (success) {
+                    verifyParallelSelectionAsync(school, task)
+                } else {
+                    val errorMsg = parseErrorMessage(result)
+                    broadcastLog("线程 ${task.workerId} 第 ${task.retryCount} 次失败: $errorMsg")
+                    scheduleParallelTaskRetry(school, task)
+                }
+            }
+        })
+    }
+
+    private fun verifyParallelSelectionAsync(school: SchoolConfig, task: GrabTaskContext) {
+        Thread {
+            val verified = verifySelection(school, task.course.courseId ?: "")
+            handler.post {
+                if (verified) {
+                    broadcastLog("线程 ${task.workerId} 验证成功：${courseDisplayName(task.course)}")
+                } else {
+                    broadcastLog("线程 ${task.workerId} 服务器返回成功，验证未通过：${courseDisplayName(task.course)}")
+                }
+                finishParallelTask(task, success = true, message = "抢课成功")
+            }
+        }.start()
+    }
+
+    private fun scheduleParallelTaskRetry(school: SchoolConfig, task: GrabTaskContext) {
+        if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return
+        if (task.retryCount >= maxRetry) {
+            finishParallelTask(task, success = false, message = "达到最大重试次数")
+            return
+        }
+        handler.postDelayed({ runParallelTaskLoop(school, task) }, interval.toLong())
+    }
+
+    private fun finishParallelTask(task: GrabTaskContext, success: Boolean, message: String) {
+        if (!activeGrabTasks.containsKey(task.workerId)) return
+        activeGrabTasks.remove(task.workerId)
+        activeWorkers.remove(task.workerId)
+        task.cancelled = true
+
+        if (success) {
+            successCount++
+            totalQueueSuccess++
+            multiKeywordTotalSuccess++
+            parallelTaskHadSuccess = true
+            if (task.origin == "fuzzy") {
+                clearServiceFuzzyMatchTarget()
+                pendingGrabTasks.clear()
+                activeGrabTasks.values.forEach { it.cancelled = true }
+                activeGrabTasks.clear()
+                activeWorkers.clear()
+            } else {
+                removeCourseFromServiceQueue(task.course)
+            }
+            broadcastQueueUpdate(courseDisplayName(task.course), "success", task.course.courseId ?: task.course.classId ?: task.courseKey)
+            showSuccessNotification(courseDisplayName(task.course))
+        } else {
+            failCount++
+            broadcastLog("线程 ${task.workerId} 任务失败：${courseDisplayName(task.course)}，$message")
+            broadcastQueueUpdate(courseDisplayName(task.course), "failed", task.course.courseId ?: task.course.classId ?: task.courseKey)
+        }
+
+        val school = currentSchool
+        if (school != null) fillParallelTaskSlots(school) else finishParallelPoolIfIdle()
+    }
+
+    private fun finishParallelPoolIfIdle() {
+        if (!isParallelTaskPoolRunning || activeGrabTasks.isNotEmpty() || pendingGrabTasks.isNotEmpty()) return
+        val summary = "并行抢课完成。成功: $successCount/$parallelTaskTotal，失败: $failCount"
+        broadcastLog(summary)
+        updateNotification(summary)
+        isParallelTaskPoolRunning = false
+        if (parallelTaskOrigin == "fuzzy" && !parallelTaskHadSuccess) {
+            isFuzzyMatchMode = true
+            isRunning = true
+            currentSchool?.let { school -> handler.postDelayed({ fetchHiddenParamsAndStartFuzzyMatch(school) }, interval.toLong()) }
+            return
+        }
+        isRunning = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
     
     private fun startGrabbing() {
         if (isRunning) return
@@ -621,6 +1095,11 @@ class GrabService : Service() {
     
     private fun stopGrabbing() {
         isRunning = false
+        isParallelTaskPoolRunning = false
+        pendingGrabTasks.clear()
+        activeGrabTasks.values.forEach { it.cancelled = true }
+        activeGrabTasks.clear()
+        activeWorkers.clear()
         grabRunnable?.let { handler.removeCallbacks(it) }
         
         // 发送停止状态，让 UI 知道服务已停止
@@ -1850,8 +2329,8 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         }
         
         if (isParallelMode && keywordQueue.size > 1) {
-            // 并行模式：同时启动多个关键词的抢课
-            startParallelGrabbing()
+            val keywordCourses = keywordQueue.map { keywordToCourse(it) }
+            startParallelCourseTasks(keywordCourses, origin = "keyword", label = "关键词抢课")
         } else {
             // 顺序模式：开始处理第一个关键词
             startSingleKeywordGrabbing(keywordQueue[currentKeywordIndex])
@@ -2728,8 +3207,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                         broadcastLog("📋 发现 ${classes.length()} 个教学班")
                     }
                     
-                    var foundVacancy = false
-                    var vacancyCourse: Course? = null
+                    val vacancyCourses = mutableListOf<Course>()
                     
                     for (i in 0 until classes.length()) {
                         val item = classes.getJSONObject(i)
@@ -2749,10 +3227,8 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                             capacity
                         )
                         
-                        if (hasVacancy && !foundVacancy) {
-                            foundVacancy = true
-                            // 构建课程对象用于抢课
-                            vacancyCourse = Course().apply {
+                        if (hasVacancy) {
+                            val vacancyCourse = Course().apply {
                                 name = targetCourseName
                                 courseId = targetCourseId
                                 this.classId = classId
@@ -2761,18 +3237,24 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                                 this.time = time
                                 this.capacity = capacity
                                 this.selected = currentSelected
+                                useExactMatch = true
                             }
+                            vacancyCourses.add(vacancyCourse)
                             
-                            broadcastLog("🎯 检测到 $targetCourseName [$teacher] 有人退课!")
-                            broadcastLog("   人数变化，剩余 ${capacity - currentSelected} 个名额，立即抢课!")
+                            broadcastLog("检测到 $targetCourseName [$teacher] 有人退课")
+                            broadcastLog("人数变化，剩余 ${capacity - currentSelected} 个名额，立即抢课")
                         }
                     }
                     
-                    if (foundVacancy && vacancyCourse != null) {
-                        // 发现空位，立即抢课
+                    if (vacancyCourses.isNotEmpty()) {
                         isFuzzyMatchMode = false // 暂停轮询
-                        targetCourse = vacancyCourse
-                        executeFuzzyMatchSelection(school, vacancyCourse)
+                        if (isParallelMode && vacancyCourses.size > 1) {
+                            startParallelCourseTasks(vacancyCourses, origin = "fuzzy", label = "模糊候选抢课")
+                        } else {
+                            val vacancyCourse = vacancyCourses.first()
+                            targetCourse = vacancyCourse
+                            executeFuzzyMatchSelection(school, vacancyCourse)
+                        }
                     } else {
                         // 继续轮询
                         handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong())

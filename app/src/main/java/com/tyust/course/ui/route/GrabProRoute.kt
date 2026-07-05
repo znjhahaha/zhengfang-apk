@@ -290,6 +290,7 @@ fun GrabProRoute() {
                 putGrabAccountExtras()
                 putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 1500)
                 putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry.toIntOrNull() ?: 100)
+                putExtra(GrabService.EXTRA_PARALLEL_MODE, isParallelMode)
             }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -357,6 +358,7 @@ fun GrabProRoute() {
             putGrabAccountExtras()
             putExtra(GrabService.EXTRA_INTERVAL, interval.toIntOrNull() ?: 2000)
             putExtra(GrabService.EXTRA_MAX_RETRY, maxRetry.toIntOrNull() ?: 999)
+            putExtra(GrabService.EXTRA_PARALLEL_MODE, isParallelMode)
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

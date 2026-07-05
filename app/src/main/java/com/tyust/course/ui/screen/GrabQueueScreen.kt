@@ -199,6 +199,40 @@ fun GrabQueueHeader(
                 )
             }
         }
+
+        if (queueSize > 1) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = NeuInsetBackground.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "并行抢课",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Neutral900
+                        )
+                        Text(
+                            text = "最多同时处理 2 门课程，仅限当前账号；切换账号前请先停止抢课。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Neutral500,
+                            lineHeight = 17.sp
+                        )
+                    }
+                    Switch(
+                        checked = isParallelMode,
+                        onCheckedChange = onParallelModeChange,
+                        enabled = !isRunning
+                    )
+                }
+            }
+        }
     }
 }
 
