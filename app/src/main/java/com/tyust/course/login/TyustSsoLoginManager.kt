@@ -117,7 +117,8 @@ class TyustSsoLoginManager internal constructor(
         }
         execute(
             attempt,
-            Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build()
+            Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build(),
+            onFailure = { fail(attempt, "无法连接统一认证服务") }
         ) { response ->
             response.use {
                 if (!it.isSuccessful) {
@@ -202,7 +203,18 @@ class TyustSsoLoginManager internal constructor(
             fail(attempt, "统一认证跳转地址未通过安全校验")
             return
         }
-        execute(attempt, request) { response ->
+        val connectionFailureMessage = if (request.url.host == endpoints.ssoLogin.host) {
+            "统一认证提交连接失败"
+        } else if (attempt.sawServiceTicket) {
+            "已取得统一认证票据，但连接教务系统失败"
+        } else {
+            "连接教务系统失败"
+        }
+        execute(
+            attempt,
+            request,
+            onFailure = { fail(attempt, connectionFailureMessage) }
+        ) { response ->
             if (response.code in REDIRECT_CODES) {
                 val location = response.header("Location")
                 val nextUrl = location?.let(response.request.url::resolve)

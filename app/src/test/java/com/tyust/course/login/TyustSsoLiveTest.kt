@@ -71,7 +71,7 @@ class TyustSsoLiveTest {
         }
 
         override fun onError(message: String) {
-            failure = "live login failed"
+            failure = message
             latch.countDown()
         }
 
