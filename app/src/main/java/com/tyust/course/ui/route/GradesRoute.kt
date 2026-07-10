@@ -6,7 +6,7 @@ import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.tyust.course.login.PasswordLoginCallback
-import com.tyust.course.login.PasswordLoginManager
+import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
@@ -95,8 +95,10 @@ fun GradesRoute() {
             val school = userManager.currentSchool!!
             val username = userManager.username
             val password = userManager.sessionPassword
-            PasswordLoginManager().login(school, username, password, object : PasswordLoginCallback {
+            val gateway = PasswordLoginGatewayFactory.create(school)
+            gateway.login(school, username, password, object : PasswordLoginCallback {
                 override fun onSuccess(cookie: String) {
+                    gateway.clearSensitiveState()
                     if (!isCurrentAccount(requestAccountKey)) return
                     userManager.saveCookie(cookie)
                     CourseApiClient.getInstance().setCookie(school.baseUrl, cookie)
@@ -104,24 +106,28 @@ fun GradesRoute() {
                     retryAction()
                 }
                 override fun onCaptchaRequired(imageBytes: ByteArray) {
+                    gateway.clearSensitiveState()
                     runOnUiThread {
                         Toast.makeText(context, "自动登录需要验证码，请手动重新登录", Toast.LENGTH_LONG).show()
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onCaptchaInvalid() {
+                    gateway.clearSensitiveState()
                     runOnUiThread {
                         Toast.makeText(context, "自动登录失败，请手动重新登录", Toast.LENGTH_LONG).show()
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onInvalidCredentials() {
+                    gateway.clearSensitiveState()
                     runOnUiThread {
                         Toast.makeText(context, "密码已失效，请手动重新登录", Toast.LENGTH_LONG).show()
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onError(message: String) {
+                    gateway.clearSensitiveState()
                     runOnUiThread {
                         Toast.makeText(context, "自动登录失败: $message", Toast.LENGTH_LONG).show()
                         sendExpiredBroadcast()

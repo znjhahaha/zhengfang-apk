@@ -35,7 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.tyust.course.LoginActivity
 import com.tyust.course.login.PasswordLoginCallback
-import com.tyust.course.login.PasswordLoginManager
+import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.manager.UserManager
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.SettingsScreen
@@ -217,7 +217,8 @@ fun SettingsRoute(
         val requestUsername = userManager.username
         val requestPassword = userManager.sessionPassword
         isRefreshingCookie = true
-        PasswordLoginManager().login(school, requestUsername, requestPassword, object : PasswordLoginCallback {
+        val gateway = PasswordLoginGatewayFactory.create(school)
+        gateway.login(school, requestUsername, requestPassword, object : PasswordLoginCallback {
             private var hasNotifiedCancellation = false
 
             private fun isRequestCurrent(): Boolean {
@@ -242,6 +243,7 @@ fun SettingsRoute(
             }
 
             override fun onSuccess(cookie: String) {
+                gateway.clearSensitiveState()
                 postToUi {
                     userManager.savePasswordLogin(requestUsername, cookie, requestPassword)
                     userManager.refreshRuntimeForCurrentAccount()
@@ -252,6 +254,7 @@ fun SettingsRoute(
             }
 
             override fun onCaptchaRequired(imageBytes: ByteArray) {
+                gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
                     Toast.makeText(context, "更新 Cookie 需要验证码，请重新使用密码登录", Toast.LENGTH_LONG).show()
@@ -259,6 +262,7 @@ fun SettingsRoute(
             }
 
             override fun onCaptchaInvalid() {
+                gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
                     Toast.makeText(context, "验证码校验失败，请重新使用密码登录", Toast.LENGTH_LONG).show()
@@ -266,6 +270,7 @@ fun SettingsRoute(
             }
 
             override fun onInvalidCredentials() {
+                gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
                     Toast.makeText(context, "密码已失效，请重新登录", Toast.LENGTH_LONG).show()
@@ -273,6 +278,7 @@ fun SettingsRoute(
             }
 
             override fun onError(message: String) {
+                gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
                     Toast.makeText(context, "更新失败：$message", Toast.LENGTH_LONG).show()

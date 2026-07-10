@@ -1,0 +1,75 @@
+package com.tyust.course.login
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TyustSsoProtocolTest {
+    @Test
+    fun parseLoginPage_readsExecutionAndCryptoKey() {
+        val html = """
+            <html><body>
+              <input id="login-page-flowkey" value="flow-123" />
+              <input id="login-croypto" value="MTIzNDU2Nzg=" />
+              <input id="recaptcha-invisible" value="true" />
+              <input id="captcha-url" value="/captcha?id=7" />
+            </body></html>
+        """.trimIndent()
+
+        val page = TyustSsoProtocol.parseLoginPage(html)
+
+        assertEquals("flow-123", page.execution)
+        assertEquals("MTIzNDU2Nzg=", page.cryptoKey)
+        assertFalse(page.captchaRequired)
+        assertEquals("/captcha?id=7", page.captchaUrl)
+    }
+
+    @Test
+    fun parseLoginPage_marksVisibleCaptchaAsRequired() {
+        val html = """
+            <input id="login-page-flowkey" value="flow-456" />
+            <input id="login-croypto" value="MTIzNDU2Nzg=" />
+            <input id="recaptcha-invisible" value="false" />
+            <input id="captcha-url" value="/captcha?id=8" />
+        """.trimIndent()
+
+        assertTrue(TyustSsoProtocol.parseLoginPage(html).captchaRequired)
+    }
+
+    @Test
+    fun parseLoginPage_supportsHiddenTextNodesUsedByProductionPage() {
+        val html = """
+            <p id="login-page-flowkey">flow-text</p>
+            <p id="login-croypto">MTIzNDU2Nzg=</p>
+            <p id="recaptcha-invisible">true</p>
+            <p id="captcha-url">/captcha/text</p>
+        """.trimIndent()
+
+        val page = TyustSsoProtocol.parseLoginPage(html)
+
+        assertEquals("flow-text", page.execution)
+        assertEquals("MTIzNDU2Nzg=", page.cryptoKey)
+        assertFalse(page.captchaRequired)
+        assertEquals("/captcha/text", page.captchaUrl)
+    }
+
+    @Test
+    fun parseLoginPage_rejectsMissingRequiredFields() {
+        assertThrows(TyustSsoProtocol.ProtocolException::class.java) {
+            TyustSsoProtocol.parseLoginPage("<html><body>login failed</body></html>")
+        }
+    }
+
+    @Test
+    fun encryptPassword_matchesBrowserDesEcbPkcs7() {
+        assertEquals(
+            "RpEpIH9dSgIJYLKpHvn7aQ==",
+            TyustSsoProtocol.encryptPassword(
+                plaintext = "protocol-test",
+                base64Key = "MTIzNDU2Nzg="
+            )
+        )
+    }
+}

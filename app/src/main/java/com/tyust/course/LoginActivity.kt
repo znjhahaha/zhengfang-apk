@@ -20,7 +20,8 @@ import com.tyust.course.ui.screen.LoginScreen
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.utils.CourseParser
 import com.tyust.course.login.PasswordLoginCallback
-import com.tyust.course.login.PasswordLoginManager
+import com.tyust.course.login.PasswordLoginGateway
+import com.tyust.course.login.PasswordLoginGatewayFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,7 +51,10 @@ class LoginActivity : ComponentActivity() {
     private var pendingPasswordLogin by mutableStateOf(false)
 
     // Password Login State
-    private val passwordLoginManager = PasswordLoginManager()
+    private var activePasswordLoginGateway: PasswordLoginGateway? = null
+    private var pendingPasswordSchool: SchoolConfig? = null
+    private var pendingPasswordUsername = ""
+    private var pendingPasswordValue = ""
     private var captchaImageBytes by mutableStateOf<ByteArray?>(null)
 
     // WebView result launcher
@@ -163,6 +167,7 @@ class LoginActivity : ComponentActivity() {
                     },
                     onCancelBinding = {
                         showBindingDialog = false
+                        discardPendingPasswordLogin()
                         errorMessage = "已取消，账号未绑定"
                     }
                 )
@@ -232,6 +237,7 @@ class LoginActivity : ComponentActivity() {
     }
 
     private fun handleLogin(cookieStr: String) {
+        discardPendingPasswordLogin()
         val currentSchool = UserManager.getInstance().currentSchool
         if (currentSchool == null) {
             errorMessage = "请先选择学校"
@@ -274,6 +280,7 @@ class LoginActivity : ComponentActivity() {
                 runOnUiThread {
                     isLoading = false
                     errorMessage = "网络请求失败: ${e.message}"
+                    discardPendingPasswordLogin()
                 }
             }
 
@@ -299,6 +306,11 @@ class LoginActivity : ComponentActivity() {
                     isLoading = false
                     if (success) {
                         val userManager = UserManager.getInstance()
+                        if (userManager.currentSchool?.id != currentSchool.id) {
+                            errorMessage = "学校已切换，请重新登录"
+                            discardPendingPasswordLogin()
+                            return@runOnUiThread
+                        }
                         val studentNameParsed = name ?: "同学"
                         val studentIdParsed = studentId ?: ""
                         
@@ -320,6 +332,7 @@ class LoginActivity : ComponentActivity() {
 
                         if (!bindingCheck.allowed) {
                             errorMessage = bindingCheck.reason
+                            discardPendingPasswordLogin()
                             return@runOnUiThread
                         }
 
@@ -346,6 +359,7 @@ class LoginActivity : ComponentActivity() {
                         showBindingDialog = true
 
                     } else {
+                        discardPendingPasswordLogin()
                         errorMessage = if (isLoginPage) {
                             "Cookie 已过期或无效，请重新获取"
                         } else {
@@ -361,16 +375,28 @@ class LoginActivity : ComponentActivity() {
      * 登录成功后进入主界面
      */
     private fun proceedToMain(userManager: UserManager, studentName: String, cookieStr: String) {
+        if (pendingPasswordLogin) {
+            val passwordSchool = pendingPasswordSchool
+            if (passwordSchool == null || userManager.currentSchool?.id != passwordSchool.id) {
+                errorMessage = "学校已切换，请重新登录"
+                discardPendingPasswordLogin()
+                return
+            }
+        }
         userManager.isLoggedIn = true
         userManager.studentName = studentName
         
         // 保存 Cookie 用于下次自动登录
         if (pendingPasswordLogin) {
-            userManager.saveCookie(cookieStr.trim())
+            userManager.savePasswordLogin(
+                pendingPasswordUsername,
+                cookieStr.trim(),
+                pendingPasswordValue
+            )
         } else {
             userManager.saveCookieLogin(cookieStr.trim())
         }
-        pendingPasswordLogin = false
+        discardPendingPasswordLogin()
         Log.d(TAG, "Cookie 已保存，下次可自动登录")
         
         Toast.makeText(
@@ -401,13 +427,25 @@ class LoginActivity : ComponentActivity() {
         errorMessage = null
         captchaImageBytes = null
 
-        passwordLoginManager.login(school, username, password, object : PasswordLoginCallback {
+        pendingPasswordUsername = username
+        pendingPasswordValue = password
+        pendingPasswordSchool = school
+        activePasswordLoginGateway?.clearSensitiveState()
+        val gateway = PasswordLoginGatewayFactory.create(school)
+        activePasswordLoginGateway = gateway
+
+        gateway.login(school, username, password, object : PasswordLoginCallback {
             override fun onSuccess(cookie: String) {
                 runOnUiThread {
+                    if (UserManager.getInstance().currentSchool?.id != school.id) {
+                        isLoading = false
+                        errorMessage = "学校已切换，请重新登录"
+                        discardPendingPasswordLogin()
+                        return@runOnUiThread
+                    }
+                    gateway.clearSensitiveState()
                     isLoading = false
                     Log.d(TAG, "密码登录成功")
-                    // 保存密码到内存，用于会话期间Cookie过期自动刷新
-                    UserManager.getInstance().savePasswordLogin(username, cookie, password)
                     pendingPasswordLogin = true
                     // 复用现有验证流程
                     lifecycleScope.launch {
@@ -441,6 +479,7 @@ class LoginActivity : ComponentActivity() {
                 runOnUiThread {
                     isLoading = false
                     errorMessage = "用户名或密码不正确"
+                    discardPendingPasswordLogin()
                     Log.d(TAG, "onInvalidCredentials called")
                 }
             }
@@ -449,6 +488,7 @@ class LoginActivity : ComponentActivity() {
                 runOnUiThread {
                     isLoading = false
                     errorMessage = message
+                    discardPendingPasswordLogin()
                     Log.e(TAG, "onError called: $message")
                 }
             }
@@ -460,17 +500,25 @@ class LoginActivity : ComponentActivity() {
         errorMessage = null
         // 不清除 captchaImageBytes，保持弹窗可见直到收到响应
 
-        passwordLoginManager.submitCaptcha(code, object : PasswordLoginCallback {
+        val gateway = activePasswordLoginGateway
+        if (gateway == null) {
+            isLoading = false
+            errorMessage = "登录会话已失效，请重新登录"
+            return
+        }
+        gateway.submitCaptcha(code, object : PasswordLoginCallback {
             override fun onSuccess(cookie: String) {
-                Log.d(TAG, "Captcha submit: login SUCCESS, cookie=${cookie.take(30)}...")
+                Log.d(TAG, "Captcha submit: login SUCCESS")
                 runOnUiThread {
+                    gateway.clearSensitiveState()
                     isLoading = false
                     captchaImageBytes = null  // 成功时清除
-                    val school = UserManager.getInstance().currentSchool ?: return@runOnUiThread
-                    // 保存密码到内存，用于会话期间Cookie过期自动刷新
-                    UserManager.getInstance().savePasswordLogin(
-                        passwordLoginManager.getCurrentUsername(), cookie, passwordLoginManager.getCurrentPassword()
-                    )
+                    val school = pendingPasswordSchool
+                    if (school == null || UserManager.getInstance().currentSchool?.id != school.id) {
+                        errorMessage = "学校已切换，请重新登录"
+                        discardPendingPasswordLogin()
+                        return@runOnUiThread
+                    }
                     pendingPasswordLogin = true
                     lifecycleScope.launch {
                         try {
@@ -504,8 +552,9 @@ class LoginActivity : ComponentActivity() {
                 Log.d(TAG, "Captcha submit: INVALID credentials")
                 runOnUiThread {
                     isLoading = false
-                    errorMessage = "账号密码错误或验证码错误，请重新输入"
-                    refreshCaptcha()
+                    errorMessage = "用户名或密码不正确"
+                    captchaImageBytes = null
+                    discardPendingPasswordLogin()
                 }
             }
 
@@ -515,16 +564,31 @@ class LoginActivity : ComponentActivity() {
                     isLoading = false
                     captchaImageBytes = null
                     errorMessage = message
+                    discardPendingPasswordLogin()
                 }
             }
         })
     }
 
     private fun refreshCaptcha() {
-        passwordLoginManager.refreshCaptcha { bytes ->
+        activePasswordLoginGateway?.refreshCaptcha { bytes ->
             runOnUiThread {
                 if (bytes != null) captchaImageBytes = bytes
             }
         }
+    }
+
+    private fun discardPendingPasswordLogin() {
+        activePasswordLoginGateway?.clearSensitiveState()
+        activePasswordLoginGateway = null
+        pendingPasswordSchool = null
+        pendingPasswordUsername = ""
+        pendingPasswordValue = ""
+        pendingPasswordLogin = false
+    }
+
+    override fun onDestroy() {
+        discardPendingPasswordLogin()
+        super.onDestroy()
     }
 }

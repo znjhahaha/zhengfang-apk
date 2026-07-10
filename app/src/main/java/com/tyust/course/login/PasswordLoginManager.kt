@@ -22,7 +22,7 @@ interface PasswordLoginCallback {
     fun onError(message: String)
 }
 
-class PasswordLoginManager {
+class PasswordLoginManager : PasswordLoginGateway {
     companion object {
         private const val TAG = "PasswordLogin"
     }
@@ -39,7 +39,8 @@ class PasswordLoginManager {
     fun getCurrentUsername(): String = currentUsername
     fun getCurrentPassword(): String = currentPassword
 
-    fun login(school: SchoolConfig, username: String, password: String, callback: PasswordLoginCallback) {
+    override fun login(school: SchoolConfig, username: String, password: String, callback: PasswordLoginCallback) {
+        clearSensitiveState()
         currentSchool = school
         currentUsername = username
         currentPassword = password
@@ -48,7 +49,7 @@ class PasswordLoginManager {
         fetchLoginPage(callback)
     }
 
-    fun submitCaptcha(captchaCode: String, callback: PasswordLoginCallback) {
+    override fun submitCaptcha(captchaCode: String, callback: PasswordLoginCallback) {
         val school = currentSchool ?: return callback.onError("学校配置丢失")
         if (encryptedPassword.isEmpty()) {
             // 验证码在登录页就出现，需要先获取公钥再提交
@@ -81,7 +82,7 @@ class PasswordLoginManager {
         })
     }
 
-    fun refreshCaptcha(callback: (ByteArray?) -> Unit) {
+    override fun refreshCaptcha(callback: (ByteArray?) -> Unit) {
         val school = currentSchool ?: return callback(null)
         CourseApiClient.getInstance().getCaptchaImage(school, object : Callback {
             override fun onFailure(call: Call, e: IOException) { callback(null) }
@@ -89,6 +90,17 @@ class PasswordLoginManager {
                 callback(response.body?.bytes())
             }
         })
+    }
+
+    override fun clearSensitiveState() {
+        csrftoken = ""
+        hiddenFields.clear()
+        modulus = ""
+        exponent = ""
+        encryptedPassword = ""
+        currentSchool = null
+        currentUsername = ""
+        currentPassword = ""
     }
 
     private fun fetchCaptchaImage(school: SchoolConfig, callback: PasswordLoginCallback, retryCount: Int = 0) {
