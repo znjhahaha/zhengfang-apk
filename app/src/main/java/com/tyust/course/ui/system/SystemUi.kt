@@ -51,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -980,6 +981,7 @@ fun SystemDivider(
 fun SystemDialog(
     onDismissRequest: () -> Unit,
     backdrop: Backdrop? = LocalAppBackdrop.current,
+    useVisualEffects: Boolean = true,
     confirmButton: @Composable (() -> Unit)? = null,
     dismissButton: @Composable (() -> Unit)? = null,
     icon: @Composable (() -> Unit)? = null,
@@ -991,6 +993,7 @@ fun SystemDialog(
     val dialogBody: @Composable () -> Unit = {
         SystemDialogContent(
             backdrop = backdrop,
+            useVisualEffects = useVisualEffects,
             confirmButton = confirmButton,
             dismissButton = dismissButton,
             icon = icon,
@@ -1014,6 +1017,7 @@ fun SystemDialog(
 @Composable
 private fun SystemDialogContent(
     backdrop: Backdrop?,
+    useVisualEffects: Boolean,
     confirmButton: @Composable (() -> Unit)?,
     dismissButton: @Composable (() -> Unit)?,
     icon: @Composable (() -> Unit)?,
@@ -1021,12 +1025,18 @@ private fun SystemDialogContent(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val dialogShape = RoundedCornerShape(32.dp)
-    val useGlass = backdrop != null && isBackdropSupported()
+    val useGlass = useVisualEffects && backdrop != null && isBackdropSupported()
 
     val fallbackModifier = Modifier
         .width(320.dp)
-        .neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
-        .clip(RoundedCornerShape(32.dp))
+        .then(
+            if (useVisualEffects) {
+                Modifier.neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
+            } else {
+                Modifier.shadow(elevation = 6.dp, shape = dialogShape, clip = false)
+            }
+        )
+        .clip(dialogShape)
         .background(MaterialTheme.colorScheme.surface)
         .padding(24.dp)
     val modifier = if (useGlass && backdrop != null) {

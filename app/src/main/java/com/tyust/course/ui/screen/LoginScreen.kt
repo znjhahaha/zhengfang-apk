@@ -67,6 +67,7 @@ fun LoginScreen(
     onOpenWebView: () -> Unit = {},
     onSchoolAdded: () -> Unit = {},
     onDemoMode: () -> Unit = {},
+    onSchoolAdaptation: () -> Unit = {},
     isLoading: Boolean = false,
     errorMessage: String? = null,
     cookieValue: String = "",
@@ -714,6 +715,20 @@ fun LoginScreen(
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         
+                        TextButton(
+                            onClick = onSchoolAdaptation,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "申请 / 查看统一登录适配",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = NeuPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         // Demo Mode Button
                         TextButton(
                             onClick = { onDemoMode() },

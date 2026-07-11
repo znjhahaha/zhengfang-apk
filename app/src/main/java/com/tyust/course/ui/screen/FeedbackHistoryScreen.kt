@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.network.FeedbackManager
+import com.tyust.course.network.SchoolAdaptationManager
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -47,7 +48,9 @@ fun FeedbackHistoryScreen(
             errorMessage = null
             val result = FeedbackManager.getMyFeedbacks(context)
             result.onSuccess {
-                feedbacks = it
+                feedbacks = it.filterNot { item ->
+                    SchoolAdaptationManager.isAdaptationFeedback(item.content)
+                }
             }.onFailure {
                 errorMessage = it.message ?: "加载失败"
             }
@@ -96,8 +99,11 @@ fun FeedbackHistoryScreen(
                                 isLoading = true
                                 errorMessage = null
                                 val result = FeedbackManager.getMyFeedbacks(context)
-                                result.onSuccess { feedbacks = it }
-                                    .onFailure { errorMessage = it.message }
+                                result.onSuccess {
+                                    feedbacks = it.filterNot { item ->
+                                        SchoolAdaptationManager.isAdaptationFeedback(item.content)
+                                    }
+                                }.onFailure { errorMessage = it.message }
                                 isLoading = false
                             }
                         }) {

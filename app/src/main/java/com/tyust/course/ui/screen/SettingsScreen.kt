@@ -67,6 +67,7 @@ fun SettingsScreen(
     onQuotaClick: () -> Unit = {},
     onRefreshCookieClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
+    onSchoolAdaptation: () -> Unit = {},
     isSuper: Boolean = false,
     quotaInfo: String = "",
     canRefreshCookie: Boolean = false,
@@ -142,6 +143,14 @@ fun SettingsScreen(
                     subtitle = "导出本地运行日志",
                     tintColor = NeuPrimary,
                     onClick = onLogExport
+                )
+                SystemDivider(modifier = Modifier.padding(start = 68.dp))
+                SettingsActionItem(
+                    icon = Icons.Outlined.School,
+                    title = "统一登录适配",
+                    subtitle = "申请学校支持或查看适配进度",
+                    tintColor = NeuPrimary,
+                    onClick = onSchoolAdaptation
                 )
                 SystemDivider(modifier = Modifier.padding(start = 68.dp))
                 SettingsActionItem(

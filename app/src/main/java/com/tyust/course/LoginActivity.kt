@@ -17,6 +17,8 @@ import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.LoginScreen
+import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
+import com.tyust.course.ui.screen.SchoolAdaptationFlow
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.utils.CourseParser
 import com.tyust.course.login.PasswordLoginCallback
@@ -103,6 +105,7 @@ class LoginActivity : ComponentActivity() {
             CourseSelectorTheme {
                 // Use mutableStateOf for reactive schools list
                 var schools by remember { mutableStateOf(UserManager.getInstance().supportedSchools) }
+                var showSchoolAdaptation by remember { mutableStateOf(false) }
                 
                 // 🔧 强化版学校选择记忆逻辑
                 LaunchedEffect(schools) {
@@ -119,7 +122,12 @@ class LoginActivity : ComponentActivity() {
                 }
                 
                 // 如果正在自动验证，显示加载状态
-                LoginScreen(
+                if (showSchoolAdaptation) {
+                    SchoolAdaptationFlow(
+                        onNavigateBack = { showSchoolAdaptation = false }
+                    )
+                } else {
+                    LoginScreen(
                     schools = schools,
                     onSchoolSelected = { school ->
                         UserManager.getInstance().currentSchool = school
@@ -136,6 +144,9 @@ class LoginActivity : ComponentActivity() {
                     },
                     onDemoMode = {
                         handleDemoMode()
+                    },
+                    onSchoolAdaptation = {
+                        showSchoolAdaptation = true
                     },
                     onPasswordLogin = { username, password ->
                         handlePasswordLogin(username, password)
@@ -170,6 +181,14 @@ class LoginActivity : ComponentActivity() {
                         discardPendingPasswordLogin()
                         errorMessage = "已取消，账号未绑定"
                     }
+                )
+                }
+                SchoolAdaptationCompletionReminder(
+                    enabled = !showSchoolAdaptation &&
+                        !showBindingDialog &&
+                        captchaImageBytes == null &&
+                        !isLoading &&
+                        !isAutoValidating
                 )
             }
         }

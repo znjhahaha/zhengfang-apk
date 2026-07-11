@@ -3,7 +3,6 @@ package com.tyust.course.network
 import android.content.Context
 import android.util.Log
 import com.tyust.course.BuildConfig
-import com.tyust.course.activation.ActivationManager
 import com.tyust.course.manager.UserManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,10 +20,7 @@ import java.util.*
 object FeedbackManager {
     private const val TAG = "FeedbackManager"
     
-    // 反馈接口地址
-    // 生产环境: https://www.znj2006.cn/api/feedback
-    // 开发环境: http://10.0.2.2:3000/api/feedback (模拟器) 或 http://YOUR_IP:3000/api/feedback (真机)
-    private const val FEEDBACK_API_URL = "https://www.znj2006.cn/api/feedback"
+    private const val FEEDBACK_API_URL = "https://www.hidisiwa.xyz/api/feedback"
     
     private const val PREFS_NAME = "feedback_prefs"
     private const val KEY_LAST_REPLY_ID = "last_reply_id"
@@ -69,7 +65,7 @@ object FeedbackManager {
             } else null
 
             val json = JSONObject().apply {
-                put("deviceId", deviceId as String)
+                put("deviceId", deviceId)
                 put("studentName", studentName)
                 put("content", content)
                 put("contact", contact)
@@ -88,18 +84,17 @@ object FeedbackManager {
                 .build()
 
             client.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    Log.d(TAG, "反馈提交成功, 服务器响应: $responseBody")
+                    Log.d(TAG, "反馈提交成功")
                     Result.success("发送成功")
                 } else {
-                    Log.e(TAG, "反馈提交失败: HTTP ${response.code}, 响应: $responseBody")
-                    Result.failure(Exception("HTTP ${response.code}: $responseBody"))
+                    Log.e(TAG, "反馈提交失败: HTTP ${response.code}")
+                    Result.failure(Exception("HTTP ${response.code}"))
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "提交反馈失败: ${e.message}")
-            Result.failure(e)
+            Log.e(TAG, "提交反馈失败: ${e.javaClass.simpleName}")
+            Result.failure(Exception("提交反馈失败", e))
         }
     }
 
@@ -133,7 +128,7 @@ object FeedbackManager {
                 )
             }
             
-            val url = "https://www.znj2006.cn/api/feedback/my?deviceId=$deviceId&t=$timestamp&s=$signature"
+            val url = "$FEEDBACK_API_URL/my?deviceId=$deviceId&t=$timestamp&s=$signature"
 
             val request = Request.Builder()
                 .url(url)
@@ -170,8 +165,8 @@ object FeedbackManager {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "获取反馈历史失败: ${e.message}")
-            Result.failure(e)
+            Log.e(TAG, "获取反馈历史失败: ${e.javaClass.simpleName}")
+            Result.failure(Exception("获取反馈历史失败", e))
         }
     }
 

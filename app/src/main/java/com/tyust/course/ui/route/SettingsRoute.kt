@@ -39,6 +39,7 @@ import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.manager.UserManager
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.SettingsScreen
+import com.tyust.course.ui.screen.SchoolAdaptationFlow
 import com.tyust.course.update.UpdateManager
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.activation.ActivationManager
@@ -97,6 +98,7 @@ fun SettingsRoute(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCreditsDialog by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
+    var showSchoolAdaptation by remember { mutableStateOf(false) }
     
     // Quota States
     var isSuper by remember { mutableStateOf(false) }
@@ -287,6 +289,13 @@ fun SettingsRoute(
         })
     }
     
+    if (showSchoolAdaptation) {
+        SchoolAdaptationFlow(
+            onNavigateBack = { showSchoolAdaptation = false }
+        )
+        return
+    }
+
     // Update Dialog
     if (showUpdateDialog && updateInfo != null) {
         UpdateDialog(
@@ -317,6 +326,7 @@ fun SettingsRoute(
         onQuotaClick = { showQuotaDialog = true },
         onRefreshCookieClick = { refreshCookieManually() },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
+        onSchoolAdaptation = { showSchoolAdaptation = true },
         isSuper = isSuper,
         quotaInfo = quotaInfo,
         canRefreshCookie = canRefreshCookie,

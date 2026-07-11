@@ -73,6 +73,7 @@ import com.tyust.course.activation.ActivationScreen
 import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
+import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
 import com.tyust.course.ui.system.CapsuleNavigationBar
 import com.tyust.course.ui.system.DialogHost
 import com.tyust.course.ui.system.LocalAppBackdrop
@@ -240,6 +241,10 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
 
     val updateInfo = updateState.updateInfo()
+    SchoolAdaptationCompletionReminder(
+        enabled = !showStarDialog && !updateState.showDialog(),
+        accountScopeKey = currentAccountStorageKey
+    )
     if (updateState.showDialog() && updateInfo != null) {
         UpdateDialog(
             updateInfo = updateInfo,
