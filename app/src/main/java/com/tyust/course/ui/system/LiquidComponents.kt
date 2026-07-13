@@ -80,8 +80,18 @@ fun LiquidButton(
                     effects = {
                         vibrancy()
                         blur(2f.dp.toPx())
-                        if (isLensSupported()) {
-                            lens(12f.dp.toPx(), 24f.dp.toPx())
+                        val refractionHeight = 12f.dp.toPx()
+                        val refractionAmount = 24f.dp.toPx()
+                        if (
+                            canUseLiquidLens(
+                                shape = shape,
+                                refractionHeightPx = refractionHeight,
+                                refractionAmountPx = refractionAmount,
+                                minCornerRadiusPx = cornerRadius.toPx(),
+                                minDimensionPx = size.minDimension
+                            )
+                        ) {
+                            lens(refractionHeight, refractionAmount)
                         }
                     },
                     shadow = { Shadow(alpha = 0.25f) },

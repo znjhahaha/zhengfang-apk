@@ -71,6 +71,7 @@ import com.tyust.course.ui.system.SystemStatStrip
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemTopBar
+import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticInfo
 import com.tyust.course.ui.theme.SemanticSuccess
@@ -361,22 +362,31 @@ private fun SemesterSelector(
                 .menuAnchor(),
             readOnly = true,
             singleLine = true,
-            label = { Text("学期") },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            label = {
+                Text(
+                    text = "学期",
+                    fontWeight = FontWeight.Medium
+                )
+            },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.CalendarToday,
-                    contentDescription = null
+                    contentDescription = null,
+                    tint = NeuPrimary
                 )
             },
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
-            shape = MaterialTheme.shapes.small,
+            shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.outline,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                focusedBorderColor = NeuPrimary.copy(alpha = 0.72f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                focusedLabelColor = NeuPrimary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
             )
         )
 
@@ -386,7 +396,21 @@ private fun SemesterSelector(
         ) {
             semesters.forEach { semester ->
                 DropdownMenuItem(
-                    text = { Text(semester) },
+                    text = {
+                        Text(
+                            text = semester,
+                            fontWeight = if (semester == currentSemester) {
+                                FontWeight.SemiBold
+                            } else {
+                                FontWeight.Normal
+                            },
+                            color = if (semester == currentSemester) {
+                                NeuPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    },
                     onClick = {
                         onSemesterChange(semester)
                         expanded = false

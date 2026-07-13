@@ -32,8 +32,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.canUseLiquidLens
 import com.tyust.course.ui.system.isBackdropSupported
-import com.tyust.course.ui.system.isLensSupported
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
@@ -179,10 +179,20 @@ fun LoginScreen(
                                 effects = {
                                     vibrancy()
                                     blur(2f.dp.toPx())
-                                    if (isLensSupported()) {
+                                    val refractionHeight = 20f.dp.toPx()
+                                    val refractionAmount = 36f.dp.toPx()
+                                    if (
+                                        canUseLiquidLens(
+                                            shape = iconShape,
+                                            refractionHeightPx = refractionHeight,
+                                            refractionAmountPx = refractionAmount,
+                                            minCornerRadiusPx = 24f.dp.toPx(),
+                                            minDimensionPx = size.minDimension
+                                        )
+                                    ) {
                                         lens(
-                                            refractionHeight = 20f.dp.toPx(),
-                                            refractionAmount = 36f.dp.toPx(),
+                                            refractionHeight = refractionHeight,
+                                            refractionAmount = refractionAmount,
                                             depthEffect = true,
                                             chromaticAberration = true
                                         )
@@ -273,10 +283,20 @@ fun LoginScreen(
                             effects = {
                                 vibrancy()
                                 blur(GlassRecipe.SheetBlurDp.dp.toPx())
-                                if (isLensSupported()) {
+                                val refractionHeight = GlassRecipe.SheetRefractionHeightDp.dp.toPx()
+                                val refractionAmount = GlassRecipe.SheetRefractionAmountDp.dp.toPx()
+                                if (
+                                    canUseLiquidLens(
+                                        shape = sheetShape,
+                                        refractionHeightPx = refractionHeight,
+                                        refractionAmountPx = refractionAmount,
+                                        minCornerRadiusPx = 28f.dp.toPx(),
+                                        minDimensionPx = size.minDimension
+                                    )
+                                ) {
                                     lens(
-                                        refractionHeight = GlassRecipe.SheetRefractionHeightDp.dp.toPx(),
-                                        refractionAmount = GlassRecipe.SheetRefractionAmountDp.dp.toPx(),
+                                        refractionHeight = refractionHeight,
+                                        refractionAmount = refractionAmount,
                                         depthEffect = true,
                                         chromaticAberration = true
                                     )
@@ -375,10 +395,20 @@ fun LoginScreen(
                                         effects = {
                                             vibrancy()
                                             blur(6f.dp.toPx())
-                                            if (isLensSupported()) {
+                                            val refractionHeight = 6f.dp.toPx()
+                                            val refractionAmount = 8f.dp.toPx()
+                                            if (
+                                                canUseLiquidLens(
+                                                    shape = tfShape,
+                                                    refractionHeightPx = refractionHeight,
+                                                    refractionAmountPx = refractionAmount,
+                                                    minCornerRadiusPx = 16f.dp.toPx(),
+                                                    minDimensionPx = size.minDimension
+                                                )
+                                            ) {
                                                 lens(
-                                                    refractionHeight = 6f.dp.toPx(),
-                                                    refractionAmount = 8f.dp.toPx(),
+                                                    refractionHeight = refractionHeight,
+                                                    refractionAmount = refractionAmount,
                                                     chromaticAberration = true
                                                 )
                                             }
@@ -497,7 +527,8 @@ fun LoginScreen(
                             SystemSegmentedControl(
                                 options = listOf("密码登录", "Cookie 登录"),
                                 selectedIndex = loginTab,
-                                onSelect = { loginTab = it }
+                                onSelect = { loginTab = it },
+                                backdrop = backdrop
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                         }
@@ -592,10 +623,20 @@ fun LoginScreen(
                                     effects = {
                                         vibrancy()
                                         blur(6f.dp.toPx())
-                                        if (isLensSupported()) {
+                                        val refractionHeight = 6f.dp.toPx()
+                                        val refractionAmount = 8f.dp.toPx()
+                                        if (
+                                            canUseLiquidLens(
+                                                shape = cookieTfShape,
+                                                refractionHeightPx = refractionHeight,
+                                                refractionAmountPx = refractionAmount,
+                                                minCornerRadiusPx = 16f.dp.toPx(),
+                                                minDimensionPx = size.minDimension
+                                            )
+                                        ) {
                                             lens(
-                                                refractionHeight = 6f.dp.toPx(),
-                                                refractionAmount = 8f.dp.toPx(),
+                                                refractionHeight = refractionHeight,
+                                                refractionAmount = refractionAmount,
                                                 chromaticAberration = true
                                             )
                                         }
@@ -917,8 +958,22 @@ fun BindingConfirmationDialog(
                         effects = {
                             vibrancy()
                             blur(GlassRecipe.CardBlurDp.dp.toPx())
-                            if (isLensSupported()) {
-                                lens(6f.dp.toPx(), 8f.dp.toPx(), chromaticAberration = true)
+                            val refractionHeight = 6f.dp.toPx()
+                            val refractionAmount = 8f.dp.toPx()
+                            if (
+                                canUseLiquidLens(
+                                    shape = iconContainerShape,
+                                    refractionHeightPx = refractionHeight,
+                                    refractionAmountPx = refractionAmount,
+                                    minCornerRadiusPx = 16f.dp.toPx(),
+                                    minDimensionPx = size.minDimension
+                                )
+                            ) {
+                                lens(
+                                    refractionHeight = refractionHeight,
+                                    refractionAmount = refractionAmount,
+                                    chromaticAberration = true
+                                )
                             }
                         },
                         onDrawSurface = {

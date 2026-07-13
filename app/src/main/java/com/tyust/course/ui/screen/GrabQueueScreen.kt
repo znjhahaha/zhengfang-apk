@@ -203,11 +203,15 @@ fun GrabQueueHeader(
         if (queueSize > 1) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = NeuInsetBackground.copy(alpha = 0.65f),
-                shape = RoundedCornerShape(14.dp)
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(
+                    0.5.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+                )
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -228,7 +232,15 @@ fun GrabQueueHeader(
                     Switch(
                         checked = isParallelMode,
                         onCheckedChange = onParallelModeChange,
-                        enabled = !isRunning
+                        enabled = !isRunning,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = NeuPrimary,
+                            checkedBorderColor = Color.Transparent,
+                            uncheckedThumbColor = MaterialTheme.colorScheme.surface,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+                        )
                     )
                 }
             }

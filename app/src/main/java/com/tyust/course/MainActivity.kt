@@ -5,13 +5,9 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,7 +58,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
@@ -83,7 +78,6 @@ import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberDialogHostState
 import com.tyust.course.ui.theme.CourseSelectorTheme
-import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -315,23 +309,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     Box(
                         modifier = Modifier.weight(1f)
                     ) {
-                        key(currentAccountStorageKey) {
-                            AnimatedContent(
-                            targetState = selectedTab,
-                            transitionSpec = {
-                                val offsetTween = MotionSpecs.tabTransition<IntOffset>()
-                                val fadeTween = MotionSpecs.standard<Float>()
-                                if (targetState > initialState) {
-                                    (slideInHorizontally(animationSpec = offsetTween) { width -> width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
-                                        (slideOutHorizontally(animationSpec = offsetTween) { width -> -width / 32 } + fadeOut(animationSpec = fadeTween))
-                                } else {
-                                    (slideInHorizontally(animationSpec = offsetTween) { width -> -width / 28 } + fadeIn(animationSpec = fadeTween)) togetherWith
-                                        (slideOutHorizontally(animationSpec = offsetTween) { width -> width / 32 } + fadeOut(animationSpec = fadeTween))
-                                }
-                            },
-                            label = "MainTabTransition"
-                        ) { targetIndex ->
-                            when (targetIndex) {
+                        key(currentAccountStorageKey, selectedTab) {
+                            when (selectedTab) {
                                 0 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
                                     com.tyust.course.ui.route.CourseListRoute()
                                 }
@@ -358,7 +337,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         }
                     }
                 }
-            }
 
             AppBuildWatermarks(fragmentActivity = fragmentActivity)
             } // 关闭 navBarBackdrop Box

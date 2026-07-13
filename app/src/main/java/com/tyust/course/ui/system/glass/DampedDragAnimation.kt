@@ -116,11 +116,16 @@ class DampedDragAnimation(
     }
 
     private fun updateVelocity() {
+        val valueSpan = valueRange.endInclusive - valueRange.start
+        if (valueSpan <= 0f) {
+            animationScope.launch { velocityAnimation.snapTo(0f) }
+            return
+        }
         velocityTracker.addPosition(
             Clock.System.now().toEpochMilliseconds(),
             Offset(value, 0f)
         )
-        val targetVelocity = velocityTracker.calculateVelocity().x / (valueRange.endInclusive - valueRange.start)
+        val targetVelocity = velocityTracker.calculateVelocity().x / valueSpan
         animationScope.launch { velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec) }
     }
 }

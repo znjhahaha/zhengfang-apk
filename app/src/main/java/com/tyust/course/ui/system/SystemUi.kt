@@ -1,11 +1,13 @@
 package com.tyust.course.ui.system
 
 import android.graphics.BlurMaskFilter
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -17,11 +19,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,8 +45,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Dialog
@@ -58,23 +62,31 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.Shadow
+import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -99,6 +111,8 @@ import com.tyust.course.ui.theme.SemanticSuccessContainer
 import com.tyust.course.ui.theme.SemanticWarning
 import com.tyust.course.ui.theme.SemanticWarningContainer
 import com.tyust.course.ui.theme.SurfaceWhite
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 val PagePadding = 20.dp
@@ -238,31 +252,7 @@ fun SystemTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
-    val useGlass = backdrop != null && isBackdropSupported()
-    val fallbackModifier = Modifier.background(MaterialTheme.colorScheme.surface)
-    val backgroundModifier = if (useGlass && backdrop != null) {
-        runCatching {
-            Modifier.drawBackdrop(
-                backdrop = backdrop,
-                shape = { androidx.compose.ui.graphics.RectangleShape },
-                effects = {
-                    vibrancy()
-                    blur(GlassRecipe.TopBarBlurDp.dp.toPx())
-                    if (isLensSupported()) {
-                        lens(
-                            refractionHeight = GlassRecipe.TopBarLensRefractionHeightDp.dp.toPx(),
-                            refractionAmount = GlassRecipe.TopBarLensRefractionAmountDp.dp.toPx()
-                        )
-                    }
-                },
-                onDrawSurface = {
-                    drawRect(Color.White.copy(alpha = GlassRecipe.TopBarSurfaceAlpha))
-                }
-            )
-        }.getOrElse { fallbackModifier }
-    } else {
-        fallbackModifier
-    }
+    val backgroundModifier = Modifier.background(MaterialTheme.colorScheme.surface)
     Column(
         modifier = backgroundModifier
     ) {
@@ -560,76 +550,240 @@ fun SystemSegmentedControl(
     backdrop: Backdrop? = LocalAppBackdrop.current,
     modifier: Modifier = Modifier
 ) {
-    val trackShape = RoundedCornerShape(14.dp)
-    val indicatorShape = RoundedCornerShape(10.dp)
+    if (options.isEmpty()) return
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = NeuInsetBackground,
-        shape = trackShape,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
+    val optionCount = options.size
+    val clampedSelectedIndex = selectedIndex.coerceIn(0, optionCount - 1)
+    val useGlass = backdrop != null && isBackdropSupported()
+    val trackShape = RoundedCornerShape(23.dp)
+    val indicatorShape = RoundedCornerShape(percent = 50)
+    val trackBackdrop = if (useGlass) rememberLayerBackdrop() else null
+    val indicatorBackdrop = if (backdrop != null && trackBackdrop != null) {
+        rememberCombinedBackdrop(backdrop, trackBackdrop)
+    } else {
+        null
+    }
+    val animationScope = rememberCoroutineScope()
+    val latestSelectedIndex by androidx.compose.runtime.rememberUpdatedState(clampedSelectedIndex)
+    val latestOnSelect by androidx.compose.runtime.rememberUpdatedState(onSelect)
+
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(46.dp)
     ) {
-        androidx.compose.foundation.layout.BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(5.dp)
-        ) {
-            val optionCount = options.size.coerceAtLeast(1)
-            val gapWidth = 5.dp * (optionCount - 1)
-            val slotWidth = (maxWidth - gapWidth) / optionCount
-
-            val indicatorOffset by animateDpAsState(
-                targetValue = slotWidth * selectedIndex + 5.dp * selectedIndex,
-                animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = 0.82f,
-                    stiffness = 280f
-                ),
-                label = "segmentIndicator"
+        val density = LocalDensity.current
+        val horizontalPadding = 4.dp
+        val horizontalPaddingPx = with(density) { horizontalPadding.toPx() }
+        val verticalPaddingPx = with(density) { 4.dp.toPx() }
+        val segmentWidthPx =
+            ((constraints.maxWidth - horizontalPaddingPx * 2f) / optionCount)
+                .coerceAtLeast(1f)
+        val segmentWidth = with(density) { segmentWidthPx.toDp() }
+        val indicatorMinDimensionPx = minOf(
+            segmentWidthPx,
+            (constraints.maxHeight - verticalPaddingPx * 2f).coerceAtLeast(1f)
+        )
+        val dragAnimation = remember(animationScope, optionCount, segmentWidthPx) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = clampedSelectedIndex.toFloat(),
+                valueRange = 0f..(optionCount - 1).toFloat(),
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 1.035f,
+                onDragStarted = {},
+                onDragStopped = {},
+                onDrag = { _, _ -> }
             )
+        }
 
-            // 指示器：带阴影和微描边的浮层
-            Surface(
-                modifier = Modifier
-                    .offset(x = indicatorOffset)
-                    .width(slotWidth)
-                    .height(38.dp),
-                shape = indicatorShape,
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 3.dp,
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-            ) {}
+        val requestSelection: (Int) -> Unit = { requestedIndex ->
+            val targetIndex = requestedIndex.coerceIn(0, optionCount - 1)
+            latestOnSelect(targetIndex)
+            dragAnimation.animateToValue(targetIndex.toFloat())
+            animationScope.launch {
+                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+                val acceptedIndex = latestSelectedIndex.coerceIn(0, optionCount - 1)
+                if (acceptedIndex != targetIndex) {
+                    dragAnimation.animateToValue(acceptedIndex.toFloat())
+                }
+            }
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().height(38.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                options.forEachIndexed { index, label ->
-                    val selected = index == selectedIndex
-                    val textColor by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        animationSpec = com.tyust.course.ui.theme.MotionSpecs.standard(),
-                        label = "segmentTextColor"
+        LaunchedEffect(clampedSelectedIndex, dragAnimation) {
+            if (abs(dragAnimation.targetValue - clampedSelectedIndex) > 0.001f) {
+                dragAnimation.animateToValue(clampedSelectedIndex.toFloat())
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (trackBackdrop != null) Modifier.layerBackdrop(trackBackdrop)
+                    else Modifier
+                )
+                .clip(trackShape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.44f))
+                .drawBehind {
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.34f),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                            x = size.height / 2f,
+                            y = size.height / 2f
+                        ),
+                        style = Stroke(width = 0.75.dp.toPx())
                     )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(indicatorShape)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() },
-                                onClick = { onSelect(index) }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = textColor
+                }
+        )
+
+        val indicatorBaseModifier = Modifier
+            .padding(horizontal = horizontalPadding, vertical = 4.dp)
+            .width(segmentWidth)
+            .fillMaxHeight()
+            .graphicsLayer {
+                translationX = dragAnimation.value * segmentWidthPx
+            }
+
+        if (indicatorBackdrop != null) {
+            Box(
+                modifier = indicatorBaseModifier.drawBackdrop(
+                    backdrop = indicatorBackdrop,
+                    shape = { indicatorShape },
+                    effects = {
+                        vibrancy()
+                        blur(2f.dp.toPx())
+                        val refractionHeight = GlassRecipe.SegIndicatorRefractionHeightDp.dp.toPx()
+                        val refractionAmount = GlassRecipe.SegIndicatorRefractionAmountDp.dp.toPx()
+                        if (
+                            canUseLiquidLens(
+                                shape = indicatorShape,
+                                refractionHeightPx = refractionHeight,
+                                refractionAmountPx = refractionAmount,
+                                minCornerRadiusPx = indicatorMinDimensionPx / 2f,
+                                minDimensionPx = indicatorMinDimensionPx
+                            )
+                        ) {
+                            lens(
+                                refractionHeight = refractionHeight,
+                                refractionAmount = refractionAmount,
+                                chromaticAberration =
+                                    dragAnimation.pressProgress > 0.5f &&
+                                        abs(dragAnimation.velocity) > 3f
+                            )
+                        }
+                    },
+                    layerBlock = {
+                        val velocityStretch = (abs(dragAnimation.velocity) / 12f).coerceIn(0f, 0.14f)
+                        scaleX = dragAnimation.scaleX + velocityStretch
+                        scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f).coerceAtLeast(0.94f)
+                    },
+                    shadow = {
+                        Shadow(alpha = 0.12f + dragAnimation.pressProgress * 0.16f)
+                    },
+                    onDrawSurface = {
+                        drawRect(
+                            Color.White.copy(
+                                alpha = GlassRecipe.SegIndicatorSurfaceAlpha +
+                                    dragAnimation.pressProgress * 0.04f
+                            )
                         )
                     }
+                )
+            )
+        } else {
+            Box(
+                modifier = indicatorBaseModifier
+                    .shadow(3.dp, indicatorShape, clip = false)
+                    .clip(indicatorShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding, vertical = 4.dp)
+                .pointerInput(optionCount, segmentWidthPx) {
+                    if (optionCount <= 1) return@pointerInput
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startValue = dragAnimation.value
+                        val touchSlop = viewConfiguration.touchSlop
+                        var totalDragX = 0f
+                        var dragging = false
+                        var pointerId = down.id
+
+                        dragAnimation.press()
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                            if (change.changedToUpIgnoreConsumed()) {
+                                if (dragging) change.consume()
+                                break
+                            }
+
+                            val dragAmount = change.positionChange()
+                            if (dragAmount != Offset.Zero) {
+                                totalDragX += dragAmount.x
+                                if (!dragging && abs(totalDragX) > touchSlop) {
+                                    dragging = true
+                                }
+                                if (dragging) {
+                                    change.consume()
+                                    dragAnimation.updateValue(
+                                        (startValue + totalDragX / segmentWidthPx)
+                                            .coerceIn(0f, (optionCount - 1).toFloat())
+                                    )
+                                }
+                            }
+                            pointerId = change.id
+                        }
+
+                        if (dragging) {
+                            requestSelection(dragAnimation.targetValue.roundToInt())
+                        } else {
+                            dragAnimation.release()
+                        }
+                    }
+                },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            options.forEachIndexed { index, label ->
+                val selectionAmount =
+                    (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
+                val textColor = lerpColor(
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+                    MaterialTheme.colorScheme.onSurface,
+                    selectionAmount
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(indicatorShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = androidx.compose.ui.semantics.Role.Tab,
+                            onClick = { requestSelection(index) }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selectionAmount >= 0.55f) {
+                            FontWeight.SemiBold
+                        } else {
+                            FontWeight.Medium
+                        },
+                        color = textColor,
+                        maxLines = 1
+                    )
                 }
             }
         }
@@ -1040,24 +1194,32 @@ private fun SystemDialogContent(
         .background(MaterialTheme.colorScheme.surface)
         .padding(24.dp)
     val modifier = if (useGlass && backdrop != null) {
-        runCatching {
-            Modifier
-                .width(320.dp)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { dialogShape },
-                    effects = {
-                        vibrancy()
-                        if (isLensSupported()) {
-                            lens(
-                                refractionHeight = 16f.dp.toPx(),
-                                refractionAmount = 32f.dp.toPx()
-                            )
-                        }
+        Modifier
+            .width(320.dp)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { dialogShape },
+                effects = {
+                    vibrancy()
+                    val refractionHeight = 16f.dp.toPx()
+                    val refractionAmount = 32f.dp.toPx()
+                    if (
+                        canUseLiquidLens(
+                            shape = dialogShape,
+                            refractionHeightPx = refractionHeight,
+                            refractionAmountPx = refractionAmount,
+                            minCornerRadiusPx = 32f.dp.toPx(),
+                            minDimensionPx = size.minDimension
+                        )
+                    ) {
+                        lens(
+                            refractionHeight = refractionHeight,
+                            refractionAmount = refractionAmount
+                        )
                     }
-                )
-                .padding(24.dp)
-        }.getOrElse { fallbackModifier }
+                }
+            )
+            .padding(24.dp)
     } else {
         fallbackModifier
     }
