@@ -5,11 +5,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 
-val BrandPrimary = Color(0xFF3559E0)
-val BrandPrimaryStrong = Color(0xFF2142BA)
-val BrandPrimaryContainer = Color(0xFFDDE5FF)
-val BrandSecondary = Color(0xFF556070)
-val BrandSecondaryContainer = Color(0xFFE7EBF3)
+val BrandPrimary = Color(0xFF496784)
+val BrandPrimaryStrong = Color(0xFF344C64)
+val BrandPrimaryContainer = Color(0xFFDCE6EF)
+val BrandSecondary = Color(0xFF5C6772)
+val BrandSecondaryContainer = Color(0xFFE6EBF0)
 
 val Neutral0 = Color(0xFFFFFFFF)
 val Neutral10 = Color(0xFFF8F9FC)
@@ -106,11 +106,11 @@ val PurpleGrey80 = Neutral100
 // 参考模板：Neumorphism 新拟态设计·组件展示
 // ═══════════════════════════════════════════════════════════
 
-/** 新拟态全局背景色（温润灰蓝底，不可使用纯白） */
-val NeuBackground = Color(0xFFECF0F3)
+/** 中性冷灰内容画布，避免主动给玻璃注入高饱和色。 */
+val NeuBackground = Color(0xFFF0F2F4)
 
-/** 新拟态卡片/组件表面色（与背景同色系，略亮） */
-val NeuSurface = Color(0xFFECF0F3)
+/** 内容表面与背景保持同一冷灰色阶。 */
+val NeuSurface = Color(0xFFF4F5F6)
 
 /** 新拟态左上角光源亮影（模拟光照投射） */
 val NeuLightShadow = Color(0xFFFFFFFF)

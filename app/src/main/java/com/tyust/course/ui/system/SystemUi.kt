@@ -126,112 +126,38 @@ val CardPadding = 16.dp
 // ═══════════════════════════════════════════════════════════
 
 /**
- * 新拟态凸起阴影效果
- * 通过在 Canvas 中绘制两层带 BlurMaskFilter 的圆角矩形，
- * 模拟光源从左上方照射时产生的凸起立体感。
- *
- * @param cornerRadius 圆角半径
- * @param elevation 阴影偏移量（越大越明显）
- * @param lightColor 左上角光源亮影色
- * @param darkColor 右下角环境暗影色
+ * 兼容路径只保留单层环境阴影，不再绘制新拟态的双向光晕。
  */
+@Suppress("UNUSED_PARAMETER")
 fun Modifier.neumorphicShadow(
     cornerRadius: Dp = 16.dp,
     elevation: Dp = 6.dp,
     lightColor: Color = NeuLightShadow,
     darkColor: Color = NeuDarkShadow
-): Modifier = this
-    .graphicsLayer { clip = false }
-    .drawBehind {
-        val elevationPx = elevation.toPx()
-        // BlurMaskFilter 不接受 radius <= 0，直接跳过绘制
-        if (elevationPx <= 0f) return@drawBehind
-        val blurPx = (elevationPx * 2f).coerceAtLeast(0.1f)
-        val radiusPx = cornerRadius.toPx()
-
-        // 组件本体对应的圆角矩形路径（大小不变）
-        val basePath = Path().apply {
-            addRoundRect(
-                RoundRect(
-                    rect = Rect(0f, 0f, size.width, size.height),
-                    radiusX = radiusPx,
-                    radiusY = radiusPx
-                )
-            )
-        }
-
-        drawIntoCanvas { canvas ->
-            // 暗影：向右下偏移，模拟遮挡面
-            val darkPaint = Paint().also { paint ->
-                paint.color = darkColor.copy(alpha = 0.55f)
-                paint.asFrameworkPaint().apply {
-                    isAntiAlias = true
-                    maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
-                }
-            }
-            canvas.save()
-            canvas.translate(elevationPx, elevationPx)
-            canvas.drawPath(basePath, darkPaint)
-            canvas.restore()
-
-            // 亮影：向左上偏移，模拟光照面
-            val lightPaint = Paint().also { paint ->
-                paint.color = lightColor.copy(alpha = 0.80f)
-                paint.asFrameworkPaint().apply {
-                    isAntiAlias = true
-                    maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
-                }
-            }
-            canvas.save()
-            canvas.translate(-elevationPx, -elevationPx)
-            canvas.drawPath(basePath, lightPaint)
-            canvas.restore()
-        }
-    }
+): Modifier = this.shadow(
+    elevation = elevation,
+    shape = RoundedCornerShape(cornerRadius),
+    clip = false,
+    ambientColor = darkColor.copy(alpha = 0.16f),
+    spotColor = darkColor.copy(alpha = 0.22f)
+)
 
 /**
- * 液态玻璃高光效果 Modifier
- * 在组件上方绘制：
- * 1. 顶部水平渐变高光条（模拟玻璃表面反射）
- * 2. 左上角径向光斑（模拟水滴折射光点）
- * 3. 底部微弱内阴影（增加玻璃深度感）
+ * 兼容路径的静态高光只提示上缘，不模拟额外折射或内阴影。
  */
+@Suppress("UNUSED_PARAMETER")
 fun Modifier.glassHighlight(
-    highlightAlpha: Float = 0.22f,
-    spotAlpha: Float = 0.12f
+    highlightAlpha: Float = 0.12f,
+    spotAlpha: Float = 0f
 ): Modifier = this.drawBehind {
-    // 1. 顶部高光条纹：模拟光源从上方照射玻璃的反射
     drawRect(
         brush = Brush.verticalGradient(
             colors = listOf(
-                GlassHighlight.copy(alpha = highlightAlpha),
-                GlassHighlight.copy(alpha = highlightAlpha * 0.35f),
+                Color.White.copy(alpha = highlightAlpha),
                 Color.Transparent
             ),
             startY = 0f,
-            endY = size.height * 0.45f
-        )
-    )
-    // 2. 左上角径向光斑：模拟水滴折射的聚焦光点
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color.White.copy(alpha = spotAlpha),
-                Color.Transparent
-            ),
-            center = Offset(size.width * 0.12f, size.height * 0.15f),
-            radius = size.height * 0.7f
-        )
-    )
-    // 3. 底部微弱阴影：增加玻璃厚度感
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                GlassBorderDark.copy(alpha = 0.06f)
-            ),
-            startY = size.height * 0.75f,
-            endY = size.height
+            endY = size.height * 0.28f
         )
     )
 }
@@ -944,14 +870,19 @@ private fun SystemDialogContent(
 ) {
     val dialogCorner = GlassRecipe.DialogCornerDp.dp
     val dialogShape = RoundedCornerShape(dialogCorner)
+    val accessibility = rememberGlassAccessibilityMode()
+    val dialogMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Modal,
+        accessibility = accessibility
+    )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
     val dialogSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-        alpha = GlassRecipe.DialogSurfaceAlpha
+        alpha = dialogMaterial.surfaceAlpha
     )
     val dialogBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(
-        alpha = GlassRecipe.DialogBorderAlpha
+        alpha = dialogMaterial.borderAlpha
     )
-    val dialogShadowColor = Color.Black.copy(alpha = GlassRecipe.DialogShadowAlpha)
+    val dialogShadowColor = Color.Black.copy(alpha = dialogMaterial.shadowAlpha)
 
     val fallbackModifier = Modifier
         .width(320.dp)
@@ -974,9 +905,9 @@ private fun SystemDialogContent(
                 shape = { dialogShape },
                 effects = {
                     vibrancy()
-                    blur(GlassRecipe.DialogBlurDp.dp.toPx())
-                    val refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx()
-                    val refractionAmount = GlassRecipe.DialogRefractionAmountDp.dp.toPx()
+                    blur(dialogMaterial.blurDp.dp.toPx())
+                    val refractionHeight = dialogMaterial.refractionHeightDp.dp.toPx()
+                    val refractionAmount = dialogMaterial.refractionAmountDp.dp.toPx()
                     if (
                         canUseLiquidLens(
                             shape = dialogShape,
@@ -993,7 +924,7 @@ private fun SystemDialogContent(
                         )
                     }
                 },
-                shadow = { Shadow(alpha = GlassRecipe.DialogShadowAlpha) },
+                shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
                 onDrawSurface = { drawRect(dialogSurfaceColor) }
             )
             .border(1.dp, dialogBorderColor, dialogShape)

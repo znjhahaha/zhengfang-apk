@@ -1207,9 +1207,7 @@ fun CourseListRoute() {
                 label = "CourseViewSwitch"
             ) { targetShowSelected ->
                 if (targetShowSelected) {
-                    CourseSelectorTheme(primaryOverride = Color(0xFF3B82F6)) {
-                        SelectedCoursesRoute()
-                    }
+                    SelectedCoursesRoute()
                 } else {
                     CourseListScreen(
                         courses = courses,

@@ -13,7 +13,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -53,9 +52,9 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF4D70FF),
+    primary = BrandPrimary,
     onPrimary = SurfaceWhite,
-    primaryContainer = Color(0xFFDAE2FF),
+    primaryContainer = BrandPrimaryContainer,
     onPrimaryContainer = NeuOnSurface,
     secondary = BrandSecondary,
     onSecondary = SurfaceWhite,
@@ -75,14 +74,13 @@ private val LightColorScheme = lightColorScheme(
     onError = SurfaceWhite,
     errorContainer = SemanticDangerContainer,
     onErrorContainer = NeuOnSurface,
-    surfaceTint = Color(0xFF4D70FF)
+    surfaceTint = BrandPrimary
 )
 
 @Composable
 fun CourseSelectorTheme(
     darkTheme: Boolean = false,
     dynamicColor: Boolean = false,
-    primaryOverride: Color? = null,
     content: @Composable () -> Unit
 ) {
     val resolvedDarkTheme = false && darkTheme && isSystemInDarkTheme()
@@ -95,15 +93,7 @@ fun CourseSelectorTheme(
         else -> LightColorScheme
     }
 
-    val colorScheme = if (primaryOverride != null && !resolvedDarkTheme) {
-        baseColorScheme.copy(
-            primary = primaryOverride,
-            surfaceTint = primaryOverride,
-            primaryContainer = primaryOverride.copy(alpha = 0.15f)
-        )
-    } else {
-        baseColorScheme
-    }
+    val colorScheme = baseColorScheme
 
     val view = LocalView.current
     if (!view.isInEditMode) {

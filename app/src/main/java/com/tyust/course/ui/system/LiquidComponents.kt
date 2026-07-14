@@ -114,8 +114,18 @@ fun LiquidButton(
     )
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val accessibility = rememberGlassAccessibilityMode()
+    val controlMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Control,
+        accessibility = accessibility,
+        interactionProgress = if (isPressed) 1f else 0f
+    )
     val buttonScale by animateFloatAsState(
-        targetValue = if (enabled && isPressed) GlassRecipe.ActionPressedScale else 1f,
+        targetValue = if (enabled && isPressed && !accessibility.reduceMotion) {
+            GlassRecipe.ActionPressedScale
+        } else {
+            1f
+        },
         animationSpec = MotionSpring.liquidTap(),
         label = "liquidButtonScale"
     )
@@ -156,9 +166,9 @@ fun LiquidButton(
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(GlassRecipe.ActionBlurDp.dp.toPx())
-                    val refractionHeight = GlassRecipe.ActionRefractionHeightDp.dp.toPx()
-                    val refractionAmount = GlassRecipe.ActionRefractionAmountDp.dp.toPx()
+                    blur(controlMaterial.blurDp.dp.toPx())
+                    val refractionHeight = controlMaterial.refractionHeightDp.dp.toPx()
+                    val refractionAmount = controlMaterial.refractionAmountDp.dp.toPx()
                     if (
                         canUseLiquidLens(
                             shape = shape,
@@ -178,7 +188,7 @@ fun LiquidButton(
                 shadow = {
                     Shadow(
                         alpha = if (enabled) {
-                            GlassRecipe.ActionShadowAlpha +
+                            controlMaterial.shadowAlpha +
                                 interactiveHighlight.pressProgress * 0.04f
                         } else {
                             0.05f
@@ -192,7 +202,7 @@ fun LiquidButton(
                             activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
                         )
                         style == LiquidButtonStyle.Surface -> drawRect(
-                            Color.White.copy(alpha = GlassRecipe.ActionSurfaceAlpha)
+                            Color.White.copy(alpha = controlMaterial.surfaceAlpha)
                         )
                         else -> Unit
                     }
@@ -216,15 +226,13 @@ fun LiquidButton(
             else -> Color.Transparent
         }
         val fallbackModifier = modifier
-            .then(
-                if (style == LiquidButtonStyle.Surface || !enabled) {
-                    Modifier.neumorphicShadow(cornerRadius = cornerRadius, elevation = 2.dp)
-                } else {
-                    Modifier
-                }
-            )
             .clip(shape)
             .background(fallbackColor)
+            .border(
+                width = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
+                shape = shape
+            )
         contentRow(fallbackModifier)
     }
 }
@@ -250,6 +258,7 @@ fun LiquidSwitch(
         Color(0xFF787880).copy(alpha = 0.36f)
     }
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
+    val accessibility = rememberGlassAccessibilityMode()
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val dragWidth = with(density) { 20.dp.toPx() }
@@ -378,12 +387,30 @@ fun LiquidSwitch(
                         shape = { Capsule() },
                         effects = {
                             val progress = dragAnimation.pressProgress
-                            blur(8.dp.toPx() * (1f - progress))
-                            lens(
-                                refractionHeight = 5.dp.toPx() * progress,
-                                refractionAmount = 10.dp.toPx() * progress,
-                                chromaticAberration = true
+                            val material = GlassMaterials.resolve(
+                                role = GlassMaterialRole.Interactive,
+                                accessibility = accessibility,
+                                interactionProgress = progress
                             )
+                            blur(8.dp.toPx() * (1f - progress))
+                            val refractionHeight = material.refractionHeightDp.dp.toPx() * progress
+                            val refractionAmount = material.refractionAmountDp.dp.toPx() * progress
+                            if (
+                                progress > 0f &&
+                                canUseLiquidLens(
+                                    shape = Capsule(),
+                                    refractionHeightPx = refractionHeight,
+                                    refractionAmountPx = refractionAmount,
+                                    minCornerRadiusPx = 12.dp.toPx(),
+                                    minDimensionPx = size.minDimension
+                                )
+                            ) {
+                                lens(
+                                    refractionHeight = refractionHeight,
+                                    refractionAmount = refractionAmount,
+                                    chromaticAberration = material.chromaticAberration
+                                )
+                            }
                         },
                         highlight = {
                             val progress = dragAnimation.pressProgress
@@ -407,18 +434,31 @@ fun LiquidSwitch(
                             )
                         },
                         layerBlock = {
-                            scaleX = dragAnimation.scaleX
-                            scaleY = dragAnimation.scaleY
-                            val velocity = dragAnimation.velocity / 50f
-                            scaleX /= 1f -
-                                (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                            scaleY *= 1f -
-                                (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                            if (accessibility.reduceMotion) {
+                                scaleX = 1f
+                                scaleY = 1f
+                            } else {
+                                scaleX = dragAnimation.scaleX
+                                scaleY = dragAnimation.scaleY
+                                val velocity = dragAnimation.velocity / 50f
+                                scaleX /= 1f -
+                                    (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                                scaleY *= 1f -
+                                    (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                            }
                         },
                         onDrawSurface = {
                             drawRect(
                                 Color.White.copy(
-                                    alpha = 1f - dragAnimation.pressProgress
+                                    alpha = lerp(
+                                        0.94f,
+                                        GlassMaterials.resolve(
+                                            role = GlassMaterialRole.Interactive,
+                                            accessibility = accessibility,
+                                            interactionProgress = dragAnimation.pressProgress
+                                        ).surfaceAlpha,
+                                        dragAnimation.pressProgress
+                                    )
                                 )
                             )
                         }
@@ -429,8 +469,13 @@ fun LiquidSwitch(
             Box(
                 modifier = thumbModifier
                     .graphicsLayer {
-                        scaleX = dragAnimation.scaleX
-                        scaleY = dragAnimation.scaleY
+                        if (accessibility.reduceMotion) {
+                            scaleX = 1f
+                            scaleY = 1f
+                        } else {
+                            scaleX = dragAnimation.scaleX
+                            scaleY = dragAnimation.scaleY
+                        }
                     }
                     .clip(Capsule())
                     .background(Color.White)
@@ -453,8 +498,9 @@ fun AnimatedIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val accessibility = rememberGlassAccessibilityMode()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.82f else 1f,
+        targetValue = if (isPressed && enabled && !accessibility.reduceMotion) 0.82f else 1f,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
         label = "iconBtnScale"
     )

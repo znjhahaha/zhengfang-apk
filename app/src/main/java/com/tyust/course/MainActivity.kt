@@ -313,28 +313,16 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     ) {
                         key(currentAccountStorageKey, selectedTab) {
                             when (selectedTab) {
-                                0 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                    com.tyust.course.ui.route.CourseListRoute()
-                                }
-                                1 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF10B981)) {
-                                    com.tyust.course.ui.route.ScheduleRoute()
-                                }
-                                2 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                    com.tyust.course.ui.route.GrabProRoute()
-                                }
-                                3 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFFF59E0B)) {
-                                    com.tyust.course.ui.route.GradesRoute()
-                                }
-                                4 -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF3B82F6)) {
-                                    com.tyust.course.ui.route.SettingsRoute(
-                                        onAccountChanged = {
-                                            currentAccountStorageKey = UserManager.getInstance().currentAccountStorageKey
-                                        }
-                                    )
-                                }
-                                else -> com.tyust.course.ui.theme.CourseSelectorTheme(primaryOverride = androidx.compose.ui.graphics.Color(0xFF6366F1)) {
-                                    com.tyust.course.ui.route.CourseListRoute()
-                                }
+                                0 -> com.tyust.course.ui.route.CourseListRoute()
+                                1 -> com.tyust.course.ui.route.ScheduleRoute()
+                                2 -> com.tyust.course.ui.route.GrabProRoute()
+                                3 -> com.tyust.course.ui.route.GradesRoute()
+                                4 -> com.tyust.course.ui.route.SettingsRoute(
+                                    onAccountChanged = {
+                                        currentAccountStorageKey = UserManager.getInstance().currentAccountStorageKey
+                                    }
+                                )
+                                else -> com.tyust.course.ui.route.CourseListRoute()
                             }
                         }
                     }
@@ -530,44 +518,26 @@ private fun BoxScope.AppBuildWatermarks(
 }
 
 private fun drawWallpaperPattern(scope: DrawScope) {
-    // 渐变壁纸：模拟文档推荐的"蓝、紫色模糊球"
-    // 需要足够饱和度让 blur+lens 产生可感知的玻璃折射
     val w = scope.size.width
     val h = scope.size.height
 
-    // 底色：柔白
-    scope.drawRect(Color(0xFFF5F5FA))
-
-    // 蓝色模糊球（左下）
+    scope.drawRect(Color(0xFFF0F2F4))
     scope.drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0x5599BBFF), Color.Transparent),
-            center = Offset(w * 0.2f, h * 0.8f),
-            radius = w * 0.6f
+            colors = listOf(Color.White.copy(alpha = 0.58f), Color.Transparent),
+            center = Offset(w * 0.18f, h * 0.12f),
+            radius = w * 0.72f
         ),
-        radius = w * 0.6f,
-        center = Offset(w * 0.2f, h * 0.8f)
+        radius = w * 0.72f,
+        center = Offset(w * 0.18f, h * 0.12f)
     )
-
-    // 紫色模糊球（右上）
     scope.drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0x44BB99FF), Color.Transparent),
-            center = Offset(w * 0.85f, h * 0.15f),
-            radius = w * 0.5f
+            colors = listOf(Color(0xFF6D7884).copy(alpha = 0.08f), Color.Transparent),
+            center = Offset(w * 0.78f, h * 0.88f),
+            radius = w * 0.64f
         ),
-        radius = w * 0.5f,
-        center = Offset(w * 0.85f, h * 0.15f)
-    )
-
-    // 青色模糊球（中下）— 确保底栏位置有色彩
-    scope.drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(Color(0x4488DDCC), Color.Transparent),
-            center = Offset(w * 0.5f, h * 0.9f),
-            radius = w * 0.45f
-        ),
-        radius = w * 0.45f,
-        center = Offset(w * 0.5f, h * 0.9f)
+        radius = w * 0.64f,
+        center = Offset(w * 0.78f, h * 0.88f)
     )
 }

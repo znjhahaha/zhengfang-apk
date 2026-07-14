@@ -31,9 +31,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.GlassMaterialRole
+import com.tyust.course.ui.system.GlassMaterials
 import com.tyust.course.ui.system.canUseLiquidLens
 import com.tyust.course.ui.system.isBackdropSupported
+import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
@@ -100,6 +102,18 @@ fun LoginScreen(
     var showPassword by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     var showEditSchoolDialog by remember { mutableStateOf(false) }
+    val accessibility = rememberGlassAccessibilityMode()
+    val loginPanelEnter = if (accessibility.reduceMotion) {
+        androidx.compose.animation.EnterTransition.None
+    } else {
+        slideInVertically(
+            initialOffsetY = { 100 },
+            animationSpec = androidx.compose.animation.core.spring(
+                stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy
+            )
+        ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
+    }
     
     LaunchedEffect(Unit) {
         visible = true
@@ -125,21 +139,16 @@ fun LoginScreen(
     ) {
         val backdrop = if (isBackdropSupported()) {
             rememberLayerBackdrop {
-                drawRect(Neutral50)
+                drawRect(Color(0xFFF0F2F4))
                 drawCircle(
-                    color = BrandPrimary.copy(alpha = 0.18f),
-                    radius = size.minDimension * 0.55f,
-                    center = Offset(size.width * 0.18f, size.height * 0.22f)
+                    color = Color.White.copy(alpha = 0.62f),
+                    radius = size.minDimension * 0.62f,
+                    center = Offset(size.width * 0.16f, size.height * 0.16f)
                 )
                 drawCircle(
-                    color = SemanticInfo.copy(alpha = 0.12f),
-                    radius = size.minDimension * 0.65f,
-                    center = Offset(size.width * 0.85f, size.height * 0.78f)
-                )
-                drawCircle(
-                    color = SemanticSuccess.copy(alpha = 0.08f),
-                    radius = size.minDimension * 0.40f,
-                    center = Offset(size.width * 0.50f, size.height * 0.50f)
+                    color = Color(0xFF66727D).copy(alpha = 0.07f),
+                    radius = size.minDimension * 0.68f,
+                    center = Offset(size.width * 0.82f, size.height * 0.84f)
                 )
                 drawContent()
             }
@@ -168,75 +177,24 @@ fun LoginScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     val iconShape = RoundedCornerShape(24.dp)
-                    val iconGlassMod = if (backdrop != null && isBackdropSupported()) {
-                        Modifier
-                            .size(90.dp)
-                            .drawBackdrop(
-                                backdrop = backdrop,
-                                shape = { iconShape },
-                                effects = {
-                                    vibrancy()
-                                    blur(2f.dp.toPx())
-                                    val refractionHeight = 20f.dp.toPx()
-                                    val refractionAmount = 36f.dp.toPx()
-                                    if (
-                                        canUseLiquidLens(
-                                            shape = iconShape,
-                                            refractionHeightPx = refractionHeight,
-                                            refractionAmountPx = refractionAmount,
-                                            minCornerRadiusPx = 24f.dp.toPx(),
-                                            minDimensionPx = size.minDimension
-                                        )
-                                    ) {
-                                        lens(
-                                            refractionHeight = refractionHeight,
-                                            refractionAmount = refractionAmount,
-                                            depthEffect = true,
-                                            chromaticAberration = true
-                                        )
-                                    }
-                                },
-                                onDrawSurface = {
-                                    drawRect(Color.White.copy(alpha = 0.30f))
-                                    drawRoundRect(
-                                        color = Color.White.copy(alpha = 0.45f),
-                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(24f.dp.toPx()),
-                                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f.dp.toPx())
-                                    )
-                                }
-                            )
-                    } else {
-                        Modifier.size(90.dp)
-                    }
-                    
-                    if (backdrop != null && isBackdropSupported()) {
-                        Box(
-                            modifier = iconGlassMod,
-                            contentAlignment = Alignment.Center
-                        ) {
+                    Surface(
+                        modifier = Modifier.size(90.dp),
+                        shape = iconShape,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.5.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f)
+                        ),
+                        shadowElevation = 2.dp,
+                        tonalElevation = 0.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.School,
                                 contentDescription = "School Icon",
                                 modifier = Modifier.size(48.dp),
                                 tint = NeuPrimary
                             )
-                        }
-                    } else {
-                        Surface(
-                            modifier = Modifier.size(90.dp),
-                            shape = iconShape,
-                            color = Color.White,
-                            shadowElevation = 8.dp,
-                            tonalElevation = 4.dp
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.School,
-                                    contentDescription = "School Icon",
-                                    modifier = Modifier.size(48.dp),
-                                    tint = NeuPrimary
-                                )
-                            }
                         }
                     }
                     
@@ -266,12 +224,16 @@ fun LoginScreen(
             // Login Card (Glassmorphism / Outline style)
             AnimatedVisibility(
                 visible = visible,
-                enter = slideInVertically(
-                    initialOffsetY = { 100 },
-                    animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow, dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy)
-                ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
+                enter = loginPanelEnter
             ) {
                 val sheetShape = RoundedCornerShape(28.dp)
+                val sheetMaterial = GlassMaterials.resolve(
+                    role = GlassMaterialRole.Modal,
+                    accessibility = accessibility
+                )
+                val sheetSurfaceColor = MaterialTheme.colorScheme.surface.copy(
+                    alpha = sheetMaterial.surfaceAlpha
+                )
                 val cardGlassMod = if (backdrop != null && isBackdropSupported()) {
                     Modifier
                         .fillMaxWidth()
@@ -280,9 +242,9 @@ fun LoginScreen(
                             shape = { sheetShape },
                             effects = {
                                 vibrancy()
-                                blur(GlassRecipe.SheetBlurDp.dp.toPx())
-                                val refractionHeight = GlassRecipe.SheetRefractionHeightDp.dp.toPx()
-                                val refractionAmount = GlassRecipe.SheetRefractionAmountDp.dp.toPx()
+                                blur(sheetMaterial.blurDp.dp.toPx())
+                                val refractionHeight = sheetMaterial.refractionHeightDp.dp.toPx()
+                                val refractionAmount = sheetMaterial.refractionAmountDp.dp.toPx()
                                 if (
                                     canUseLiquidLens(
                                         shape = sheetShape,
@@ -295,17 +257,17 @@ fun LoginScreen(
                                     lens(
                                         refractionHeight = refractionHeight,
                                         refractionAmount = refractionAmount,
-                                        depthEffect = true,
-                                        chromaticAberration = true
+                                        depthEffect = false,
+                                        chromaticAberration = false
                                     )
                                 }
                             },
                             onDrawSurface = {
-                                drawRect(Color.White.copy(alpha = GlassRecipe.SheetSurfaceAlpha))
+                                drawRect(sheetSurfaceColor)
                                 drawRoundRect(
-                                    color = Color.White.copy(alpha = 0.35f),
+                                    color = Color.White.copy(alpha = sheetMaterial.borderAlpha),
                                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(28f.dp.toPx()),
-                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f.dp.toPx())
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5f.dp.toPx())
                                 )
                             }
                         )
@@ -529,48 +491,9 @@ fun LoginScreen(
                         
                         // Cookie Input (Minimalist TextField)
                         val cookieTfShape = RoundedCornerShape(16.dp)
-                        val cookieTfModifier = if (backdrop != null && isBackdropSupported()) {
-                            Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .drawBackdrop(
-                                    backdrop = backdrop,
-                                    shape = { cookieTfShape },
-                                    effects = {
-                                        vibrancy()
-                                        blur(6f.dp.toPx())
-                                        val refractionHeight = 6f.dp.toPx()
-                                        val refractionAmount = 8f.dp.toPx()
-                                        if (
-                                            canUseLiquidLens(
-                                                shape = cookieTfShape,
-                                                refractionHeightPx = refractionHeight,
-                                                refractionAmountPx = refractionAmount,
-                                                minCornerRadiusPx = 16f.dp.toPx(),
-                                                minDimensionPx = size.minDimension
-                                            )
-                                        ) {
-                                            lens(
-                                                refractionHeight = refractionHeight,
-                                                refractionAmount = refractionAmount,
-                                                chromaticAberration = true
-                                            )
-                                        }
-                                    },
-                                    onDrawSurface = {
-                                        drawRect(Color.White.copy(alpha = 0.15f))
-                                        drawRoundRect(
-                                            color = Color.White.copy(alpha = 0.25f),
-                                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f.dp.toPx()),
-                                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8f.dp.toPx())
-                                        )
-                                    }
-                                )
-                        } else {
-                            Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                        }
+                        val cookieTfModifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
 
                         TextField(
                             value = cookie,
@@ -591,8 +514,8 @@ fun LoginScreen(
                             shape = cookieTfShape,
                             singleLine = false,
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
-                                unfocusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
                                 focusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
                                 unfocusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
                                 focusedTextColor = Neutral900,
@@ -854,67 +777,23 @@ fun BindingConfirmationDialog(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val backdrop = LocalAppBackdrop.current
-            val useGlass = backdrop != null && isBackdropSupported()
             val iconContainerShape = RoundedCornerShape(16.dp)
-            val iconModifier = if (useGlass && backdrop != null) {
-                Modifier
-                    .size(64.dp)
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { iconContainerShape },
-                        effects = {
-                            vibrancy()
-                            blur(GlassRecipe.CardBlurDp.dp.toPx())
-                            val refractionHeight = 6f.dp.toPx()
-                            val refractionAmount = 8f.dp.toPx()
-                            if (
-                                canUseLiquidLens(
-                                    shape = iconContainerShape,
-                                    refractionHeightPx = refractionHeight,
-                                    refractionAmountPx = refractionAmount,
-                                    minCornerRadiusPx = 16f.dp.toPx(),
-                                    minDimensionPx = size.minDimension
-                                )
-                            ) {
-                                lens(
-                                    refractionHeight = refractionHeight,
-                                    refractionAmount = refractionAmount,
-                                    chromaticAberration = true
-                                )
-                            }
-                        },
-                        onDrawSurface = {
-                            drawRect(Color.White.copy(alpha = 0.20f))
-                        }
-                    )
-            } else {
-                Modifier.size(64.dp)
-            }
-
-            if (useGlass && backdrop != null) {
-                Box(modifier = iconModifier, contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier.size(64.dp),
+                shape = iconContainerShape,
+                color = NeuPrimary.copy(alpha = 0.10f),
+                border = androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    NeuPrimary.copy(alpha = 0.16f)
+                )
+            ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Default.School,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
                         tint = NeuPrimary
                     )
-                }
-            } else {
-                Surface(
-                    modifier = Modifier.size(64.dp),
-                    shape = iconContainerShape,
-                    color = NeuPrimary.copy(alpha = 0.1f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.School,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = NeuPrimary
-                        )
-                    }
                 }
             }
 

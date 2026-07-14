@@ -129,6 +129,11 @@ fun LiquidSegmentedControl(
         null
     }
     val animationScope = rememberCoroutineScope()
+    val accessibility = rememberGlassAccessibilityMode()
+    val controlMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Control,
+        accessibility = accessibility
+    )
     val latestSelectedIndex by rememberUpdatedState(clampedSelectedIndex)
     val latestOnSelect by rememberUpdatedState(onSelect)
 
@@ -158,7 +163,11 @@ fun LiquidSegmentedControl(
                 valueRange = 0f..(optionCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = GlassRecipe.SegIndicatorPressedScale,
+                pressedScale = if (accessibility.reduceMotion) {
+                    1f
+                } else {
+                    GlassRecipe.SegIndicatorPressedScale
+                },
                 directManipulationSpec = MotionSpring.liquidFollow(),
                 settleAnimationSpec = MotionSpring.liquidTap(),
                 onDragStarted = {},
@@ -221,12 +230,13 @@ fun LiquidSegmentedControl(
             .align(Alignment.CenterStart)
             .graphicsLayer {
                 translationX = horizontalPaddingPx + dragAnimation.value * segmentWidthPx
-                if (!useGlass) {
+                if (!useGlass && !accessibility.reduceMotion) {
                     val velocityStretch =
                         (abs(dragAnimation.velocity) / 12f)
                             .coerceIn(0f, GlassRecipe.SegIndicatorMaxVelocityStretch)
                     scaleX = dragAnimation.scaleX + velocityStretch
-                    scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f).coerceAtLeast(0.94f)
+                    scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f)
+                        .coerceAtLeast(0.94f)
                 }
             }
 
@@ -237,9 +247,9 @@ fun LiquidSegmentedControl(
                     shape = { indicatorShape },
                     effects = {
                         vibrancy()
-                        blur(GlassRecipe.SegIndicatorBlurDp.dp.toPx())
-                        val refractionHeight = GlassRecipe.SegIndicatorRefractionHeightDp.dp.toPx()
-                        val refractionAmount = GlassRecipe.SegIndicatorRefractionAmountDp.dp.toPx()
+                    blur(controlMaterial.blurDp.dp.toPx())
+                    val refractionHeight = controlMaterial.refractionHeightDp.dp.toPx()
+                    val refractionAmount = controlMaterial.refractionAmountDp.dp.toPx()
                         if (
                             canUseLiquidLens(
                                 shape = indicatorShape,
@@ -257,11 +267,17 @@ fun LiquidSegmentedControl(
                         }
                     },
                     layerBlock = {
-                        val velocityStretch =
-                            (abs(dragAnimation.velocity) / 12f)
-                                .coerceIn(0f, GlassRecipe.SegIndicatorMaxVelocityStretch)
-                        scaleX = dragAnimation.scaleX + velocityStretch
-                        scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f).coerceAtLeast(0.94f)
+                        if (accessibility.reduceMotion) {
+                            scaleX = 1f
+                            scaleY = 1f
+                        } else {
+                            val velocityStretch =
+                                (abs(dragAnimation.velocity) / 12f)
+                                    .coerceIn(0f, GlassRecipe.SegIndicatorMaxVelocityStretch)
+                            scaleX = dragAnimation.scaleX + velocityStretch
+                            scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f)
+                                .coerceAtLeast(0.94f)
+                        }
                     },
                     shadow = {
                         val shadowAlpha = lerp(
@@ -275,15 +291,15 @@ fun LiquidSegmentedControl(
                         val press = dragAnimation.pressProgress
                         drawRect(
                             Color.White.copy(
-                                alpha = GlassRecipe.SegIndicatorSurfaceAlpha + press * 0.06f
+                                alpha = controlMaterial.surfaceAlpha + press * 0.04f
                             )
                         )
                         drawRoundRect(
                             color = Color.White.copy(
-                                alpha = GlassRecipe.SegIndicatorBorderAlpha + press * 0.10f
+                                alpha = controlMaterial.borderAlpha + press * 0.06f
                             ),
                             cornerRadius = CornerRadius(size.height / 2f),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5.dp.toPx())
                         )
                     }
                 )
@@ -291,9 +307,9 @@ fun LiquidSegmentedControl(
         } else {
             Box(
                 modifier = indicatorBaseModifier
-                    .shadow(3.dp, indicatorShape, clip = false)
+                    .shadow(1.dp, indicatorShape, clip = false)
                     .clip(indicatorShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
             )
         }
 
@@ -357,7 +373,7 @@ fun LiquidSegmentedControl(
                 val selectionAmount =
                     (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
                 val textColor = lerpColor(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                     MaterialTheme.colorScheme.onSurface,
                     selectionAmount
                 )
@@ -386,7 +402,7 @@ fun LiquidSegmentedControl(
                             MaterialTheme.typography.labelLarge
                         },
                         fontWeight = if (selectionAmount >= 0.55f) {
-                            FontWeight.SemiBold
+                            FontWeight.Bold
                         } else {
                             FontWeight.Medium
                         },
@@ -422,6 +438,15 @@ fun LiquidPicker(
     val selectedLabel = validSelectedIndex?.let { options[it].label }
     val hasAvailableOption = options.any { it.enabled }
     val canOpen = enabled && (hasAvailableOption || onAction != null)
+    val accessibility = rememberGlassAccessibilityMode()
+    val fieldMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Control,
+        accessibility = accessibility
+    )
+    val menuMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Modal,
+        accessibility = accessibility
+    )
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
     val shape = RoundedCornerShape(18.dp)
     val menuShape = RoundedCornerShape(20.dp)
@@ -430,13 +455,16 @@ fun LiquidPicker(
     val gapPx = with(density) { 8.dp.roundToPx() }
     val overlayBottomInsetPx = with(density) { overlayBottomInset.roundToPx() }
     val menuSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-        alpha = GlassRecipe.PickerMenuSurfaceAlpha
+        alpha = menuMaterial.surfaceAlpha
     )
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    LaunchedEffect(expanded) {
-        if (expanded) {
+    LaunchedEffect(expanded, accessibility.reduceMotion) {
+        if (accessibility.reduceMotion) {
+            popupVisible = expanded
+            menuProgress.snapTo(if (expanded) 1f else 0f)
+        } else if (expanded) {
             popupVisible = true
             withFrameNanos { }
             menuProgress.animateTo(1f, MotionSpring.liquidMenu())
@@ -457,7 +485,9 @@ fun LiquidPicker(
 
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = if (expanded) {
+        animationSpec = if (accessibility.reduceMotion) {
+            tween(durationMillis = 0)
+        } else if (expanded) {
             MotionSpring.liquidMenu()
         } else {
             tween(durationMillis = 140, easing = MotionEasing.Accelerate)
@@ -465,16 +495,24 @@ fun LiquidPicker(
         label = "liquidPickerArrow"
     )
     val fieldScale by animateFloatAsState(
-        targetValue = if ((isPressed || expanded) && canOpen) 0.985f else 1f,
+        targetValue = if (
+            !accessibility.reduceMotion &&
+            (isPressed || expanded) &&
+            canOpen
+        ) {
+            0.985f
+        } else {
+            1f
+        },
         animationSpec = MotionSpring.liquidTap(),
         label = "liquidPickerScale"
     )
     val borderColor by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.outlineVariant.copy(
             alpha = if (expanded) {
-                GlassRecipe.PickerExpandedBorderAlpha
+                (fieldMaterial.borderAlpha + 0.08f).coerceAtMost(0.72f)
             } else {
-                GlassRecipe.PickerBorderAlpha
+                fieldMaterial.borderAlpha
             }
         ),
         label = "liquidPickerBorder"
@@ -491,7 +529,11 @@ fun LiquidPicker(
         val fallbackModifier = Modifier
             .shadow(if (expanded) 5.dp else 2.dp, shape, clip = false)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+            .background(
+                MaterialTheme.colorScheme.surface.copy(
+                    alpha = if (accessibility.highContrast) 1f else 0.94f
+                )
+            )
             .border(1.dp, borderColor, shape)
         val glassModifier = if (glassBackdrop != null) {
             Modifier.drawBackdrop(
@@ -499,9 +541,9 @@ fun LiquidPicker(
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(GlassRecipe.PickerBlurDp.dp.toPx())
-                    val refractionHeight = GlassRecipe.PickerRefractionHeightDp.dp.toPx()
-                    val refractionAmount = GlassRecipe.PickerRefractionAmountDp.dp.toPx()
+                    blur(fieldMaterial.blurDp.dp.toPx())
+                    val refractionHeight = fieldMaterial.refractionHeightDp.dp.toPx()
+                    val refractionAmount = fieldMaterial.refractionAmountDp.dp.toPx()
                     if (
                         canUseLiquidLens(
                             shape = shape,
@@ -520,21 +562,13 @@ fun LiquidPicker(
                 },
                 shadow = {
                     Shadow(
-                        alpha = if (expanded) {
-                            GlassRecipe.PickerExpandedShadowAlpha
-                        } else {
-                            GlassRecipe.PickerShadowAlpha
-                        }
+                        alpha = fieldMaterial.shadowAlpha + if (expanded) 0.06f else 0f
                     )
                 },
                 onDrawSurface = {
                     drawRect(
                         Color.White.copy(
-                            alpha = if (expanded) {
-                                GlassRecipe.PickerExpandedSurfaceAlpha
-                            } else {
-                                GlassRecipe.PickerSurfaceAlpha
-                            }
+                            alpha = fieldMaterial.surfaceAlpha + if (expanded) 0.08f else 0f
                         )
                     )
                     drawRoundRect(
@@ -630,11 +664,15 @@ fun LiquidPicker(
                 val menuFallbackModifier = Modifier
                     .shadow(12.dp, menuShape, clip = false)
                     .clip(menuShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
+                    .background(
+                        MaterialTheme.colorScheme.surface.copy(
+                            alpha = if (accessibility.highContrast) 1f else 0.98f
+                        )
+                    )
                     .border(
                         1.dp,
                         MaterialTheme.colorScheme.outlineVariant.copy(
-                            alpha = GlassRecipe.PickerMenuBorderAlpha
+                            alpha = menuMaterial.borderAlpha
                         ),
                         menuShape
                     )
@@ -644,9 +682,9 @@ fun LiquidPicker(
                         shape = { menuShape },
                         effects = {
                             vibrancy()
-                            blur(GlassRecipe.PickerMenuBlurDp.dp.toPx())
-                            val refractionHeight = GlassRecipe.PickerMenuRefractionHeightDp.dp.toPx()
-                            val refractionAmount = GlassRecipe.PickerMenuRefractionAmountDp.dp.toPx()
+                            blur(menuMaterial.blurDp.dp.toPx())
+                            val refractionHeight = menuMaterial.refractionHeightDp.dp.toPx()
+                            val refractionAmount = menuMaterial.refractionAmountDp.dp.toPx()
                             if (
                                 canUseLiquidLens(
                                     shape = menuShape,
@@ -663,12 +701,12 @@ fun LiquidPicker(
                                 )
                             }
                         },
-                        shadow = { Shadow(alpha = GlassRecipe.PickerMenuShadowAlpha) },
+                        shadow = { Shadow(alpha = menuMaterial.shadowAlpha) },
                         onDrawSurface = {
                             drawRect(menuSurfaceColor)
                             drawRoundRect(
                                 color = Color.White.copy(
-                                    alpha = GlassRecipe.PickerMenuBorderAlpha
+                                    alpha = menuMaterial.borderAlpha
                                 ),
                                 cornerRadius = CornerRadius(20.dp.toPx()),
                                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
@@ -711,7 +749,8 @@ fun LiquidPicker(
                                 .background(
                                     if (isSelected) {
                                         Color.White.copy(
-                                            alpha = GlassRecipe.PickerSelectedSurfaceAlpha
+                                            alpha = (fieldMaterial.surfaceAlpha * 0.6f)
+                                                .coerceIn(0.12f, 0.28f)
                                         )
                                     } else {
                                         Color.Transparent

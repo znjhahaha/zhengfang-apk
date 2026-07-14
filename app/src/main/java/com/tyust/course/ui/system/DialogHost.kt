@@ -62,19 +62,32 @@ fun DialogHost(
     modifier: Modifier = Modifier
 ) {
     val dialogContent = state.currentDialog
+    val accessibility = rememberGlassAccessibilityMode()
+    val exitDurationMillis = if (accessibility.reduceMotion) 0L else EXIT_ANIM_DURATION_MS
 
-    // 退场动画结束后清空内容并回调
-    LaunchedEffect(state.isVisible) {
+    LaunchedEffect(state.isVisible, exitDurationMillis) {
         if (!state.isVisible && state.currentDialog != null) {
-            delay(EXIT_ANIM_DURATION_MS)
+            delay(exitDurationMillis)
             state.clearAfterAnimation()
         }
     }
 
+    val enterTransition = if (accessibility.reduceMotion) {
+        androidx.compose.animation.EnterTransition.None
+    } else {
+        fadeIn() + scaleIn(initialScale = 0.92f)
+    }
+    val exitTransition = if (accessibility.reduceMotion) {
+        androidx.compose.animation.ExitTransition.None
+    } else {
+        fadeOut(animationSpec = tween(150)) +
+            scaleOut(targetScale = 0.92f, animationSpec = tween(150))
+    }
+
     AnimatedVisibility(
         visible = state.isVisible && dialogContent != null,
-        enter = fadeIn() + scaleIn(initialScale = 0.92f),
-        exit = fadeOut(animationSpec = tween(150)) + scaleOut(targetScale = 0.92f, animationSpec = tween(150)),
+        enter = enterTransition,
+        exit = exitTransition,
         modifier = modifier
     ) {
         if (dialogContent != null) {
@@ -82,7 +95,7 @@ fun DialogHost(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Transparent)
+                    .background(Color.Black.copy(alpha = 0.18f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
