@@ -14,7 +14,8 @@ internal object TyustSsoProtocol {
         val execution: String,
         val cryptoKey: String,
         val captchaRequired: Boolean,
-        val captchaUrl: String?
+        val captchaUrl: String?,
+        val formAction: String?
     )
 
     fun parseLoginPage(html: String): LoginPage {
@@ -38,12 +39,17 @@ internal object TyustSsoProtocol {
             ?.let { element -> element.attr("value").ifBlank { element.text() } }
             ?.trim()
             ?.takeIf(String::isNotBlank)
+        val formAction = document.select("form")
+            .firstOrNull { it.attr("method").equals("post", ignoreCase = true) }
+            ?.attr("action")
+            ?.trim()
 
         return LoginPage(
             execution = execution,
             cryptoKey = cryptoKey,
             captchaRequired = !captchaInvisible,
-            captchaUrl = captchaUrl
+            captchaUrl = captchaUrl,
+            formAction = formAction
         )
     }
 

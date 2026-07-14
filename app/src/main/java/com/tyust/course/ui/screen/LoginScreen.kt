@@ -39,6 +39,7 @@ import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.theme.*
 
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -48,12 +49,9 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.manager.UserManager
@@ -364,7 +362,6 @@ fun LoginScreen(
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        var expanded by remember { mutableStateOf(false) }
                         var selectedSchool by remember { mutableStateOf<SchoolConfig?>(null) }
                         var showAddSchoolDialog by remember { mutableStateOf(false) }
                         
@@ -379,103 +376,22 @@ fun LoginScreen(
                             }
                         }
 
-                        ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { expanded = !expanded },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val tfShape = RoundedCornerShape(16.dp)
-                            val tfModifier = if (backdrop != null && isBackdropSupported()) {
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor()
-                                    .drawBackdrop(
-                                        backdrop = backdrop,
-                                        shape = { tfShape },
-                                        effects = {
-                                            vibrancy()
-                                            blur(6f.dp.toPx())
-                                            val refractionHeight = 6f.dp.toPx()
-                                            val refractionAmount = 8f.dp.toPx()
-                                            if (
-                                                canUseLiquidLens(
-                                                    shape = tfShape,
-                                                    refractionHeightPx = refractionHeight,
-                                                    refractionAmountPx = refractionAmount,
-                                                    minCornerRadiusPx = 16f.dp.toPx(),
-                                                    minDimensionPx = size.minDimension
-                                                )
-                                            ) {
-                                                lens(
-                                                    refractionHeight = refractionHeight,
-                                                    refractionAmount = refractionAmount,
-                                                    chromaticAberration = true
-                                                )
-                                            }
-                                        },
-                                        onDrawSurface = {
-                                            drawRect(Color.White.copy(alpha = 0.15f))
-                                            drawRoundRect(
-                                                color = Color.White.copy(alpha = 0.25f),
-                                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f.dp.toPx()),
-                                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8f.dp.toPx())
-                                            )
-                                        }
-                                    )
-                            } else {
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor()
-                            }
-
-                            TextField(
-                                value = selectedSchool?.name ?: "请选择学校",
-                                onValueChange = {},
-                                readOnly = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                modifier = tfModifier,
-                                shape = tfShape,
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
-                                    unfocusedContainerColor = if (backdrop != null) Color.Transparent else Neutral100,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                    focusedTextColor = Neutral900,
-                                    unfocusedTextColor = Neutral900
-                                )
-                            )
-
-                            ExposedDropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false },
-                                modifier = Modifier.background(Color.White)
-                            ) {
-                                schools.forEach { school ->
-                                    DropdownMenuItem(
-                                        text = { Text(school.name, color = Neutral900) },
-                                        onClick = {
-                                            selectedSchool = school
-                                            onSchoolSelected(school)
-                                            expanded = false
-                                        }
-                                    )
-                                }
-                                HorizontalDivider(color = Neutral200, thickness = 0.5.dp)
-                                DropdownMenuItem(
-                                    text = { 
-                                        Text(
-                                            text = "+ 配置新终端",
-                                            color = NeuPrimary,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    },
-                                    onClick = {
-                                        expanded = false
-                                        showAddSchoolDialog = true
-                                    }
-                                )
-                            }
-                        }
+                        val selectedSchoolIndex = schools
+                            .indexOfFirst { it.id == selectedSchool?.id }
+                            .takeIf { it >= 0 }
+                        SystemPicker(
+                            options = schools.map { it.name },
+                            selectedIndex = selectedSchoolIndex,
+                            onSelect = { index ->
+                                selectedSchool = schools[index]
+                                onSchoolSelected(schools[index])
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = "请选择学校",
+                            actionLabel = "+ 配置新终端",
+                            onAction = { showAddSchoolDialog = true },
+                            backdrop = backdrop
+                        )
                         
                         // Add School Dialog
                         if (showAddSchoolDialog) {
@@ -878,32 +794,24 @@ fun LoginScreen(
                 }
             },
             confirmButton = {
-                Button(
+                SystemPrimaryButton(
+                    text = if (captchaSubmitting) "提交中…" else "确认",
                     onClick = {
                         captchaSubmitting = true
                         onCaptchaSubmit?.invoke(captchaInput)
                     },
                     enabled = captchaInput.isNotBlank() && !captchaSubmitting
-                ) {
-                    if (captchaSubmitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("确认")
-                    }
-                }
+                )
             },
             dismissButton = {
-                TextButton(onClick = {
-                    showCaptchaDialog = false
-                    captchaDismissed = true
-                    // 不调用 refreshCaptcha，避免更新 captchaImageBytes 触发 LaunchedEffect 重新弹窗
-                }) {
-                    Text("取消")
-                }
+                SystemSecondaryButton(
+                    text = "取消",
+                    onClick = {
+                        showCaptchaDialog = false
+                        captchaDismissed = true
+                        // 不调用 refreshCaptcha，避免更新 captchaImageBytes 触发 LaunchedEffect 重新弹窗
+                    }
+                )
             }
         )
     }
@@ -1075,7 +983,6 @@ fun AddSchoolDialog(
     var domain by remember { mutableStateOf("") }
     var basePath by remember { mutableStateOf("/jwglxt") }
     var protocol by remember { mutableStateOf("https") }
-    var protocolExpanded by remember { mutableStateOf(false) }
     
     // Smart URL parsing function
     fun parseUrl(url: String) {
@@ -1188,14 +1095,12 @@ fun AddSchoolDialog(
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        Button(
+                        SystemPrimaryButton(
+                            text = "自动识别",
                             onClick = { parseUrl(urlInput) },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary),
                             enabled = urlInput.isNotBlank()
-                        ) {
-                            Text("自动识别")
-                        }
+                        )
                     }
                 }
                 
@@ -1245,66 +1150,28 @@ fun AddSchoolDialog(
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                // Protocol Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = protocolExpanded,
-                    onExpandedChange = { protocolExpanded = !protocolExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = protocol.uppercase(),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("协议") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = protocolExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeuPrimary,
-                            unfocusedBorderColor = NeuPrimary.copy(alpha = 0.5f)
-                        )
-                    )
-                    
-                    ExposedDropdownMenu(
-                        expanded = protocolExpanded,
-                        onDismissRequest = { protocolExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("HTTPS (推荐)") },
-                            onClick = {
-                                protocol = "https"
-                                protocolExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("HTTP") },
-                            onClick = {
-                                protocol = "http"
-                                protocolExpanded = false
-                            }
-                        )
-                    }
-                }
+                SystemPicker(
+                    options = listOf("HTTPS（推荐）", "HTTP"),
+                    selectedIndex = if (protocol == "https") 0 else 1,
+                    onSelect = { index -> protocol = if (index == 0) "https" else "http" },
+                    label = "协议"
+                )
             }
         },
         confirmButton = {
-            Button(
-                onClick = { 
-                    // Pass domain with basePath encoded
-                    onConfirm(name, "$domain|$basePath", protocol) 
+            SystemPrimaryButton(
+                text = "添加",
+                onClick = {
+                    onConfirm(name, "$domain|$basePath", protocol)
                 },
-                enabled = isValidDomain,
-                colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
-            ) {
-                Text("添加")
-            }
+                enabled = isValidDomain
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss
+            )
         }
     )
 }

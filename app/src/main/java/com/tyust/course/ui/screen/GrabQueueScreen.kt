@@ -52,6 +52,7 @@ import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.LiquidSwitch
 import com.tyust.course.ui.system.neumorphicShadow
 /**
  * 抢课队列项状态
@@ -229,18 +230,10 @@ fun GrabQueueHeader(
                             lineHeight = 17.sp
                         )
                     }
-                    Switch(
+                    LiquidSwitch(
                         checked = isParallelMode,
                         onCheckedChange = onParallelModeChange,
-                        enabled = !isRunning,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = NeuPrimary,
-                            checkedBorderColor = Color.Transparent,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
-                        )
+                        enabled = !isRunning
                     )
                 }
             }

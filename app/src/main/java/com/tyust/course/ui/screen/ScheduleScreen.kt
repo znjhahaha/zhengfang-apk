@@ -1,7 +1,6 @@
 package com.tyust.course.ui.screen
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
@@ -63,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
+import com.tyust.course.ui.system.SystemCompactSegmentedControl
 import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
@@ -232,24 +230,20 @@ fun WeekHeaderCompact(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalAlignment = Alignment.Start
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "第 $currentWeek 周",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            letterSpacing = (-0.5).sp
-                        )
-                        SemesterCapsuleToggle(
-                            isNextSemester = isNextSemester,
-                            onClick = onToggleSemester
-                        )
-                    }
+                    Text(
+                        text = "第 $currentWeek 周",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        letterSpacing = (-0.5).sp
+                    )
+                    SemesterCapsuleToggle(
+                        isNextSemester = isNextSemester,
+                        onClick = onToggleSemester
+                    )
                 }
 
                 Row(
@@ -348,69 +342,17 @@ private fun SemesterCapsuleToggle(
     isNextSemester: Boolean,
     onClick: () -> Unit
 ) {
-    val indicatorOffset by animateDpAsState(
-        targetValue = if (isNextSemester) 52.dp else 0.dp,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.7f,
-            stiffness = 400f
-        ),
-        label = "semesterToggle"
+    SystemCompactSegmentedControl(
+        options = listOf("本学期", "下学期"),
+        selectedIndex = if (isNextSemester) 1 else 0,
+        onSelect = { selectedIndex ->
+            val nextSemesterSelected = selectedIndex == 1
+            if (nextSemesterSelected != isNextSemester) {
+                onClick()
+            }
+        },
+        modifier = Modifier.width(144.dp)
     )
-
-    Box(
-        modifier = Modifier
-            .width(104.dp)
-            .height(30.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .then(
-                Modifier.background(NeuInsetBackground, RoundedCornerShape(15.dp))
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(2.dp)
-    ) {
-        // 滑动指示器
-        Box(
-            modifier = Modifier
-                .offset(x = indicatorOffset)
-                .width(50.dp)
-                .height(26.dp)
-                .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(13.dp))
-                .shadow(2.dp, RoundedCornerShape(13.dp))
-        )
-        // 文字层
-        Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "本学期",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (!isNextSemester) FontWeight.Bold else FontWeight.Normal,
-                    color = if (!isNextSemester) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 10.sp
-                )
-            }
-            Box(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "下学期",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (isNextSemester) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isNextSemester) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 10.sp
-                )
-            }
-        }
-    }
 }
 
 

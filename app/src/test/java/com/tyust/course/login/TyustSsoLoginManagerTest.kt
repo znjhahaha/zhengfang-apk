@@ -48,6 +48,11 @@ class TyustSsoLoginManagerTest {
 
         val postRequest = server.takeRequest(1, TimeUnit.SECONDS)
         assertEquals("POST", postRequest?.method)
+        assertEquals(
+            testEndpoints().teachingService.toString(),
+            postRequest?.requestUrl?.queryParameter("service")
+        )
+        assertEquals(loginPageRequest?.requestUrl.toString(), postRequest?.getHeader("Referer"))
         val postBody = postRequest?.body?.readUtf8().orEmpty()
         val fields = decodeForm(postBody)
         assertEquals(
@@ -103,6 +108,62 @@ class TyustSsoLoginManagerTest {
             ),
             paths
         )
+    }
+
+    @Test
+    fun resubmitsOnceWhenFirstPostRefreshesTheLoginForm() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(loginPageHtml()))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody(loginPageHtml(execution = "flow-456"))
+        )
+        enqueueSuccessfulRedirectChain()
+        val callback = RecordingCallback()
+
+        TyustSsoLoginManager(testEndpoints()).login(
+            tyustSchool(), "student-001", "protocol-test", callback
+        )
+
+        assertTrue("login callback timed out", callback.await())
+        assertNull(callback.error)
+        assertEquals("JSESSIONID=jw; route=node-a", callback.cookie)
+        assertEquals(8, server.requestCount)
+
+        val loginGet = server.takeRequest()
+        val firstPost = server.takeRequest()
+        val refreshedPost = server.takeRequest()
+        assertEquals("GET", loginGet.method)
+        assertEquals("POST", firstPost.method)
+        assertEquals("POST", refreshedPost.method)
+        assertEquals("flow-123", decodeForm(firstPost.body.readUtf8())["execution"])
+        assertEquals("flow-456", decodeForm(refreshedPost.body.readUtf8())["execution"])
+        assertEquals(
+            testEndpoints().teachingService.toString(),
+            refreshedPost.requestUrl!!.queryParameter("service")
+        )
+    }
+
+    @Test
+    fun stopsAfterOneRefreshedFormResubmission() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(loginPageHtml()))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody(loginPageHtml(execution = "flow-456"))
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody(loginPageHtml(execution = "flow-789"))
+        )
+        val callback = RecordingCallback()
+
+        TyustSsoLoginManager(testEndpoints()).login(
+            tyustSchool(), "student-001", "protocol-test", callback
+        )
+
+        assertTrue("login callback timed out", callback.await())
+        assertNull(callback.cookie)
+        assertEquals("统一认证登录失败，请检查账号密码或稍后重试", callback.error)
+        assertEquals(3, server.requestCount)
     }
 
     @Test
@@ -192,6 +253,10 @@ class TyustSsoLoginManagerTest {
                 .addHeader("Set-Cookie", "SESSION=sso; Path=/login; HttpOnly")
                 .setBody(loginPageHtml())
         )
+        enqueueSuccessfulRedirectChain()
+    }
+
+    private fun enqueueSuccessfulRedirectChain() {
         server.enqueue(
             MockResponse().setResponseCode(302)
                 .addHeader("Location", "/sso/jasiglogin/jwglxt?ticket=redacted-ticket")
@@ -220,12 +285,17 @@ class TyustSsoLoginManagerTest {
         )
     }
 
-    private fun loginPageHtml(captchaInvisible: Boolean = true): String = """
+    private fun loginPageHtml(
+        captchaInvisible: Boolean = true,
+        execution: String = "flow-123"
+    ): String = """
         <html><body>
-          <input id="login-page-flowkey" value="flow-123" />
-          <input id="login-croypto" value="MTIzNDU2Nzg=" />
-          <input id="recaptcha-invisible" value="$captchaInvisible" />
-          <input id="captcha-url" value="/captcha" />
+          <form method="post" action="">
+            <input id="login-page-flowkey" value="$execution" />
+            <input id="login-croypto" value="MTIzNDU2Nzg=" />
+            <input id="recaptcha-invisible" value="$captchaInvisible" />
+            <input id="captcha-url" value="/captcha" />
+          </form>
         </body></html>
     """.trimIndent()
 

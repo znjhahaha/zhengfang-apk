@@ -36,6 +36,10 @@ import com.tyust.course.model.SchoolConfig
 import com.tyust.course.receiver.GrabAlarmReceiver
 import com.tyust.course.service.GrabService
 import com.tyust.course.ui.screen.GrabProScreen
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPicker
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -636,10 +640,8 @@ fun GrabProRoute() {
     if (showAddCourseDialog) {
         val weekdays = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
         val periods = listOf("", "1-2节", "3-4节", "5-6节", "7-8节", "9-10节", "11-12节")
-        var weekdayExpanded by remember { mutableStateOf(false) }
-        var periodExpanded by remember { mutableStateOf(false) }
         
-        androidx.compose.material3.AlertDialog(
+        SystemDialog(
             onDismissRequest = { 
                 showAddCourseDialog = false
                 inputCourseName = ""
@@ -648,7 +650,7 @@ fun GrabProRoute() {
                 selectedPeriod = ""
             },
             title = { Text("添加课程到队列") },
-            text = {
+            content = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     // 课程名（必填）
                     androidx.compose.material3.OutlinedTextField(
@@ -673,74 +675,26 @@ fun GrabProRoute() {
                     // 时间选择（选填）
                     Text("上课时间（选填）", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // 周几选择
-                        Box(modifier = Modifier.weight(1f)) {
-                            androidx.compose.material3.OutlinedTextField(
-                                value = selectedWeekday,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("周几") },
-                                trailingIcon = {
-                                    Icon(
-                                        if (weekdayExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        modifier = Modifier.clickable { weekdayExpanded = !weekdayExpanded }
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth().clickable { weekdayExpanded = true }
-                            )
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = weekdayExpanded,
-                                onDismissRequest = { weekdayExpanded = false }
-                            ) {
-                                weekdays.forEach { day ->
-                                    androidx.compose.material3.DropdownMenuItem(
-                                        text = { Text(if (day.isEmpty()) "不限" else day) },
-                                        onClick = {
-                                            selectedWeekday = day
-                                            weekdayExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        
-                        // 节次选择
-                        Box(modifier = Modifier.weight(1f)) {
-                            androidx.compose.material3.OutlinedTextField(
-                                value = selectedPeriod,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("节次") },
-                                trailingIcon = {
-                                    Icon(
-                                        if (periodExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        modifier = Modifier.clickable { periodExpanded = !periodExpanded }
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth().clickable { periodExpanded = true }
-                            )
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = periodExpanded,
-                                onDismissRequest = { periodExpanded = false }
-                            ) {
-                                periods.forEach { period ->
-                                    androidx.compose.material3.DropdownMenuItem(
-                                        text = { Text(if (period.isEmpty()) "不限" else period) },
-                                        onClick = {
-                                            selectedPeriod = period
-                                            periodExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                        SystemPicker(
+                            options = weekdays.map { it.ifBlank { "不限" } },
+                            selectedIndex = weekdays.indexOf(selectedWeekday).takeIf { it >= 0 },
+                            onSelect = { index -> selectedWeekday = weekdays[index] },
+                            modifier = Modifier.weight(1f),
+                            label = "周几"
+                        )
+                        SystemPicker(
+                            options = periods.map { it.ifBlank { "不限" } },
+                            selectedIndex = periods.indexOf(selectedPeriod).takeIf { it >= 0 },
+                            onSelect = { index -> selectedPeriod = periods[index] },
+                            modifier = Modifier.weight(1f),
+                            label = "节次"
+                        )
                     }
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                SystemPrimaryButton(
+                    text = "添加",
                     onClick = {
                         if (inputCourseName.isNotBlank()) {
                             // 构造时间字符串
@@ -786,19 +740,22 @@ fun GrabProRoute() {
                         }
                         showAddCourseDialog = false
                     },
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = inputCourseName.isNotBlank()
-                ) { Text("添加") }
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = { 
+                SystemSecondaryButton(
+                    text = "取消",
+                    onClick = {
                         showAddCourseDialog = false
                         inputCourseName = ""
                         inputTeacher = ""
                         selectedWeekday = ""
                         selectedPeriod = ""
-                    }
-                ) { Text("取消") }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         )
     }

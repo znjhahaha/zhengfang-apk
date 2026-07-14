@@ -132,6 +132,7 @@ class TyustSsoLoginManager internal constructor(
                     fail(attempt, "无法读取统一认证登录参数")
                     return@use
                 }
+                attempt.loginPageUrl = it.request.url
                 attempt.form = form
                 attempt.captchaUrl = form.captchaUrl?.let(it.request.url::resolve)
                 if (form.captchaRequired) {
@@ -158,9 +159,31 @@ class TyustSsoLoginManager internal constructor(
             return
         }
         if (callback != null) attempt.callback = callback
+        submitLoginForm(
+            attempt = attempt,
+            captchaCode = captchaCode,
+            formRefreshCount = 0
+        )
+    }
+
+    private fun submitLoginForm(
+        attempt: LoginAttempt,
+        captchaCode: String,
+        formRefreshCount: Int
+    ) {
         val form = attempt.form
-        if (form == null || attempt.password.isEmpty()) {
+        val loginPageUrl = attempt.loginPageUrl
+        if (form == null || loginPageUrl == null || attempt.password.isEmpty()) {
             fail(attempt, "登录会话已失效，请重新登录")
+            return
+        }
+        val postUrl = if (form.formAction.isNullOrBlank()) {
+            loginPageUrl
+        } else {
+            loginPageUrl.resolve(form.formAction)
+        }
+        if (postUrl == null || !isAllowed(postUrl)) {
+            fail(attempt, "统一认证表单地址未通过安全校验")
             return
         }
         val encryptedPassword = try {
@@ -180,20 +203,29 @@ class TyustSsoLoginManager internal constructor(
             .add("password", encryptedPassword)
             .build()
         val request = Request.Builder()
-            .url(endpoints.ssoLogin)
+            .url(postUrl)
             .header("User-Agent", USER_AGENT)
-            .header("Referer", endpoints.ssoLogin.toString())
-            .header("Origin", originOf(endpoints.ssoLogin))
+            .header("Referer", loginPageUrl.toString())
+            .header("Origin", originOf(postUrl))
             .post(body)
             .build()
-        executeCas(attempt, request, redirectCount = 0, captchaWasSubmitted = captchaCode.isNotEmpty())
+        executeCas(
+            attempt = attempt,
+            request = request,
+            redirectCount = 0,
+            captchaWasSubmitted = captchaCode.isNotEmpty(),
+            captchaCode = captchaCode,
+            formRefreshCount = formRefreshCount
+        )
     }
 
     private fun executeCas(
         attempt: LoginAttempt,
         request: Request,
         redirectCount: Int,
-        captchaWasSubmitted: Boolean
+        captchaWasSubmitted: Boolean,
+        captchaCode: String,
+        formRefreshCount: Int
     ) {
         if (redirectCount > MAX_REDIRECTS) {
             fail(attempt, "统一认证跳转次数过多")
@@ -230,7 +262,14 @@ class TyustSsoLoginManager internal constructor(
                 }
                 val nextRequest = redirectedRequest(response, nextUrl)
                 response.close()
-                executeCas(attempt, nextRequest, redirectCount + 1, captchaWasSubmitted)
+                executeCas(
+                    attempt = attempt,
+                    request = nextRequest,
+                    redirectCount = redirectCount + 1,
+                    captchaWasSubmitted = captchaWasSubmitted,
+                    captchaCode = captchaCode,
+                    formRefreshCount = formRefreshCount
+                )
                 return@execute
             }
 
@@ -257,8 +296,10 @@ class TyustSsoLoginManager internal constructor(
                     return@use
                 }
 
+                val previousForm = attempt.form
                 val updatedForm = runCatching { TyustSsoProtocol.parseLoginPage(body) }.getOrNull()
                 if (updatedForm != null) {
+                    attempt.loginPageUrl = it.request.url
                     attempt.form = updatedForm
                     attempt.captchaUrl = updatedForm.captchaUrl?.let(it.request.url::resolve)
                 }
@@ -278,6 +319,17 @@ class TyustSsoLoginManager internal constructor(
                         attempt.submissionInFlight.set(false)
                         fetchCaptcha(attempt, captchaUrl)
                     }
+                } else if (
+                    it.code == 200 &&
+                    updatedForm != null &&
+                    updatedForm != previousForm &&
+                    formRefreshCount < MAX_FORM_REFRESHES
+                ) {
+                    submitLoginForm(
+                        attempt = attempt,
+                        captchaCode = captchaCode,
+                        formRefreshCount = formRefreshCount + 1
+                    )
                 } else {
                     fail(attempt, "统一认证登录失败，请检查账号密码或稍后重试")
                 }
@@ -413,7 +465,10 @@ class TyustSsoLoginManager internal constructor(
             contains("账号或密码不正确")
 
     private fun String.indicatesCaptchaProblem(): Boolean =
-        contains("验证码") || contains("captcha", ignoreCase = true)
+        contains("验证码") ||
+            contains("invalid captcha", ignoreCase = true) ||
+            contains("captcha error", ignoreCase = true) ||
+            contains("captcha required", ignoreCase = true)
 
     private class LoginAttempt(
         val school: SchoolConfig,
@@ -427,6 +482,7 @@ class TyustSsoLoginManager internal constructor(
         val submissionInFlight = AtomicBoolean(false)
         @Volatile var currentCall: Call? = null
         @Volatile var form: TyustSsoProtocol.LoginPage? = null
+        @Volatile var loginPageUrl: HttpUrl? = null
         @Volatile var captchaUrl: HttpUrl? = null
         @Volatile var sawServiceTicket: Boolean = false
 
@@ -434,6 +490,7 @@ class TyustSsoLoginManager internal constructor(
             username = ""
             password = ""
             form = null
+            loginPageUrl = null
             captchaUrl = null
             sawServiceTicket = false
             submissionInFlight.set(false)
@@ -445,6 +502,7 @@ class TyustSsoLoginManager internal constructor(
     private companion object {
         const val TYUST_SCHOOL_ID = "tyust"
         const val MAX_REDIRECTS = 12
+        const val MAX_FORM_REFRESHES = 1
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/139.0.0.0 Mobile Safari/537.36"
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)

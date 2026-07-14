@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -548,246 +549,66 @@ fun SystemSegmentedControl(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     backdrop: Backdrop? = LocalAppBackdrop.current,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
-    if (options.isEmpty()) return
+    LiquidSegmentedControl(
+        options = options,
+        selectedIndex = selectedIndex,
+        onSelect = onSelect,
+        modifier = modifier,
+        enabled = enabled,
+        backdrop = backdrop
+    )
+}
 
-    val optionCount = options.size
-    val clampedSelectedIndex = selectedIndex.coerceIn(0, optionCount - 1)
-    val useGlass = backdrop != null && isBackdropSupported()
-    val trackShape = RoundedCornerShape(23.dp)
-    val indicatorShape = RoundedCornerShape(percent = 50)
-    val trackBackdrop = if (useGlass) rememberLayerBackdrop() else null
-    val indicatorBackdrop = if (backdrop != null && trackBackdrop != null) {
-        rememberCombinedBackdrop(backdrop, trackBackdrop)
-    } else {
-        null
-    }
-    val animationScope = rememberCoroutineScope()
-    val latestSelectedIndex by androidx.compose.runtime.rememberUpdatedState(clampedSelectedIndex)
-    val latestOnSelect by androidx.compose.runtime.rememberUpdatedState(onSelect)
+@Composable
+fun SystemCompactSegmentedControl(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    backdrop: Backdrop? = LocalAppBackdrop.current,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    LiquidSegmentedControl(
+        options = options,
+        selectedIndex = selectedIndex,
+        onSelect = onSelect,
+        modifier = modifier,
+        enabled = enabled,
+        backdrop = backdrop,
+        height = 32.dp
+    )
+}
 
-    androidx.compose.foundation.layout.BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(46.dp)
-    ) {
-        val density = LocalDensity.current
-        val horizontalPadding = 4.dp
-        val horizontalPaddingPx = with(density) { horizontalPadding.toPx() }
-        val verticalPaddingPx = with(density) { 4.dp.toPx() }
-        val segmentWidthPx =
-            ((constraints.maxWidth - horizontalPaddingPx * 2f) / optionCount)
-                .coerceAtLeast(1f)
-        val segmentWidth = with(density) { segmentWidthPx.toDp() }
-        val indicatorMinDimensionPx = minOf(
-            segmentWidthPx,
-            (constraints.maxHeight - verticalPaddingPx * 2f).coerceAtLeast(1f)
-        )
-        val dragAnimation = remember(animationScope, optionCount, segmentWidthPx) {
-            DampedDragAnimation(
-                animationScope = animationScope,
-                initialValue = clampedSelectedIndex.toFloat(),
-                valueRange = 0f..(optionCount - 1).toFloat(),
-                visibilityThreshold = 0.001f,
-                initialScale = 1f,
-                pressedScale = 1.035f,
-                onDragStarted = {},
-                onDragStopped = {},
-                onDrag = { _, _ -> }
-            )
-        }
-
-        val requestSelection: (Int) -> Unit = { requestedIndex ->
-            val targetIndex = requestedIndex.coerceIn(0, optionCount - 1)
-            latestOnSelect(targetIndex)
-            dragAnimation.animateToValue(targetIndex.toFloat())
-            animationScope.launch {
-                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-                val acceptedIndex = latestSelectedIndex.coerceIn(0, optionCount - 1)
-                if (acceptedIndex != targetIndex) {
-                    dragAnimation.animateToValue(acceptedIndex.toFloat())
-                }
-            }
-        }
-
-        LaunchedEffect(clampedSelectedIndex, dragAnimation) {
-            if (abs(dragAnimation.targetValue - clampedSelectedIndex) > 0.001f) {
-                dragAnimation.animateToValue(clampedSelectedIndex.toFloat())
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (trackBackdrop != null) Modifier.layerBackdrop(trackBackdrop)
-                    else Modifier
-                )
-                .clip(trackShape)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.44f))
-                .drawBehind {
-                    drawRoundRect(
-                        color = Color.White.copy(alpha = 0.34f),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-                            x = size.height / 2f,
-                            y = size.height / 2f
-                        ),
-                        style = Stroke(width = 0.75.dp.toPx())
-                    )
-                }
-        )
-
-        val indicatorBaseModifier = Modifier
-            .padding(horizontal = horizontalPadding, vertical = 4.dp)
-            .width(segmentWidth)
-            .fillMaxHeight()
-            .graphicsLayer {
-                translationX = dragAnimation.value * segmentWidthPx
-            }
-
-        if (indicatorBackdrop != null) {
-            Box(
-                modifier = indicatorBaseModifier.drawBackdrop(
-                    backdrop = indicatorBackdrop,
-                    shape = { indicatorShape },
-                    effects = {
-                        vibrancy()
-                        blur(2f.dp.toPx())
-                        val refractionHeight = GlassRecipe.SegIndicatorRefractionHeightDp.dp.toPx()
-                        val refractionAmount = GlassRecipe.SegIndicatorRefractionAmountDp.dp.toPx()
-                        if (
-                            canUseLiquidLens(
-                                shape = indicatorShape,
-                                refractionHeightPx = refractionHeight,
-                                refractionAmountPx = refractionAmount,
-                                minCornerRadiusPx = indicatorMinDimensionPx / 2f,
-                                minDimensionPx = indicatorMinDimensionPx
-                            )
-                        ) {
-                            lens(
-                                refractionHeight = refractionHeight,
-                                refractionAmount = refractionAmount,
-                                chromaticAberration =
-                                    dragAnimation.pressProgress > 0.5f &&
-                                        abs(dragAnimation.velocity) > 3f
-                            )
-                        }
-                    },
-                    layerBlock = {
-                        val velocityStretch = (abs(dragAnimation.velocity) / 12f).coerceIn(0f, 0.14f)
-                        scaleX = dragAnimation.scaleX + velocityStretch
-                        scaleY = (dragAnimation.scaleY - velocityStretch * 0.32f).coerceAtLeast(0.94f)
-                    },
-                    shadow = {
-                        Shadow(alpha = 0.12f + dragAnimation.pressProgress * 0.16f)
-                    },
-                    onDrawSurface = {
-                        drawRect(
-                            Color.White.copy(
-                                alpha = GlassRecipe.SegIndicatorSurfaceAlpha +
-                                    dragAnimation.pressProgress * 0.04f
-                            )
-                        )
-                    }
-                )
-            )
-        } else {
-            Box(
-                modifier = indicatorBaseModifier
-                    .shadow(3.dp, indicatorShape, clip = false)
-                    .clip(indicatorShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = horizontalPadding, vertical = 4.dp)
-                .pointerInput(optionCount, segmentWidthPx) {
-                    if (optionCount <= 1) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val startValue = dragAnimation.value
-                        val touchSlop = viewConfiguration.touchSlop
-                        var totalDragX = 0f
-                        var dragging = false
-                        var pointerId = down.id
-
-                        dragAnimation.press()
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
-                            if (change.changedToUpIgnoreConsumed()) {
-                                if (dragging) change.consume()
-                                break
-                            }
-
-                            val dragAmount = change.positionChange()
-                            if (dragAmount != Offset.Zero) {
-                                totalDragX += dragAmount.x
-                                if (!dragging && abs(totalDragX) > touchSlop) {
-                                    dragging = true
-                                }
-                                if (dragging) {
-                                    change.consume()
-                                    dragAnimation.updateValue(
-                                        (startValue + totalDragX / segmentWidthPx)
-                                            .coerceIn(0f, (optionCount - 1).toFloat())
-                                    )
-                                }
-                            }
-                            pointerId = change.id
-                        }
-
-                        if (dragging) {
-                            requestSelection(dragAnimation.targetValue.roundToInt())
-                        } else {
-                            dragAnimation.release()
-                        }
-                    }
-                },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            options.forEachIndexed { index, label ->
-                val selectionAmount =
-                    (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
-                val textColor = lerpColor(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
-                    MaterialTheme.colorScheme.onSurface,
-                    selectionAmount
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(indicatorShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            role = androidx.compose.ui.semantics.Role.Tab,
-                            onClick = { requestSelection(index) }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        modifier = Modifier.padding(horizontal = 10.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (selectionAmount >= 0.55f) {
-                            FontWeight.SemiBold
-                        } else {
-                            FontWeight.Medium
-                        },
-                        color = textColor,
-                        maxLines = 1
-                    )
-                }
-            }
-        }
-    }
+@Composable
+fun SystemPicker(
+    options: List<String>,
+    selectedIndex: Int?,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String = "请选择",
+    enabled: Boolean = true,
+    leadingIcon: ImageVector? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    backdrop: Backdrop? = LocalAppBackdrop.current
+) {
+    LiquidPicker(
+        options = options.map(::LiquidPickerOption),
+        selectedIndex = selectedIndex,
+        onSelect = onSelect,
+        modifier = modifier,
+        label = label,
+        placeholder = placeholder,
+        enabled = enabled,
+        leadingIcon = leadingIcon,
+        actionLabel = actionLabel,
+        onAction = onAction,
+        backdrop = backdrop
+    )
 }
 
 @Composable
@@ -798,31 +619,16 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val activeColor = NeuPrimary
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = MotionSpring.bounce(),
-        label = "btnPressScale"
-    )
-
-    Button(
+    LiquidButton(
         onClick = onClick,
-        modifier = modifier.height(52.dp).scale(pressScale),
+        modifier = modifier.height(52.dp),
         enabled = enabled,
-        interactionSource = interactionSource,
-        colors = ButtonDefaults.buttonColors(containerColor = activeColor),
-        shape = RoundedCornerShape(14.dp),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 0.dp
-        )
+        style = LiquidButtonStyle.Tinted,
+        tint = NeuPrimary,
+        shape = RoundedCornerShape(16.dp),
+        cornerRadius = 16.dp
     ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
-        }
+        if (leadingIcon != null) leadingIcon()
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
@@ -839,34 +645,16 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = MotionSpring.bounce(),
-        label = "secBtnPressScale"
-    )
-
-    Button(
+    LiquidButton(
         onClick = onClick,
-        modifier = modifier.height(52.dp).scale(pressScale),
+        modifier = modifier.height(52.dp),
         enabled = enabled,
-        interactionSource = interactionSource,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = NeuSurface,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        ),
-        shape = RoundedCornerShape(14.dp),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 0.dp,
-            pressedElevation = 0.dp
-        ),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+        style = LiquidButtonStyle.Surface,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(16.dp),
+        cornerRadius = 16.dp
     ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
-        }
+        if (leadingIcon != null) leadingIcon()
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
@@ -883,30 +671,16 @@ fun SystemDestructiveButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = MotionSpring.bounce(),
-        label = "destBtnPressScale"
-    )
-
-    Button(
+    LiquidButton(
         onClick = onClick,
-        modifier = modifier.height(52.dp).scale(pressScale),
+        modifier = modifier.height(52.dp),
         enabled = enabled,
-        interactionSource = interactionSource,
-        colors = ButtonDefaults.buttonColors(containerColor = SemanticDanger),
-        shape = RoundedCornerShape(14.dp),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 1.dp,
-            pressedElevation = 0.dp
-        )
+        style = LiquidButtonStyle.Tinted,
+        tint = SemanticDanger,
+        shape = RoundedCornerShape(16.dp),
+        cornerRadius = 16.dp
     ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-            Spacer(modifier = Modifier.width(8.dp))
-        }
+        if (leadingIcon != null) leadingIcon()
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
@@ -998,42 +772,32 @@ fun SystemActionButton(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
-    val buttonShape = RoundedCornerShape(12.dp)
-    val containerColor = if (primary) NeuPrimary else NeuSurface
 
-    Surface(
+    LiquidButton(
         onClick = onClick,
+        backdrop = backdrop,
+        modifier = modifier,
         enabled = enabled,
-        modifier = modifier.defaultMinSize(minHeight = 36.dp),
-        shape = buttonShape,
-        color = containerColor,
+        style = if (primary) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface,
+        tint = NeuPrimary,
         contentColor = contentColor,
-        shadowElevation = if (primary) 1.dp else 0.dp,
-        border = if (!primary) BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)) else null
+        shape = RoundedCornerShape(12.dp),
+        cornerRadius = 12.dp,
+        minHeight = 36.dp,
+        horizontalPadding = 12.dp
     ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp)
+            )
         }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -1178,47 +942,61 @@ private fun SystemDialogContent(
     title: @Composable (() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val dialogShape = RoundedCornerShape(32.dp)
-    val useGlass = useVisualEffects && backdrop != null && isBackdropSupported()
+    val dialogCorner = GlassRecipe.DialogCornerDp.dp
+    val dialogShape = RoundedCornerShape(dialogCorner)
+    val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
+    val dialogSurfaceColor = MaterialTheme.colorScheme.surface.copy(
+        alpha = GlassRecipe.DialogSurfaceAlpha
+    )
+    val dialogBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(
+        alpha = GlassRecipe.DialogBorderAlpha
+    )
+    val dialogShadowColor = Color.Black.copy(alpha = GlassRecipe.DialogShadowAlpha)
 
     val fallbackModifier = Modifier
         .width(320.dp)
-        .then(
-            if (useVisualEffects) {
-                Modifier.neumorphicShadow(cornerRadius = 32.dp, elevation = 12.dp)
-            } else {
-                Modifier.shadow(elevation = 6.dp, shape = dialogShape, clip = false)
-            }
+        .shadow(
+            elevation = GlassRecipe.DialogShadowElevationDp.dp,
+            shape = dialogShape,
+            clip = false,
+            ambientColor = dialogShadowColor,
+            spotColor = dialogShadowColor
         )
         .clip(dialogShape)
         .background(MaterialTheme.colorScheme.surface)
+        .border(1.dp, dialogBorderColor, dialogShape)
         .padding(24.dp)
-    val modifier = if (useGlass && backdrop != null) {
+    val modifier = if (glassBackdrop != null) {
         Modifier
             .width(320.dp)
             .drawBackdrop(
-                backdrop = backdrop,
+                backdrop = glassBackdrop,
                 shape = { dialogShape },
                 effects = {
                     vibrancy()
-                    val refractionHeight = 16f.dp.toPx()
-                    val refractionAmount = 32f.dp.toPx()
+                    blur(GlassRecipe.DialogBlurDp.dp.toPx())
+                    val refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx()
+                    val refractionAmount = GlassRecipe.DialogRefractionAmountDp.dp.toPx()
                     if (
                         canUseLiquidLens(
                             shape = dialogShape,
                             refractionHeightPx = refractionHeight,
                             refractionAmountPx = refractionAmount,
-                            minCornerRadiusPx = 32f.dp.toPx(),
+                            minCornerRadiusPx = dialogCorner.toPx(),
                             minDimensionPx = size.minDimension
                         )
                     ) {
                         lens(
                             refractionHeight = refractionHeight,
-                            refractionAmount = refractionAmount
+                            refractionAmount = refractionAmount,
+                            chromaticAberration = false
                         )
                     }
-                }
+                },
+                shadow = { Shadow(alpha = GlassRecipe.DialogShadowAlpha) },
+                onDrawSurface = { drawRect(dialogSurfaceColor) }
             )
+            .border(1.dp, dialogBorderColor, dialogShape)
             .padding(24.dp)
     } else {
         fallbackModifier

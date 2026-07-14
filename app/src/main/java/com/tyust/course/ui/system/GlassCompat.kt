@@ -4,6 +4,8 @@ import android.os.Build
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 
 // ═══════════════════════════════════════════════════════════
@@ -13,25 +15,10 @@ import com.kyant.backdrop.Backdrop
 /**
  * Backdrop 的核心 RenderEffect（blur / vibrancy）需要 Android 12 (API 31) 的图形管线。
  * 老设备会自动回退到现有 neumorphicShadow + glassHighlight 视觉。
- * x86 模拟器：ARM 翻译层与 native 代码不兼容。
  */
-
-private fun isEmulator(): Boolean =
-    Build.FINGERPRINT.startsWith("generic") ||
-    Build.FINGERPRINT.startsWith("unknown") ||
-    Build.MODEL.contains("google_sdk") ||
-    Build.MODEL.contains("Emulator") ||
-    Build.MODEL.contains("Android SDK built for x86") ||
-    Build.HARDWARE.contains("goldfish") ||
-    Build.HARDWARE.contains("ranchu") ||
-    Build.PRODUCT.contains("sdk") ||
-    Build.PRODUCT.contains("emulator")
-
 fun isBackdropSupported(): Boolean {
     // API < 31 无 RenderEffect，直接禁用
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
-    // 模拟器 ARM 翻译层不兼容 native 代码
-    if (isEmulator()) return false
     // 已知 GPU 驱动不兼容 RenderEffect / RuntimeShader 的厂商
     val manufacturer = Build.MANUFACTURER.lowercase()
     val incompatibleVendors = listOf(
@@ -91,6 +78,12 @@ fun canUseLiquidLens(
 val LocalAppBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
+ * 应用内覆盖在页面之上的底部区域，例如悬浮导航栏。
+ * Popup 使用该值收紧可用窗口，避免菜单进入不可交互的覆盖层。
+ */
+val LocalAppOverlayBottomInset = staticCompositionLocalOf<Dp> { 0.dp }
+
+/**
  * 玻璃配方常量。所有数值均为 dp / alpha，调用方按需 toPx。
  *
  * 设计原则（对齐 Apple Liquid Glass）：
@@ -138,19 +131,60 @@ object GlassRecipe {
     val SheetRefractionAmountDp = 32f
     val SheetSurfaceAlpha = 0.12f
 
-    // SegmentedControl（14dp 轨道圆角 / 10dp 指示器圆角）
-    val SegTrackBlurDp = 6f
-    val SegTrackSurfaceAlpha = 0.08f
-    val SegIndicatorBlurDp = 6f
-    val SegIndicatorRefractionHeightDp = 8f
-    val SegIndicatorRefractionAmountDp = 16f
-    val SegIndicatorSurfaceAlpha = 0.08f
+    // SegmentedControl：轨道保持安静，选中指示器用中性折射与动态高光表达液态感
+    val SegTrackBlurDp = 7f
+    val SegTrackSurfaceAlpha = 0.10f
+    val SegTrackBorderAlpha = 0.26f
+    val SegIndicatorBlurDp = 3f
+    val SegIndicatorRefractionHeightDp = 6f
+    val SegIndicatorRefractionAmountDp = 10f
+    val SegIndicatorSurfaceAlpha = 0.14f
+    val SegIndicatorBorderAlpha = 0.52f
+    val SegIndicatorShadowAlpha = 0.10f
+    val SegIndicatorPressedShadowAlpha = 0.18f
+    val SegIndicatorPressedScale = 1.055f
+    val SegIndicatorMaxVelocityStretch = 0.13f
 
-    // ActionButton（12dp 圆角）
-    val ActionBlurDp = 6f
-    val ActionRefractionHeightDp = 8f
-    val ActionRefractionAmountDp = 16f
-    val ActionSurfaceAlpha = 0.08f
+    // ActionButton：只有 prominent / destructive 使用语义色，其余保持中性玻璃
+    val ActionBlurDp = 4f
+    val ActionRefractionHeightDp = 6f
+    val ActionRefractionAmountDp = 10f
+    val ActionSurfaceAlpha = 0.16f
+    val ActionBorderAlpha = 0.40f
+    val ActionShadowAlpha = 0.12f
+    val ActionPressedScale = 0.975f
+    val ActionTintAlpha = 0.84f
+    val ActionDisabledSurfaceAlpha = 0.20f
+
+    // Toggle：轨道提供状态色，玻璃拇指只在交互时承担液态质感
+    val SwitchTrackInactiveAlpha = 0.58f
+    val SwitchTrackActiveAlpha = 0.82f
+    val SwitchThumbBlurDp = 2.5f
+    val SwitchThumbRefractionHeightDp = 8f
+    val SwitchThumbRefractionAmountDp = 14f
+    val SwitchThumbSurfaceAlpha = 0.34f
+    val SwitchThumbBorderAlpha = 0.72f
+    val SwitchThumbShadowAlpha = 0.14f
+    val SwitchPressedScaleX = 1.12f
+    val SwitchPressedScaleY = 0.94f
+
+    // Picker：触发器与锚定菜单共享 regular glass 语言，菜单提高不透明度保证文字可读
+    val PickerBlurDp = 6f
+    val PickerRefractionHeightDp = 6f
+    val PickerRefractionAmountDp = 10f
+    val PickerSurfaceAlpha = 0.12f
+    val PickerExpandedSurfaceAlpha = 0.18f
+    val PickerBorderAlpha = 0.34f
+    val PickerExpandedBorderAlpha = 0.54f
+    val PickerShadowAlpha = 0.10f
+    val PickerExpandedShadowAlpha = 0.18f
+    val PickerMenuBlurDp = 10f
+    val PickerMenuRefractionHeightDp = 8f
+    val PickerMenuRefractionAmountDp = 12f
+    val PickerMenuSurfaceAlpha = 0.76f
+    val PickerMenuBorderAlpha = 0.42f
+    val PickerMenuShadowAlpha = 0.20f
+    val PickerSelectedSurfaceAlpha = 0.10f
 
     // ═══════════════════════════════════════════════════════════
     // 3D 景深与色彩饱和度补偿（对齐官方 Demo 配方）
@@ -162,14 +196,15 @@ object GlassRecipe {
     // 使用渐变背景时的景深折射
     val CardDepthEffect = true
 
-    // Dialog / 弹窗专用高折射配方（48dp 超大圆角）
-    val DialogCornerDp = 48f
-    val DialogBlurDp = 12f
-    val DialogRefractionHeightDp = 24f    // ≤ 48dp 圆角，极致水晶镇纸感
-    val DialogRefractionAmountDp = 48f
-    val DialogSurfaceAlpha = 0.08f
-    val DialogDepthEffect = true
-    val DialogBrightness = 0.2f           // 亮色模式提亮
+    // Dialog：模态层只使用中性环境阴影与细边缘，不制造新拟态光晕
+    val DialogCornerDp = 32f
+    val DialogBlurDp = 10f
+    val DialogRefractionHeightDp = 10f
+    val DialogRefractionAmountDp = 18f
+    val DialogSurfaceAlpha = 0.78f
+    val DialogBorderAlpha = 0.30f
+    val DialogShadowAlpha = 0.14f
+    val DialogShadowElevationDp = 6f
 
     // 亮度自适应采样参数
     val LuminanceSampleSize = 5           // 5x5 = 25 像素极低分化采样

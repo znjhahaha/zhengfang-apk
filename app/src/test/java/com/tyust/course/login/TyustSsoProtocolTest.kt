@@ -11,10 +11,12 @@ class TyustSsoProtocolTest {
     fun parseLoginPage_readsExecutionAndCryptoKey() {
         val html = """
             <html><body>
-              <input id="login-page-flowkey" value="flow-123" />
-              <input id="login-croypto" value="MTIzNDU2Nzg=" />
-              <input id="recaptcha-invisible" value="true" />
-              <input id="captcha-url" value="/captcha?id=7" />
+              <form method="post" action="">
+                <input id="login-page-flowkey" value="flow-123" />
+                <input id="login-croypto" value="MTIzNDU2Nzg=" />
+                <input id="recaptcha-invisible" value="true" />
+                <input id="captcha-url" value="/captcha?id=7" />
+              </form>
             </body></html>
         """.trimIndent()
 
@@ -24,6 +26,7 @@ class TyustSsoProtocolTest {
         assertEquals("MTIzNDU2Nzg=", page.cryptoKey)
         assertFalse(page.captchaRequired)
         assertEquals("/captcha?id=7", page.captchaUrl)
+        assertEquals("", page.formAction)
     }
 
     @Test

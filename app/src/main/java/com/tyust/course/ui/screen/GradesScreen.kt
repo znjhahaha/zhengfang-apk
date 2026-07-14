@@ -37,15 +37,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,6 +60,7 @@ import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemLoadingState
+import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.system.SystemSectionHeader
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemStatStrip
@@ -341,84 +337,20 @@ private fun SemesterGradesContent(
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SemesterSelector(
     semesters: List<String>,
     currentSemester: String,
     onSemesterChange: (String) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
-        OutlinedTextField(
-            value = currentSemester.ifBlank { "选择学期" },
-            onValueChange = {},
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            readOnly = true,
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-            label = {
-                Text(
-                    text = "学期",
-                    fontWeight = FontWeight.Medium
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.CalendarToday,
-                    contentDescription = null,
-                    tint = NeuPrimary
-                )
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            },
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = NeuPrimary.copy(alpha = 0.72f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-                focusedLabelColor = NeuPrimary,
-                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-            )
-        )
-
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            semesters.forEach { semester ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = semester,
-                            fontWeight = if (semester == currentSemester) {
-                                FontWeight.SemiBold
-                            } else {
-                                FontWeight.Normal
-                            },
-                            color = if (semester == currentSemester) {
-                                NeuPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                        )
-                    },
-                    onClick = {
-                        onSemesterChange(semester)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
+    SystemPicker(
+        options = semesters,
+        selectedIndex = semesters.indexOf(currentSemester).takeIf { it >= 0 },
+        onSelect = { index -> onSemesterChange(semesters[index]) },
+        label = "学期",
+        placeholder = "选择学期",
+        leadingIcon = Icons.Default.CalendarToday
+    )
 }
 
 @Composable

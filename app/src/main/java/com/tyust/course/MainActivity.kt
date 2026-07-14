@@ -72,6 +72,7 @@ import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
 import com.tyust.course.ui.system.CapsuleNavigationBar
 import com.tyust.course.ui.system.DialogHost
 import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalDialogHost
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
@@ -271,6 +272,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val dialogHostState = rememberDialogHostState()
         CompositionLocalProvider(
             LocalAppBackdrop provides rootBackdrop,
+            LocalAppOverlayBottomInset provides 96.dp,
             LocalDialogHost provides dialogHostState
         ) {
             // navBarBackdrop 捕获壁纸+页面内容，底栏在此 Box 之外折射它

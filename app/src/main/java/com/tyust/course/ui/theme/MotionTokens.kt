@@ -83,6 +83,30 @@ object MotionSpring {
         dampingRatio = 0.5f,
         stiffness = 300f
     )
+
+    /** Liquid-control tap: visible overshoot without a long wobble. */
+    fun <T> liquidTap() = spring<T>(
+        dampingRatio = 0.62f,
+        stiffness = 460f
+    )
+
+    /** Liquid-control settle: decisive snapping after a drag or state change. */
+    fun <T> liquidSettle() = spring<T>(
+        dampingRatio = 0.72f,
+        stiffness = 560f
+    )
+
+    /** Liquid-control follow: high damping keeps direct manipulation attached to the finger. */
+    fun <T> liquidFollow() = spring<T>(
+        dampingRatio = 1f,
+        stiffness = 1100f
+    )
+
+    /** Anchored menu reveal: soft enough to show depth, short enough to stay responsive. */
+    fun <T> liquidMenu() = spring<T>(
+        dampingRatio = 0.78f,
+        stiffness = 520f
+    )
 }
 
 /**
