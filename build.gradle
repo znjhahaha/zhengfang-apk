@@ -4,7 +4,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.12.3'
+        classpath 'com.android.tools.build:gradle:8.13.2'
         // Kotlin / Compose 编译器插件版本由 settings.gradle 的 pluginManagement 统一声明
     }
 }

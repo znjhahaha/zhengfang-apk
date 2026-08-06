@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.GlassMaterialRole
 import com.tyust.course.ui.system.GlassMaterials
-import com.tyust.course.ui.system.canUseLiquidLens
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.system.LocalAppBackdrop
@@ -42,6 +41,7 @@ import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPicker
+import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.*
 
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -241,24 +241,23 @@ fun LoginScreen(
                             backdrop = backdrop,
                             shape = { sheetShape },
                             effects = {
+                                val params = resolvePhysicalLens(
+                                    density = this,
+                                    material = sheetMaterial,
+                                    shape = sheetShape,
+                                    minCornerRadiusPx = 28f.dp.toPx(),
+                                    minDimensionPx = size.minDimension,
+                                    interactionProgress = 0f,
+                                    enableBlur = true,
+                                    allowChromaticAberration = false
+                                )
                                 vibrancy()
-                                blur(sheetMaterial.blurDp.dp.toPx())
-                                val refractionHeight = sheetMaterial.refractionHeightDp.dp.toPx()
-                                val refractionAmount = sheetMaterial.refractionAmountDp.dp.toPx()
-                                if (
-                                    canUseLiquidLens(
-                                        shape = sheetShape,
-                                        refractionHeightPx = refractionHeight,
-                                        refractionAmountPx = refractionAmount,
-                                        minCornerRadiusPx = 28f.dp.toPx(),
-                                        minDimensionPx = size.minDimension
-                                    )
-                                ) {
+                                if (params.blurPx > 0f) blur(params.blurPx)
+                                if (params.useLens) {
                                     lens(
-                                        refractionHeight = refractionHeight,
-                                        refractionAmount = refractionAmount,
-                                        depthEffect = false,
-                                        chromaticAberration = false
+                                        refractionHeight = params.refractionHeightPx,
+                                        refractionAmount = params.refractionAmountPx,
+                                        chromaticAberration = params.chromaticAberration
                                     )
                                 }
                             },

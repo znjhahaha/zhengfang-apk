@@ -96,6 +96,12 @@ object MotionSpring {
         stiffness = 560f
     )
 
+    /** Liquid selection release: restrained overshoot shared by tabs and segmented controls. */
+    fun <T> liquidSelectionRelease() = spring<T>(
+        dampingRatio = 0.76f,
+        stiffness = 420f
+    )
+
     /** Liquid-control follow: high damping keeps direct manipulation attached to the finger. */
     fun <T> liquidFollow() = spring<T>(
         dampingRatio = 1f,

@@ -161,7 +161,7 @@ fun GrabProScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             SystemTopBar(
                 title = "抢课工作台",

@@ -24,6 +24,9 @@ object GlassRuntimeGuard {
     private var enabled = true
 
     @Volatile
+    private var dynamicOpticsEnabled = true
+
+    @Volatile
     private var sessionMarked = false
 
     private var appContext: Context? = null
@@ -32,6 +35,7 @@ object GlassRuntimeGuard {
         val applicationContext = context.applicationContext
         appContext = applicationContext
         sessionMarked = false
+        dynamicOpticsEnabled = true
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             enabled = false
@@ -43,25 +47,24 @@ object GlassRuntimeGuard {
             PREFS_NAME,
             Context.MODE_PRIVATE
         )
+        // 实验期开关：不再因历史崩溃熔断降级。
+        // 仅记录上一进程是否失败用于日志取证，不写 disabledVersion。
         val previousSessionUsedGlass = preferences.getBoolean(
             KEY_SESSION_USED_GLASS,
             false
         )
-        val disabledVersion = preferences.getInt(KEY_DISABLED_VERSION, -1)
         val previousProcessFailed = previousSessionUsedGlass &&
             didPreviousProcessFail(applicationContext)
-
         if (previousProcessFailed) {
-            preferences.edit()
-                .putInt(KEY_DISABLED_VERSION, BuildConfig.VERSION_CODE)
-                .remove(KEY_SESSION_USED_GLASS)
-                .apply()
-            Log.w(TAG, "Backdrop disabled for this version after a failed process exit")
-        } else {
-            preferences.edit().remove(KEY_SESSION_USED_GLASS).apply()
+            Log.w(TAG, "Previous process exit looked like a failure; keeping Backdrop enabled (experimental)")
         }
+        preferences.edit()
+            .remove(KEY_SESSION_USED_GLASS)
+            .remove(KEY_DISABLED_VERSION)
+            .apply()
 
-        enabled = !previousProcessFailed && disabledVersion != BuildConfig.VERSION_CODE
+        // 实验期恒启用（仅受 SDK 下限约束），后续可恢复为熔断策略。
+        enabled = true
         initialized = true
     }
 
@@ -71,6 +74,19 @@ object GlassRuntimeGuard {
 
         markGlassSession()
         return true
+    }
+
+    fun isDynamicOpticsEnabled(): Boolean =
+        enabled && dynamicOpticsEnabled
+
+    fun disableDynamicOpticsForSession(error: Throwable? = null) {
+        if (!dynamicOpticsEnabled) return
+        dynamicOpticsEnabled = false
+        if (error == null) {
+            Log.w(TAG, "Dynamic glass optics disabled for this session")
+        } else {
+            Log.w(TAG, "Dynamic glass optics disabled for this session", error)
+        }
     }
 
     private fun markGlassSession() {

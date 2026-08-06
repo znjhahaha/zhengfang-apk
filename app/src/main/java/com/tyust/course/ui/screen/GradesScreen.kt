@@ -133,7 +133,7 @@ fun GradesScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             SystemTopBar(
                 title = "成绩与考试",

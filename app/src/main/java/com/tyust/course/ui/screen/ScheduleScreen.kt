@@ -133,7 +133,7 @@ fun ScheduleScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             WeekHeaderCompact(
                 currentWeek = pagerState.currentPage + 1,
@@ -218,7 +218,7 @@ fun WeekHeaderCompact(
     val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
 
     Surface(
-        color = MaterialTheme.colorScheme.background,
+        color = Color.Transparent,
         shadowElevation = 0.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

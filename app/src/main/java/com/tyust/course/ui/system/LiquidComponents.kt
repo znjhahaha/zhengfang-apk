@@ -67,11 +67,12 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
+import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
+import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.flow.collectLatest
 
@@ -165,23 +166,24 @@ fun LiquidButton(
                 backdrop = glassBackdrop,
                 shape = { shape },
                 effects = {
+                    val params = resolvePhysicalLens(
+                        density = this,
+                        material = controlMaterial,
+                        shape = shape,
+                        minCornerRadiusPx = cornerRadius.toPx(),
+                        minDimensionPx = size.minDimension,
+                        interactionProgress = if (isPressed) 1f else 0f,
+                        motionIntensity = interactiveHighlight.pressProgress * 0.35f,
+                        enableBlur = true,
+                        allowChromaticAberration = isInteractive && enabled
+                    )
                     vibrancy()
-                    blur(controlMaterial.blurDp.dp.toPx())
-                    val refractionHeight = controlMaterial.refractionHeightDp.dp.toPx()
-                    val refractionAmount = controlMaterial.refractionAmountDp.dp.toPx()
-                    if (
-                        canUseLiquidLens(
-                            shape = shape,
-                            refractionHeightPx = refractionHeight,
-                            refractionAmountPx = refractionAmount,
-                            minCornerRadiusPx = cornerRadius.toPx(),
-                            minDimensionPx = size.minDimension
-                        )
-                    ) {
+                    if (params.blurPx > 0f) blur(params.blurPx)
+                    if (params.useLens) {
                         lens(
-                            refractionHeight = refractionHeight,
-                            refractionAmount = refractionAmount,
-                            chromaticAberration = false
+                            refractionHeight = params.refractionHeightPx,
+                            refractionAmount = params.refractionAmountPx,
+                            chromaticAberration = params.chromaticAberration
                         )
                     }
                 },
@@ -392,23 +394,29 @@ fun LiquidSwitch(
                                 accessibility = accessibility,
                                 interactionProgress = progress
                             )
-                            blur(8.dp.toPx() * (1f - progress))
-                            val refractionHeight = material.refractionHeightDp.dp.toPx() * progress
-                            val refractionAmount = material.refractionAmountDp.dp.toPx() * progress
-                            if (
-                                progress > 0f &&
-                                canUseLiquidLens(
-                                    shape = Capsule(),
-                                    refractionHeightPx = refractionHeight,
-                                    refractionAmountPx = refractionAmount,
-                                    minCornerRadiusPx = 12.dp.toPx(),
-                                    minDimensionPx = size.minDimension
-                                )
-                            ) {
+                            val motion = motionIntensityFromVelocity(
+                                velocityX = dragAnimation.velocity * dragWidth,
+                                fullEffectVelocity = material.optics.velocityForFullEffect
+                            )
+                            val params = resolvePhysicalLens(
+                                density = this,
+                                material = material,
+                                shape = Capsule(),
+                                minCornerRadiusPx = size.minDimension / 2f,
+                                minDimensionPx = size.minDimension,
+                                interactionProgress = progress,
+                                motionIntensity = motion,
+                                // 静止时保留轻 blur，按压后转物理透镜
+                                enableBlur = true,
+                                allowChromaticAberration = true
+                            )
+                            vibrancy()
+                            if (params.blurPx > 0f) blur(params.blurPx)
+                            if (params.useLens) {
                                 lens(
-                                    refractionHeight = refractionHeight,
-                                    refractionAmount = refractionAmount,
-                                    chromaticAberration = material.chromaticAberration
+                                    refractionHeight = params.refractionHeightPx,
+                                    refractionAmount = params.refractionAmountPx,
+                                    chromaticAberration = params.chromaticAberration
                                 )
                             }
                         },
@@ -426,13 +434,6 @@ fun LiquidSwitch(
                                 color = Color.Black.copy(alpha = 0.05f)
                             )
                         },
-                        innerShadow = {
-                            val progress = dragAnimation.pressProgress
-                            InnerShadow(
-                                radius = 4.dp * progress,
-                                alpha = progress
-                            )
-                        },
                         layerBlock = {
                             if (accessibility.reduceMotion) {
                                 scaleX = 1f
@@ -448,17 +449,16 @@ fun LiquidSwitch(
                             }
                         },
                         onDrawSurface = {
+                            val progress = dragAnimation.pressProgress
+                            val material = GlassMaterials.resolve(
+                                role = GlassMaterialRole.Interactive,
+                                accessibility = accessibility,
+                                interactionProgress = progress
+                            )
+                            // 静止也保持可透视，不再用 0.94 白块盖住折射
                             drawRect(
                                 Color.White.copy(
-                                    alpha = lerp(
-                                        0.94f,
-                                        GlassMaterials.resolve(
-                                            role = GlassMaterialRole.Interactive,
-                                            accessibility = accessibility,
-                                            interactionProgress = dragAnimation.pressProgress
-                                        ).surfaceAlpha,
-                                        dragAnimation.pressProgress
-                                    )
+                                    alpha = lerp(0.34f, material.surfaceAlpha, progress)
                                 )
                             )
                         }

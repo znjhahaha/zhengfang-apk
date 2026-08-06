@@ -5,9 +5,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 
-val BrandPrimary = Color(0xFF496784)
-val BrandPrimaryStrong = Color(0xFF344C64)
-val BrandPrimaryContainer = Color(0xFFDCE6EF)
+// 克莱因蓝（International Klein Blue）作为全局主色
+val BrandPrimary = Color(0xFF002FA7)
+val BrandPrimaryStrong = Color(0xFF00238A)
+val BrandPrimaryContainer = Color(0xFFDCE2F6)
 val BrandSecondary = Color(0xFF5C6772)
 val BrandSecondaryContainer = Color(0xFFE6EBF0)
 

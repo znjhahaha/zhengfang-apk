@@ -29,13 +29,17 @@ class DampedDragAnimation(
     private val directManipulationSpec: AnimationSpec<Float> =
         spring(1f, 1000f, visibilityThreshold),
     private val settleAnimationSpec: AnimationSpec<Float> =
-        spring(1f, 1000f, visibilityThreshold),
+        spring(0.5f, 340f, visibilityThreshold),
+    private val releaseScaleAnimationSpec: AnimationSpec<Float> =
+        spring(0.34f, 280f, 0.001f),
     val onDragStarted: DampedDragAnimation.(position: Offset) -> Unit,
     val onDragStopped: DampedDragAnimation.() -> Unit,
     val onDrag: DampedDragAnimation.(size: IntSize, dragAmount: Offset) -> Unit,
 ) {
     private val velocityAnimationSpec = spring(0.5f, 300f, visibilityThreshold * 10f)
-    private val pressProgressAnimationSpec = spring(1f, 1000f, 0.001f)
+    // tint/色散转玻璃过渡：略降刚度让\"实色→玻璃\"更平滑，不突兀。
+    private val pressProgressAnimationSpec = spring(0.85f, 360f, 0.001f)
+    // 按下阶段：较高阻尼，缩放跟手贴合，不抖。
     private val scaleXAnimationSpec = spring(0.6f, 250f, 0.001f)
     private val scaleYAnimationSpec = spring(0.7f, 250f, 0.001f)
 
@@ -93,8 +97,8 @@ class DampedDragAnimation(
                     .first()
             }
             launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
-            launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
+            launch { scaleXAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
+            launch { scaleYAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
         }
     }
 
@@ -110,7 +114,7 @@ class DampedDragAnimation(
             mutatorMutex.mutate {
                 press()
                 val targetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(targetValue, settleAnimationSpec) }
+                launch { valueAnimation.animateTo(targetValue, settleAnimationSpec) { updateVelocity() } }
                 if (velocity != 0f) {
                     launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                 }

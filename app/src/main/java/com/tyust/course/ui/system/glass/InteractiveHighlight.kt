@@ -1,9 +1,5 @@
 package com.tyust.course.ui.system.glass
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.spring
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -11,33 +7,33 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.util.fastCoerceIn
 import com.kyant.backdrop.RuntimeShader
 import com.kyant.backdrop.asComposeShader
 import com.kyant.backdrop.isRuntimeShaderSupported
+import com.tyust.course.ui.system.GlassRuntimeGuard
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 class InteractiveHighlight(
-    val animationScope: CoroutineScope,
+    animationScope: CoroutineScope,
     val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
 ) {
-    private val pressProgressAnimationSpec = spring(0.5f, 300f, 0.001f)
-    private val positionAnimationSpec = spring(0.5f, 300f, Offset.VisibilityThreshold)
+    private val optics = InteractiveOptics(animationScope)
 
-    private val pressProgressAnimation = Animatable(0f, 0.001f)
-    private val positionAnimation = Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
+    val pressProgress: Float
+        get() = optics.pressProgress
 
-    private var startPosition = Offset.Zero
-    val pressProgress: Float get() = pressProgressAnimation.value
-    val offset: Offset get() = positionAnimation.value - startPosition
+    val velocityX: Float
+        get() = optics.velocityX
 
-    private val shader =
-        if (isRuntimeShaderSupported()) {
+    val pointerPosition: Offset
+        get() = optics.pointerPosition
+
+    private val shader = if (
+        isRuntimeShaderSupported() &&
+        GlassRuntimeGuard.isDynamicOpticsEnabled()
+    ) {
+        runCatching {
             RuntimeShader(
                 """
 uniform float2 size;
@@ -47,72 +43,51 @@ uniform float2 position;
 
 half4 main(float2 coord) {
     float dist = distance(coord, position);
-    float intensity = smoothstep(radius, radius * 0.5, dist);
+    float intensity = smoothstep(radius, radius * 0.16, dist);
     return color * intensity;
-}"""
+}
+"""
+            )
+        }.onFailure(GlassRuntimeGuard::disableDynamicOpticsForSession).getOrNull()
+    } else {
+        null
+    }
+
+    val modifier: Modifier = Modifier.drawWithContent {
+        drawContent()
+
+        val progress = optics.pressProgress.coerceIn(0f, 1f)
+        if (progress <= 0.001f) return@drawWithContent
+
+        val rawPosition = optics.pointerPosition
+        val mappedPosition = if (rawPosition.x.isFinite() && rawPosition.y.isFinite()) {
+            position(size, rawPosition)
+        } else {
+            center
+        }
+        val lightPosition = Offset(
+            mappedPosition.x.fastCoerceIn(0f, size.width),
+            mappedPosition.y.fastCoerceIn(0f, size.height)
+        )
+
+        if (shader != null) {
+            shader.setFloatUniform("size", size.width, size.height)
+            shader.setColorUniform("color", Color.White.copy(alpha = 0.20f * progress))
+            shader.setFloatUniform("radius", size.maxDimension * 0.88f)
+            shader.setFloatUniform("position", lightPosition.x, lightPosition.y)
+            drawRect(
+                brush = ShaderBrush(shader.asComposeShader()),
+                blendMode = BlendMode.Plus
             )
         } else {
-            null
+            drawCircle(
+                color = Color.White.copy(alpha = 0.12f * progress),
+                radius = size.maxDimension * 0.62f,
+                center = lightPosition,
+                blendMode = BlendMode.Plus
+            )
         }
+    }
 
-    val modifier: Modifier =
-        Modifier.drawWithContent {
-            val progress = pressProgressAnimation.value
-            if (progress > 0f) {
-                if (shader != null) {
-                    drawRect(
-                        Color.White.copy(0.08f * progress),
-                        blendMode = BlendMode.Plus
-                    )
-                    shader.apply {
-                        val pos = position(size, positionAnimation.value)
-                        setFloatUniform("size", size.width, size.height)
-                        setColorUniform("color", Color.White.copy(0.15f * progress))
-                        setFloatUniform("radius", size.minDimension * 1.5f)
-                        setFloatUniform(
-                            "position",
-                            pos.x.fastCoerceIn(0f, size.width),
-                            pos.y.fastCoerceIn(0f, size.height)
-                        )
-                    }
-                    drawRect(
-                        ShaderBrush(shader.asComposeShader()),
-                        blendMode = BlendMode.Plus
-                    )
-                } else {
-                    drawRect(
-                        Color.White.copy(0.25f * progress),
-                        blendMode = BlendMode.Plus
-                    )
-                }
-            }
-            drawContent()
-        }
-
-    val gestureModifier: Modifier =
-        Modifier.pointerInput(animationScope) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false, PointerEventPass.Initial)
-                startPosition = down.position
-                animationScope.launch {
-                    launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-                    launch { positionAnimation.snapTo(startPosition) }
-                }
-                // Track pointer position without consuming — click handlers stay unblocked
-                var pointer = down.id
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == pointer }
-                    if (change == null || !change.pressed) break
-                    if (change.previousPosition != change.position) {
-                        animationScope.launch { positionAnimation.snapTo(change.position) }
-                    }
-                    pointer = change.id
-                }
-                animationScope.launch {
-                    launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                    launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                }
-            }
-        }
+    val gestureModifier: Modifier = optics.gestureModifier
 }

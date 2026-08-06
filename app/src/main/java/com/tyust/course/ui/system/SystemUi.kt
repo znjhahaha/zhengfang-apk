@@ -88,6 +88,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -904,23 +905,23 @@ private fun SystemDialogContent(
                 backdrop = glassBackdrop,
                 shape = { dialogShape },
                 effects = {
+                    val params = resolvePhysicalLens(
+                        density = this,
+                        material = dialogMaterial,
+                        shape = dialogShape,
+                        minCornerRadiusPx = dialogCorner.toPx(),
+                        minDimensionPx = size.minDimension,
+                        interactionProgress = 0f,
+                        enableBlur = true,
+                        allowChromaticAberration = false
+                    )
                     vibrancy()
-                    blur(dialogMaterial.blurDp.dp.toPx())
-                    val refractionHeight = dialogMaterial.refractionHeightDp.dp.toPx()
-                    val refractionAmount = dialogMaterial.refractionAmountDp.dp.toPx()
-                    if (
-                        canUseLiquidLens(
-                            shape = dialogShape,
-                            refractionHeightPx = refractionHeight,
-                            refractionAmountPx = refractionAmount,
-                            minCornerRadiusPx = dialogCorner.toPx(),
-                            minDimensionPx = size.minDimension
-                        )
-                    ) {
+                    if (params.blurPx > 0f) blur(params.blurPx)
+                    if (params.useLens) {
                         lens(
-                            refractionHeight = refractionHeight,
-                            refractionAmount = refractionAmount,
-                            chromaticAberration = false
+                            refractionHeight = params.refractionHeightPx,
+                            refractionAmount = params.refractionAmountPx,
+                            chromaticAberration = params.chromaticAberration
                         )
                     }
                 },

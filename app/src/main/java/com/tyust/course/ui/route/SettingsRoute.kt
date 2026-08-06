@@ -59,6 +59,7 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
@@ -99,6 +100,8 @@ fun SettingsRoute(
     var showCreditsDialog by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
     var showSchoolAdaptation by remember { mutableStateOf(false) }
+    var showWallpaperDialog by remember { mutableStateOf(false) }
+    val currentWallpaper = com.tyust.course.manager.AppearanceSettingsManager.wallpaper
     
     // Quota States
     var isSuper by remember { mutableStateOf(false) }
@@ -327,12 +330,64 @@ fun SettingsRoute(
         onRefreshCookieClick = { refreshCookieManually() },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
         onSchoolAdaptation = { showSchoolAdaptation = true },
+        onWallpaperSelect = { showWallpaperDialog = true },
+        wallpaperName = currentWallpaper.displayName,
         isSuper = isSuper,
         quotaInfo = quotaInfo,
         canRefreshCookie = canRefreshCookie,
         isRefreshingCookie = isRefreshingCookie
     )
     
+    if (showWallpaperDialog) {
+        com.tyust.course.ui.system.SystemDialog(
+            onDismissRequest = { showWallpaperDialog = false },
+            title = { Text("背景颜色") },
+            confirmButton = {
+                SystemSecondaryButton(
+                    text = "关闭",
+                    onClick = { showWallpaperDialog = false }
+                )
+            }
+        ) {
+            com.tyust.course.manager.WallpaperPreset.values().forEach { preset ->
+                val selected = preset == currentWallpaper
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            com.tyust.course.manager.AppearanceSettingsManager.updateWallpaper(preset)
+                            showWallpaperDialog = false
+                        }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(preset.baseColor)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = preset.displayName,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = NeuPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     // Dialogs
     if (showLogoutDialog) {
         SimpleConfirmDialog(

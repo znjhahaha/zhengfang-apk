@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.ContentPasteSearch
 import androidx.compose.material.icons.outlined.Cookie
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -68,13 +69,15 @@ fun SettingsScreen(
     onRefreshCookieClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
     onSchoolAdaptation: () -> Unit = {},
+    onWallpaperSelect: () -> Unit = {},
+    wallpaperName: String = "",
     isSuper: Boolean = false,
     quotaInfo: String = "",
     canRefreshCookie: Boolean = false,
     isRefreshingCookie: Boolean = false
 ) {
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             SystemTopBar(
                 title = "设置",
@@ -125,6 +128,16 @@ fun SettingsScreen(
                     subtitle = "更新登录状态与身份信息",
                     tintColor = NeuPrimary,
                     onClick = onCookieConfig
+                )
+            }
+
+            SettingsSection(title = "外观") {
+                SettingsActionItem(
+                    icon = Icons.Outlined.Palette,
+                    title = "背景颜色",
+                    subtitle = wallpaperName.ifBlank { "选择应用背景色" },
+                    tintColor = NeuPrimary,
+                    onClick = onWallpaperSelect
                 )
             }
 

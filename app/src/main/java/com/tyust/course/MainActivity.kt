@@ -5,9 +5,16 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,7 +72,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.tyust.course.activation.ActivationManager
 import com.tyust.course.activation.ActivationScreen
+import com.tyust.course.manager.AppearanceSettingsManager
 import com.tyust.course.manager.SmartSelector
+import com.tyust.course.manager.WallpaperPreset
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
 import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
@@ -78,16 +87,23 @@ import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberDialogHostState
+import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.theme.CourseSelectorTheme
+import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.update.UpdateDialog
 import com.tyust.course.update.rememberUpdateState
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.Shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import kotlin.math.roundToInt
 
 class MainActivity : FragmentActivity() {
 
@@ -175,6 +191,11 @@ sealed class BottomNavItem(
     object Settings : BottomNavItem("settings", Icons.Default.Settings, "设置")
 }
 
+private data class MainPageTarget(
+    val accountStorageKey: String,
+    val tabIndex: Int
+)
+
 @Composable
 fun MainScreen(fragmentActivity: FragmentActivity) {
     val context = LocalContext.current
@@ -186,6 +207,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var currentAccountStorageKey by remember { mutableStateOf(UserManager.getInstance().currentAccountStorageKey) }
+    val accessibility = rememberGlassAccessibilityMode()
     val items = listOf(
         BottomNavItem.Courses,
         BottomNavItem.Schedule,
@@ -207,13 +229,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     val eventAccountKey = intent.getStringExtra(com.tyust.course.network.CourseApiClient.EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
                     val currentAccountKey = UserManager.getInstance().currentAccountStorageKey
                     if (eventAccountKey.isNotEmpty() && eventAccountKey != currentAccountKey) return
+                    // 幂等闸门：已在提醒态就不重复弹，避免多次 401 连环触发。
+                    // Toast 由过期处理链自带（GradesRoute.handleExpiredCookie），此处只驱动 Banner。
                     isTokenExpired = true
-                    // 全局即时 Toast 强提醒，确保用户在任何页面都能感知
-                    android.widget.Toast.makeText(
-                        fragmentActivity,
-                        "登录状态已过期，请重新登录",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
                 }
             }
         }
@@ -255,14 +273,14 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val bgColor = MaterialTheme.colorScheme.background
         val useGlass = isBackdropSupported()
 
-        val rootBackdrop = if (useGlass) {
+        // 页内玻璃只采样独立壁纸层，不能采样包含自身的页面内容层。
+        val wallpaperBackdrop = if (useGlass) {
             rememberLayerBackdrop()
         } else {
             null
         }
 
-        // 第二个 backdrop：捕获壁纸+页面内容，专供底栏折射
-        // 底栏在此 layer 之外，不会形成循环
+        // 底栏位于该层外，只能单向采样壁纸与页面内容。
         val navBarBackdrop = if (useGlass) {
             rememberLayerBackdrop()
         } else {
@@ -271,67 +289,154 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
         val dialogHostState = rememberDialogHostState()
         CompositionLocalProvider(
-            LocalAppBackdrop provides rootBackdrop,
+            LocalAppBackdrop provides wallpaperBackdrop,
             LocalAppOverlayBottomInset provides 96.dp,
             LocalDialogHost provides dialogHostState
         ) {
-            // navBarBackdrop 捕获壁纸+页面内容，底栏在此 Box 之外折射它
             Box(
                 modifier = Modifier.fillMaxSize().then(
                     if (useGlass && navBarBackdrop != null) Modifier.layerBackdrop(navBarBackdrop)
                     else Modifier
                 )
             ) {
-            // 壁纸层：layerBackdrop 只捕获壁纸，给卡片/顶栏用（避免循环）
-            if (useGlass && rootBackdrop != null) {
-                Canvas(modifier = Modifier.fillMaxSize().layerBackdrop(rootBackdrop)) {
-                    drawWallpaperPattern(this)
+            val wallpaperPreset = AppearanceSettingsManager.wallpaper
+            if (useGlass && wallpaperBackdrop != null) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .layerBackdrop(wallpaperBackdrop)
+                ) {
+                    drawWallpaperPattern(this, wallpaperPreset)
                 }
             } else {
-                Box(Modifier.fillMaxSize().background(bgColor))
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(wallpaperPreset.baseColor)
+                ) {}
             }
 
             Column(modifier = Modifier.fillMaxSize()) {
                     AnimatedVisibility(
                         visible = isTokenExpired,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        // 规避刘海屏和系统状态栏遮挡
-                        modifier = Modifier.statusBarsPadding()
+                        enter = fadeIn() + slideInVertically { -it / 2 },
+                        exit = fadeOut() + slideOutVertically { -it / 2 },
+                        // 规避刘海屏和系统状态栏遮挡；居中悬浮玻璃气泡
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
                     ) {
-                        TokenExpiredBanner(
-                            onClick = {
-                                val intent = Intent(fragmentActivity, LoginActivity::class.java)
-                                intent.putExtra("force_relogin", true)
-                                fragmentActivity.startActivity(intent)
-                            }
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            TokenExpiredBanner(
+                                backdrop = wallpaperBackdrop,
+                                onClick = {
+                                    val intent = Intent(fragmentActivity, LoginActivity::class.java)
+                                    intent.putExtra("force_relogin", true)
+                                    fragmentActivity.startActivity(intent)
+                                }
+                            )
+                        }
                     }
 
                     Box(
                         modifier = Modifier.weight(1f)
                     ) {
-                        key(currentAccountStorageKey, selectedTab) {
-                            when (selectedTab) {
-                                0 -> com.tyust.course.ui.route.CourseListRoute()
-                                1 -> com.tyust.course.ui.route.ScheduleRoute()
-                                2 -> com.tyust.course.ui.route.GrabProRoute()
-                                3 -> com.tyust.course.ui.route.GradesRoute()
-                                4 -> com.tyust.course.ui.route.SettingsRoute(
-                                    onAccountChanged = {
-                                        currentAccountStorageKey = UserManager.getInstance().currentAccountStorageKey
+                        val pageTarget = MainPageTarget(
+                            accountStorageKey = currentAccountStorageKey,
+                            tabIndex = selectedTab
+                        )
+                        AnimatedContent(
+                            targetState = pageTarget,
+                            modifier = Modifier.fillMaxSize(),
+                            transitionSpec = {
+                                val accountChanged =
+                                    targetState.accountStorageKey != initialState.accountStorageKey
+                                if (accessibility.reduceMotion || accountChanged) {
+                                    fadeIn(
+                                        animationSpec = tween(
+                                            durationMillis = if (accessibility.reduceMotion) 90 else 160,
+                                            easing = MotionEasing.FastOutSlowIn
+                                        )
+                                    ).togetherWith(
+                                        fadeOut(
+                                            animationSpec = tween(
+                                                durationMillis = if (accessibility.reduceMotion) 70 else 120,
+                                                easing = MotionEasing.Accelerate
+                                            )
+                                        )
+                                    )
+                                } else {
+                                    val direction = if (
+                                        targetState.tabIndex >= initialState.tabIndex
+                                    ) {
+                                        1
+                                    } else {
+                                        -1
                                     }
-                                )
-                                else -> com.tyust.course.ui.route.CourseListRoute()
+                                    (
+                                        slideInHorizontally(
+                                            animationSpec = tween(
+                                                durationMillis = 290,
+                                                easing = MotionEasing.FastOutSlowIn
+                                            )
+                                        ) { fullWidth ->
+                                            direction * (fullWidth * 0.16f).roundToInt()
+                                        } + fadeIn(
+                                            animationSpec = tween(
+                                                durationMillis = 240,
+                                                easing = MotionEasing.FastOutSlowIn
+                                            )
+                                        )
+                                    ).togetherWith(
+                                        slideOutHorizontally(
+                                            animationSpec = tween(
+                                                durationMillis = 220,
+                                                easing = MotionEasing.Accelerate
+                                            )
+                                        ) { fullWidth ->
+                                            -direction * (fullWidth * 0.10f).roundToInt()
+                                        } + fadeOut(
+                                            animationSpec = tween(
+                                                durationMillis = 180,
+                                                easing = MotionEasing.Accelerate
+                                            )
+                                        )
+                                    )
+                                }
+                            },
+                            contentKey = { target ->
+                                "${target.accountStorageKey}:${target.tabIndex}"
+                            },
+                            label = "mainPageTransition"
+                        ) { target ->
+                            key(target.accountStorageKey, target.tabIndex) {
+                                when (target.tabIndex) {
+                                    0 -> com.tyust.course.ui.route.CourseListRoute()
+                                    1 -> com.tyust.course.ui.route.ScheduleRoute()
+                                    2 -> com.tyust.course.ui.route.GrabProRoute()
+                                    3 -> com.tyust.course.ui.route.GradesRoute()
+                                    4 -> com.tyust.course.ui.route.SettingsRoute(
+                                        onAccountChanged = {
+                                            currentAccountStorageKey =
+                                                UserManager.getInstance().currentAccountStorageKey
+                                        }
+                                    )
+                                    else -> com.tyust.course.ui.route.CourseListRoute()
+                                }
                             }
                         }
                     }
                 }
 
             AppBuildWatermarks(fragmentActivity = fragmentActivity)
-            } // 关闭 navBarBackdrop Box
+            } // 关闭 navBarBackdrop 捕获层
 
-            // 底栏在 navBarBackdrop 之外，折射壁纸+页面内容
+            // 底栏位于捕获层外，避免采样源包含底栏自身。
             CapsuleNavigationBar(
                 items = items,
                 selectedTab = selectedTab,
@@ -434,39 +539,73 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
 @Composable
 private fun TokenExpiredBanner(
+    backdrop: com.kyant.backdrop.Backdrop?,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = com.tyust.course.ui.theme.NeuInsetBackground,
-        contentColor = com.tyust.course.ui.theme.SemanticWarning,
-        tonalElevation = 0.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
+    val useGlass = backdrop != null && isBackdropSupported()
+    val capsuleShape = RoundedCornerShape(percent = 50)
+    val isLight = !androidx.compose.foundation.isSystemInDarkTheme()
+    val accent = MaterialTheme.colorScheme.primary
+
+    val content: @Composable () -> Unit = {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = PagePadding, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = null,
-                tint = com.tyust.course.ui.theme.SemanticWarning,
-                modifier = Modifier.size(18.dp)
+                tint = accent,
+                modifier = Modifier.size(17.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "登录已过期，点击此处重新登录",
+                text = "登录已过期，点击重新登录",
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
+
+    if (useGlass && backdrop != null) {
+        Box(
+            modifier = Modifier
+                .clip(capsuleShape)
+                .clickable(onClick = onClick)
+                .com_tyust_tokenBannerGlass(backdrop, capsuleShape, isLight)
+        ) { content() }
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = capsuleShape,
+            shadowElevation = 6.dp,
+            modifier = Modifier.clickable(onClick = onClick)
+        ) { content() }
+    }
 }
+
+private fun Modifier.com_tyust_tokenBannerGlass(
+    backdrop: com.kyant.backdrop.Backdrop,
+    shape: androidx.compose.foundation.shape.RoundedCornerShape,
+    isLight: Boolean
+): Modifier = this.drawBackdrop(
+    backdrop = backdrop,
+    shape = { shape },
+    effects = {
+        vibrancy()
+        blur(8.dp.toPx())
+    },
+    shadow = { Shadow(alpha = 0.18f) },
+    onDrawSurface = {
+        drawRect(
+            if (isLight) Color.White.copy(alpha = 0.55f)
+            else Color.Black.copy(alpha = 0.40f)
+        )
+    }
+)
 
 @Composable
 private fun BoxScope.AppBuildWatermarks(
@@ -517,14 +656,18 @@ private fun BoxScope.AppBuildWatermarks(
     }
 }
 
-private fun drawWallpaperPattern(scope: DrawScope) {
+private fun drawWallpaperPattern(scope: DrawScope, preset: WallpaperPreset) {
     val w = scope.size.width
     val h = scope.size.height
 
-    scope.drawRect(Color(0xFFF0F2F4))
+    // 底色 + 左上高光 + 右下暗角，提升明暗对比，让 Backdrop 折射有可采样层次。
+    scope.drawRect(preset.baseColor)
     scope.drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color.White.copy(alpha = 0.58f), Color.Transparent),
+            colors = listOf(
+                preset.glowColor.copy(alpha = if (preset.isDark) 0.42f else 0.72f),
+                Color.Transparent
+            ),
             center = Offset(w * 0.18f, h * 0.12f),
             radius = w * 0.72f
         ),
@@ -533,7 +676,10 @@ private fun drawWallpaperPattern(scope: DrawScope) {
     )
     scope.drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(Color(0xFF6D7884).copy(alpha = 0.08f), Color.Transparent),
+            colors = listOf(
+                preset.shadeColor.copy(alpha = if (preset.isDark) 0.30f else 0.12f),
+                Color.Transparent
+            ),
             center = Offset(w * 0.78f, h * 0.88f),
             radius = w * 0.64f
         ),

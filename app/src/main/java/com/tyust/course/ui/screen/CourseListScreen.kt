@@ -141,7 +141,7 @@ fun CourseListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Transparent)
     ) {
         if (isBatchSelecting) {
             LinearProgressIndicator(

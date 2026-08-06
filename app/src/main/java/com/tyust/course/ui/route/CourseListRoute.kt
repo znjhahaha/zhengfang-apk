@@ -1047,6 +1047,7 @@ fun CourseListRoute() {
 
     // 🔧 视图切换容器（带平滑动画）
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             Surface(
                 color = NeuSurface,
