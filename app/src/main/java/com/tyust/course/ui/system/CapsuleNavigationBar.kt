@@ -3,6 +3,7 @@ package com.tyust.course.ui.system
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -40,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,6 +81,8 @@ fun CapsuleNavigationBar(
     items: List<BottomNavItem>,
     selectedTab: Int,
     onTabSelect: (Int) -> Unit,
+    minimized: Boolean = false,
+    onExpandRequest: () -> Unit = {},
     backdrop: Backdrop? = LocalAppBackdrop.current,
     modifier: Modifier = Modifier
 ) {
@@ -88,21 +92,111 @@ fun CapsuleNavigationBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .navigationBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
     ) {
         when {
-            useGlass -> GlassNavigationBar(
-                items = items,
-                selectedTab = selectedTab,
-                onTabSelect = onTabSelect,
-                backdrop = requireNotNull(backdrop)
-            )
+            useGlass -> {
+                // 滚动最小化：整条玻璃横向收拢淡出，单胶囊液态弹出
+                val minimizeFraction by animateFloatAsState(
+                    targetValue = if (minimized) 1f else 0f,
+                    animationSpec = MotionSpring.liquidSettle(),
+                    label = "navMinimizeFraction"
+                )
+                if (minimizeFraction < 0.999f) {
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            val f = minimizeFraction
+                            alpha = (1f - f * 1.6f).fastCoerceIn(0f, 1f)
+                            scaleX = 1f - 0.82f * f
+                            scaleY = 1f - 0.30f * f
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                        }
+                    ) {
+                        GlassNavigationBar(
+                            items = items,
+                            selectedTab = selectedTab,
+                            onTabSelect = onTabSelect,
+                            backdrop = requireNotNull(backdrop)
+                        )
+                    }
+                }
+                if (minimizeFraction > 0.001f) {
+                    MinimizedNavCapsule(
+                        item = items.getOrElse(selectedTab) { items.first() },
+                        backdrop = requireNotNull(backdrop),
+                        onClick = onExpandRequest,
+                        modifier = Modifier.graphicsLayer {
+                            val f = minimizeFraction
+                            alpha = ((f - 0.35f) / 0.65f).fastCoerceIn(0f, 1f)
+                            val scale = 0.55f + 0.45f * f
+                            scaleX = scale
+                            scaleY = scale
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                        }
+                    )
+                }
+            }
             else -> FallbackNavigationBar(
                 items = items,
                 selectedTab = selectedTab,
                 onTabSelect = onTabSelect
             )
         }
+    }
+}
+
+/** 最小化形态：仅显示当前 tab 的小玻璃胶囊，点按展开。 */
+@Composable
+private fun MinimizedNavCapsule(
+    item: BottomNavItem,
+    backdrop: Backdrop,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isLightTheme = !isSystemInDarkTheme()
+    val containerColor = if (isLightTheme) {
+        Color.White.copy(alpha = 0.28f)
+    } else {
+        Color.Black.copy(alpha = 0.26f)
+    }
+    Row(
+        modifier = modifier
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { Capsule() },
+                effects = {
+                    vibrancy()
+                    blur(8.dp.toPx())
+                },
+                highlight = { Highlight.Default.copy(alpha = 0.14f) },
+                shadow = { Shadow(alpha = 0.10f) },
+                onDrawSurface = { drawRect(containerColor) }
+            )
+            .clip(RoundedCornerShape(percent = 50))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .height(48.dp)
+            .padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = item.icon,
+            contentDescription = item.label,
+            tint = NeuPrimary,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = item.label,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 
@@ -126,8 +220,9 @@ private fun GlassNavigationBar(
     val isLightTheme = !isSystemInDarkTheme()
     // API32：cba2a09 半透轨；API33+：半透主题底
     val containerColor = if (hasRealLens) {
-        if (isLightTheme) Color.White.copy(alpha = 0.16f)
-        else Color.Black.copy(alpha = 0.18f)
+        // 提浊：降低穿透内容对比度，深色文字经过栏后不再形成清晰污块
+        if (isLightTheme) Color.White.copy(alpha = 0.28f)
+        else Color.Black.copy(alpha = 0.26f)
     } else {
         if (isLightTheme) {
             Color(GlassRecipe.NavLegacyTrackSurfaceLight)
@@ -410,7 +505,8 @@ private fun GlassNavigationBar(
                         }
                     },
                     highlight = {
-                        Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
+                        // 该层被选中透镜采样，白环压低避免折射进胶囊形成白圈
+                        Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress * 0.35f)
                     },
                     onDrawSurface = {
                         drawRect(containerColor)
@@ -463,9 +559,9 @@ private fun GlassNavigationBar(
                                 motionIntensity = motion,
                                 enableBlur = false,
                                 allowChromaticAberration = true,
-                                // 静止保留 floor 折射：滑块即凸起镜片
+                                // 静止保留轻折射（凸起镜片感），交互时抬到满值
                                 pressScalesRefraction = true,
-                                refractionFloor = 0.7f
+                                refractionFloor = 0.42f
                             )
                             if (params.useLens) {
                                 lens(
@@ -485,27 +581,38 @@ private fun GlassNavigationBar(
                     },
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress
+                        // 整层被 graphicsLayer 等比放大，描边宽度反向补偿保持视觉细度恒定
+                        val scaleComp = (
+                            (dampedDragAnimation.scaleX + dampedDragAnimation.scaleY) / 2f
+                            ).coerceAtLeast(1f)
                         if (hasRealLens) {
-                            Highlight.Default.copy(alpha = 0.12f + progress * 0.5f)
+                            Highlight.Default.copy(
+                                width = Highlight.Default.width / scaleComp,
+                                blurRadius = Highlight.Default.blurRadius / scaleComp,
+                                alpha = 0.12f + progress * 0.35f
+                            )
                         } else {
-                            // cba2a09：按压渐显边缘高光
-                            Highlight.Default.copy(alpha = progress)
+                            // 按压渐显边缘高光（压低亮度，避免白圈）
+                            Highlight.Default.copy(
+                                width = Highlight.Default.width / scaleComp,
+                                alpha = progress * 0.35f
+                            )
                         }
                     },
                     shadow = {
                         val progress = dampedDragAnimation.pressProgress
                         if (hasRealLens) {
-                            Shadow(alpha = 0.10f + progress * 0.25f)
+                            Shadow(alpha = 0.10f + progress * 0.15f)
                         } else {
-                            // cba2a09：按压渐显投影
-                            Shadow(alpha = progress)
+                            // 按压渐显投影（减半，滑动残影更轻）
+                            Shadow(alpha = progress * 0.5f)
                         }
                     },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress
                         InnerShadow(
-                            radius = 8.dp * progress,
-                            alpha = progress
+                            radius = 4.dp * progress,
+                            alpha = progress * 0.5f
                         )
                     },
                     layerBlock = {

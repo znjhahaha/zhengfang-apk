@@ -228,7 +228,12 @@ fun CourseListScreen(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = PagePadding, end = PagePadding, top = PagePadding, bottom = PagePadding + 80.dp),
+                        contentPadding = PaddingValues(
+                            start = PagePadding,
+                            end = PagePadding,
+                            top = PagePadding,
+                            bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
+                        ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(groupedCourses) { (key, classes) ->

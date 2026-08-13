@@ -85,12 +85,17 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        // 内容延伸到玻璃顶栏下方，滚动时从顶栏底下穿过（padding 施加在滚动内容内部）
         Column(
             modifier = Modifier
-                .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = PagePadding, end = PagePadding, top = 20.dp, bottom = 80.dp),
+                .padding(
+                    start = PagePadding,
+                    end = PagePadding,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(SectionSpacing)
         ) {
             SettingsHeader(

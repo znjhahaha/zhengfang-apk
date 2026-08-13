@@ -1,9 +1,7 @@
 package com.tyust.course.ui.route
 
 import android.app.AlarmManager
-import android.app.DatePickerDialog
 import android.app.PendingIntent
-import android.app.TimePickerDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -78,6 +76,7 @@ fun GrabProRoute() {
     var isScheduledMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("scheduled_mode"), false)) }
     var hasScheduledTask by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("has_scheduled_task"), false)) }
     var scheduledTaskInfo by remember { mutableStateOf(prefs.getString(scopedPrefKey("scheduled_task_info"), "") ?: "") }
+    var showGlassDateTimePicker by remember { mutableStateOf(false) }
     
     // 队列相关状态
     var queue by remember { mutableStateOf(SmartSelector.getInstance().queue.toList()) }
@@ -580,15 +579,7 @@ fun GrabProRoute() {
             scheduledTaskInfo = ""
             saveState()
         },
-        onPickDateTime = {
-            val calendar = Calendar.getInstance()
-            DatePickerDialog(context, { _, year, month, day ->
-                TimePickerDialog(context, { _, hour, minute ->
-                    scheduledDateTime = String.format("%04d/%02d/%02d %02d:%02d", year, month + 1, day, hour, minute)
-                    saveState()
-                }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), true).show()
-            }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
-        },
+        onPickDateTime = { showGlassDateTimePicker = true },
         // Queue data
         queue = queue,
         queueVersion = queueVersion,
@@ -635,7 +626,29 @@ fun GrabProRoute() {
             prefs.edit().putBoolean(scopedPrefKey("show_schedule_warning"), false).apply()
         }
     )
-    
+
+    // 玻璃滚轮日期时间选择器（替代原生 DatePicker/TimePicker）
+    if (showGlassDateTimePicker) {
+        com.tyust.course.ui.system.GlassDateTimePickerDialog(
+            title = "选择抢课时间",
+            onConfirm = { millis ->
+                val cal = Calendar.getInstance().apply { timeInMillis = millis }
+                scheduledDateTime = String.format(
+                    Locale.US,
+                    "%04d/%02d/%02d %02d:%02d",
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH) + 1,
+                    cal.get(Calendar.DAY_OF_MONTH),
+                    cal.get(Calendar.HOUR_OF_DAY),
+                    cal.get(Calendar.MINUTE)
+                )
+                saveState()
+                showGlassDateTimePicker = false
+            },
+            onDismiss = { showGlassDateTimePicker = false }
+        )
+    }
+
     // 手动添加课程对话框 - 🔧 改进版：独立输入框 + 时间选择器
     if (showAddCourseDialog) {
         val weekdays = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")

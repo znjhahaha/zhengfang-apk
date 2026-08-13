@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.tyust.course.manager.ScheduleSettingsManager
 import com.tyust.course.manager.ScheduleSettingsManager.PeriodTime
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.Neutral50
 import com.tyust.course.ui.theme.Neutral100
@@ -300,39 +303,44 @@ fun TimeEditDialog(
     var start by remember { mutableStateOf(initialStart) }
     var end by remember { mutableStateOf(initialEnd) }
     
-    AlertDialog(
+    SystemDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑时间") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = start,
-                    onValueChange = { start = it },
-                    label = { Text("开始时间 (HH:MM)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = end,
-                    onValueChange = { end = it },
-                    label = { Text("结束时间 (HH:MM)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+        title = {
+            Text(
+                text = "编辑时间",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
         },
         confirmButton = {
-            TextButton(
-                onClick = { onSave(start, end) }
-            ) {
-                Text("保存")
-            }
+            SystemPrimaryButton(
+                text = "保存",
+                onClick = { onSave(start, end) },
+                modifier = Modifier.fillMaxWidth()
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-    )
+    ) {
+        OutlinedTextField(
+            value = start,
+            onValueChange = { start = it },
+            label = { Text("开始时间 (HH:MM)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = end,
+            onValueChange = { end = it },
+            label = { Text("结束时间 (HH:MM)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }

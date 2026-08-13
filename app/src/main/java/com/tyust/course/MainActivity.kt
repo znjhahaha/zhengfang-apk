@@ -58,6 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -99,8 +102,7 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.shadow.Shadow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
 import kotlin.math.roundToInt
@@ -217,6 +219,24 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     )
     val updateState = rememberUpdateState()
     var isTokenExpired by remember { mutableStateOf(false) }
+
+    // 底栏滚动最小化：捕获页面内任意滚动的方向（nested scroll 冒泡，页面零改动）
+    var navBarMinimized by remember { mutableStateOf(false) }
+    val navBarScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    if (available.y < -8f) {
+                        navBarMinimized = true
+                    } else if (available.y > 8f) {
+                        navBarMinimized = false
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(selectedTab) { navBarMinimized = false }
 
     LaunchedEffect(Unit) {
         updateState.checkForUpdate()
@@ -344,7 +364,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     }
 
                     Box(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .nestedScroll(navBarScrollConnection)
                     ) {
                         val pageTarget = MainPageTarget(
                             accountStorageKey = currentAccountStorageKey,
@@ -441,6 +463,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 items = items,
                 selectedTab = selectedTab,
                 onTabSelect = { selectedTab = it },
+                minimized = navBarMinimized,
+                onExpandRequest = { navBarMinimized = false },
                 backdrop = navBarBackdrop,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -463,74 +487,52 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     else -> "这是最后一次打扰啦～\n\n写这个小工具很不容易，如果你喜欢它，真心希望能得到你的一颗 Star ⭐ 鼓励。非常感谢一路以来的陪伴！"
                 }
 
-                Dialog(
+                // 走 DialogHost portal（同窗口渲染），玻璃采样与按钮显示才正确
+                SystemDialog(
                     onDismissRequest = {}, // 点击外部或按返回键不响应，防止误触
-                    properties = DialogProperties(
-                        dismissOnBackPress = false,
-                        dismissOnClickOutside = false
-                    )
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .width(320.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(MaterialTheme.colorScheme.surface),
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(28.dp),
-                        tonalElevation = 4.dp
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Text(
-                                text = dialogTitle,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = dialogText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 20.sp
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(modifier = Modifier.weight(1f)) {
-                                    SystemSecondaryButton(
-                                        text = "暂不",
-                                        onClick = {
-                                            showStarDialog = false
-                                            prefs.edit().putInt("star_dismiss_count", dismissCount + 1).apply()
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                    title = {
+                        Text(
+                            text = dialogTitle,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    dismissButton = {
+                        SystemSecondaryButton(
+                            text = "暂不",
+                            onClick = {
+                                showStarDialog = false
+                                prefs.edit().putInt("star_dismiss_count", dismissCount + 1).apply()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        SystemPrimaryButton(
+                            text = "去点 Star",
+                            onClick = {
+                                showStarDialog = false
+                                prefs.edit().putBoolean("has_starred", true).apply()
+                                try {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/znjhahaha/zhengfang-apk.git")).apply {
+                                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "无法打开浏览器", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                Box(modifier = Modifier.weight(1f)) {
-                                    SystemPrimaryButton(
-                                        text = "去点 Star",
-                                        onClick = {
-                                            showStarDialog = false
-                                            prefs.edit().putBoolean("has_starred", true).apply()
-                                            try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/znjhahaha/zhengfang-apk.git")).apply {
-                                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                                }
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "无法打开浏览器", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
+                ) {
+                    Text(
+                        text = dialogText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
                 }
             }
         }

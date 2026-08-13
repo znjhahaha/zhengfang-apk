@@ -84,10 +84,11 @@ fun resolvePhysicalLens(
         minCornerRadiusPx = minCornerRadiusPx,
         minDimensionPx = minDimensionPx
     )
-    // 有 lens 即出色散（静止微量、运动增强），不再设进入门槛
+    // 色散只在交互（按压/运动）时出现；静止让玻璃保持干净（glass rests in steady state）
     val chromatic = useLens &&
         allowChromaticAberration &&
-        material.chromaticAberration
+        material.chromaticAberration &&
+        (progress > 0.05f || motion > 0.05f)
 
     PhysicalLensParams(
         blurPx = blurPx,

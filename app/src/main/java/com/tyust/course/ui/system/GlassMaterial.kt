@@ -75,8 +75,8 @@ fun rememberGlassAccessibilityMode(): GlassAccessibilityMode {
 
 object GlassMaterials {
     private val navigation = GlassMaterialSpec(
-        // 轨道：轻磨砂，不抢选中透镜
-        blurDp = 6f,
+        // 轨道：磨砂加深，穿透内容雾化均匀，避免深色内容顶在栏边缘成污块
+        blurDp = 10f,
         refractionHeightDp = 8f,
         refractionAmountDp = 12f,
         surfaceAlpha = 0.16f,

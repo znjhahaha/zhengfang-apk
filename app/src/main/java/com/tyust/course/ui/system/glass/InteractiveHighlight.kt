@@ -5,6 +5,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.util.fastCoerceIn
@@ -80,9 +81,18 @@ half4 main(float2 coord) {
                 blendMode = BlendMode.Plus
             )
         } else {
+            // 回退路径（API<33）：径向渐变柔光，避免实心白圆盘糊在表面上。
+            val radius = size.maxDimension * 0.75f
             drawCircle(
-                color = Color.White.copy(alpha = 0.12f * progress),
-                radius = size.maxDimension * 0.62f,
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.10f * progress),
+                        Color.White.copy(alpha = 0f)
+                    ),
+                    center = lightPosition,
+                    radius = radius
+                ),
+                radius = radius,
                 center = lightPosition,
                 blendMode = BlendMode.Plus
             )

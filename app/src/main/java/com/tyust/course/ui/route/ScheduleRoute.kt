@@ -326,30 +326,41 @@ fun ScheduleRoute() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface
                 ) {
-                    ScheduleSettingsScreen(
-                        manager = settingsManager,
-                        onClose = {
-                            periodCount = settingsManager.periodCount
-                            periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
-                            val w = settingsManager.calculateCurrentWeek()
-                            if (w > 0) currentWeek = w
-                            
-                            dismiss()
-                        },
-                        onShowDatePicker = {
-                             (context as? FragmentActivity)?.supportFragmentManager?.let { fm ->
-                                 val selection = if (settingsManager.semesterStartDate > 0) settingsManager.semesterStartDate else com.google.android.material.datepicker.MaterialDatePicker.todayInUtcMilliseconds()
-                                 com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
-                                     .setTitleText("选择第一周周一日期")
-                                     .setSelection(selection)
-                                     .build().apply {
-                                         addOnPositiveButtonClickListener { 
-                                             settingsManager.semesterStartDate = it 
-                                         }
-                                     }.show(fm, "date_picker")
-                             }
+                    // 该弹窗是独立窗口：主窗口 DialogHost/壁纸层跨窗口不可用，
+                    // 内部 SystemDialog 一律走本窗口 fallback，避免采样错位。
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.tyust.course.ui.system.LocalDialogHost provides null,
+                        com.tyust.course.ui.system.LocalAppBackdrop provides null
+                    ) {
+                        var showGlassDatePicker by remember { mutableStateOf(false) }
+                        ScheduleSettingsScreen(
+                            manager = settingsManager,
+                            onClose = {
+                                periodCount = settingsManager.periodCount
+                                periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
+                                val w = settingsManager.calculateCurrentWeek()
+                                if (w > 0) currentWeek = w
+
+                                dismiss()
+                            },
+                            onShowDatePicker = { showGlassDatePicker = true }
+                        )
+                        if (showGlassDatePicker) {
+                            com.tyust.course.ui.system.GlassDatePickerDialog(
+                                title = "选择第一周周一日期",
+                                initialMillis = if (settingsManager.semesterStartDate > 0) {
+                                    settingsManager.semesterStartDate
+                                } else {
+                                    System.currentTimeMillis()
+                                },
+                                onConfirm = {
+                                    settingsManager.semesterStartDate = it
+                                    showGlassDatePicker = false
+                                },
+                                onDismiss = { showGlassDatePicker = false }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }

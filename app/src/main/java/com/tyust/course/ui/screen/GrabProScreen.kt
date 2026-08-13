@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +64,7 @@ import com.tyust.course.model.Course
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemDestructiveButton
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSectionHeader
@@ -173,12 +173,17 @@ fun GrabProScreen(
             )
         }
     ) { paddingValues ->
+        // 内容延伸到玻璃顶栏下方，滚动时从顶栏底下穿过
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
+            modifier = Modifier.fillMaxSize(),
             state = scrollState,
-            contentPadding = PaddingValues(start = PagePadding, end = PagePadding, top = 16.dp, bottom = 80.dp),
+            contentPadding = PaddingValues(
+                start = PagePadding,
+                end = PagePadding,
+                top = paddingValues.calculateTopPadding() + 8.dp,
+                // 滚到底时最后一项停在底栏上方；滚动中内容仍可从栏后穿过
+                bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -755,61 +760,50 @@ private fun ScheduleWarningDialog(
     onDismissForever: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    SystemDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = SemanticWarning
-                )
-                Text(
-                    text = "定时模式提示",
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = SemanticWarning,
+                modifier = Modifier.size(36.dp)
+            )
         },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "系统可能因电池优化、锁屏或后台限制导致定时触发延迟。",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "建议在抢课前保持应用存活，并将应用加入电池优化白名单。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        title = {
+            Text(
+                text = "定时模式提示",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
         },
         confirmButton = {
             SystemPrimaryButton(
                 text = "我已知晓",
                 onClick = onConfirm,
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.fillMaxWidth()
             )
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "不再提示",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.clickable(onClick = onDismissForever)
-                )
-                Text(
-                    text = "取消",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.clickable(onClick = onDismiss)
-                )
-            }
+            SystemSecondaryButton(
+                text = "不再提示",
+                onClick = onDismissForever,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-    )
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "系统可能因电池优化、锁屏或后台限制导致定时触发延迟。",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "建议在抢课前保持应用存活，并将应用加入电池优化白名单。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable

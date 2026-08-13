@@ -2,8 +2,6 @@ package com.tyust.course.update
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,15 +21,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.theme.MotionDuration
-import com.tyust.course.ui.theme.MotionSpecs
-import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuPrimary
 
 /**
- * 更新对话框
+ * 更新对话框（玻璃 SystemDialog 版）
  */
 @Composable
 fun UpdateDialog(
@@ -42,11 +39,7 @@ fun UpdateDialog(
     downloadProgress: Int = -1,  // -1 表示未开始下载
     isDownloading: Boolean = false
 ) {
-    // 控制对话框内容的入场动画
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        isVisible = true
-    }
+    val canDismiss = !isDownloading && !updateInfo.forceUpdate
 
     // 图标动画：呼吸效果
     val infiniteTransition = rememberInfiniteTransition(label = "iconScale")
@@ -60,186 +53,141 @@ fun UpdateDialog(
         label = "scale"
     )
 
-    Dialog(
-        onDismissRequest = { if (!isDownloading && !updateInfo.forceUpdate) onDismiss() },
-        properties = DialogProperties(
-            dismissOnBackPress = !isDownloading && !updateInfo.forceUpdate,
-            dismissOnClickOutside = !isDownloading && !updateInfo.forceUpdate,
-            usePlatformDefaultWidth = false // 允许自定义宽度
-        )
-    ) {
-        AnimatedVisibility(
-            visible = isVisible,
-            enter = scaleIn(initialScale = 0.8f, animationSpec = MotionSpring.bounce()) +
-                    fadeIn(animationSpec = MotionSpecs.dialogEnter()),
-        ) {
-            Card(
+    SystemDialog(
+        onDismissRequest = { if (canDismiss) onDismiss() },
+        icon = {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .padding(vertical = 16.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    }
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(NeuPrimary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
             ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = NeuPrimary
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "发现新版本",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        dismissButton = if (!isDownloading && !updateInfo.forceUpdate) {
+            {
+                SystemSecondaryButton(
+                    text = "稍后",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else null,
+        confirmButton = if (!isDownloading) {
+            {
+                SystemPrimaryButton(
+                    text = "立即更新",
+                    onClick = onUpdate,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else null
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 版本信息
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "v$currentVersion",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = " → ",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "v${updateInfo.versionName}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeuPrimary
+                )
+            }
+
+            // 更新说明
+            if (updateInfo.releaseNotes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // 图标
-                    Box(
-                        modifier = Modifier
-                            .graphicsLayer {
-                                scaleX = iconScale
-                                scaleY = iconScale
-                            }
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(NeuPrimary.copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                    Icon(
-                        imageVector = Icons.Default.SystemUpdate,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = NeuPrimary
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // 标题
-                Text(
-                    text = "发现新版本",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1A1A1A)
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // 版本信息
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        .heightIn(max = 200.dp)
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = "v$currentVersion",
-                        fontSize = 14.sp,
-                        color = Color.Gray
+                        text = "更新内容",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = " → ",
+                        text = updateInfo.releaseNotes,
                         fontSize = 14.sp,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 20.sp
                     )
-                    Text(
-                        text = "v${updateInfo.versionName}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NeuPrimary
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // 更新说明
-                if (updateInfo.releaseNotes.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp), // 限制最大高度
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F7))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp)
-                                .verticalScroll(rememberScrollState()) // 添加滚动
-                        ) {
-                            Text(
-                                text = "更新内容",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color.Gray
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = updateInfo.releaseNotes,
-                                fontSize = 14.sp,
-                                color = Color(0xFF333333),
-                                lineHeight = 20.sp
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                // 下载进度
-                AnimatedVisibility(visible = isDownloading) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        val animatedProgress by animateFloatAsState(
-                            targetValue = downloadProgress / 100f,
-                            label = "progress"
-                        )
-                        
-                        LinearProgressIndicator(
-                            progress = { animatedProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = NeuPrimary,
-                            trackColor = Color(0xFFE0E0E0)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Text(
-                            text = if (downloadProgress >= 100) "下载完成，正在安装..." else "正在下载 $downloadProgress%",
-                            fontSize = 14.sp,
-                            color = Color.Gray
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                }
-                
-                // 按钮
-                AnimatedVisibility(visible = !isDownloading) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // 稍后按钮（非强制更新时显示）
-                        if (!updateInfo.forceUpdate) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("稍后")
-                            }
-                        }
-                        
-                        // 更新按钮
-                        Button(
-                            onClick = onUpdate,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = NeuPrimary)
-                        ) {
-                            Text("立即更新")
-                        }
-                    }
                 }
             }
+
+            // 下载进度
+            AnimatedVisibility(visible = isDownloading) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = downloadProgress / 100f,
+                        label = "progress"
+                    )
+
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = NeuPrimary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = if (downloadProgress >= 100) "下载完成，正在安装..." else "正在下载 $downloadProgress%",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

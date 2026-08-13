@@ -180,10 +180,10 @@ fun SystemTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
-    val backgroundModifier = Modifier.background(MaterialTheme.colorScheme.surface)
-    Column(
-        modifier = backgroundModifier
-    ) {
+    val useGlass = backdrop != null && isBackdropSupported()
+    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+
+    val barContent: @Composable () -> Unit = {
         TopAppBar(
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -226,22 +226,73 @@ fun SystemTopBar(
                 actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         )
-        // 渐变分割线 + 底部柔和环境光
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            GlassBorderLight.copy(alpha = 0.40f),
-                            GlassBorderLight.copy(alpha = 0.40f),
-                            Color.Transparent
+    }
+
+    if (useGlass && backdrop != null) {
+        val accessibility = rememberGlassAccessibilityMode()
+        val barMaterial = GlassMaterials.resolve(
+            role = GlassMaterialRole.Navigation,
+            accessibility = accessibility
+        )
+        val surfaceTint = if (isLightTheme) {
+            Color.White.copy(alpha = 0.60f)
+        } else {
+            Color.Black.copy(alpha = 0.44f)
+        }
+        Column {
+            // 真玻璃顶栏：模糊采样壁纸/内容层，内容可从下方穿过
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RoundedCornerShape(0.dp) },
+                        effects = {
+                            vibrancy()
+                            if (barMaterial.blurDp > 0f) blur(barMaterial.blurDp.dp.toPx())
+                        },
+                        onDrawSurface = { drawRect(surfaceTint) }
+                    )
+            ) {
+                barContent()
+            }
+            // scroll edge effect：底缘软渐隐，内容滚入顶栏时平滑没入
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                surfaceTint.copy(alpha = surfaceTint.alpha * 0.55f),
+                                Color.Transparent
+                            )
                         )
                     )
-                )
-        )
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+        ) {
+            barContent()
+            // 渐变分割线 + 底部柔和环境光
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                GlassBorderLight.copy(alpha = 0.40f),
+                                GlassBorderLight.copy(alpha = 0.40f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
     }
 }
 
@@ -546,11 +597,12 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
+    val insideGlass = LocalInsideGlassSurface.current
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Tinted,
+        style = if (insideGlass) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.Tinted,
         tint = NeuPrimary,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -572,11 +624,12 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
+    val insideGlass = LocalInsideGlassSurface.current
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Surface,
+        style = if (insideGlass) LiquidButtonStyle.SolidSurface else LiquidButtonStyle.Surface,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -598,11 +651,12 @@ fun SystemDestructiveButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
+    val insideGlass = LocalInsideGlassSurface.current
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Tinted,
+        style = if (insideGlass) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.Tinted,
         tint = SemanticDanger,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -819,6 +873,12 @@ fun SystemDivider(
 }
 
 /**
+ * 标记当前组合处于玻璃容器（弹窗等）之上。
+ * System*Button 读取后自动切换为实色填充，避免玻璃叠玻璃发糊。
+ */
+val LocalInsideGlassSurface = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
  * 物理流体玻璃对话框 — 通过 DialogHost portal 在同窗口内渲染，
  * 使 backdrop 折射正常工作。当 portal 不可用时回退到 Dialog()。
  */
@@ -934,52 +994,54 @@ private fun SystemDialogContent(
         fallbackModifier
     }
 
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (icon != null) {
-            icon()
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        if (title != null) {
-            CompositionLocalProvider(
-                androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    title()
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        Box(
-            modifier = Modifier
-                .weight(weight = 1f, fill = false)
-                .fillMaxWidth()
+    CompositionLocalProvider(LocalInsideGlassSurface provides true) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                content = content
-            )
-        }
-        if (confirmButton != null || dismissButton != null) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (dismissButton != null) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        dismissButton()
+            if (icon != null) {
+                icon()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            if (title != null) {
+                CompositionLocalProvider(
+                    androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        title()
                     }
                 }
-                if (confirmButton != null) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        confirmButton()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            Box(
+                modifier = Modifier
+                    .weight(weight = 1f, fill = false)
+                    .fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    content = content
+                )
+            }
+            if (confirmButton != null || dismissButton != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (dismissButton != null) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            dismissButton()
+                        }
+                    }
+                    if (confirmButton != null) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            confirmButton()
+                        }
                     }
                 }
             }

@@ -40,9 +40,13 @@ import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import com.tyust.course.ui.theme.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
 
 private data class CourseTabParam(
     val kklxdm: String,
@@ -1046,14 +1050,31 @@ fun CourseListRoute() {
     }
 
     // 🔧 视图切换容器（带平滑动画）
+    val topBarBackdrop = com.tyust.course.ui.system.LocalAppBackdrop.current
+    val topBarUseGlass = topBarBackdrop != null && com.tyust.course.ui.system.isBackdropSupported()
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            Surface(
-                color = NeuSurface,
-                contentColor = Neutral900,
-                shadowElevation = 0.dp
-            ) {
+            // 三态顶栏：玻璃外壳（不支持时回退实色）
+            val topBarShellModifier = if (topBarUseGlass && topBarBackdrop != null) {
+                Modifier
+                    .fillMaxWidth()
+                    .drawBackdrop(
+                        backdrop = topBarBackdrop,
+                        shape = { RoundedCornerShape(0.dp) },
+                        effects = {
+                            vibrancy()
+                            blur(6.dp.toPx())
+                        },
+                        onDrawSurface = { drawRect(White.copy(alpha = 0.60f)) }
+                    )
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .background(NeuSurface)
+            }
+            Column {
+            Box(modifier = topBarShellModifier) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     AnimatedContent(
                     targetState = when {
@@ -1168,26 +1189,28 @@ fun CourseListRoute() {
                         }
                     }
                 }
-                // 底部柔和渐变线
-                com.tyust.course.ui.system.SystemDivider(alpha = 0.6f)
+                // 底部柔和渐变线（仅回退路径显示）
+                if (!topBarUseGlass) {
+                    com.tyust.course.ui.system.SystemDivider(alpha = 0.6f)
+                }
                 }
             }
-        },
-        floatingActionButton = {
-            if (isMultiSelectMode && selectedClassIds.isNotEmpty() && !showSelectedCourses) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        val selected = courses.filter { it.classId in selectedClassIds }
-                        scope.launch {
-                            performBatchSelection(selected)
-                            exitMultiSelectMode()
-                        }
-                    },
-                    containerColor = Color(0xFF4CAF50),
-                    contentColor = Color.White,
-                    icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) },
-                    text = { Text("批量抢课 (${selectedClassIds.size})") }
+            // scroll edge effect：底缘软渐隐，与 SystemTopBar 一致
+            if (topBarUseGlass) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    White.copy(alpha = 0.33f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
                 )
+            }
             }
         }
     ) { paddingValues ->
@@ -1297,6 +1320,41 @@ fun CourseListRoute() {
                         isFilterOptionsLoading = isFilterOptionsLoading,
                         filterOptionsMessage = filterOptionsMessage,
                         filterCategories = filterCategories
+                    )
+                }
+            }
+
+            // 底部 accessory 玻璃胶囊：多选批量抢课（替代 FAB）
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isMultiSelectMode && selectedClassIds.isNotEmpty() && !showSelectedCourses,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current),
+                enter = slideInVertically { it * 2 } + fadeIn(),
+                exit = slideOutVertically { it * 2 } + fadeOut()
+            ) {
+                com.tyust.course.ui.system.LiquidButton(
+                    onClick = {
+                        val selected = courses.filter { it.classId in selectedClassIds }
+                        scope.launch {
+                            performBatchSelection(selected)
+                            exitMultiSelectMode()
+                        }
+                    },
+                    style = com.tyust.course.ui.system.LiquidButtonStyle.Tinted,
+                    tint = Color(0xFF34C759),
+                    minHeight = 52.dp,
+                    horizontalPadding = 24.dp
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "批量抢课 (${selectedClassIds.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                 }
             }

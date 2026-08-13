@@ -84,9 +84,6 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -133,12 +130,10 @@ fun LiquidSegmentedControl(
     val isLightTheme = !isSystemInDarkTheme()
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)
-    val trackBackdrop = if (useGlass) rememberLayerBackdrop() else null
-    val indicatorBackdrop = if (glassBackdrop != null && trackBackdrop != null) {
-        rememberCombinedBackdrop(glassBackdrop, trackBackdrop)
-    } else {
-        null
-    }
+    // 页面内组件不得使用隐藏 layerBackdrop + combined 采样：
+    // 该结构嵌套在底栏捕获层的 record 会话中，GraphicsLayer 被多处引用，
+    // API 37 上会把 tint 内容错位绘制成底栏上方的残影。指示器直接采样壁纸层。
+    val indicatorBackdrop = glassBackdrop
     val animationScope = rememberCoroutineScope()
     val accessibility = rememberGlassAccessibilityMode()
     val interactiveHighlight = remember(animationScope) {
@@ -253,55 +248,6 @@ fun LiquidSegmentedControl(
                 }
         )
 
-        if (trackBackdrop != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(trackBackdrop)
-                    .clip(trackShape)
-                    .background(trackBackgroundColor)
-                    .drawBehind {
-                        drawRoundRect(
-                            color = trackBorderColor,
-                            cornerRadius = CornerRadius(size.height / 2f),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                width = 0.75.dp.toPx()
-                            )
-                        )
-                    }
-                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                options.forEach { label ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(
-                                horizontal = if (compact) 6.dp else 10.dp
-                            ),
-                            style = if (compact) {
-                                MaterialTheme.typography.labelSmall
-                            } else {
-                                MaterialTheme.typography.labelLarge
-                            },
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
-
         val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
         val indicatorBaseModifier = Modifier
             .width(segmentWidth)
@@ -348,7 +294,7 @@ fun LiquidSegmentedControl(
                                 enableBlur = false,
                                 allowChromaticAberration = true,
                                 pressScalesRefraction = true,
-                                refractionFloor = 0.7f
+                                refractionFloor = 0.42f
                             )
                             if (params.useLens) {
                                 lens(
@@ -358,7 +304,8 @@ fun LiquidSegmentedControl(
                                 )
                             }
                         } else {
-                            // cba2a09：31/32 上 lens 为平台 no-op，毛玻璃来自 combined 采样轨道模糊层
+                            // 31/32：lens 为平台 no-op，直接 blur 出毛玻璃（不再依赖轨道采样层）
+                            blur(8.dp.toPx())
                             lens(
                                 refractionHeight = 10.dp.toPx() * press,
                                 refractionAmount = 14.dp.toPx() * press,
@@ -368,17 +315,28 @@ fun LiquidSegmentedControl(
                     },
                     highlight = {
                         val press = dragAnimation.pressProgress
+                        // 描边宽度随按压缩放反向补偿，保持细度恒定
+                        val scaleComp = (
+                            (dragAnimation.scaleX + dragAnimation.scaleY) / 2f
+                            ).coerceAtLeast(1f)
                         if (hasRealLens) {
-                            Highlight.Default.copy(alpha = 0.12f + press * 0.5f)
+                            Highlight.Default.copy(
+                                width = Highlight.Default.width / scaleComp,
+                                blurRadius = Highlight.Default.blurRadius / scaleComp,
+                                alpha = 0.12f + press * 0.35f
+                            )
                         } else {
-                            Highlight.Default.copy(alpha = press)
+                            Highlight.Default.copy(
+                                width = Highlight.Default.width / scaleComp,
+                                alpha = press * 0.35f
+                            )
                         }
                     },
                     innerShadow = {
                         val press = dragAnimation.pressProgress
                         InnerShadow(
-                            radius = 8.dp * press,
-                            alpha = press
+                            radius = 4.dp * press,
+                            alpha = press * 0.5f
                         )
                     },
                     layerBlock = {
@@ -405,8 +363,8 @@ fun LiquidSegmentedControl(
                                 )
                             )
                         } else {
-                            // cba2a09：按压渐显投影
-                            Shadow(alpha = press)
+                            // 按压渐显投影（减半，残影更轻）
+                            Shadow(alpha = press * 0.5f)
                         }
                     },
                     onDrawSurface = {

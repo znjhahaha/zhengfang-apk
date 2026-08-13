@@ -682,38 +682,14 @@ fun LoginScreen(
 
     // 验证码弹窗
     if (showCaptchaDialog && captchaImageBytes != null) {
-        AlertDialog(
+        SystemDialog(
             onDismissRequest = { showCaptchaDialog = false },
-            title = { Text("请输入验证码") },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val bitmap = remember(captchaImageBytes) {
-                        BitmapFactory.decodeByteArray(captchaImageBytes, 0, captchaImageBytes.size)
-                    }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "验证码",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(60.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = { onCaptchaRefresh?.invoke() }) {
-                        Text("看不清？点击刷新")
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = captchaInput,
-                        onValueChange = { captchaInput = it },
-                        label = { Text("验证码") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
+            title = {
+                Text(
+                    text = "请输入验证码",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             },
             confirmButton = {
                 SystemPrimaryButton(
@@ -722,7 +698,8 @@ fun LoginScreen(
                         captchaSubmitting = true
                         onCaptchaSubmit?.invoke(captchaInput)
                     },
-                    enabled = captchaInput.isNotBlank() && !captchaSubmitting
+                    enabled = captchaInput.isNotBlank() && !captchaSubmitting,
+                    modifier = Modifier.fillMaxWidth()
                 )
             },
             dismissButton = {
@@ -732,10 +709,43 @@ fun LoginScreen(
                         showCaptchaDialog = false
                         captchaDismissed = true
                         // 不调用 refreshCaptcha，避免更新 captchaImageBytes 触发 LaunchedEffect 重新弹窗
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
-        )
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val bitmap = remember(captchaImageBytes) {
+                    BitmapFactory.decodeByteArray(captchaImageBytes, 0, captchaImageBytes.size)
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "验证码",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = { onCaptchaRefresh?.invoke() }) {
+                    Text("看不清？点击刷新")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = captchaInput,
+                    onValueChange = { captchaInput = it },
+                    label = { Text("验证码") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        }
     }
 }
 
@@ -936,13 +946,38 @@ fun AddSchoolDialog(
     val isValidDomain = domain.length >= 2 && domainPattern.matches(domain) && domain.contains(".")
     val showError = urlInput.isNotBlank() && domain.isNotBlank() && !isValidDomain
     
-    AlertDialog(
+    SystemDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加学校", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
+        title = {
+            Text(
+                text = "添加学校",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "添加",
+                onClick = {
+                    onConfirm(name, "$domain|$basePath", protocol)
+                },
+                enabled = isValidDomain,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        dismissButton = {
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 420.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
                 // Smart URL input section
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -1034,22 +1069,6 @@ fun AddSchoolDialog(
                     onSelect = { index -> protocol = if (index == 0) "https" else "http" },
                     label = "协议"
                 )
-            }
-        },
-        confirmButton = {
-            SystemPrimaryButton(
-                text = "添加",
-                onClick = {
-                    onConfirm(name, "$domain|$basePath", protocol)
-                },
-                enabled = isValidDomain
-            )
-        },
-        dismissButton = {
-            SystemSecondaryButton(
-                text = "取消",
-                onClick = onDismiss
-            )
         }
-    )
+    }
 }

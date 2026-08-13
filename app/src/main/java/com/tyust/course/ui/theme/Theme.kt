@@ -2,6 +2,7 @@ package com.tyust.course.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -11,12 +12,14 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.tyust.course.ui.system.GlassPressIndication
 
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -100,8 +103,10 @@ fun CourseSelectorTheme(
         SideEffect {
             val activity = view.context as? Activity ?: return@SideEffect
             val window = activity.window
-            window.statusBarColor = colorScheme.background.toArgb()
-            window.navigationBarColor = colorScheme.surface.toArgb()
+            // edge-to-edge：内容延伸到系统栏后方，玻璃顶栏/底栏自行处理 insets
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !resolvedDarkTheme
                 isAppearanceLightNavigationBars = !resolvedDarkTheme
@@ -109,10 +114,12 @@ fun CourseSelectorTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = AppShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalIndication provides GlassPressIndication) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = AppShapes,
+            content = content
+        )
+    }
 }

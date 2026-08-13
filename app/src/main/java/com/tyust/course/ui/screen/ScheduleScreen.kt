@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
@@ -221,7 +222,11 @@ fun WeekHeaderCompact(
         color = Color.Transparent,
         shadowElevation = 0.dp
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -374,7 +379,12 @@ fun ScheduleGrid(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(start = PagePadding, end = PagePadding, top = 8.dp, bottom = 80.dp),
+            .padding(
+                start = PagePadding,
+                end = PagePadding,
+                top = 8.dp,
+                bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
+            ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SystemCard(

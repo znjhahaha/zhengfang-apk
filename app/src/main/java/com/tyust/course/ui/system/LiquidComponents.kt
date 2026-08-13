@@ -58,10 +58,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -79,7 +75,11 @@ import kotlinx.coroutines.flow.collectLatest
 enum class LiquidButtonStyle {
     Transparent,
     Surface,
-    Tinted
+    Tinted,
+
+    /** 实色填充（不透明），用于玻璃弹窗等容器之上，避免玻璃叠玻璃发糊。 */
+    SolidSurface,
+    SolidTinted
 }
 
 @Composable
@@ -98,11 +98,13 @@ fun LiquidButton(
     horizontalPadding: Dp = 16.dp,
     content: @Composable RowScope.() -> Unit
 ) {
-    val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
+    val isSolid = style == LiquidButtonStyle.SolidSurface || style == LiquidButtonStyle.SolidTinted
+    val glassBackdrop = backdrop?.takeIf { isBackdropSupported() && !isSolid }
     val activeTint = if (tint.isSpecified) tint else MaterialTheme.colorScheme.primary
     val activeContentColor = when {
         contentColor.isSpecified -> contentColor
-        style == LiquidButtonStyle.Tinted -> Color.White
+        style == LiquidButtonStyle.Tinted || style == LiquidButtonStyle.SolidTinted -> Color.White
+        style == LiquidButtonStyle.SolidSurface -> MaterialTheme.colorScheme.onSurface
         else -> LocalContentColor.current
     }
     val resolvedContentColor = if (enabled) {
@@ -221,8 +223,13 @@ fun LiquidButton(
             )
         contentRow(glassModifier)
     } else {
+        val isLightTheme = !isSystemInDarkTheme()
         val fallbackColor = when {
             !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
+            style == LiquidButtonStyle.SolidTinted -> activeTint
+            // iOS gray-fill：不透明浅灰/深灰，弹窗白底上干净清晰
+            style == LiquidButtonStyle.SolidSurface ->
+                if (isLightTheme) Color(0xFFEFEFF4) else Color(0xFF3A3A3C)
             style == LiquidButtonStyle.Tinted -> activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
             style == LiquidButtonStyle.Surface -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             else -> Color.Transparent
@@ -230,10 +237,16 @@ fun LiquidButton(
         val fallbackModifier = modifier
             .clip(shape)
             .background(fallbackColor)
-            .border(
-                width = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
-                shape = shape
+            .then(
+                if (isSolid) {
+                    Modifier
+                } else {
+                    Modifier.border(
+                        width = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
+                        shape = shape
+                    )
+                }
             )
         contentRow(fallbackModifier)
     }
@@ -313,22 +326,9 @@ fun LiquidSwitch(
         }
     }
 
-    val trackBackdrop = if (glassBackdrop != null) rememberLayerBackdrop() else null
-    val thumbBackdrop = if (glassBackdrop != null && trackBackdrop != null) {
-        rememberCombinedBackdrop(
-            glassBackdrop,
-            rememberBackdrop(trackBackdrop) { drawBackdrop ->
-                val progress = dragAnimation.pressProgress
-                val scaleX = lerp(2f / 3f, 0.75f, progress)
-                val scaleY = lerp(0f, 0.75f, progress)
-                scale(scaleX, scaleY) {
-                    drawBackdrop()
-                }
-            }
-        )
-    } else {
-        null
-    }
+    // 页面内组件不得使用隐藏 layerBackdrop + combined 采样（多父引用会错位残影），
+    // thumb 直接采样壁纸层，轨道色由 thumb 表面色兜底。
+    val thumbBackdrop = glassBackdrop
 
     Box(
         modifier = modifier
@@ -353,10 +353,6 @@ fun LiquidSwitch(
     ) {
         Box(
             modifier = Modifier
-                .then(
-                    if (trackBackdrop != null) Modifier.layerBackdrop(trackBackdrop)
-                    else Modifier
-                )
                 .clip(Capsule())
                 .drawBehind {
                     drawRect(

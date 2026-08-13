@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.util.fastCoerceIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -89,16 +90,8 @@ class DampedDragAnimation(
 
     fun release() {
         animationScope.launch {
-            awaitFrame()
-            if (value != targetValue) {
-                val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
-                snapshotFlow { valueAnimation.value }
-                    .filter { abs(it - valueAnimation.targetValue) < threshold }
-                    .first()
-            }
-            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
-            launch { scaleYAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
+            awaitReleaseGate()
+            startReleaseAnimations(this)
         }
     }
 
@@ -110,17 +103,44 @@ class DampedDragAnimation(
     }
 
     fun animateToValue(value: Float) {
+        val target = value.coerceIn(valueRange)
         animationScope.launch {
             mutatorMutex.mutate {
-                press()
-                val targetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(targetValue, settleAnimationSpec) { updateVelocity() } }
-                if (velocity != 0f) {
-                    launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
+                // 结构化会话：按下增亮先启动，褪光协程等 value 就位后才启动，
+                // 保证"褪光"永远排在"增亮"之后，杜绝按下态永久卡住的竞态；
+                // 新的 animateToValue 会整体取消旧会话（含等待中的褪光）。
+                coroutineScope {
+                    launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
+                    launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
+                    launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
+                    launch { valueAnimation.animateTo(target, settleAnimationSpec) { updateVelocity() } }
+                    if (velocity != 0f) {
+                        launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
+                    }
+                    launch {
+                        awaitReleaseGate()
+                        startReleaseAnimations(this)
+                    }
                 }
-                release()
             }
         }
+    }
+
+    /** 滑动过大半程即开始褪光缩小，避免全亮白环拖出长残影。 */
+    private suspend fun awaitReleaseGate() {
+        awaitFrame()
+        if (value != targetValue) {
+            val threshold = (valueRange.endInclusive - valueRange.start) * 0.15f
+            snapshotFlow { valueAnimation.value }
+                .filter { abs(it - valueAnimation.targetValue) < threshold }
+                .first()
+        }
+    }
+
+    private fun startReleaseAnimations(scope: CoroutineScope) {
+        scope.launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+        scope.launch { scaleXAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
+        scope.launch { scaleYAnimation.animateTo(initialScale, releaseScaleAnimationSpec) }
     }
 
     private fun updateVelocity() {
