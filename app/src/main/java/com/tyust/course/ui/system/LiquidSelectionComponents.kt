@@ -91,6 +91,8 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
@@ -229,6 +231,17 @@ fun LiquidSegmentedControl(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    // 轨道随滑块果冻回弹同步呼吸
+                    if (!accessibility.reduceMotion) {
+                        val boost = (
+                            (dragAnimation.scaleX + dragAnimation.scaleY) / 2f - 1f
+                            ).coerceIn(0f, 0.4f)
+                        val scale = 1f + boost * 0.15f
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                }
                 .clip(trackShape)
                 .background(trackBackgroundColor)
                 .drawBehind {
@@ -335,7 +348,7 @@ fun LiquidSegmentedControl(
                                 enableBlur = false,
                                 allowChromaticAberration = true,
                                 pressScalesRefraction = true,
-                                refractionFloor = 0.55f
+                                refractionFloor = 0.7f
                             )
                             if (params.useLens) {
                                 lens(
@@ -345,9 +358,28 @@ fun LiquidSegmentedControl(
                                 )
                             }
                         } else {
-                            // API31/32：固定 blur 毛玻璃滑块，对齐底栏
-                            blur(GlassRecipe.NavLegacyIndicatorBlurDp.dp.toPx())
+                            // cba2a09：31/32 上 lens 为平台 no-op，毛玻璃来自 combined 采样轨道模糊层
+                            lens(
+                                refractionHeight = 10.dp.toPx() * press,
+                                refractionAmount = 14.dp.toPx() * press,
+                                chromaticAberration = true
+                            )
                         }
+                    },
+                    highlight = {
+                        val press = dragAnimation.pressProgress
+                        if (hasRealLens) {
+                            Highlight.Default.copy(alpha = 0.12f + press * 0.5f)
+                        } else {
+                            Highlight.Default.copy(alpha = press)
+                        }
+                    },
+                    innerShadow = {
+                        val press = dragAnimation.pressProgress
+                        InnerShadow(
+                            radius = 8.dp * press,
+                            alpha = press
+                        )
                     },
                     layerBlock = {
                         if (accessibility.reduceMotion) {
@@ -363,23 +395,36 @@ fun LiquidSegmentedControl(
                         }
                     },
                     shadow = {
-                        val shadowAlpha = lerp(
-                            GlassRecipe.SegIndicatorShadowAlpha,
-                            GlassRecipe.SegIndicatorPressedShadowAlpha,
-                            dragAnimation.pressProgress
-                        )
-                        Shadow(alpha = shadowAlpha)
+                        val press = dragAnimation.pressProgress
+                        if (hasRealLens) {
+                            Shadow(
+                                alpha = lerp(
+                                    GlassRecipe.SegIndicatorShadowAlpha,
+                                    GlassRecipe.SegIndicatorPressedShadowAlpha,
+                                    press
+                                )
+                            )
+                        } else {
+                            // cba2a09：按压渐显投影
+                            Shadow(alpha = press)
+                        }
                     },
                     onDrawSurface = {
                         val press = dragAnimation.pressProgress
                         if (hasRealLens) {
+                            // 低透明中性 tint，静止即玻璃；按下更透露出折射/色散
                             val solidColor = if (isLightTheme) {
                                 Color(GlassRecipe.NavSelectedSolidColorLight)
                             } else {
                                 Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
+                            val restAlpha = if (isLightTheme) {
+                                GlassRecipe.NavSelectedSolidAlpha
+                            } else {
+                                GlassRecipe.NavSelectedSolidAlphaDark
+                            }
                             val fillAlpha = lerp(
-                                GlassRecipe.NavSelectedSolidAlpha,
+                                restAlpha,
                                 GlassRecipe.NavSelectedGlassAlpha,
                                 press
                             )
@@ -387,7 +432,7 @@ fun LiquidSegmentedControl(
                                 drawRect(solidColor.copy(alpha = fillAlpha))
                             }
                         } else {
-                            // API32 cba2a09：Black×0.1
+                            // API31/32 cba2a09：Black×0.1
                             drawRect(Color.Black.copy(0.1f), alpha = 1f - press)
                             drawRect(Color.Black.copy(alpha = 0.03f * press))
                         }

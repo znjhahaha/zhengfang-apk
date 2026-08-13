@@ -3,7 +3,6 @@ package com.tyust.course.ui.system
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -197,7 +196,7 @@ private fun GlassNavigationBar(
                     onTabSelect(targetIndex)
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
-                        offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                        offsetAnimation.animateTo(0f, MotionSpring.liquidJellyRebound())
                     }
                 },
                 onDrag = { _, dragAmount ->
@@ -266,17 +265,18 @@ private fun GlassNavigationBar(
                         if (hasRealLens) {
                             Shadow(alpha = 0.08f)
                         } else {
-                            Shadow(alpha = GlassRecipe.NavLegacyShadowBaseAlpha * 0.5f)
+                            // cba2a09：轨道无投影
+                            null
                         }
                     },
                     layerBlock = {
                         val progress = dampedDragAnimation.pressProgress
-                        // 轨道随按压 + 指示器 scale 呼吸
+                        // 轨道随按压 + 指示器 scale 呼吸；滑块果冻回弹时底栏同步放大回落
                         val maxGain = 16.dp.toPx()
                         val pressScale = lerp(1f, 1f + maxGain / size.width, progress)
                         val indicatorBoost = (
                             (dampedDragAnimation.scaleX + dampedDragAnimation.scaleY) / 2f - 1f
-                            ).fastCoerceIn(0f, 0.35f)
+                            ).fastCoerceIn(0f, 0.4f)
                         val scale = pressScale * (1f + indicatorBoost * 0.18f)
                         scaleX = scale
                         scaleY = scale
@@ -348,7 +348,7 @@ private fun GlassNavigationBar(
                                 onTabSelect(targetIndex)
                                 dampedDragAnimation.animateToValue(targetIndex.toFloat())
                                 animationScope.launch {
-                                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                                    offsetAnimation.animateTo(0f, MotionSpring.liquidJellyRebound())
                                 }
                             }
                         }
@@ -463,9 +463,9 @@ private fun GlassNavigationBar(
                                 motionIntensity = motion,
                                 enableBlur = false,
                                 allowChromaticAberration = true,
-                                // 静止保留 floor 折射，避免灰片
+                                // 静止保留 floor 折射：滑块即凸起镜片
                                 pressScalesRefraction = true,
-                                refractionFloor = 0.55f
+                                refractionFloor = 0.7f
                             )
                             if (params.useLens) {
                                 lens(
@@ -475,17 +475,21 @@ private fun GlassNavigationBar(
                                 )
                             }
                         } else {
-                            // cba2a09 无真 lens：轻 blur 撑起毛玻璃选中胶囊（禁止空 effects）
-                            blur(GlassRecipe.NavLegacyIndicatorBlurDp.dp.toPx())
+                            // cba2a09：31/32 上 lens 为平台 no-op，毛玻璃来自 combined 采样轨道模糊层
+                            lens(
+                                refractionHeight = 10.dp.toPx() * press,
+                                refractionAmount = 14.dp.toPx() * press,
+                                chromaticAberration = true
+                            )
                         }
                     },
                     highlight = {
+                        val progress = dampedDragAnimation.pressProgress
                         if (hasRealLens) {
-                            Highlight.Default.copy(
-                                alpha = 0.12f + dampedDragAnimation.pressProgress * 0.5f
-                            )
+                            Highlight.Default.copy(alpha = 0.12f + progress * 0.5f)
                         } else {
-                            null
+                            // cba2a09：按压渐显边缘高光
+                            Highlight.Default.copy(alpha = progress)
                         }
                     },
                     shadow = {
@@ -493,22 +497,16 @@ private fun GlassNavigationBar(
                         if (hasRealLens) {
                             Shadow(alpha = 0.10f + progress * 0.25f)
                         } else {
-                            Shadow(
-                                alpha = GlassRecipe.NavLegacyShadowBaseAlpha +
-                                    progress * GlassRecipe.NavLegacyShadowPressGain
-                            )
+                            // cba2a09：按压渐显投影
+                            Shadow(alpha = progress)
                         }
                     },
                     innerShadow = {
-                        if (hasRealLens) {
-                            val progress = dampedDragAnimation.pressProgress
-                            InnerShadow(
-                                radius = 8.dp * progress,
-                                alpha = progress
-                            )
-                        } else {
-                            null
-                        }
+                        val progress = dampedDragAnimation.pressProgress
+                        InnerShadow(
+                            radius = 8.dp * progress,
+                            alpha = progress
+                        )
                     },
                     layerBlock = {
                         scaleX = dampedDragAnimation.scaleX
@@ -525,14 +523,19 @@ private fun GlassNavigationBar(
                     onDrawSurface = {
                         val press = dampedDragAnimation.pressProgress
                         if (hasRealLens) {
-                            // API33+：半透玻璃 tint，按下更透露出折射/色散
+                            // API33+：低透明中性 tint，静止即玻璃；按下更透露出折射/色散
                             val solidColor = if (isLightTheme) {
                                 Color(GlassRecipe.NavSelectedSolidColorLight)
                             } else {
                                 Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
+                            val restAlpha = if (isLightTheme) {
+                                GlassRecipe.NavSelectedSolidAlpha
+                            } else {
+                                GlassRecipe.NavSelectedSolidAlphaDark
+                            }
                             val fillAlpha = lerp(
-                                GlassRecipe.NavSelectedSolidAlpha,
+                                restAlpha,
                                 GlassRecipe.NavSelectedGlassAlpha,
                                 press
                             )
@@ -540,7 +543,7 @@ private fun GlassNavigationBar(
                                 drawRect(solidColor.copy(alpha = fillAlpha))
                             }
                         } else {
-                            // API32 cba2a09：Black×0.1，按下淡出
+                            // API31/32 cba2a09：Black×0.1，按下淡出
                             drawRect(Color.Black.copy(0.1f), alpha = 1f - press)
                             drawRect(Color.Black.copy(alpha = 0.03f * press))
                         }

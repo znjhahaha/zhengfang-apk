@@ -90,16 +90,23 @@ object MotionSpring {
         stiffness = 460f
     )
 
-    /** Liquid-control settle: decisive snapping after a drag or state change. */
+    /** Liquid-control settle: jelly overshoot when the capsule snaps to a tab (cba2a09 feel). */
     fun <T> liquidSettle() = spring<T>(
-        dampingRatio = 0.72f,
-        stiffness = 560f
+        dampingRatio = 0.5f,
+        stiffness = 340f
     )
 
-    /** Liquid selection release: restrained overshoot shared by tabs and segmented controls. */
+    /** Liquid selection release: bouncy scale with decaying wobble, shared by tabs and segmented controls. */
     fun <T> liquidSelectionRelease() = spring<T>(
-        dampingRatio = 0.76f,
-        stiffness = 420f
+        dampingRatio = 0.38f,
+        stiffness = 300f
+    )
+
+    /** Jelly rebound for the track/panel drifting back to rest after a drag or tab switch. */
+    fun liquidJellyRebound() = spring(
+        dampingRatio = 0.45f,
+        stiffness = 300f,
+        visibilityThreshold = 0.5f
     )
 
     /** Liquid-control follow: high damping keeps direct manipulation attached to the finger. */

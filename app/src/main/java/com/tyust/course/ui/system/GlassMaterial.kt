@@ -245,9 +245,11 @@ object GlassRecipe {
     val SegIndicatorBorderAlpha = 0.24f
     val SegIndicatorShadowAlpha = control.shadowAlpha
     val SegIndicatorPressedShadowAlpha = interactive.shadowAlpha
-    // 导航与 segmented 共用克制的选中胶囊按压尺度。
-    val SelectionIndicatorPressedScale = 1.08f
-    val SegIndicatorPressedScale = SelectionIndicatorPressedScale
+    // 底栏选中胶囊按压尺度：cba2a09 的 78/56 大按压，
+    // 放大后溢出轨道，配合果冻弹簧形成"弹起-缩回-再弹起"的衰减回弹。
+    val SelectionIndicatorPressedScale = 78f / 56f
+    // segmented 滑块横向更宽，按压放大更克制；果冻感来自低阻尼弹簧振荡。
+    val SegIndicatorPressedScale = 1.12f
     val SegIndicatorMaxVelocityStretch = 0.12f
 
     // Apple 风清晰实心选中胶囊：不依赖折射，底栏与 segmented 共用。
@@ -260,23 +262,23 @@ object GlassRecipe {
     val SelectedCapsuleLensSurfaceAlphaLight = 0.16f
     val SelectedCapsuleLensSurfaceAlphaDark = 0.12f
 
-    // 底栏 API32（cba2a09）：轨道固定 blur 8dp + 半透 surface，选中 Black×0.1
+    // 底栏 API31/32（cba2a09）：轨道固定 blur 8dp + 半透 surface，选中 Black×0.1，
+    // 滑块自身不加 blur，毛玻璃质感来自 combined backdrop 采样轨道模糊层。
     val NavLegacyTrackBlurDp = 8f
-    val NavLegacyIndicatorBlurDp = 6f
     val NavLegacyTrackSurfaceLight = 0xFFFAFAFA
     val NavLegacyTrackSurfaceAlpha = 0.15f
     val NavLegacyGlassSurfaceAlphaLight = 0.12f
     val NavLegacyGlassSurfaceAlphaDark = 0.18f
-    val NavLegacyShadowBaseAlpha = 0.15f
-    val NavLegacyShadowPressGain = 0.35f
-    // 无 RuntimeShader 时保持同样的克制按压尺度。
+    // 无 RuntimeShader 时与真 lens 平台共用 78/56 按压尺度（cba2a09）。
     val NavLegacyPressedScale = SelectionIndicatorPressedScale
 
-    // API33+ 静态选中态以清晰实心胶囊为主；按压时降低遮罩露出折射。
-    val NavSelectedSolidColorLight = 0xFFF5F5F7
-    val NavSelectedSolidColorDark = 0xFF3A3A3C
-    val NavSelectedSolidAlpha = 0.88f
-    val NavSelectedGlassAlpha = 0.08f
+    // 选中胶囊静止即玻璃：低透明中性 tint（浅色暗 tint / 深色亮 tint），
+    // 与轨道形成明度差的同时透出折射与模糊背景；按压进一步降遮罩。
+    val NavSelectedSolidColorLight = 0xFF1C1C1E
+    val NavSelectedSolidColorDark = 0xFFFFFFFF
+    val NavSelectedSolidAlpha = 0.10f
+    val NavSelectedSolidAlphaDark = 0.14f
+    val NavSelectedGlassAlpha = 0.05f
     val NavPressedScale = SelectionIndicatorPressedScale
 
     val ActionBlurDp = control.blurDp
