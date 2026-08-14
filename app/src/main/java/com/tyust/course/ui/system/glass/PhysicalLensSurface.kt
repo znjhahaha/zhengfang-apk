@@ -33,6 +33,8 @@ fun resolvePhysicalLens(
     motionIntensity: Float = 0f,
     enableBlur: Boolean = true,
     allowChromaticAberration: Boolean = true,
+    /** 仅选中透镜使用：静止态也保持弱色散，交互时由运动强度继续增强。 */
+    chromaticAberrationAtRest: Boolean = false,
     /**
      * true：折射随按压从 floor 抬到满额（选中透镜，静止也保留弱折射）。
      * false：静止即满额基础折射，按压只小幅增强（轨道）。
@@ -52,8 +54,8 @@ fun resolvePhysicalLens(
     // 真 RuntimeShader/lens 仅 API 33+；API31/32 保留 blur + RGB 分离色散近似
     if (!isRuntimeShaderTrulySupported()) {
         val fringeDp = if (allowChromaticAberration && material.chromaticAberration) {
-            // 与 API 33+ 一致：静止为 0，按压/运动时浮现
-            (progress * 1.8f + motion * 1.2f).coerceIn(0f, 2.2f)
+            val restFringe = if (chromaticAberrationAtRest) 0.55f else 0f
+            (restFringe + progress * 1.8f + motion * 1.2f).coerceIn(0f, 2.2f)
         } else {
             0f
         }
@@ -93,11 +95,10 @@ fun resolvePhysicalLens(
         minCornerRadiusPx = minCornerRadiusPx,
         minDimensionPx = minDimensionPx
     )
-    // 色散只在交互（按压/运动）时出现；静止让玻璃保持干净（glass rests in steady state）
     val chromatic = useLens &&
         allowChromaticAberration &&
         material.chromaticAberration &&
-        (progress > 0.05f || motion > 0.05f)
+        (chromaticAberrationAtRest || progress > 0.05f || motion > 0.05f)
 
     PhysicalLensParams(
         blurPx = blurPx,

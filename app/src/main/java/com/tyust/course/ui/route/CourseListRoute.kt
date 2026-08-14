@@ -1182,6 +1182,7 @@ fun CourseListRoute() {
                 }
                 }
             }
+            com.tyust.course.ui.system.PageInlineNoticeHost()
             // scroll edge effect：底缘软渐隐，与 SystemTopBar 一致
             if (topBarUseGlass) {
                 Box(

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -84,6 +85,9 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -91,6 +95,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
 import com.tyust.course.ui.system.glass.chromaticFringe
@@ -98,6 +103,7 @@ import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.ui.theme.MotionSpring
+import com.tyust.course.ui.theme.NeuPrimary
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -117,7 +123,7 @@ fun LiquidSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     height: Dp = 52.dp
 ) {
     if (options.isEmpty()) return
@@ -131,12 +137,25 @@ fun LiquidSegmentedControl(
     val isLightTheme = !isSystemInDarkTheme()
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)
-    // 页面内组件不得使用隐藏 layerBackdrop + combined 采样：
-    // 该结构嵌套在底栏捕获层的 record 会话中，GraphicsLayer 被多处引用，
-    // API 37 上会把 tint 内容错位绘制成底栏上方的残影。指示器直接采样壁纸层。
-    val indicatorBackdrop = glassBackdrop
+    // 与底部 Tab 相同：隐藏内容层与环境层合成为选中透镜的采样源。
+    val segmentsBackdrop = rememberLayerBackdrop()
     val animationScope = rememberCoroutineScope()
     val accessibility = rememberGlassAccessibilityMode()
+    val trackMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Navigation,
+        accessibility = accessibility,
+        interactionProgress = 0f
+    )
+    val indicatorMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Interactive,
+        accessibility = accessibility,
+        interactionProgress = 0f
+    )
+    val pressedScale = if (accessibility.reduceMotion) {
+        1f
+    } else {
+        GlassRecipe.SegIndicatorPressedScale
+    }
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
     }
@@ -153,18 +172,15 @@ fun LiquidSegmentedControl(
             }
     ) {
         val density = LocalDensity.current
-        val horizontalPadding = 5.dp
-        val verticalPadding = 5.dp
+        val compact = height <= 36.dp
+        val horizontalPadding = if (compact) 3.dp else 5.dp
+        val verticalPadding = if (compact) 3.dp else 5.dp
         val horizontalPaddingPx = with(density) { horizontalPadding.toPx() }
-        val verticalPaddingPx = with(density) { verticalPadding.toPx() }
         val segmentWidthPx =
             ((constraints.maxWidth - horizontalPaddingPx * 2f) / optionCount)
                 .coerceAtLeast(1f)
         val segmentWidth = with(density) { segmentWidthPx.toDp() }
-        val indicatorMinDimensionPx = minOf(
-            segmentWidthPx,
-            (constraints.maxHeight - verticalPaddingPx * 2f).coerceAtLeast(1f)
-        )
+        val indicatorWidth = segmentWidth
         val dragAnimation = remember(animationScope, optionCount, segmentWidthPx) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -172,11 +188,7 @@ fun LiquidSegmentedControl(
                 valueRange = 0f..(optionCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = if (accessibility.reduceMotion) {
-                    1f
-                } else {
-                    GlassRecipe.SegIndicatorPressedScale
-                },
+                pressedScale = pressedScale,
                 directManipulationSpec = MotionSpring.liquidFollow(),
                 settleAnimationSpec = MotionSpring.segmentedSettle(),
                 releaseScaleAnimationSpec = MotionSpring.segmentedRelease(),
@@ -207,10 +219,12 @@ fun LiquidSegmentedControl(
             }
         }
 
-        // 轨道半透底：API32 对齐 cba2a09 轨；与底栏一致
         val trackBackgroundColor = if (hasRealLens) {
-            if (isLightTheme) Color.White.copy(alpha = if (useGlass) 0.16f else 0.28f)
-            else Color.Black.copy(alpha = if (useGlass) 0.18f else 0.28f)
+            if (isLightTheme) {
+                Color.White.copy(alpha = if (compact) 0.18f else 0.28f)
+            } else {
+                Color.Black.copy(alpha = if (compact) 0.20f else 0.26f)
+            }
         } else {
             if (isLightTheme) {
                 Color(GlassRecipe.NavLegacyTrackSurfaceLight)
@@ -220,82 +234,189 @@ fun LiquidSegmentedControl(
             }
         }
         val trackBorderColor = MaterialTheme.colorScheme.onSurface.copy(
-            alpha = if (useGlass) 0.10f else 0.14f
+            alpha = when {
+                compact && useGlass -> 0.07f
+                useGlass -> 0.10f
+                else -> 0.14f
+            }
         )
-        val compact = height <= 36.dp
+        val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
+        val indicatorBackdrop = if (glassBackdrop != null) {
+            rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)
+        } else {
+            null
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    // 轨道随滑块果冻回弹同步呼吸
-                    if (!accessibility.reduceMotion) {
-                        val boost = (
-                            (dragAnimation.scaleX + dragAnimation.scaleY) / 2f - 1f
-                            ).coerceIn(0f, 0.4f)
-                        val scale = 1f + boost * 0.15f
-                        scaleX = scale
-                        scaleY = scale
+                .then(
+                    if (glassBackdrop != null) {
+                        Modifier.drawBackdrop(
+                            backdrop = glassBackdrop,
+                            shape = { Capsule() },
+                            effects = {
+                                vibrancy()
+                                if (hasRealLens) {
+                                    val params = resolvePhysicalLens(
+                                        density = this,
+                                        material = trackMaterial,
+                                        shape = Capsule(),
+                                        minCornerRadiusPx = size.minDimension / 2f,
+                                        minDimensionPx = size.minDimension,
+                                        interactionProgress = 0f,
+                                        enableBlur = true,
+                                        allowChromaticAberration = false,
+                                        pressScalesRefraction = false
+                                    )
+                                    if (params.blurPx > 0f) blur(params.blurPx)
+                                    else blur(8.dp.toPx())
+                                    if (params.useLens) {
+                                        lens(
+                                            refractionHeight = params.refractionHeightPx,
+                                            refractionAmount = params.refractionAmountPx,
+                                            chromaticAberration = false
+                                        )
+                                    }
+                                } else {
+                                    blur(GlassRecipe.NavLegacyTrackBlurDp.dp.toPx())
+                                }
+                            },
+                            highlight = {
+                                if (hasRealLens) Highlight.Default.copy(alpha = 0.16f) else null
+                            },
+                            shadow = { if (hasRealLens) Shadow(alpha = 0.08f) else null },
+                            layerBlock = {
+                                val progress = dragAnimation.pressProgress
+                                val maxGain = 16.dp.toPx()
+                                val pressScale = lerp(1f, 1f + maxGain / size.width, progress)
+                                val indicatorBoost = (
+                                    (dragAnimation.scaleX + dragAnimation.scaleY) / 2f - 1f
+                                    ).coerceIn(0f, 0.4f)
+                                val scale = pressScale * (1f + indicatorBoost * 0.18f)
+                                scaleX = scale
+                                scaleY = scale
+                            },
+                            onDrawSurface = { drawRect(trackBackgroundColor) }
+                        )
+                    } else {
+                        Modifier
+                            .clip(trackShape)
+                            .background(trackBackgroundColor)
+                            .border(0.75.dp, trackBorderColor, trackShape)
                     }
-                }
-                .clip(trackShape)
-                .background(trackBackgroundColor)
-                .drawBehind {
-                    drawRoundRect(
-                        color = trackBorderColor,
-                        cornerRadius = CornerRadius(size.height / 2f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.75.dp.toPx())
-                    )
-                }
+                )
         )
 
-        val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
         val indicatorBaseModifier = Modifier
-            .width(segmentWidth)
+            .width(indicatorWidth)
             .height(indicatorHeight)
             .align(Alignment.CenterStart)
             .graphicsLayer {
                 translationX = horizontalPaddingPx + dragAnimation.value * segmentWidthPx
                 clip = false
-                if (!useGlass && !accessibility.reduceMotion) {
-                    val velocity = dragAnimation.velocity / 6f
-                    scaleX = dragAnimation.scaleX /
-                        (1f - (velocity * 0.75f).coerceIn(-0.22f, 0.22f))
-                    scaleY = dragAnimation.scaleY *
-                        (1f - (velocity * 0.25f).coerceIn(-0.22f, 0.22f))
+            }
+
+        if (glassBackdrop != null && indicatorBackdrop != null) {
+            Row(
+                modifier = Modifier
+                    .clearAndSetSemantics { }
+                    .alpha(0f)
+                    .layerBackdrop(segmentsBackdrop)
+                    .align(Alignment.CenterStart)
+                    .drawBackdrop(
+                        backdrop = glassBackdrop,
+                        shape = { Capsule() },
+                        effects = {
+                            val progress = dragAnimation.pressProgress
+                            vibrancy()
+                            if (hasRealLens) {
+                                val params = resolvePhysicalLens(
+                                    density = this,
+                                    material = trackMaterial,
+                                    shape = Capsule(),
+                                    minCornerRadiusPx = size.minDimension / 2f,
+                                    minDimensionPx = size.minDimension,
+                                    interactionProgress = progress,
+                                    enableBlur = true,
+                                    allowChromaticAberration = false,
+                                    pressScalesRefraction = false
+                                )
+                                if (params.blurPx > 0f) blur(params.blurPx)
+                                else blur(8.dp.toPx())
+                                if (params.useLens) {
+                                    lens(
+                                        refractionHeight = params.refractionHeightPx,
+                                        refractionAmount = params.refractionAmountPx,
+                                        chromaticAberration = false
+                                    )
+                                }
+                            } else {
+                                blur(GlassRecipe.NavLegacyTrackBlurDp.dp.toPx())
+                            }
+                        },
+                        highlight = {
+                            Highlight.Default.copy(alpha = dragAnimation.pressProgress * 0.35f)
+                        },
+                        onDrawSurface = { drawRect(trackBackgroundColor) }
+                    )
+                    .height(indicatorHeight)
+                    .fillMaxWidth()
+                    .padding(horizontal = horizontalPadding)
+                    .graphicsLayer(colorFilter = ColorFilter.tint(NeuPrimary)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                options.forEach { label ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            modifier = Modifier.padding(
+                                horizontal = if (compact) 6.dp else 10.dp
+                            ),
+                            style = if (compact) {
+                                MaterialTheme.typography.labelMedium
+                            } else {
+                                MaterialTheme.typography.labelLarge
+                            },
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
-        if (indicatorBackdrop != null) {
             Box(
                 modifier = indicatorBaseModifier.drawBackdrop(
                     backdrop = indicatorBackdrop,
-                    shape = { indicatorShape },
+                    shape = { Capsule() },
                     effects = {
                         val press = dragAnimation.pressProgress
                         vibrancy()
                         if (hasRealLens) {
-                            val activeMaterial = GlassMaterials.resolve(
-                                role = GlassMaterialRole.Interactive,
-                                accessibility = accessibility,
-                                interactionProgress = press
-                            )
                             val motion = motionIntensityFromVelocity(
                                 velocityX = dragAnimation.velocity * segmentWidthPx,
-                                fullEffectVelocity = activeMaterial.optics.velocityForFullEffect
+                                fullEffectVelocity = indicatorMaterial.optics.velocityForFullEffect
                             )
                             val params = resolvePhysicalLens(
                                 density = this,
-                                material = activeMaterial,
-                                shape = indicatorShape,
-                                minCornerRadiusPx = indicatorMinDimensionPx / 2f,
-                                minDimensionPx = indicatorMinDimensionPx,
+                                material = indicatorMaterial,
+                                shape = Capsule(),
+                                minCornerRadiusPx = size.minDimension / 2f,
+                                minDimensionPx = size.minDimension,
                                 interactionProgress = press,
                                 motionIntensity = motion,
                                 enableBlur = false,
                                 allowChromaticAberration = true,
+                                chromaticAberrationAtRest = true,
                                 pressScalesRefraction = true,
-                                refractionFloor = 0.42f
+                                refractionFloor = if (compact) 0.30f else 0.42f
                             )
                             if (params.useLens) {
                                 lens(
@@ -305,27 +426,23 @@ fun LiquidSegmentedControl(
                                 )
                             }
                         } else {
-                            // 31/32：lens 为平台 no-op，直接 blur 出毛玻璃（不再依赖轨道采样层）
-                            blur(8.dp.toPx())
                             lens(
-                                refractionHeight = 10.dp.toPx() * press,
-                                refractionAmount = 14.dp.toPx() * press,
+                                refractionHeight = 10.dp.toPx() * (0.42f + press * 0.58f),
+                                refractionAmount = 14.dp.toPx() * (0.42f + press * 0.58f),
                                 chromaticAberration = true
                             )
-                            // RGB 分离色散近似：按压/滑动时浮现，静止归零
                             val legacyMotion = motionIntensityFromVelocity(
                                 velocityX = dragAnimation.velocity * segmentWidthPx,
-                                fullEffectVelocity = 900f
+                                fullEffectVelocity = indicatorMaterial.optics.velocityForFullEffect
                             )
                             chromaticFringe(
-                                (press * 1.8f + legacyMotion * 1.2f)
+                                (0.55f + press * 1.8f + legacyMotion * 1.2f)
                                     .coerceIn(0f, 2.2f).dp.toPx()
                             )
                         }
                     },
                     highlight = {
-                        val press = dragAnimation.pressProgress
-                        // 描边宽度随按压缩放反向补偿，保持细度恒定
+                        val progress = dragAnimation.pressProgress
                         val scaleComp = (
                             (dragAnimation.scaleX + dragAnimation.scaleY) / 2f
                             ).coerceAtLeast(1f)
@@ -333,63 +450,55 @@ fun LiquidSegmentedControl(
                             Highlight.Default.copy(
                                 width = Highlight.Default.width / scaleComp,
                                 blurRadius = Highlight.Default.blurRadius / scaleComp,
-                                alpha = 0.12f + press * 0.35f
+                                alpha = 0.12f + progress * 0.35f
                             )
                         } else {
                             Highlight.Default.copy(
                                 width = Highlight.Default.width / scaleComp,
-                                alpha = press * 0.35f
+                                alpha = progress * 0.35f
                             )
-                        }
-                    },
-                    innerShadow = {
-                        val press = dragAnimation.pressProgress
-                        InnerShadow(
-                            radius = 4.dp * press,
-                            alpha = press * 0.5f
-                        )
-                    },
-                    layerBlock = {
-                        if (accessibility.reduceMotion) {
-                            scaleX = 1f
-                            scaleY = 1f
-                        } else {
-                            // 与底栏同一 velocity 公式
-                            val velocity = dragAnimation.velocity / 6f
-                            scaleX = dragAnimation.scaleX /
-                                (1f - (velocity * 0.75f).coerceIn(-0.22f, 0.22f))
-                            scaleY = dragAnimation.scaleY *
-                                (1f - (velocity * 0.25f).coerceIn(-0.22f, 0.22f))
                         }
                     },
                     shadow = {
-                        val press = dragAnimation.pressProgress
+                        val progress = dragAnimation.pressProgress
                         if (hasRealLens) {
-                            Shadow(
-                                alpha = lerp(
-                                    GlassRecipe.SegIndicatorShadowAlpha,
-                                    GlassRecipe.SegIndicatorPressedShadowAlpha,
-                                    press
-                                )
-                            )
+                            Shadow(alpha = 0.10f + progress * 0.15f)
                         } else {
-                            // 按压渐显投影（减半，残影更轻）
-                            Shadow(alpha = press * 0.5f)
+                            Shadow(alpha = progress * 0.5f)
                         }
                     },
+                    innerShadow = {
+                        val progress = dragAnimation.pressProgress
+                        InnerShadow(
+                            radius = 4.dp * progress,
+                            alpha = progress * 0.5f
+                        )
+                    },
+                    layerBlock = {
+                        scaleX = dragAnimation.scaleX
+                        scaleY = dragAnimation.scaleY
+                        val velocity = dragAnimation.velocity / 10f
+                        val maxStretch = GlassRecipe.SegIndicatorMaxVelocityStretch
+                        scaleX /= 1f - (velocity * 0.45f)
+                            .coerceIn(-maxStretch, maxStretch)
+                        scaleY *= 1f - (velocity * 0.15f)
+                            .coerceIn(-maxStretch, maxStretch)
+                    },
+                    onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
                     onDrawSurface = {
                         val press = dragAnimation.pressProgress
                         if (hasRealLens) {
-                            // 低透明中性 tint，静止即玻璃；按下更透露出折射/色散
-                            val solidColor = if (isLightTheme) {
-                                Color(GlassRecipe.NavSelectedSolidColorLight)
-                            } else {
-                                Color(GlassRecipe.NavSelectedSolidColorDark)
+                            val solidColor = when {
+                                compact && isLightTheme -> Color.White
+                                compact -> Color.White
+                                isLightTheme -> Color(GlassRecipe.NavSelectedSolidColorLight)
+                                else -> Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
-                            val restAlpha = if (isLightTheme) {
-                                GlassRecipe.NavSelectedSolidAlpha
-                            } else {
-                                GlassRecipe.NavSelectedSolidAlphaDark
+                            val restAlpha = when {
+                                compact && isLightTheme -> 0.42f
+                                compact -> 0.16f
+                                isLightTheme -> GlassRecipe.NavSelectedSolidAlpha
+                                else -> GlassRecipe.NavSelectedSolidAlphaDark
                             }
                             val fillAlpha = lerp(
                                 restAlpha,
@@ -400,7 +509,6 @@ fun LiquidSegmentedControl(
                                 drawRect(solidColor.copy(alpha = fillAlpha))
                             }
                         } else {
-                            // API31/32 cba2a09：Black×0.1
                             drawRect(Color.Black.copy(0.1f), alpha = 1f - press)
                             drawRect(Color.Black.copy(alpha = 0.03f * press))
                         }
@@ -482,7 +590,7 @@ fun LiquidSegmentedControl(
                 val selectionAmount =
                     (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
                 val textColor = lerpColor(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f),
                     MaterialTheme.colorScheme.onSurface,
                     selectionAmount
                 )
@@ -506,14 +614,14 @@ fun LiquidSegmentedControl(
                         text = label,
                         modifier = Modifier.padding(horizontal = if (compact) 6.dp else 10.dp),
                         style = if (compact) {
-                            MaterialTheme.typography.labelSmall
+                            MaterialTheme.typography.labelMedium
                         } else {
                             MaterialTheme.typography.labelLarge
                         },
                         fontWeight = if (selectionAmount >= 0.55f) {
-                            FontWeight.Bold
+                            FontWeight.ExtraBold
                         } else {
-                            FontWeight.Medium
+                            FontWeight.SemiBold
                         },
                         color = textColor,
                         maxLines = 1,
@@ -538,7 +646,7 @@ fun LiquidPicker(
     leadingIcon: ImageVector? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    backdrop: Backdrop? = LocalAppBackdrop.current
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
 ) {
     var expanded by remember { mutableStateOf(false) }
     var popupVisible by remember { mutableStateOf(false) }

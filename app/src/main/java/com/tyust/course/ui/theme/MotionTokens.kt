@@ -96,16 +96,16 @@ object MotionSpring {
         stiffness = 420f
     )
 
-    /** Segmented settle: short travel distance, so keep the slide nearly critically damped. */
+    /** Segmented settle: decisive movement without visible overshoot. */
     fun <T> segmentedSettle() = spring<T>(
-        dampingRatio = 0.88f,
-        stiffness = 430f
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 500f
     )
 
-    /** Segmented release: one barely-visible bounce when the indicator scale relaxes. */
+    /** Segmented release: return the lens to rest without a jelly rebound. */
     fun <T> segmentedRelease() = spring<T>(
-        dampingRatio = 0.86f,
-        stiffness = 400f
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 560f
     )
 
     /** Nav settle: long travel across the bar wants a pronounced jelly overshoot. */

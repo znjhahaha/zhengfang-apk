@@ -295,6 +295,7 @@ fun SystemTopBar(
                 )
             }
         }
+        PageInlineNoticeHost()
         // scroll edge effect：折叠后底缘软渐隐，内容滚入头部时平滑没入
         if (useGlass && showShell) {
             Box(
@@ -330,7 +331,7 @@ fun GlassCircleButton(
     enabled: Boolean = true,
     size: Dp = 40.dp,
     tint: Color = MaterialTheme.colorScheme.onSurface,
-    backdrop: Backdrop? = LocalAppBackdrop.current
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
     val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
@@ -622,7 +623,7 @@ fun SystemSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -641,7 +642,7 @@ fun SystemCompactSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -652,7 +653,7 @@ fun SystemCompactSegmentedControl(
         modifier = modifier,
         enabled = enabled,
         backdrop = backdrop,
-        height = 32.dp
+        height = 36.dp
     )
 }
 
@@ -668,7 +669,7 @@ fun SystemPicker(
     leadingIcon: ImageVector? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    backdrop: Backdrop? = LocalAppBackdrop.current
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
 ) {
     LiquidPicker(
         options = options.map(::LiquidPickerOption),
@@ -693,12 +694,12 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    // iOS filled button：主行动钮始终实色饱和填充，不做玻璃采样（采样灰底会去饱和发闷）
+    // 主按钮使用高饱和 tint 覆盖中性折射层，保留玻璃边缘和按压形变。
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.SolidTinted,
+        style = LiquidButtonStyle.Tinted,
         tint = NeuPrimary,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -720,12 +721,11 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val insideGlass = LocalInsideGlassSurface.current
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = if (insideGlass) LiquidButtonStyle.SolidSurface else LiquidButtonStyle.Surface,
+        style = LiquidButtonStyle.Surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -751,7 +751,7 @@ fun SystemDestructiveButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.SolidTinted,
+        style = LiquidButtonStyle.Tinted,
         tint = SemanticDanger,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -851,7 +851,7 @@ fun SystemActionButton(
     icon: ImageVector? = null,
     primary: Boolean = false,
     enabled: Boolean = true,
-    backdrop: Backdrop? = LocalAppBackdrop.current
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
 ) {
     val contentColor = if (primary) {
         Color.White
@@ -990,7 +990,7 @@ val LocalInsideGlassSurface = androidx.compose.runtime.staticCompositionLocalOf 
 @Composable
 fun SystemDialog(
     onDismissRequest: () -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     useVisualEffects: Boolean = true,
     confirmButton: @Composable (() -> Unit)? = null,
     dismissButton: @Composable (() -> Unit)? = null,
@@ -1042,11 +1042,14 @@ private fun SystemDialogContent(
         accessibility = accessibility
     )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
-    val dialogSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-        alpha = dialogMaterial.surfaceAlpha
-    )
-    val dialogBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(
-        alpha = dialogMaterial.borderAlpha
+    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val dialogSurfaceColor = if (isLightTheme) {
+        Color(0xFFD9DBDF).copy(alpha = dialogMaterial.surfaceAlpha)
+    } else {
+        Color(0xFF25272B).copy(alpha = 0.82f)
+    }
+    val dialogBorderColor = Color.White.copy(
+        alpha = if (isLightTheme) 0.64f else 0.16f
     )
     val dialogShadowColor = Color.Black.copy(alpha = dialogMaterial.shadowAlpha)
 
@@ -1060,8 +1063,8 @@ private fun SystemDialogContent(
             spotColor = dialogShadowColor
         )
         .clip(dialogShape)
-        .background(MaterialTheme.colorScheme.surface)
-        .border(1.dp, dialogBorderColor, dialogShape)
+        .background(if (isLightTheme) Color(0xFFE0E2E6) else Color(0xFF25272B))
+        .border(0.75.dp, dialogBorderColor, dialogShape)
         .padding(24.dp)
     val modifier = if (glassBackdrop != null) {
         Modifier
@@ -1091,9 +1094,20 @@ private fun SystemDialogContent(
                     }
                 },
                 shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
-                onDrawSurface = { drawRect(dialogSurfaceColor) }
+                onDrawSurface = {
+                    drawRect(dialogSurfaceColor)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isLightTheme) 0.24f else 0.08f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = if (isLightTheme) 0.05f else 0.12f)
+                            )
+                        )
+                    )
+                }
             )
-            .border(1.dp, dialogBorderColor, dialogShape)
+            .border(0.75.dp, dialogBorderColor, dialogShape)
             .padding(24.dp)
     } else {
         fallbackModifier

@@ -82,6 +82,12 @@ fun canUseLiquidLens(
 val LocalAppBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
+ * 交互控件专用的中性光学输入。它只记录灰阶明暗，不包含壁纸或页面内容，
+ * 因而按钮、滑块和模态层可以保留折射而不会把背景流光带进表面。
+ */
+val LocalNeutralGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
  * 页面底部不可被 Popup 覆盖的浮层高度，例如底部导航栏。
  */
 val LocalAppOverlayBottomInset = staticCompositionLocalOf<Dp> { 0.dp }

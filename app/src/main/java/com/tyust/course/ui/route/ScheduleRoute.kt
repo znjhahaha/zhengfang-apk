@@ -46,6 +46,7 @@ import com.tyust.course.ui.screen.PeriodTimeUi
 import com.tyust.course.ui.screen.ScheduleCourseUi
 import com.tyust.course.ui.screen.ScheduleScreen
 import com.tyust.course.ui.screen.ScheduleSettingsScreen
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.theme.MotionDuration
 import com.tyust.course.ui.theme.MotionEasing
@@ -326,11 +327,12 @@ fun ScheduleRoute() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface
                 ) {
-                    // 该弹窗是独立窗口：主窗口 DialogHost/壁纸层跨窗口不可用，
+                    // 该弹窗是独立窗口：主窗口 DialogHost/Backdrop 跨窗口不可用，
                     // 内部 SystemDialog 一律走本窗口 fallback，避免采样错位。
                     androidx.compose.runtime.CompositionLocalProvider(
                         com.tyust.course.ui.system.LocalDialogHost provides null,
-                        com.tyust.course.ui.system.LocalAppBackdrop provides null
+                        com.tyust.course.ui.system.LocalAppBackdrop provides null,
+                        com.tyust.course.ui.system.LocalNeutralGlassBackdrop provides null
                     ) {
                         var showGlassDatePicker by remember { mutableStateOf(false) }
                         ScheduleSettingsScreen(
@@ -366,79 +368,42 @@ fun ScheduleRoute() {
         }
     }
     
-    // 课程详情弹窗（统一设计语言）
-    if (showCourseDetail != null) {
-        val course = showCourseDetail!!
-        var animateTrigger by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { animateTrigger = true }
-
-        fun dismiss() {
-            animateTrigger = false
-        }
-
-        if (!animateTrigger) {
-            LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(300)
-                showCourseDetail = null
+    // 课程详情弹窗统一走同窗口 portal，复用中性遮罩和光学输入。
+    showCourseDetail?.let { course ->
+        SystemDialog(
+            onDismissRequest = { showCourseDetail = null },
+            title = {
+                Text(
+                    text = course.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                SystemPrimaryButton(
+                    text = "确定",
+                    onClick = { showCourseDetail = null },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        }
-
-        Dialog(onDismissRequest = { dismiss() }) {
-            AnimatedVisibility(
-                visible = animateTrigger,
-                enter = slideInVertically(
-                    initialOffsetY = { it / 3 },
-                    animationSpec = tween(MotionDuration.DialogEnter, easing = MotionEasing.FastOutSlowIn)
-                ) + fadeIn(animationSpec = tween(MotionDuration.Medium)),
-                exit = slideOutVertically(
-                    targetOffsetY = { it / 3 },
-                    animationSpec = tween(MotionDuration.Medium, easing = MotionEasing.Accelerate)
-                ) + fadeOut(animationSpec = tween(MotionDuration.Medium))
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // 课程名
-                        Text(
-                            text = course.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        // 信息行
-                        CourseInfoRow(
-                            icon = Icons.Default.AccessTime,
-                            label = "时间",
-                            value = "${course.weeks} 周${course.day} 第${course.startPeriod}-${course.endPeriod}节"
-                        )
-                        CourseInfoRow(
-                            icon = Icons.Default.Place,
-                            label = "教室",
-                            value = course.location.ifEmpty { "未指定" }
-                        )
-                        CourseInfoRow(
-                            icon = Icons.Default.Person,
-                            label = "教师",
-                            value = course.teacher.ifEmpty { "未指定" }
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        SystemPrimaryButton(
-                            text = "确定",
-                            onClick = { dismiss() },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                CourseInfoRow(
+                    icon = Icons.Default.AccessTime,
+                    label = "时间",
+                    value = "${course.weeks} 周${course.day} 第${course.startPeriod}-${course.endPeriod}节"
+                )
+                CourseInfoRow(
+                    icon = Icons.Default.Place,
+                    label = "教室",
+                    value = course.location.ifEmpty { "未指定" }
+                )
+                CourseInfoRow(
+                    icon = Icons.Default.Person,
+                    label = "教师",
+                    value = course.teacher.ifEmpty { "未指定" }
+                )
             }
         }
     }

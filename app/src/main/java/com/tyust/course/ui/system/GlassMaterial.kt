@@ -109,15 +109,15 @@ object GlassMaterials {
     )
 
     private val modal = GlassMaterialSpec(
-        blurDp = 12f,
-        refractionHeightDp = 6f,
-        refractionAmountDp = 8f,
-        surfaceAlpha = 0.78f,
-        borderAlpha = 0.22f,
-        shadowAlpha = 0.18f,
+        blurDp = 6f,
+        refractionHeightDp = 10f,
+        refractionAmountDp = 14f,
+        surfaceAlpha = 0.62f,
+        borderAlpha = 0.30f,
+        shadowAlpha = 0.24f,
         optics = GlassOpticsSpec(
-            specularAlpha = 0.10f,
-            innerGlowAlpha = 0.06f
+            specularAlpha = 0.18f,
+            innerGlowAlpha = 0.10f
         )
     )
 
@@ -238,19 +238,10 @@ object GlassRecipe {
     val SegTrackBlurDp = control.blurDp
     val SegTrackSurfaceAlpha = 0.34f
     val SegTrackBorderAlpha = 0.16f
-    val SegIndicatorBlurDp = control.blurDp
-    val SegIndicatorRefractionHeightDp = control.refractionHeightDp
-    val SegIndicatorRefractionAmountDp = control.refractionAmountDp
-    val SegIndicatorSurfaceAlpha = 0.24f
-    val SegIndicatorBorderAlpha = 0.24f
-    val SegIndicatorShadowAlpha = control.shadowAlpha
-    val SegIndicatorPressedShadowAlpha = interactive.shadowAlpha
-    // 底栏选中胶囊按压尺度：cba2a09 的 78/56 大按压，
-    // 放大后溢出轨道，配合果冻弹簧形成"弹起-缩回-再弹起"的衰减回弹。
     val SelectionIndicatorPressedScale = 78f / 56f
-    // segmented 滑块横向更宽，按压放大更克制；果冻感来自低阻尼弹簧振荡。
-    val SegIndicatorPressedScale = 1.12f
-    val SegIndicatorMaxVelocityStretch = 0.12f
+    // 分段滑块只做轻微按压反馈，位移由接近临界阻尼的弹簧负责。
+    val SegIndicatorPressedScale = 1.035f
+    val SegIndicatorMaxVelocityStretch = 0.06f
 
     // Apple 风清晰实心选中胶囊：不依赖折射，底栏与 segmented 共用。
     // 无真 lens（API 32）时用较高不透明度形成清晰白/浅胶囊；真 lens 时调用侧降低以露出折射。
@@ -288,8 +279,8 @@ object GlassRecipe {
     val ActionBorderAlpha = control.borderAlpha
     val ActionShadowAlpha = control.shadowAlpha
     val ActionPressedScale = 0.98f
-    // 0.72→0.85：降低壁纸灰底对 tint 的去饱和影响
-    val ActionTintAlpha = 0.85f
+    // 中性采样源不会稀释色相，保留约三成透射用于展示折射和按压高光。
+    val ActionTintAlpha = 0.72f
     // 0.28→0.88：禁用态接近实色浅灰，与可用态干净区分，避免"半透明糊灰"
     val ActionDisabledSurfaceAlpha = 0.88f
 

@@ -86,7 +86,7 @@ enum class LiquidButtonStyle {
 @Composable
 fun LiquidButton(
     onClick: () -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isInteractive: Boolean = true,
@@ -101,6 +101,7 @@ fun LiquidButton(
 ) {
     val isSolid = style == LiquidButtonStyle.SolidSurface || style == LiquidButtonStyle.SolidTinted
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() && !isSolid }
+    val isLightTheme = !isSystemInDarkTheme()
     val activeTint = if (tint.isSpecified) tint else MaterialTheme.colorScheme.primary
     val activeContentColor = when {
         contentColor.isSpecified -> contentColor
@@ -193,6 +194,13 @@ fun LiquidButton(
                         chromaticFringe(params.fringePx)
                     }
                 },
+                highlight = {
+                    Highlight.Default.copy(
+                        width = Highlight.Default.width / 1.25f,
+                        blurRadius = Highlight.Default.blurRadius / 1.4f,
+                        alpha = if (enabled) 0.18f + interactiveHighlight.pressProgress * 0.18f else 0.08f
+                    )
+                },
                 shadow = {
                     Shadow(
                         alpha = if (enabled) {
@@ -210,10 +218,24 @@ fun LiquidButton(
                             activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
                         )
                         style == LiquidButtonStyle.Surface -> drawRect(
-                            // 0.10 时按钮几乎融进背景;0.30 呈现清晰的 iOS gray-fill 玻璃
-                            Color.White.copy(alpha = 0.30f)
+                            if (isLightTheme) {
+                                Color.White.copy(alpha = 0.36f)
+                            } else {
+                                Color.White.copy(alpha = 0.12f)
+                            }
                         )
                         else -> Unit
+                    }
+                    if (enabled) {
+                        drawRect(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (isLightTheme) 0.16f else 0.10f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = if (isLightTheme) 0.04f else 0.10f)
+                                )
+                            )
+                        )
                     }
                 }
             )
@@ -228,7 +250,6 @@ fun LiquidButton(
             )
         contentRow(glassModifier)
     } else {
-        val isLightTheme = !isSystemInDarkTheme()
         val fallbackColor = when {
             !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
             style == LiquidButtonStyle.SolidTinted -> activeTint
@@ -263,7 +284,7 @@ fun LiquidSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    backdrop: Backdrop? = LocalAppBackdrop.current,
+    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
     checkedColor: Color = Color.Unspecified
 ) {
     val isLightTheme = !isSystemInDarkTheme()
@@ -331,8 +352,7 @@ fun LiquidSwitch(
         }
     }
 
-    // 页面内组件不得使用隐藏 layerBackdrop + combined 采样（多父引用会错位残影），
-    // thumb 直接采样壁纸层，轨道色由 thumb 表面色兜底。
+    // 中性采样源只携带控件所需的灰阶光学信息，轨道色由 thumb 表面色兜底。
     val thumbBackdrop = glassBackdrop
 
     Box(

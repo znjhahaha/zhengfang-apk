@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -63,6 +64,12 @@ fun DialogHost(
 ) {
     val dialogContent = state.currentDialog
     val accessibility = rememberGlassAccessibilityMode()
+    val isLightTheme = !isSystemInDarkTheme()
+    val scrimColor = if (isLightTheme) {
+        Color(0xFF5F636B).copy(alpha = 0.34f)
+    } else {
+        Color.Black.copy(alpha = 0.52f)
+    }
     val exitDurationMillis = if (accessibility.reduceMotion) 0L else EXIT_ANIM_DURATION_MS
 
     LaunchedEffect(state.isVisible, exitDurationMillis) {
@@ -95,7 +102,7 @@ fun DialogHost(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.18f))
+                    .background(scrimColor)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

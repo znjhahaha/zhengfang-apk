@@ -33,6 +33,7 @@ import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDestructiveButton
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.neumorphicShadow
 
@@ -137,80 +138,40 @@ fun SelectedCourseItem(
 ) {
     var showDropConfirmDialog by remember { mutableStateOf(false) }
     
-    // 定制滑入动效的退课确认对话框
     if (showDropConfirmDialog) {
-        var animateTrigger by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { animateTrigger = true }
-
-        fun dismiss() {
-            animateTrigger = false
-        }
-
-        if (!animateTrigger) {
-            LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(300)
-                showDropConfirmDialog = false
+        SystemDialog(
+            onDismissRequest = { showDropConfirmDialog = false },
+            title = {
+                Text(
+                    text = "确认退课",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = SemanticDanger
+                )
+            },
+            dismissButton = {
+                SystemSecondaryButton(
+                    text = "取消",
+                    onClick = { showDropConfirmDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                SystemDestructiveButton(
+                    text = "确认退课",
+                    onClick = {
+                        showDropConfirmDialog = false
+                        onDrop()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        }
-
-        Dialog(onDismissRequest = { dismiss() }) {
-            AnimatedVisibility(
-                visible = animateTrigger,
-                enter = slideInVertically(
-                    initialOffsetY = { it / 3 },
-                    animationSpec = tween(MotionDuration.DialogEnter, easing = MotionEasing.FastOutSlowIn)
-                ) + fadeIn(animationSpec = tween(MotionDuration.Medium)),
-                exit = slideOutVertically(
-                    targetOffsetY = { it / 3 },
-                    animationSpec = tween(MotionDuration.Medium, easing = MotionEasing.Accelerate)
-                ) + fadeOut(animationSpec = tween(MotionDuration.Medium))
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "确认退课",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = SemanticDanger
-                        )
-                        
-                        Text(
-                            text = "确定要退选「${course.name ?: "未知课程"}」吗？\n\n退课后可能无法再次选上此课程。",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            SystemSecondaryButton(
-                                text = "取消",
-                                onClick = { dismiss() },
-                                modifier = Modifier.weight(1f)
-                            )
-                            SystemDestructiveButton(
-                                text = "确认退课",
-                                onClick = {
-                                    dismiss()
-                                    onDrop()
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
+        ) {
+            Text(
+                text = "确定要退选「${course.name ?: "未知课程"}」吗？\n\n退课后可能无法再次选上此课程。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
     

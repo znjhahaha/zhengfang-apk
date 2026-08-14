@@ -88,6 +88,9 @@ import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.drawWallpaperPattern
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalDialogHost
+import com.tyust.course.ui.system.LocalPageInlineNotice
+import com.tyust.course.ui.system.NeutralGlassBackdropProvider
+import com.tyust.course.ui.system.PageInlineNotice
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.isBackdropSupported
@@ -292,10 +295,24 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        val bgColor = MaterialTheme.colorScheme.background
         val useGlass = isBackdropSupported()
+        val tokenExpiredNotice = if (isTokenExpired) {
+            PageInlineNotice(
+                message = "登录已过期，点击重新登录",
+                onClick = {
+                    val intent = Intent(fragmentActivity, LoginActivity::class.java)
+                    intent.putExtra("force_relogin", true)
+                    fragmentActivity.startActivity(intent)
+                }
+            )
+        } else {
+            null
+        }
 
-        // 页内玻璃只采样独立壁纸层，不能采样包含自身的页面内容层。
+        NeutralGlassBackdropProvider(
+            modifier = Modifier.fillMaxSize(),
+            enabled = useGlass
+        ) {
         val wallpaperBackdrop = if (useGlass) {
             rememberLayerBackdrop()
         } else {
@@ -313,7 +330,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         CompositionLocalProvider(
             LocalAppBackdrop provides wallpaperBackdrop,
             LocalAppOverlayBottomInset provides 96.dp,
-            LocalDialogHost provides dialogHostState
+            LocalDialogHost provides dialogHostState,
+            LocalPageInlineNotice provides tokenExpiredNotice
         ) {
             Box(
                 modifier = Modifier.fillMaxSize().then(
@@ -441,32 +459,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             AppBuildWatermarks(fragmentActivity = fragmentActivity)
             } // 关闭 navBarBackdrop 捕获层
 
-            // 登录过期横幅：悬浮 overlay，不推挤页面内容（顶栏只计一次状态栏高度）
-            AnimatedVisibility(
-                visible = isTokenExpired,
-                enter = fadeIn() + slideInVertically { -it / 2 },
-                exit = fadeOut() + slideOutVertically { -it / 2 },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    TokenExpiredBanner(
-                        backdrop = wallpaperBackdrop,
-                        onClick = {
-                            val intent = Intent(fragmentActivity, LoginActivity::class.java)
-                            intent.putExtra("force_relogin", true)
-                            fragmentActivity.startActivity(intent)
-                        }
-                    )
-                }
-            }
-
             // 底栏位于捕获层外，避免采样源包含底栏自身。
             CapsuleNavigationBar(
                 items = items,
@@ -554,76 +546,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         }
     }
 }
-
-@Composable
-private fun TokenExpiredBanner(
-    backdrop: com.kyant.backdrop.Backdrop?,
-    onClick: () -> Unit
-) {
-    val useGlass = backdrop != null && isBackdropSupported()
-    val capsuleShape = RoundedCornerShape(percent = 50)
-    val isLight = !androidx.compose.foundation.isSystemInDarkTheme()
-    val accent = MaterialTheme.colorScheme.primary
-
-    val content: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "登录已过期，点击重新登录",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-
-    if (useGlass && backdrop != null) {
-        Box(
-            modifier = Modifier
-                .clip(capsuleShape)
-                .clickable(onClick = onClick)
-                .com_tyust_tokenBannerGlass(backdrop, capsuleShape, isLight)
-        ) { content() }
-    } else {
-        Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = capsuleShape,
-            shadowElevation = 6.dp,
-            modifier = Modifier.clickable(onClick = onClick)
-        ) { content() }
-    }
 }
-
-private fun Modifier.com_tyust_tokenBannerGlass(
-    backdrop: com.kyant.backdrop.Backdrop,
-    shape: androidx.compose.foundation.shape.RoundedCornerShape,
-    isLight: Boolean
-): Modifier = this.drawBackdrop(
-    backdrop = backdrop,
-    shape = { shape },
-    effects = {
-        vibrancy()
-        blur(8.dp.toPx())
-    },
-    shadow = { Shadow(alpha = 0.18f) },
-    onDrawSurface = {
-        drawRect(
-            if (isLight) Color.White.copy(alpha = 0.55f)
-            else Color.Black.copy(alpha = 0.40f)
-        )
-    }
-)
 
 @Composable
 private fun BoxScope.AppBuildWatermarks(

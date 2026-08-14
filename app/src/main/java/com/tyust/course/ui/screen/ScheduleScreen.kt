@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.GlassLoadingState
+import com.tyust.course.ui.system.PageInlineNoticeHost
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemCompactSegmentedControl
@@ -157,6 +158,7 @@ fun ScheduleScreen(
                 isNextSemester = isNextSemester,
                 onToggleSemester = onToggleSemester
             )
+            PageInlineNoticeHost()
         }
     ) { paddingValues ->
         when {
