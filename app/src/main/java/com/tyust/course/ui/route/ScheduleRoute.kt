@@ -46,6 +46,7 @@ import com.tyust.course.ui.screen.PeriodTimeUi
 import com.tyust.course.ui.screen.ScheduleCourseUi
 import com.tyust.course.ui.screen.ScheduleScreen
 import com.tyust.course.ui.screen.ScheduleSettingsScreen
+import com.tyust.course.ui.system.DisablePlatformDialogDim
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.theme.MotionDuration
@@ -312,6 +313,7 @@ fun ScheduleRoute() {
             onDismissRequest = { dismiss() },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
+            DisablePlatformDialogDim()
             AnimatedVisibility(
                 visible = animateTrigger,
                 enter = slideInVertically(

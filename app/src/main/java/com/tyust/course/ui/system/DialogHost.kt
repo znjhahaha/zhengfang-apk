@@ -7,10 +7,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -22,7 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.delay
 
 private const val EXIT_ANIM_DURATION_MS = 150L
@@ -64,12 +61,6 @@ fun DialogHost(
 ) {
     val dialogContent = state.currentDialog
     val accessibility = rememberGlassAccessibilityMode()
-    val isLightTheme = !isSystemInDarkTheme()
-    val scrimColor = if (isLightTheme) {
-        Color(0xFF5F636B).copy(alpha = 0.34f)
-    } else {
-        Color.Black.copy(alpha = 0.52f)
-    }
     val exitDurationMillis = if (accessibility.reduceMotion) 0L else EXIT_ANIM_DURATION_MS
 
     LaunchedEffect(state.isVisible, exitDurationMillis) {
@@ -91,30 +82,28 @@ fun DialogHost(
             scaleOut(targetScale = 0.92f, animationSpec = tween(150))
     }
 
-    AnimatedVisibility(
-        visible = state.isVisible && dialogContent != null,
-        enter = enterTransition,
-        exit = exitTransition,
-        modifier = modifier
-    ) {
-        if (dialogContent != null) {
-            BackHandler { state.dismiss() }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(scrimColor)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { state.dismiss() }
-                    ),
-                contentAlignment = Alignment.Center
+    if (dialogContent != null) {
+        BackHandler { state.dismiss() }
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { state.dismiss() }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedVisibility(
+                visible = state.isVisible,
+                enter = enterTransition,
+                exit = exitTransition
             ) {
                 Box(
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = {} // consume click to prevent dismiss
+                        onClick = {}
                     )
                 ) {
                     dialogContent()

@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.theme.CourseSelectorTheme
 
 class CookieWebViewActivity : ComponentActivity() {
@@ -351,8 +354,10 @@ fun CookieWebViewScreen(
 
     // Tutorial Dialog
     if (showTutorial) {
-        AlertDialog(
+        SystemDialog(
             onDismissRequest = { showTutorial = false },
+            backdrop = null,
+            useVisualEffects = false,
             icon = {
                 Icon(
                     Icons.Default.School,
@@ -367,56 +372,54 @@ fun CookieWebViewScreen(
                     fontWeight = FontWeight.Bold
                 )
             },
-            text = {
-                Column {
-                    TutorialStep(1, "搜索你的学校教务系统")
-                    TutorialStep(2, "点击搜索结果进入教务网站")
-                    TutorialStep(3, "输入学号和密码登录")
-                    TutorialStep(4, "登录成功后，点击下方「获取 Cookie」按钮")
-                    TutorialStep(5, "Cookie 将自动填充到登录框")
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Lightbulb,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "确保登录成功后再获取 Cookie",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            },
             confirmButton = {
-                Button(
+                SystemPrimaryButton(
+                    text = "我知道了",
                     onClick = { showTutorial = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        ) {
+            TutorialStep(1, "搜索你的学校教务系统")
+            TutorialStep(2, "点击搜索结果进入教务网站")
+            TutorialStep(3, "输入学号和密码登录")
+            TutorialStep(4, "登录成功后，点击下方「获取 Cookie」按钮")
+            TutorialStep(5, "Cookie 将自动填充到登录框")
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("我知道了")
+                    Icon(
+                        Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "确保登录成功后再获取 Cookie",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
-        )
+        }
     }
 
     // Cookie Result Dialog
     if (showCookieDialog) {
-        AlertDialog(
+        SystemDialog(
             onDismissRequest = { showCookieDialog = false },
+            backdrop = null,
+            useVisualEffects = false,
             icon = {
                 Icon(
                     Icons.Default.CheckCircle,
@@ -431,57 +434,55 @@ fun CookieWebViewScreen(
                     fontWeight = FontWeight.Bold
                 )
             },
-            text = {
-                Column {
-                    Text(
-                        text = "已获取到以下 Cookie：",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 150.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = extractedCookie,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(12.dp),
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text(
-                        text = "点击「使用此 Cookie」将自动填充并返回登录界面",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
             confirmButton = {
-                Button(
+                SystemPrimaryButton(
+                    text = "使用此 Cookie",
                     onClick = {
                         showCookieDialog = false
                         onCookieExtracted(extractedCookie)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text("使用此 Cookie")
-                }
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             dismissButton = {
-                TextButton(onClick = { showCookieDialog = false }) {
-                    Text("继续浏览")
-                }
+                SystemSecondaryButton(
+                    text = "继续浏览",
+                    onClick = { showCookieDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        )
+        ) {
+            Text(
+                text = "已获取到以下 Cookie：",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 150.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = extractedCookie,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(12.dp),
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "点击「使用此 Cookie」将自动填充并返回登录界面",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

@@ -58,17 +58,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
 import com.tyust.course.ui.system.glass.chromaticFringe
-import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.flow.collectLatest
@@ -125,23 +129,9 @@ fun LiquidButton(
         accessibility = accessibility,
         interactionProgress = if (isPressed) 1f else 0f
     )
-    val buttonScale by animateFloatAsState(
-        targetValue = if (enabled && isPressed && !accessibility.reduceMotion) {
-            GlassRecipe.ActionPressedScale
-        } else {
-            1f
-        },
-        animationSpec = MotionSpring.liquidTap(),
-        label = "liquidButtonScale"
-    )
-
     val contentRow: @Composable (Modifier) -> Unit = { baseModifier ->
         Row(
             baseModifier
-                .graphicsLayer {
-                    scaleX = buttonScale
-                    scaleY = buttonScale
-                }
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -211,6 +201,28 @@ fun LiquidButton(
                         }
                     )
                 },
+                layerBlock = {
+                    if (enabled && isInteractive && !accessibility.reduceMotion) {
+                        val progress = interactiveHighlight.pressProgress
+                        val baseScale = lerp(1f, GlassRecipe.ActionPressedScale, progress)
+                        val pointer = interactiveHighlight.pointerPosition
+                        val normalizedX = if (pointer.x.isFinite() && size.width > 0f) {
+                            (pointer.x / size.width * 2f - 1f).coerceIn(-1f, 1f)
+                        } else {
+                            0f
+                        }
+                        val normalizedY = if (pointer.y.isFinite() && size.height > 0f) {
+                            (pointer.y / size.height * 2f - 1f).coerceIn(-1f, 1f)
+                        } else {
+                            0f
+                        }
+                        val stretch = 2.dp.toPx() / size.minDimension.coerceAtLeast(1f)
+                        scaleX = baseScale + kotlin.math.abs(normalizedX) * stretch * progress
+                        scaleY = baseScale + kotlin.math.abs(normalizedY) * stretch * progress
+                        translationX = normalizedX * 1.5.dp.toPx() * progress
+                        translationY = normalizedY * 1.5.dp.toPx() * progress
+                    }
+                },
                 onDrawSurface = {
                     when {
                         !enabled -> drawRect(disabledSurfaceColor)
@@ -225,17 +237,6 @@ fun LiquidButton(
                             }
                         )
                         else -> Unit
-                    }
-                    if (enabled) {
-                        drawRect(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (isLightTheme) 0.16f else 0.10f),
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = if (isLightTheme) 0.04f else 0.10f)
-                                )
-                            )
-                        )
                     }
                 }
             )
@@ -352,8 +353,20 @@ fun LiquidSwitch(
         }
     }
 
-    // 中性采样源只携带控件所需的灰阶光学信息，轨道色由 thumb 表面色兜底。
-    val thumbBackdrop = glassBackdrop
+    val trackBackdrop = rememberLayerBackdrop()
+    val scaledTrackBackdrop = rememberBackdrop(trackBackdrop) { drawTrackBackdrop ->
+        val progress = dragAnimation.pressProgress
+        val scaleX = lerp(2f / 3f, 0.75f, progress)
+        val scaleY = lerp(0f, 0.75f, progress)
+        scale(scaleX, scaleY) {
+            drawTrackBackdrop()
+        }
+    }
+    val thumbBackdrop = if (glassBackdrop != null) {
+        rememberCombinedBackdrop(glassBackdrop, scaledTrackBackdrop)
+    } else {
+        null
+    }
 
     Box(
         modifier = modifier
@@ -378,6 +391,7 @@ fun LiquidSwitch(
     ) {
         Box(
             modifier = Modifier
+                .layerBackdrop(trackBackdrop)
                 .clip(Capsule())
                 .drawBehind {
                     drawRect(
@@ -410,36 +424,12 @@ fun LiquidSwitch(
                         shape = { Capsule() },
                         effects = {
                             val progress = dragAnimation.pressProgress
-                            val material = GlassMaterials.resolve(
-                                role = GlassMaterialRole.Interactive,
-                                accessibility = accessibility,
-                                interactionProgress = progress
+                            blur(8.dp.toPx() * (1f - progress))
+                            lens(
+                                refractionHeight = 5.dp.toPx() * progress,
+                                refractionAmount = 10.dp.toPx() * progress,
+                                chromaticAberration = true
                             )
-                            val motion = motionIntensityFromVelocity(
-                                velocityX = dragAnimation.velocity * dragWidth,
-                                fullEffectVelocity = material.optics.velocityForFullEffect
-                            )
-                            val params = resolvePhysicalLens(
-                                density = this,
-                                material = material,
-                                shape = Capsule(),
-                                minCornerRadiusPx = size.minDimension / 2f,
-                                minDimensionPx = size.minDimension,
-                                interactionProgress = progress,
-                                motionIntensity = motion,
-                                // 静止时保留轻 blur，按压后转物理透镜
-                                enableBlur = true,
-                                allowChromaticAberration = true
-                            )
-                            vibrancy()
-                            if (params.blurPx > 0f) blur(params.blurPx)
-                            if (params.useLens) {
-                                lens(
-                                    refractionHeight = params.refractionHeightPx,
-                                    refractionAmount = params.refractionAmountPx,
-                                    chromaticAberration = params.chromaticAberration
-                                )
-                            }
                         },
                         highlight = {
                             val progress = dragAnimation.pressProgress
@@ -453,6 +443,13 @@ fun LiquidSwitch(
                             Shadow(
                                 radius = 4.dp,
                                 color = Color.Black.copy(alpha = 0.05f)
+                            )
+                        },
+                        innerShadow = {
+                            val progress = dragAnimation.pressProgress
+                            InnerShadow(
+                                radius = 4.dp * progress,
+                                alpha = progress
                             )
                         },
                         layerBlock = {
@@ -471,17 +468,7 @@ fun LiquidSwitch(
                         },
                         onDrawSurface = {
                             val progress = dragAnimation.pressProgress
-                            val material = GlassMaterials.resolve(
-                                role = GlassMaterialRole.Interactive,
-                                accessibility = accessibility,
-                                interactionProgress = progress
-                            )
-                            // 静止也保持可透视，不再用 0.94 白块盖住折射
-                            drawRect(
-                                Color.White.copy(
-                                    alpha = lerp(0.34f, material.surfaceAlpha, progress)
-                                )
-                            )
+                            drawRect(Color.White.copy(alpha = 1f - progress))
                         }
                     )
                     .size(40.dp, 24.dp)

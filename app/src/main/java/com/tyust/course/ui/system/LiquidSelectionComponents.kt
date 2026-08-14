@@ -55,7 +55,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -103,7 +102,6 @@ import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.ui.theme.MotionSpring
-import com.tyust.course.ui.theme.NeuPrimary
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -362,8 +360,7 @@ fun LiquidSegmentedControl(
                     )
                     .height(indicatorHeight)
                     .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(NeuPrimary)),
+                    .padding(horizontal = horizontalPadding),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 options.forEach { label ->

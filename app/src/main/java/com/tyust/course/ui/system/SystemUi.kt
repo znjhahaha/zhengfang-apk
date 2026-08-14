@@ -1,6 +1,7 @@
 package com.tyust.course.ui.system
 
 import android.graphics.BlurMaskFilter
+import android.view.WindowManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
@@ -47,6 +48,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -75,11 +77,13 @@ import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogWindowProvider
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
@@ -88,6 +92,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
@@ -977,11 +982,16 @@ fun SystemDivider(
     )
 }
 
-/**
- * 标记当前组合处于玻璃容器（弹窗等）之上。
- * System*Button 读取后自动切换为实色填充，避免玻璃叠玻璃发糊。
- */
-val LocalInsideGlassSurface = androidx.compose.runtime.staticCompositionLocalOf { false }
+@Composable
+fun DisablePlatformDialogDim() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window?.setDimAmount(0f)
+        onDispose { }
+    }
+}
 
 /**
  * 物理流体玻璃对话框 — 通过 DialogHost portal 在同窗口内渲染，
@@ -1019,6 +1029,7 @@ fun SystemDialog(
         }
     } else {
         Dialog(onDismissRequest = onDismissRequest) {
+            DisablePlatformDialogDim()
             dialogBody()
         }
     }
@@ -1053,71 +1064,75 @@ private fun SystemDialogContent(
     )
     val dialogShadowColor = Color.Black.copy(alpha = dialogMaterial.shadowAlpha)
 
-    val fallbackModifier = Modifier
-        .width(320.dp)
-        .shadow(
-            elevation = GlassRecipe.DialogShadowElevationDp.dp,
-            shape = dialogShape,
-            clip = false,
-            ambientColor = dialogShadowColor,
-            spotColor = dialogShadowColor
-        )
-        .clip(dialogShape)
-        .background(if (isLightTheme) Color(0xFFE0E2E6) else Color(0xFF25272B))
-        .border(0.75.dp, dialogBorderColor, dialogShape)
-        .padding(24.dp)
-    val modifier = if (glassBackdrop != null) {
-        Modifier
-            .width(320.dp)
-            .drawBackdrop(
-                backdrop = glassBackdrop,
-                shape = { dialogShape },
-                effects = {
-                    val params = resolvePhysicalLens(
-                        density = this,
-                        material = dialogMaterial,
-                        shape = dialogShape,
-                        minCornerRadiusPx = dialogCorner.toPx(),
-                        minDimensionPx = size.minDimension,
-                        interactionProgress = 0f,
-                        enableBlur = true,
-                        allowChromaticAberration = false
-                    )
-                    vibrancy()
-                    if (params.blurPx > 0f) blur(params.blurPx)
-                    if (params.useLens) {
-                        lens(
-                            refractionHeight = params.refractionHeightPx,
-                            refractionAmount = params.refractionAmountPx,
-                            chromaticAberration = params.chromaticAberration
-                        )
-                    }
-                },
-                shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
-                onDrawSurface = {
-                    drawRect(dialogSurfaceColor)
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = if (isLightTheme) 0.24f else 0.08f),
-                                Color.Transparent,
-                                Color.Black.copy(alpha = if (isLightTheme) 0.05f else 0.12f)
-                            )
-                        )
-                    )
-                }
-            )
-            .border(0.75.dp, dialogBorderColor, dialogShape)
-            .padding(24.dp)
+    val dialogLayerBackdrop = rememberLayerBackdrop()
+    val nestedControlBackdrop = if (glassBackdrop != null) {
+        rememberCombinedBackdrop(glassBackdrop, dialogLayerBackdrop)
     } else {
-        fallbackModifier
+        null
     }
 
-    CompositionLocalProvider(LocalInsideGlassSurface provides true) {
-        Column(
-            modifier = modifier,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+    Box(modifier = Modifier.width(320.dp)) {
+        if (glassBackdrop != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .layerBackdrop(dialogLayerBackdrop)
+                    .drawBackdrop(
+                        backdrop = glassBackdrop,
+                        shape = { dialogShape },
+                        effects = {
+                            val params = resolvePhysicalLens(
+                                density = this,
+                                material = dialogMaterial,
+                                shape = dialogShape,
+                                minCornerRadiusPx = dialogCorner.toPx(),
+                                minDimensionPx = size.minDimension,
+                                interactionProgress = 0f,
+                                enableBlur = true,
+                                allowChromaticAberration = false
+                            )
+                            vibrancy()
+                            if (params.blurPx > 0f) blur(params.blurPx)
+                            if (params.useLens) {
+                                lens(
+                                    refractionHeight = params.refractionHeightPx,
+                                    refractionAmount = params.refractionAmountPx,
+                                    chromaticAberration = params.chromaticAberration
+                                )
+                            }
+                        },
+                        highlight = {
+                            Highlight.Default.copy(
+                                alpha = if (isLightTheme) 0.20f else 0.12f
+                            )
+                        },
+                        shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
+                        onDrawSurface = { drawRect(dialogSurfaceColor) }
+                    )
+                    .border(0.75.dp, dialogBorderColor, dialogShape)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .shadow(
+                        elevation = GlassRecipe.DialogShadowElevationDp.dp,
+                        shape = dialogShape,
+                        clip = false,
+                        ambientColor = dialogShadowColor,
+                        spotColor = dialogShadowColor
+                    )
+                    .clip(dialogShape)
+                    .background(if (isLightTheme) Color(0xFFE0E2E6) else Color(0xFF25272B))
+                    .border(0.75.dp, dialogBorderColor, dialogShape)
+            )
+        }
+
+        CompositionLocalProvider(LocalNeutralGlassBackdrop provides nestedControlBackdrop) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             if (icon != null) {
                 icon()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1166,6 +1181,7 @@ private fun SystemDialogContent(
             }
         }
     }
+}
 }
 
 /**
