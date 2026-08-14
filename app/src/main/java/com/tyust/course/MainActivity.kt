@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -64,7 +65,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +83,9 @@ import com.tyust.course.ui.screen.OnboardingScreen
 import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
 import com.tyust.course.ui.system.CapsuleNavigationBar
 import com.tyust.course.ui.system.DialogHost
+import com.tyust.course.ui.system.GlassToastHost
 import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.drawWallpaperPattern
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalDialogHost
 import com.tyust.course.ui.system.PagePadding
@@ -326,7 +328,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         .fillMaxSize()
                         .layerBackdrop(wallpaperBackdrop)
                 ) {
-                    drawWallpaperPattern(this, wallpaperPreset)
+                    drawWallpaperPattern(wallpaperPreset)
                 }
             } else {
                 Box(
@@ -337,32 +339,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
 
             Column(modifier = Modifier.fillMaxSize()) {
-                    AnimatedVisibility(
-                        visible = isTokenExpired,
-                        enter = fadeIn() + slideInVertically { -it / 2 },
-                        exit = fadeOut() + slideOutVertically { -it / 2 },
-                        // 规避刘海屏和系统状态栏遮挡；居中悬浮玻璃气泡
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            TokenExpiredBanner(
-                                backdrop = wallpaperBackdrop,
-                                onClick = {
-                                    val intent = Intent(fragmentActivity, LoginActivity::class.java)
-                                    intent.putExtra("force_relogin", true)
-                                    fragmentActivity.startActivity(intent)
-                                }
-                            )
-                        }
-                    }
-
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -400,31 +376,38 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                     } else {
                                         -1
                                     }
+                                    // 轻位移 + 微缩放 + 交叉淡化：弱化横移的生硬感
                                     (
                                         slideInHorizontally(
                                             animationSpec = tween(
-                                                durationMillis = 290,
+                                                durationMillis = 260,
                                                 easing = MotionEasing.FastOutSlowIn
                                             )
                                         ) { fullWidth ->
-                                            direction * (fullWidth * 0.16f).roundToInt()
-                                        } + fadeIn(
+                                            direction * (fullWidth * 0.08f).roundToInt()
+                                        } + scaleIn(
+                                            initialScale = 0.985f,
                                             animationSpec = tween(
-                                                durationMillis = 240,
+                                                durationMillis = 260,
+                                                easing = MotionEasing.FastOutSlowIn
+                                            )
+                                        ) + fadeIn(
+                                            animationSpec = tween(
+                                                durationMillis = 220,
                                                 easing = MotionEasing.FastOutSlowIn
                                             )
                                         )
                                     ).togetherWith(
                                         slideOutHorizontally(
                                             animationSpec = tween(
-                                                durationMillis = 220,
+                                                durationMillis = 200,
                                                 easing = MotionEasing.Accelerate
                                             )
                                         ) { fullWidth ->
-                                            -direction * (fullWidth * 0.10f).roundToInt()
+                                            -direction * (fullWidth * 0.05f).roundToInt()
                                         } + fadeOut(
                                             animationSpec = tween(
-                                                durationMillis = 180,
+                                                durationMillis = 150,
                                                 easing = MotionEasing.Accelerate
                                             )
                                         )
@@ -458,6 +441,32 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             AppBuildWatermarks(fragmentActivity = fragmentActivity)
             } // 关闭 navBarBackdrop 捕获层
 
+            // 登录过期横幅：悬浮 overlay，不推挤页面内容（顶栏只计一次状态栏高度）
+            AnimatedVisibility(
+                visible = isTokenExpired,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically { -it / 2 },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TokenExpiredBanner(
+                        backdrop = wallpaperBackdrop,
+                        onClick = {
+                            val intent = Intent(fragmentActivity, LoginActivity::class.java)
+                            intent.putExtra("force_relogin", true)
+                            fragmentActivity.startActivity(intent)
+                        }
+                    )
+                }
+            }
+
             // 底栏位于捕获层外，避免采样源包含底栏自身。
             CapsuleNavigationBar(
                 items = items,
@@ -467,6 +476,13 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 onExpandRequest = { navBarMinimized = false },
                 backdrop = navBarBackdrop,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+
+            // 全局玻璃 Toast：悬浮在底栏上方
+            GlassToastHost(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 108.dp)
             )
 
             DialogHost(
@@ -658,34 +674,3 @@ private fun BoxScope.AppBuildWatermarks(
     }
 }
 
-private fun drawWallpaperPattern(scope: DrawScope, preset: WallpaperPreset) {
-    val w = scope.size.width
-    val h = scope.size.height
-
-    // 底色 + 左上高光 + 右下暗角，提升明暗对比，让 Backdrop 折射有可采样层次。
-    scope.drawRect(preset.baseColor)
-    scope.drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                preset.glowColor.copy(alpha = if (preset.isDark) 0.42f else 0.72f),
-                Color.Transparent
-            ),
-            center = Offset(w * 0.18f, h * 0.12f),
-            radius = w * 0.72f
-        ),
-        radius = w * 0.72f,
-        center = Offset(w * 0.18f, h * 0.12f)
-    )
-    scope.drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                preset.shadeColor.copy(alpha = if (preset.isDark) 0.30f else 0.12f),
-                Color.Transparent
-            ),
-            center = Offset(w * 0.78f, h * 0.88f),
-            radius = w * 0.64f
-        ),
-        radius = w * 0.64f,
-        center = Offset(w * 0.78f, h * 0.88f)
-    )
-}

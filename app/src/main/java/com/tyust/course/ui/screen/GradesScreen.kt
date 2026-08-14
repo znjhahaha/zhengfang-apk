@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tyust.course.ui.system.GlassSegmentedBar
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemEmptyState
@@ -367,48 +368,14 @@ private fun GradeDistributionCard(
             subtitle = "按已统计课程划分"
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(999.dp)
-                )
-        ) {
-            if (stats.excellent > 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(stats.excellent.toFloat())
-                        .fillMaxSize()
-                        .background(SemanticSuccess)
-                )
-            }
-            if (stats.good > 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(stats.good.toFloat())
-                        .fillMaxSize()
-                        .background(SemanticInfo)
-                )
-            }
-            if (stats.medium > 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(stats.medium.toFloat())
-                        .fillMaxSize()
-                        .background(SemanticWarning)
-                )
-            }
-            if (stats.pass > 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(stats.pass.toFloat())
-                        .fillMaxSize()
-                        .background(SemanticDanger)
-                )
-            }
-        }
+        GlassSegmentedBar(
+            segments = listOf(
+                stats.excellent.toFloat() to SemanticSuccess,
+                stats.good.toFloat() to SemanticInfo,
+                stats.medium.toFloat() to SemanticWarning,
+                stats.pass.toFloat() to SemanticDanger
+            )
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,6 +75,7 @@ import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -176,6 +178,7 @@ enum class SystemTone {
 fun SystemTopBar(
     title: String,
     subtitle: String? = null,
+    collapseFraction: Float = 0f,
     navigationIcon: @Composable (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     backdrop: Backdrop? = LocalAppBackdrop.current
@@ -183,116 +186,207 @@ fun SystemTopBar(
     val useGlass = backdrop != null && isBackdropSupported()
     val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
 
-    val barContent: @Composable () -> Unit = {
-        TopAppBar(
-            title = {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    // iOS 26 分离式头部：展开态大标题直接浮在内容上（无背景），
+    // 滚动折叠时标题缩小、浮出细玻璃条。折叠进度由滚动偏移连续驱动、
+    // 全程跟手；高刚度临界阻尼弹簧只负责抹平 LazyList 快滚时的跳变。
+    val collapse by animateFloatAsState(
+        targetValue = collapseFraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "headerCollapse"
+    )
+    val surfaceTint = if (isLightTheme) {
+        Color.White.copy(alpha = 0.62f)
+    } else {
+        Color.Black.copy(alpha = 0.46f)
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        val showShell = collapse > 0.01f
+        val shellModifier = when {
+            useGlass && backdrop != null && showShell -> Modifier.drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(0.dp) },
+                effects = {
+                    vibrancy()
+                    val radius = 10.dp.toPx() * collapse
+                    if (radius > 0.5f) blur(radius)
+                },
+                onDrawSurface = { drawRect(surfaceTint.copy(alpha = surfaceTint.alpha * collapse)) }
+            )
+            !useGlass && showShell -> Modifier.background(
+                MaterialTheme.colorScheme.surface.copy(alpha = collapse)
+            )
+            else -> Modifier
+        }
+        Box(modifier = Modifier.fillMaxWidth().then(shellModifier)) {
+            // 展开态：大标题背后铺一层自上而下的软渐变，
+            // 内容滚入标题区域时被渐隐吞没而不是直接撞字；随折叠淡出交棒给玻璃条。
+            if (collapse < 0.99f) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    surfaceTint.copy(alpha = surfaceTint.alpha * 0.85f * (1f - collapse)),
+                                    surfaceTint.copy(alpha = surfaceTint.alpha * 0.35f * (1f - collapse)),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(
+                        start = PagePadding,
+                        end = PagePadding,
+                        top = lerpDp(10.dp, 6.dp, collapse),
+                        bottom = lerpDp(10.dp, 8.dp, collapse)
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                navigationIcon?.invoke()
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        fontSize = lerpSp(28f, 17f, collapse),
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.5).sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
                     )
                     if (!subtitle.isNullOrBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        // 折叠时副标题高度收拢并渐隐
+                        Box(
+                            modifier = Modifier
+                                .height(lerpDp(22.dp, 0.dp, collapse))
+                                .graphicsLayer { alpha = (1f - collapse * 1.6f).coerceIn(0f, 1f) },
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            // 副标题前缀圆点指示器
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(NeuPrimary.copy(alpha = 0.65f))
-                            )
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(NeuPrimary.copy(alpha = 0.65f))
+                                )
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
-            },
-            navigationIcon = { navigationIcon?.invoke() },
-            actions = actions,
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        )
-    }
-
-    if (useGlass && backdrop != null) {
-        val accessibility = rememberGlassAccessibilityMode()
-        val barMaterial = GlassMaterials.resolve(
-            role = GlassMaterialRole.Navigation,
-            accessibility = accessibility
-        )
-        val surfaceTint = if (isLightTheme) {
-            Color.White.copy(alpha = 0.60f)
-        } else {
-            Color.Black.copy(alpha = 0.44f)
-        }
-        Column {
-            // 真玻璃顶栏：模糊采样壁纸/内容层，内容可从下方穿过
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { RoundedCornerShape(0.dp) },
-                        effects = {
-                            vibrancy()
-                            if (barMaterial.blurDp > 0f) blur(barMaterial.blurDp.dp.toPx())
-                        },
-                        onDrawSurface = { drawRect(surfaceTint) }
-                    )
-            ) {
-                barContent()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    content = actions
+                )
             }
-            // scroll edge effect：底缘软渐隐，内容滚入顶栏时平滑没入
+        }
+        // scroll edge effect：折叠后底缘软渐隐，内容滚入头部时平滑没入
+        if (useGlass && showShell) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(14.dp)
+                    .height(12.dp)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                surfaceTint.copy(alpha = surfaceTint.alpha * 0.55f),
+                                surfaceTint.copy(alpha = surfaceTint.alpha * 0.5f * collapse),
                                 Color.Transparent
                             )
                         )
                     )
             )
         }
+    }
+}
+
+private fun lerpDp(start: Dp, stop: Dp, fraction: Float): Dp =
+    start + (stop - start) * fraction
+
+private fun lerpSp(startSp: Float, stopSp: Float, fraction: Float) =
+    (startSp + (stopSp - startSp) * fraction).sp
+
+/** 分离式头部右上角的独立玻璃圆钮。 */
+@Composable
+fun GlassCircleButton(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    enabled: Boolean = true,
+    size: Dp = 40.dp,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    backdrop: Backdrop? = LocalAppBackdrop.current
+) {
+    val useGlass = backdrop != null && isBackdropSupported()
+    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.9f else 1f,
+        animationSpec = MotionSpring.liquidTap(),
+        label = "glassCircleScale"
+    )
+    val surfaceColor = if (isLightTheme) {
+        Color.White.copy(alpha = 0.55f)
     } else {
-        Column(
-            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-        ) {
-            barContent()
-            // 渐变分割线 + 底部柔和环境光
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                GlassBorderLight.copy(alpha = 0.40f),
-                                GlassBorderLight.copy(alpha = 0.40f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+        Color.Black.copy(alpha = 0.38f)
+    }
+    val shellModifier = if (useGlass && backdrop != null) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { CircleShape },
+            effects = {
+                vibrancy()
+                blur(8.dp.toPx())
+            },
+            onDrawSurface = { drawRect(surfaceColor) }
+        )
+    } else {
+        Modifier
+            .clip(CircleShape)
+            .background(
+                if (isLightTheme) Color.White.copy(alpha = 0.85f)
+                else Color(0xFF2C2C2E).copy(alpha = 0.85f)
             )
-        }
+    }
+    Box(
+        modifier = modifier
+            .size(size)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .then(shellModifier)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(size * 0.48f),
+            tint = if (enabled) tint else tint.copy(alpha = 0.38f)
+        )
     }
 }
 
@@ -314,7 +408,7 @@ fun SystemCard(
         label = "cardScale"
     )
 
-    val cardShape = RoundedCornerShape(20.dp)
+    val cardShape = RoundedCornerShape(24.dp)
 
     val baseModifier = modifier
         .fillMaxWidth()
@@ -330,15 +424,35 @@ fun SystemCard(
         baseModifier
     }
 
+    // 调用方普遍显式传 colorScheme.surface；把"默认白面"语义映射为半透玻璃面
+    // （纯 alpha 混合零采样开销，多彩壁纸自然透出），特殊色卡保持原色。
+    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val translucent = backgroundColor == MaterialTheme.colorScheme.surface
+    val effectiveColor = when {
+        !translucent -> backgroundColor
+        isLightTheme -> Color.White.copy(alpha = 0.62f)
+        else -> Color(0xFF1C1C1E).copy(alpha = 0.55f)
+    }
+    val effectiveBorder = if (translucent) {
+        Color.White.copy(alpha = if (isLightTheme) 0.55f else 0.12f)
+    } else {
+        borderColor.copy(alpha = 0.15f)
+    }
+
     Surface(
         modifier = clickableModifier,
         shape = cardShape,
-        color = backgroundColor,
+        color = effectiveColor,
         border = BorderStroke(
             width = 0.5.dp,
-            color = borderColor.copy(alpha = 0.15f)
+            color = effectiveBorder
         ),
-        shadowElevation = if (isPressed) 1.dp else 2.dp,
+        // 半透玻璃面必须关 elevation 阴影：RenderNode 阴影会透过半透表面显形为白蒙层
+        shadowElevation = when {
+            translucent -> 0.dp
+            isPressed -> 1.dp
+            else -> 2.dp
+        },
         tonalElevation = 0.dp
     ) {
         Column(
@@ -450,35 +564,17 @@ fun SystemStatStrip(
     modifier: Modifier = Modifier,
     items: List<Pair<String, String>>
 ) {
-    SystemCard(
-        modifier = modifier,
-        backgroundColor = NeuInsetBackground,
-        borderColor = NeuDivider,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+    // 玻璃数字胶囊横排：替代灰底凹陷统计条
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items.forEach { (label, value) ->
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = value,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+        items.forEach { (label, value) ->
+            GlassStatChip(
+                value = value,
+                label = label,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -597,12 +693,12 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val insideGlass = LocalInsideGlassSurface.current
+    // iOS filled button：主行动钮始终实色饱和填充，不做玻璃采样（采样灰底会去饱和发闷）
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = if (insideGlass) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.Tinted,
+        style = LiquidButtonStyle.SolidTinted,
         tint = NeuPrimary,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -630,7 +726,7 @@ fun SystemSecondaryButton(
         modifier = modifier.height(52.dp),
         enabled = enabled,
         style = if (insideGlass) LiquidButtonStyle.SolidSurface else LiquidButtonStyle.Surface,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
     ) {
@@ -651,12 +747,11 @@ fun SystemDestructiveButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val insideGlass = LocalInsideGlassSurface.current
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = if (insideGlass) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.Tinted,
+        style = LiquidButtonStyle.SolidTinted,
         tint = SemanticDanger,
         shape = RoundedCornerShape(16.dp),
         cornerRadius = 16.dp
@@ -677,6 +772,7 @@ fun SystemEmptyState(
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null
 ) {
+    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -684,6 +780,30 @@ fun SystemEmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // 玻璃圆底托一个占位圆点，让空态与液态层次一致
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isLightTheme) Color.White.copy(alpha = 0.50f)
+                    else Color.White.copy(alpha = 0.10f)
+                )
+                .border(
+                    0.5.dp,
+                    Color.White.copy(alpha = if (isLightTheme) 0.55f else 0.14f),
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -693,7 +813,8 @@ fun SystemEmptyState(
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f)
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
         if (action != null) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -707,23 +828,7 @@ fun SystemLoadingState(
     text: String = "加载中…",
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        androidx.compose.material3.CircularProgressIndicator(
-            color = NeuPrimary,
-            trackColor = NeuInsetBackground
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    GlassLoadingState(text = text, modifier = modifier)
 }
 
 @Composable

@@ -54,9 +54,11 @@ import com.kyant.backdrop.effects.vibrancy
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.tyust.course.model.SchoolConfig
+import com.tyust.course.manager.AppearanceSettingsManager
 import com.tyust.course.manager.UserManager
+import com.tyust.course.ui.system.GlassTextField
+import com.tyust.course.ui.system.drawWallpaperPattern
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,24 +134,16 @@ fun LoginScreen(
         }
     }
     
+    // 与主界面同款 Aurora 流体壁纸，登录卡的玻璃采样有真实的多彩层次
+    val wallpaperPreset = AppearanceSettingsManager.wallpaper
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Neutral50)
+            .background(wallpaperPreset.baseColor)
     ) {
         val backdrop = if (isBackdropSupported()) {
             rememberLayerBackdrop {
-                drawRect(Color(0xFFF0F2F4))
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.62f),
-                    radius = size.minDimension * 0.62f,
-                    center = Offset(size.width * 0.16f, size.height * 0.16f)
-                )
-                drawCircle(
-                    color = Color(0xFF66727D).copy(alpha = 0.07f),
-                    radius = size.minDimension * 0.68f,
-                    center = Offset(size.width * 0.82f, size.height * 0.84f)
-                )
+                drawWallpaperPattern(wallpaperPreset)
                 drawContent()
             }
         } else {
@@ -158,6 +152,10 @@ fun LoginScreen(
 
         if (backdrop != null) {
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop))
+        } else {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                drawWallpaperPattern(wallpaperPreset)
+            }
         }
 
         Column(
@@ -421,44 +419,38 @@ fun LoginScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            OutlinedTextField(
+                            GlassTextField(
                                 value = username,
                                 onValueChange = { username = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("学号") },
-                                singleLine = true,
+                                placeholder = "学号",
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = NeuPrimary,
-                                    unfocusedBorderColor = Neutral300
-                                )
+                                minHeight = 50.dp
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField(
+                            GlassTextField(
                                 value = password,
                                 onValueChange = { password = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("密码") },
-                                singleLine = true,
+                                placeholder = "密码",
                                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                trailingIcon = {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
+                                trailing = {
+                                    IconButton(
+                                        onClick = { showPassword = !showPassword },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
                                         Icon(
                                             imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                             contentDescription = null,
-                                            tint = Neutral500
+                                            tint = Neutral500,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = NeuPrimary,
-                                    unfocusedBorderColor = Neutral300
-                                )
+                                minHeight = 50.dp
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Surface(
@@ -488,39 +480,30 @@ fun LoginScreen(
                             }
                         } else {
                         
-                        // Cookie Input (Minimalist TextField)
-                        val cookieTfShape = RoundedCornerShape(16.dp)
-                        val cookieTfModifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-
-                        TextField(
+                        // Cookie Input（玻璃多行输入）
+                        GlassTextField(
                             value = cookie,
                             onValueChange = { cookie = it },
-                            modifier = cookieTfModifier,
-                            placeholder = { Text("粘贴 Cookie 字符串...", color = Neutral500) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            placeholder = "粘贴 Cookie 字符串...",
                             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                            trailingIcon = {
-                                IconButton(onClick = { showPassword = !showPassword }) {
+                            singleLine = false,
+                            trailing = {
+                                IconButton(
+                                    onClick = { showPassword = !showPassword },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
                                     Icon(
                                         imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                         contentDescription = if (showPassword) "隐藏" else "显示",
-                                        tint = Neutral500
+                                        tint = Neutral500,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
-                            },
-                            shape = cookieTfShape,
-                            singleLine = false,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
-                                focusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
-                                unfocusedIndicatorColor = if (errorMessage != null) SemanticDanger else Color.Transparent,
-                                focusedTextColor = Neutral900,
-                                unfocusedTextColor = Neutral900,
-                                cursorColor = NeuPrimary
-                            )
+                            }
                         )
                         } // end else (cookie tab)
                         
@@ -638,9 +621,9 @@ fun LoginScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = sheetShape,
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.72f)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Neutral200.copy(alpha = 0.5f))
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.60f))
                     ) {
                         Column(
                             modifier = Modifier

@@ -1,7 +1,7 @@
 package com.tyust.course.ui.route
 
+import com.tyust.course.ui.system.GlassToaster
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -165,7 +165,7 @@ fun SettingsRoute(
     
     fun checkForUpdate() {
         isCheckingUpdate = true
-        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+        GlassToaster.show("正在检查更新...")
         
         updateManager.checkForUpdate { info ->
             isCheckingUpdate = false
@@ -173,7 +173,7 @@ fun SettingsRoute(
                 updateInfo = info
                 showUpdateDialog = true
             } else {
-                Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("已是最新版本")
             }
         }
     }
@@ -194,7 +194,7 @@ fun SettingsRoute(
                     updateManager.installApk(file)
                     showUpdateDialog = false
                 } else {
-                    Toast.makeText(context, "下载失败，请重试", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("下载失败，请重试")
                 }
             }
         )
@@ -205,15 +205,15 @@ fun SettingsRoute(
         val school = userManager.currentSchool
         if (isRefreshingCookie) return
         if (school == null) {
-            Toast.makeText(context, "请先选择学校", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("请先选择学校")
             return
         }
         if (userManager.loginMode != "password") {
-            Toast.makeText(context, "仅密码登录账号支持手动更新 Cookie", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("仅密码登录账号支持手动更新 Cookie")
             return
         }
         if (!userManager.canAutoRelogin()) {
-            Toast.makeText(context, "当前会话未保存密码，请重新使用密码登录后再更新", Toast.LENGTH_LONG).show()
+            GlassToaster.show("当前会话未保存密码，请重新使用密码登录后再更新")
             return
         }
 
@@ -239,7 +239,7 @@ fun SettingsRoute(
                         isRefreshingCookie = false
                         if (!hasNotifiedCancellation) {
                             hasNotifiedCancellation = true
-                            Toast.makeText(context, "账号已切换，本次 Cookie 更新已取消", Toast.LENGTH_SHORT).show()
+                            GlassToaster.show("账号已切换，本次 Cookie 更新已取消")
                         }
                         return@post
                     }
@@ -254,7 +254,7 @@ fun SettingsRoute(
                     userManager.refreshRuntimeForCurrentAccount()
                     isRefreshingCookie = false
                     refreshAccountUiState()
-                    Toast.makeText(context, "Cookie 已更新", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("Cookie 已更新")
                 }
             }
 
@@ -262,7 +262,7 @@ fun SettingsRoute(
                 gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
-                    Toast.makeText(context, "更新 Cookie 需要验证码，请重新使用密码登录", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("更新 Cookie 需要验证码，请重新使用密码登录")
                 }
             }
 
@@ -270,7 +270,7 @@ fun SettingsRoute(
                 gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
-                    Toast.makeText(context, "验证码校验失败，请重新使用密码登录", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("验证码校验失败，请重新使用密码登录")
                 }
             }
 
@@ -278,7 +278,7 @@ fun SettingsRoute(
                 gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
-                    Toast.makeText(context, "密码已失效，请重新登录", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("密码已失效，请重新登录")
                 }
             }
 
@@ -286,7 +286,7 @@ fun SettingsRoute(
                 gateway.clearSensitiveState()
                 postToUi {
                     isRefreshingCookie = false
-                    Toast.makeText(context, "更新失败：$message", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("更新失败：$message")
                 }
             }
         })
@@ -406,7 +406,7 @@ fun SettingsRoute(
             title = "清除缓存",
             text = "确定要清除所有本地缓存数据吗？",
             onConfirm = { 
-                Toast.makeText(context, "缓存已清除", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("缓存已清除")
                 showClearCacheDialog = false
             },
             onDismiss = { showClearCacheDialog = false }
@@ -580,9 +580,9 @@ fun SettingsRoute(
                     refreshAccountUiState()
                     showQuotaDialog = false
                     onAccountChanged()
-                    Toast.makeText(context, "已切换账号", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("已切换账号")
                 } else {
-                    Toast.makeText(context, "账号切换失败，请重新登录", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("账号切换失败，请重新登录")
                 }
             },
             onDismiss = { showQuotaDialog = false }
@@ -638,7 +638,7 @@ fun SettingsRoute(
                             .clickable {
                                 UserManager.getInstance().clearLoginState()
                                 UserManager.getInstance().currentSchool = school
-                                Toast.makeText(context, "已切换到: ${school.name}", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("已切换到: ${school.name}")
                                 performLogout()
                                 dismiss()
                             }

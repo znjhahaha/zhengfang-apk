@@ -67,6 +67,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
+import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
@@ -187,6 +188,9 @@ fun LiquidButton(
                             refractionAmount = params.refractionAmountPx,
                             chromaticAberration = params.chromaticAberration
                         )
+                    } else if (params.fringePx > 0f) {
+                        // API 31/32：RGB 分离色散近似，交互时浮现
+                        chromaticFringe(params.fringePx)
                     }
                 },
                 shadow = {
@@ -206,7 +210,8 @@ fun LiquidButton(
                             activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
                         )
                         style == LiquidButtonStyle.Surface -> drawRect(
-                            Color.White.copy(alpha = controlMaterial.surfaceAlpha)
+                            // 0.10 时按钮几乎融进背景;0.30 呈现清晰的 iOS gray-fill 玻璃
+                            Color.White.copy(alpha = 0.30f)
                         )
                         else -> Unit
                     }

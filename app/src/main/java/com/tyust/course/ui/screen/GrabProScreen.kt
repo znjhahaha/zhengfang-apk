@@ -1,6 +1,6 @@
 package com.tyust.course.ui.screen
 
-import android.widget.Toast
+import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,16 +36,16 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
+import com.tyust.course.ui.system.GlassStatChip
+import com.tyust.course.ui.system.GlassTextField
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemDestructiveButton
@@ -73,11 +75,6 @@ import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemTopBar
-import com.tyust.course.ui.theme.BackgroundDark
-import com.tyust.course.ui.theme.NeuDivider
-import com.tyust.course.ui.theme.NeuInsetBackground
-import com.tyust.course.ui.theme.NeuPrimary
-import com.tyust.course.ui.theme.NeuSurface
 import com.tyust.course.ui.theme.SemanticDanger
 import com.tyust.course.ui.theme.SemanticSuccess
 import com.tyust.course.ui.theme.SemanticWarning
@@ -160,11 +157,22 @@ fun GrabProScreen(
         )
     }
 
+    // 折叠进度随滚动偏移连续变化（约 96px 行程），全程跟手
+    val headerCollapse by remember {
+        derivedStateOf {
+            if (scrollState.firstVisibleItemIndex > 0) {
+                1f
+            } else {
+                (scrollState.firstVisibleItemScrollOffset / 96f).coerceIn(0f, 1f)
+            }
+        }
+    }
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             SystemTopBar(
                 title = "抢课工作台",
+                collapseFraction = headerCollapse,
                 subtitle = when {
                     localScheduledMode -> "定时任务模式"
                     isFuzzyMatchMode -> "模糊监控模式"
@@ -246,11 +254,7 @@ fun GrabProScreen(
                             onStart = {
                                 val manualCourses = queue.filter { it.classId.isNullOrEmpty() }
                                 if (manualCourses.isNotEmpty()) {
-                                    Toast.makeText(
-                                        context,
-                                        "包含 ${manualCourses.size} 门手动添加课程，即时模式暂不支持这些条目",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    GlassToaster.show("包含 ${manualCourses.size} 门手动添加课程，即时模式暂不支持这些条目")
                                 } else {
                                     onStart()
                                 }
@@ -360,40 +364,9 @@ private fun RuntimeStatusCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            StatusMetric("尝试", retryCount.toString(), Modifier.weight(1f))
-            StatusMetric("成功", successCount.toString(), Modifier.weight(1f), SemanticSuccess)
-            StatusMetric("失败", failCount.toString(), Modifier.weight(1f), SemanticDanger)
-        }
-    }
-}
-
-@Composable
-private fun StatusMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Surface(
-        modifier = modifier,
-        color = NeuInsetBackground,
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = valueColor
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            GlassStatChip(retryCount.toString(), "尝试", Modifier.weight(1f))
+            GlassStatChip(successCount.toString(), "成功", Modifier.weight(1f), SemanticSuccess)
+            GlassStatChip(failCount.toString(), "失败", Modifier.weight(1f), SemanticDanger)
         }
     }
 }
@@ -554,20 +527,11 @@ private fun ScheduledTaskForm(
         }
 
         if (onCourseKeywordsChange != null) {
-            OutlinedTextField(
+            GlassTextField(
                 value = courseKeywords,
                 onValueChange = onCourseKeywordsChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("课程关键词") },
-                placeholder = { Text("输入课程名、教师名等关键词") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.outline,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                )
+                placeholder = "输入课程名、教师名等关键词"
             )
         }
 
@@ -575,8 +539,9 @@ private fun ScheduledTaskForm(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onDateTimeClick),
-            color = NeuInsetBackground,
-            shape = RoundedCornerShape(14.dp)
+            color = Color.White.copy(alpha = 0.35f),
+            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.55f)),
+            shape = RoundedCornerShape(16.dp)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
@@ -683,8 +648,9 @@ private fun TargetSummaryCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = NeuInsetBackground,
-        shape = RoundedCornerShape(14.dp)
+        color = Color.White.copy(alpha = 0.35f),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.50f)),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
@@ -737,21 +703,22 @@ private fun NumericField(
     label: String,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
+    Column(
         modifier = modifier,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        shape = MaterialTheme.shapes.small,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.outline,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    )
+        GlassTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+    }
 }
 
 @Composable
@@ -855,8 +822,9 @@ private fun LogConsole(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF1A1D23),
-            shape = RoundedCornerShape(16.dp)
+            color = Color(0xFF16181D).copy(alpha = 0.88f),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.10f))
         ) {
             Box(
                 modifier = Modifier

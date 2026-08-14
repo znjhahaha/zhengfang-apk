@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.tyust.course.model.Course
 import com.tyust.course.ui.theme.*
+import com.tyust.course.ui.system.GlassPullRefreshBox
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
@@ -46,10 +46,9 @@ fun SelectedCoursesScreen(
     onDropCourse: (Course) -> Unit = {}
 ) {
 
+    // 透明容器：让 Aurora 壁纸透出，与"可选"页一致
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NeuSurface)
+        modifier = Modifier.fillMaxSize()
     ) {
         // 退课进度条
         if (isDropping) {
@@ -62,7 +61,7 @@ fun SelectedCoursesScreen(
             )
         }
 
-        PullToRefreshBox(
+        GlassPullRefreshBox(
             isRefreshing = isLoading,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize()

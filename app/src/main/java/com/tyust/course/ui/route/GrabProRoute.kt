@@ -1,5 +1,6 @@
 package com.tyust.course.ui.route
 
+import com.tyust.course.ui.system.GlassToaster
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -8,7 +9,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -265,7 +265,7 @@ fun GrabProRoute() {
     fun startGrabbing() {
         val school = UserManager.getInstance().currentSchool
         if (school == null) {
-            Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("请先登录")
             return
         }
 
@@ -304,7 +304,7 @@ fun GrabProRoute() {
             
             appendLog("🚀 开始队列抢课: ${queueList.size} 门课程 (直接请求模式)")
             isRunning = true
-            Toast.makeText(context, "队列抢课进程已启动", Toast.LENGTH_LONG).show()
+            GlassToaster.show("队列抢课进程已启动")
         } else if (targetCourse != null) {
             // 单课模式 (保持原有逻辑作为 fallback)
             successCount = 0
@@ -331,9 +331,9 @@ fun GrabProRoute() {
             
             appendLog("🚀 开始后台抢课: ${targetCourse.name}")
             isRunning = true
-            Toast.makeText(context, "后台抢课已启动", Toast.LENGTH_LONG).show()
+            GlassToaster.show("后台抢课已启动")
         } else {
-            Toast.makeText(context, "请先在\"课程\"页面长按选择要抢的课程，或在下方添加课程到队列", Toast.LENGTH_LONG).show()
+            GlassToaster.show("请先在\"课程\"页面长按选择要抢的课程，或在下方添加课程到队列")
         }
     }
     
@@ -341,7 +341,7 @@ fun GrabProRoute() {
     fun startFuzzyMatchGrabbing() {
         val school = UserManager.getInstance().currentSchool
         if (school == null) {
-            Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("请先登录")
             return
         }
         
@@ -349,7 +349,7 @@ fun GrabProRoute() {
         val fuzzyTargetName = SmartSelector.getInstance().fuzzyMatchCourseName
         
         if (fuzzyTargetId.isNullOrEmpty()) {
-            Toast.makeText(context, "请先设置监控目标", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("请先设置监控目标")
             return
         }
         
@@ -372,7 +372,7 @@ fun GrabProRoute() {
         
         appendLog("🔍 启动模糊匹配模式: $fuzzyTargetName")
         isRunning = true
-        Toast.makeText(context, "模糊匹配监控已启动: $fuzzyTargetName", Toast.LENGTH_LONG).show()
+        GlassToaster.show("模糊匹配监控已启动: $fuzzyTargetName")
     }
     
     fun stopGrabbing() {
@@ -416,18 +416,18 @@ fun GrabProRoute() {
     fun createScheduledTask() {
         // 只使用队列中的课程
         if (queue.isEmpty()) { 
-            Toast.makeText(context, "请先在队列中添加课程", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("请先在队列中添加课程")
             return 
         }
-        if (scheduledDateTime.isBlank()) { Toast.makeText(context, "请选择开始时间", Toast.LENGTH_SHORT).show(); return }
+        if (scheduledDateTime.isBlank()) { GlassToaster.show("请选择开始时间"); return }
         
         val dateFormat = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
         val targetTime = try { dateFormat.parse(scheduledDateTime) } catch (e: Exception) { null }
-        if (targetTime == null) { Toast.makeText(context, "日期格式错误", Toast.LENGTH_LONG).show(); return }
+        if (targetTime == null) { GlassToaster.show("日期格式错误"); return }
         
         val now = Date()
         val delayMs = targetTime.time - now.time
-        if (delayMs <= 0) { Toast.makeText(context, "开始时间必须在当前时间之后", Toast.LENGTH_SHORT).show(); return }
+        if (delayMs <= 0) { GlassToaster.show("开始时间必须在当前时间之后"); return }
         
         val userManager = UserManager.getInstance()
         val scheduledAccountKey = userManager.currentAccountKey
@@ -449,7 +449,7 @@ fun GrabProRoute() {
         saveState()
         
         val delayMinutes = delayMs / 60000
-        Toast.makeText(context, "定时任务已创建，将在 ${delayMinutes} 分钟后开始", Toast.LENGTH_LONG).show()
+        GlassToaster.show("定时任务已创建，将在 ${delayMinutes} 分钟后开始")
         appendLog("定时任务已设置，将在 $scheduledDateTime 开始抢课")
         if (queue.isNotEmpty()) {
             appendLog("队列包含 ${queue.size} 门课程")
@@ -519,7 +519,7 @@ fun GrabProRoute() {
                     isRunning = true
                 } else {
                     appendLog("定时任务失败：找不到创建任务的账号，请重新登录")
-                    Toast.makeText(context, "定时任务账号已失效，请重新登录", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("定时任务账号已失效，请重新登录")
                 }
                 
                 hasScheduledTask = false
@@ -547,7 +547,7 @@ fun GrabProRoute() {
             SmartSelector.getInstance().clearTargetCourse()
             targetCourseName = null
             targetCourseTeacher = null
-            Toast.makeText(context, "已清除目标课程", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("已清除目标课程")
         },
         // 🔧 模糊匹配模式参数
         isFuzzyMatchMode = isFuzzyMatchMode,
@@ -560,7 +560,7 @@ fun GrabProRoute() {
         onClearFuzzyMatchTarget = {
             SmartSelector.getInstance().clearFuzzyMatchTarget()
             fuzzyMatchTarget = null
-            Toast.makeText(context, "已清除监控目标", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("已清除监控目标")
         },
         schoolName = UserManager.getInstance().currentSchool?.name ?: "",
         showQueueModeLabels = false, // 🔧 隐藏单项模式标签，只用全局开关控制
@@ -741,9 +741,9 @@ fun GrabProRoute() {
                                     if (tempCourse.teacher.isNotEmpty()) append(" | ${tempCourse.teacher}")
                                     if (tempCourse.time.isNotEmpty()) append(" | ${tempCourse.time}")
                                 }
-                                Toast.makeText(context, "已添加: $displayInfo", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("已添加: $displayInfo")
                             } else {
-                                Toast.makeText(context, "课程「${tempCourse.name}」已在队列中", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("课程「${tempCourse.name}」已在队列中")
                             }
                             // 清空输入
                             inputCourseName = ""

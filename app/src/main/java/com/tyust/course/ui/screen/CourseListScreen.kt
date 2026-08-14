@@ -1,9 +1,11 @@
 package com.tyust.course.ui.screen
 
-import android.widget.Toast
+import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.expandVertically
@@ -56,7 +58,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,10 +73,12 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
 import com.tyust.course.utils.CourseParser
+import com.tyust.course.ui.system.GlassPullRefreshBox
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemActionButton
 import com.tyust.course.ui.system.SystemCapacityIndicator
@@ -84,8 +87,8 @@ import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
-import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuPrimary
+import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.system.SystemDivider
@@ -160,38 +163,42 @@ fun CourseListScreen(
             )
         }
 
-        if (!showFilterPanel) {
-            FilterToggleHandle(
-                expanded = false,
-                active = activeFilter != null && !activeFilter.isEmpty(),
-                onClick = onToggleFilterPanel,
-                modifier = Modifier.padding(horizontal = PagePadding)
-            )
-        }
+        // 把手常驻同一位置：展开/收起只旋转箭头，不再跳位
+        FilterToggleHandle(
+            expanded = showFilterPanel,
+            active = activeFilter != null && !activeFilter.isEmpty(),
+            onClick = onToggleFilterPanel,
+            modifier = Modifier.padding(horizontal = PagePadding)
+        )
 
-        // 筛选面板（可展开/收起）
+        // 筛选面板（可展开/收起）：弹簧展开，带一次轻微回弹
         AnimatedVisibility(
             visible = showFilterPanel,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(
+                animationSpec = spring(
+                    dampingRatio = 0.88f,
+                    stiffness = 380f,
+                    visibilityThreshold = IntSize.VisibilityThreshold
+                )
+            ) + fadeIn(animationSpec = tween(200, easing = MotionEasing.FastOutSlowIn)),
+            exit = shrinkVertically(
+                animationSpec = spring(
+                    dampingRatio = 1f,
+                    stiffness = 420f,
+                    visibilityThreshold = IntSize.VisibilityThreshold
+                )
+            ) + fadeOut(animationSpec = tween(150, easing = MotionEasing.Accelerate))
         ) {
-            Column {
-                CourseFilterPanel(
-                    filter = draftFilter,
-                    onFilterChange = onDraftFilterChange,
-                    onApply = onFilterApply,
-                    onClear = onFilterClear,
-                    filterCategories = filterCategories,
-                    isLoading = isFilterOptionsLoading,
-                    emptyMessage = filterOptionsMessage
-                )
-                FilterToggleHandle(
-                    expanded = true,
-                    active = activeFilter != null && !activeFilter.isEmpty(),
-                    onClick = onToggleFilterPanel,
-                    modifier = Modifier.padding(horizontal = PagePadding)
-                )
-            }
+            CourseFilterPanel(
+                filter = draftFilter,
+                onFilterChange = onDraftFilterChange,
+                onApply = onFilterApply,
+                onClear = onFilterClear,
+                filterCategories = filterCategories,
+                isLoading = isFilterOptionsLoading,
+                emptyMessage = filterOptionsMessage,
+                modifier = Modifier.padding(horizontal = PagePadding, vertical = 4.dp)
+            )
         }
 
         // 已激活筛选标签栏
@@ -204,7 +211,7 @@ fun CourseListScreen(
             )
         }
 
-        PullToRefreshBox(
+        GlassPullRefreshBox(
             isRefreshing = isLoading,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize()
@@ -292,31 +299,28 @@ private fun FilterToggleHandle(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val lineColor = accentColor.copy(alpha = if (expanded) 0.34f else 0.26f)
-    val buttonWidth = if (expanded) 94.dp else 76.dp
-    val buttonHeight = if (expanded) 22.dp else 32.dp
-    val buttonShape = if (expanded) {
-        RoundedCornerShape(
-            topStart = 2.dp,
-            topEnd = 2.dp,
-            bottomStart = 5.dp,
-            bottomEnd = 5.dp
-        )
-    } else {
-        RoundedCornerShape(16.dp)
-    }
+    val lineColor = accentColor.copy(alpha = 0.26f)
+    val buttonWidth = 84.dp
+    val buttonHeight = 30.dp
+    val buttonShape = RoundedCornerShape(15.dp)
+    // 箭头随展开状态旋转，位置形状全程不变，衔接连续
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = MotionSpring.liquidSettle(),
+        label = "filterHandleArrow"
+    )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (expanded) 28.dp else 38.dp),
-        contentAlignment = if (expanded) Alignment.TopCenter else Alignment.Center
+            .height(36.dp),
+        contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val centerX = size.width / 2f
             val tabHalfWidth = buttonWidth.toPx() / 2f
-            val lineY = if (expanded) 1.dp.toPx() else size.height / 2f
-            val gap = if (expanded) 0f else 5.dp.toPx()
+            val lineY = size.height / 2f
+            val gap = 6.dp.toPx()
             val strokeWidth = 1.dp.toPx()
 
             drawLine(
@@ -333,20 +337,6 @@ private fun FilterToggleHandle(
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
-            drawLine(
-                color = Color.White.copy(alpha = 0.45f),
-                start = androidx.compose.ui.geometry.Offset(0f, lineY + 0.7.dp.toPx()),
-                end = androidx.compose.ui.geometry.Offset(centerX - tabHalfWidth - gap, lineY + 0.7.dp.toPx()),
-                strokeWidth = 0.5.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color.White.copy(alpha = 0.45f),
-                start = androidx.compose.ui.geometry.Offset(centerX + tabHalfWidth + gap, lineY + 0.7.dp.toPx()),
-                end = androidx.compose.ui.geometry.Offset(size.width, lineY + 0.7.dp.toPx()),
-                strokeWidth = 0.5.dp.toPx(),
-                cap = StrokeCap.Round
-            )
         }
 
         Surface(
@@ -354,14 +344,14 @@ private fun FilterToggleHandle(
                 .width(buttonWidth)
                 .height(buttonHeight)
                 .border(
-                    width = 1.dp,
-                    color = accentColor.copy(alpha = if (expanded) 0.36f else 0.28f),
+                    width = 0.5.dp,
+                    color = Color.White.copy(alpha = 0.55f),
                     shape = buttonShape
                 ),
             shape = buttonShape,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = if (expanded) 0.98f else 0.92f),
-            shadowElevation = if (expanded) 0.dp else 3.dp,
-            tonalElevation = if (expanded) 0.dp else 1.dp
+            color = Color.White.copy(alpha = 0.42f),
+            shadowElevation = 0.dp,
+            tonalElevation = 0.dp
         ) {
             Row(
                 modifier = Modifier
@@ -372,15 +362,17 @@ private fun FilterToggleHandle(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    imageVector = Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
-                    modifier = Modifier.size(if (expanded) 13.dp else 14.dp),
-                    tint = accentColor.copy(alpha = 0.78f)
+                    modifier = Modifier
+                        .size(14.dp)
+                        .rotate(arrowRotation),
+                    tint = accentColor.copy(alpha = 0.82f)
                 )
                 Spacer(modifier = Modifier.width(3.dp))
                 Text(
-                    text = if (expanded) "收起" else "展开",
-                    color = accentColor.copy(alpha = 0.78f),
+                    text = if (expanded) "收起" else "筛选",
+                    color = accentColor.copy(alpha = 0.82f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -467,25 +459,16 @@ fun CourseGroupItem(
         animationSpec = MotionSpecs.standard(),
         label = "courseGroupBorder"
     )
-    val cardBackgroundColor by animateColorAsState(
-        targetValue = when {
-            hasSelected -> MaterialTheme.colorScheme.surface
-            hasAvailableSeat -> MaterialTheme.colorScheme.surface
-            else -> NeuInsetBackground
-        },
-        animationSpec = MotionSpecs.standard(),
-        label = "courseGroupBackground"
-    )
-
+    // 满员组不再整卡灰底（会在玻璃页面里形成"死块"），状态由"紧张"徽章表达
     SystemCard(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = cardBackgroundColor,
+        backgroundColor = MaterialTheme.colorScheme.surface,
         borderColor = cardBorderColor,
         onClick = {
             if (isDetailsReady) {
                 onExpandClick()
             } else {
-                Toast.makeText(context, "正在准备课程数据…", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("正在准备课程数据…")
             }
         },
         contentPadding = PaddingValues(0.dp)
@@ -553,7 +536,7 @@ fun CourseGroupItem(
                                     val xkkzId = firstCourse?._xkkz_id
                                     val kklxdm = firstCourse?.kklxdm
                                     onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
-                                    Toast.makeText(context, "已设为监控目标: $courseName", Toast.LENGTH_SHORT).show()
+                                    GlassToaster.show("已设为监控目标: $courseName")
                                 }
                             )
                         }
@@ -594,36 +577,6 @@ fun CourseGroupItem(
             ) {
                 Column {
                     SystemDivider()
-                    Surface(
-                        color = NeuInsetBackground,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isMultiSelectMode) {
-                                Spacer(modifier = Modifier.width(36.dp))
-                            }
-                            Text(
-                                text = "班级 / 容量",
-                                modifier = Modifier.weight(1.2f),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "时间 / 地点",
-                                modifier = Modifier.weight(1.1f),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.width(96.dp))
-                        }
-                    }
 
                     classes.forEachIndexed { index, course ->
                         TeachingClassRow(

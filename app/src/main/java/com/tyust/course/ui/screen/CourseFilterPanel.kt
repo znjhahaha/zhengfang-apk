@@ -47,10 +47,13 @@ fun CourseFilterPanel(
     emptyMessage: String = "筛选条件加载失败，请下拉刷新重试",
     modifier: Modifier = Modifier
 ) {
+    // 玻璃卡：半透白 + 细边框圆角，与整体液态风格衔接（半透面必须关 elevation 阴影）
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp
+        color = Color.White.copy(alpha = 0.55f),
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.60f)),
+        shadowElevation = 0.dp
     ) {
         val contentMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.52f).dp
         Column(
@@ -208,9 +211,9 @@ private fun FilterChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val bgColor = if (selected) NeuPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+    val bgColor = if (selected) NeuPrimary.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.50f)
     val textColor = if (selected) NeuPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    val borderColor = if (selected) NeuPrimary.copy(alpha = 0.4f) else Color.Transparent
+    val borderColor = if (selected) NeuPrimary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.55f)
 
     Surface(
         modifier = Modifier

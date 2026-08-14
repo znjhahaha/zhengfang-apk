@@ -1,6 +1,6 @@
 package com.tyust.course.ui.route
 
-import android.widget.Toast
+import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.tyust.course.manager.CourseCacheManager
@@ -81,14 +81,14 @@ fun SelectedCoursesRoute() {
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
                         isLoading = false
-                        Toast.makeText(context, "未获取到已选课程数据", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("未获取到已选课程数据")
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isLoading = false
-                    Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("加载失败: ${e.message}")
                 }
             }
         }
@@ -105,7 +105,7 @@ fun SelectedCoursesRoute() {
         val jxbIds = (if (!course.doJxbId.isNullOrEmpty()) course.doJxbId else course.classId) ?: return
         
         if (requestXkxnm.isEmpty() || requestXkxqm.isEmpty()) {
-            Toast.makeText(context, "学年学期参数缺失，请刷新后重试", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("学年学期参数缺失，请刷新后重试")
             return
         }
         
@@ -118,7 +118,7 @@ fun SelectedCoursesRoute() {
                     isDropping = false
                     // 服务器返回 "1" 或 {"flag":"1"} 都表示成功
                     if (result != null && (result.trim() == "\"1\"" || result.contains("\"flag\":\"1\""))) {
-                        Toast.makeText(context, "退课成功: ${course.name}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("退课成功: ${course.name}")
                         // 同步更新本地缓存的 isSelected 状态
                         val cached = CourseCacheManager.getCachedCourses(context, requestAccountKey)
                         if (cached != null) {
@@ -134,14 +134,14 @@ fun SelectedCoursesRoute() {
                                 org.json.JSONObject(result).optString("msg", "未知错误")
                             } catch (e: Exception) { "退课失败" }
                         } else { "退课失败" }
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        GlassToaster.show(msg)
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isDropping = false
-                    Toast.makeText(context, "退课异常: ${e.message}", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("退课异常: ${e.message}")
                 }
             }
         }

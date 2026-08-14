@@ -288,8 +288,10 @@ object GlassRecipe {
     val ActionBorderAlpha = control.borderAlpha
     val ActionShadowAlpha = control.shadowAlpha
     val ActionPressedScale = 0.98f
-    val ActionTintAlpha = 0.72f
-    val ActionDisabledSurfaceAlpha = 0.28f
+    // 0.72→0.85：降低壁纸灰底对 tint 的去饱和影响
+    val ActionTintAlpha = 0.85f
+    // 0.28→0.88：禁用态接近实色浅灰，与可用态干净区分，避免"半透明糊灰"
+    val ActionDisabledSurfaceAlpha = 0.88f
 
     val SwitchTrackInactiveAlpha = 0.32f
     val SwitchTrackActiveAlpha = 0.78f

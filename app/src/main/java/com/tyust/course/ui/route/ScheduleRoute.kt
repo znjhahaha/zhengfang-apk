@@ -1,6 +1,6 @@
 package com.tyust.course.ui.route
 
-import android.widget.Toast
+import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -215,7 +215,7 @@ fun ScheduleRoute() {
                     scope.launch(Dispatchers.Main) {
                         if (!isRequestAccountActive()) return@launch
                         isLoading = false
-                        if (courses.isEmpty()) Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        if (courses.isEmpty()) GlassToaster.show("加载失败: ${e.message}")
                     }
                 }
 
@@ -225,7 +225,7 @@ fun ScheduleRoute() {
                          scope.launch(Dispatchers.Main) { 
                              if (!isRequestAccountActive()) return@launch
                              isLoading = false
-                             Toast.makeText(context, "请先登录", Toast.LENGTH_SHORT).show() 
+                             GlassToaster.show("请先登录") 
                          }
                         return
                     }
@@ -236,9 +236,9 @@ fun ScheduleRoute() {
                         if (parsed.isNotEmpty()) {
                             saveScheduleToCache(cacheKey, json)
                             courses = reloadCustomCourses(parsed)
-                            if (forceRefresh) Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
+                            if (forceRefresh) GlassToaster.show("已刷新")
                         } else if (courses.isEmpty()) {
-                            Toast.makeText(context, "暂无课程", Toast.LENGTH_SHORT).show()
+                            GlassToaster.show("暂无课程")
                         }
                     }
                 }
@@ -271,7 +271,7 @@ fun ScheduleRoute() {
         onSettingsClick = { showSettingsDialog = true },
         onExportClick = {
             if (courses.isEmpty()) {
-                Toast.makeText(context, "课表为空，无法导出", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("课表为空，无法导出")
             } else {
                 try {
                     val semesterStart = settingsManager.getSemesterStartCalendar()
@@ -281,9 +281,9 @@ fun ScheduleRoute() {
                         semesterStartDate = semesterStart,
                         totalWeeks = 20
                     )
-                    Toast.makeText(context, "课表已导出，可导入到系统日历中查看", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("课表已导出，可导入到系统日历中查看")
                 } catch (e: Exception) {
-                    Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("导出失败: ${e.message}")
                 }
             }
         },

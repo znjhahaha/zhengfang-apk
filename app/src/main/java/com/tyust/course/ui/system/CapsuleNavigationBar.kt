@@ -68,6 +68,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.BottomNavItem
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
@@ -280,8 +281,8 @@ private fun GlassNavigationBar(
                 initialScale = 1f,
                 pressedScale = pressedScale,
                 directManipulationSpec = MotionSpring.liquidFollow(),
-                settleAnimationSpec = MotionSpring.liquidSettle(),
-                releaseScaleAnimationSpec = MotionSpring.liquidSelectionRelease(),
+                settleAnimationSpec = MotionSpring.navSettle(),
+                releaseScaleAnimationSpec = MotionSpring.navRelease(),
                 onDragStarted = {},
                 onDragStopped = {
                     val targetIndex = targetValue
@@ -576,6 +577,15 @@ private fun GlassNavigationBar(
                                 refractionHeight = 10.dp.toPx() * press,
                                 refractionAmount = 14.dp.toPx() * press,
                                 chromaticAberration = true
+                            )
+                            // RGB 分离色散近似：按压/滑动时浮现，静止归零
+                            val legacyMotion = motionIntensityFromVelocity(
+                                velocityX = dampedDragAnimation.velocity * tabWidth,
+                                fullEffectVelocity = indicatorMaterial.optics.velocityForFullEffect
+                            )
+                            chromaticFringe(
+                                (press * 1.8f + legacyMotion * 1.2f)
+                                    .coerceIn(0f, 2.2f).dp.toPx()
                             )
                         }
                     },

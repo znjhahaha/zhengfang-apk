@@ -7,6 +7,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tyust.course.ui.system.GlassLoadingState
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemCompactSegmentedControl
@@ -71,7 +72,6 @@ import com.tyust.course.ui.system.AnimatedIconButton
 
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuDivider
-import com.tyust.course.ui.theme.NeuInsetBackground
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.NeuSurface
 
@@ -167,17 +167,7 @@ fun ScheduleScreen(
                         .padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(color = NeuPrimary, trackColor = NeuInsetBackground)
-                        Text(
-                            text = "正在同步课表…",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    GlassLoadingState(text = "正在同步课表…")
                 }
             }
 
@@ -387,11 +377,17 @@ fun ScheduleGrid(
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SystemCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = MaterialTheme.colorScheme.surface,
-            borderColor = MaterialTheme.colorScheme.outlineVariant,
-            contentPadding = PaddingValues(0.dp)
+        // 去卡片化：轻玻璃衬底（低透明度），课表网格悬浮于多彩壁纸上
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White.copy(alpha = 0.38f))
+                .border(
+                    0.5.dp,
+                    Color.White.copy(alpha = 0.50f),
+                    RoundedCornerShape(24.dp)
+                )
         ) {
             Row(
                 modifier = Modifier
@@ -402,7 +398,7 @@ fun ScheduleGrid(
                     modifier = Modifier
                         .width(ScheduleTimeColumnWidth)
                         .fillMaxHeight()
-                        .background(NeuInsetBackground.copy(alpha = 0.70f)),
+                        .background(Color.White.copy(alpha = 0.28f)),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     for (i in 1..periodCount) {
@@ -518,16 +514,13 @@ private fun TimetableBackground(
     periodHeight: Dp
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
+        // 去斑马纹：透明列 + 极淡分隔线，壁纸从网格间透出
         Row(modifier = Modifier.fillMaxSize()) {
             repeat(7) { dayIndex ->
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .background(
-                            if (dayIndex % 2 == 0) NeuSurface
-                            else NeuInsetBackground.copy(alpha = 0.35f)
-                        )
                 ) {
                     if (dayIndex < 6) {
                         Box(
@@ -535,7 +528,7 @@ private fun TimetableBackground(
                                 .align(Alignment.CenterEnd)
                                 .fillMaxHeight()
                                 .width(1.dp)
-                                .background(NeuDivider.copy(alpha = 0.15f))
+                                .background(NeuDivider.copy(alpha = 0.18f))
                         )
                     }
                 }
@@ -623,10 +616,10 @@ fun TimetableLayout(
 @Composable
 fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
     val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
-    // 新拟态玻璃风格：更柔和的半透明填充 + 顶部高光
-    val containerColor = if (course.isCustom) course.color.copy(alpha = 0.28f) else course.color.copy(alpha = 0.18f)
-    val borderColor = course.color.copy(alpha = 0.35f)
-    val accentColor = course.color.copy(alpha = 0.70f)
+    // 彩色半透玻璃 tile：加深填充保证壁纸上可读，边缘细亮线似透镜
+    val containerColor = if (course.isCustom) course.color.copy(alpha = 0.42f) else course.color.copy(alpha = 0.32f)
+    val borderColor = course.color.copy(alpha = 0.50f)
+    val accentColor = course.color.copy(alpha = 0.85f)
 
     val nameFontSize = when {
         duration == 1 -> 10.5.sp
@@ -656,7 +649,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                 indication = LocalIndication.current,
                 onClick = onClick
             ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(0.6.dp, borderColor)

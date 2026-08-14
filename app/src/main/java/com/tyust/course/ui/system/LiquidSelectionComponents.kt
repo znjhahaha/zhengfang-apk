@@ -93,6 +93,7 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
+import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionEasing
@@ -177,8 +178,8 @@ fun LiquidSegmentedControl(
                     GlassRecipe.SegIndicatorPressedScale
                 },
                 directManipulationSpec = MotionSpring.liquidFollow(),
-                settleAnimationSpec = MotionSpring.liquidSettle(),
-                releaseScaleAnimationSpec = MotionSpring.liquidSelectionRelease(),
+                settleAnimationSpec = MotionSpring.segmentedSettle(),
+                releaseScaleAnimationSpec = MotionSpring.segmentedRelease(),
                 onDragStarted = {},
                 onDragStopped = {},
                 onDrag = { _, _ -> }
@@ -310,6 +311,15 @@ fun LiquidSegmentedControl(
                                 refractionHeight = 10.dp.toPx() * press,
                                 refractionAmount = 14.dp.toPx() * press,
                                 chromaticAberration = true
+                            )
+                            // RGB 分离色散近似：按压/滑动时浮现，静止归零
+                            val legacyMotion = motionIntensityFromVelocity(
+                                velocityX = dragAnimation.velocity * segmentWidthPx,
+                                fullEffectVelocity = 900f
+                            )
+                            chromaticFringe(
+                                (press * 1.8f + legacyMotion * 1.2f)
+                                    .coerceIn(0f, 2.2f).dp.toPx()
                             )
                         }
                     },

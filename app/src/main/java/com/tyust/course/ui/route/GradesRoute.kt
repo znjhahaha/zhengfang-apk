@@ -1,8 +1,8 @@
 package com.tyust.course.ui.route
 
+import com.tyust.course.ui.system.GlassToaster
 import android.content.Intent
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.tyust.course.login.PasswordLoginCallback
@@ -90,7 +90,7 @@ fun GradesRoute() {
 
         if (userManager.canAutoRelogin()) {
             runOnUiThread {
-                Toast.makeText(context, "Cookie已过期，正在自动重新登录…", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("Cookie已过期，正在自动重新登录…")
             }
             val school = userManager.currentSchool!!
             val username = userManager.username
@@ -108,35 +108,35 @@ fun GradesRoute() {
                 override fun onCaptchaRequired(imageBytes: ByteArray) {
                     gateway.clearSensitiveState()
                     runOnUiThread {
-                        Toast.makeText(context, "自动登录需要验证码，请手动重新登录", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("自动登录需要验证码，请手动重新登录")
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onCaptchaInvalid() {
                     gateway.clearSensitiveState()
                     runOnUiThread {
-                        Toast.makeText(context, "自动登录失败，请手动重新登录", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("自动登录失败，请手动重新登录")
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onInvalidCredentials() {
                     gateway.clearSensitiveState()
                     runOnUiThread {
-                        Toast.makeText(context, "密码已失效，请手动重新登录", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("密码已失效，请手动重新登录")
                         sendExpiredBroadcast()
                     }
                 }
                 override fun onError(message: String) {
                     gateway.clearSensitiveState()
                     runOnUiThread {
-                        Toast.makeText(context, "自动登录失败: $message", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("自动登录失败: $message")
                         sendExpiredBroadcast()
                     }
                 }
             })
         } else {
             runOnUiThread {
-                Toast.makeText(context, "Cookie已过期，请重新登录", Toast.LENGTH_LONG).show()
+                GlassToaster.show("Cookie已过期，请重新登录")
                 sendExpiredBroadcast()
             }
         }
@@ -162,7 +162,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         semesterIsLoading = false
-                        Toast.makeText(context, "加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("加载失败: ${e.message}")
                     }
                 }
 
@@ -234,7 +234,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         overallIsLoading = false
-                        Toast.makeText(context, "获取参数失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("获取参数失败: ${e.message}")
                     }
                 }
 
@@ -304,7 +304,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         examIsLoading = false
-                        Toast.makeText(context, "获取考试安排失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("获取考试安排失败: ${e.message}")
                     }
                 }
 
@@ -407,7 +407,7 @@ fun GradesRoute() {
                 context.startActivity(Intent.createChooser(intent, "导出成绩单"))
             } catch (e: Exception) {
                 Log.e("GradesRoute", "导出成绩失败: ${e.message}", e)
-                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("导出失败: ${e.message}")
             }
         }
     )

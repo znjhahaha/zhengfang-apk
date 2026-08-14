@@ -18,7 +18,9 @@ data class PhysicalLensParams(
     val refractionHeightPx: Float,
     val refractionAmountPx: Float,
     val useLens: Boolean,
-    val chromaticAberration: Boolean
+    val chromaticAberration: Boolean,
+    /** API 31/32 色散近似的 RGB 分离偏移（px）；0 表示关闭。交互时才 > 0。 */
+    val fringePx: Float = 0f
 )
 
 fun resolvePhysicalLens(
@@ -47,14 +49,21 @@ fun resolvePhysicalLens(
         0f
     }
 
-    // 真 RuntimeShader/lens 仅 API 33+；API31/32 只保留 blur（调用侧需自行保证 blur 开启）
+    // 真 RuntimeShader/lens 仅 API 33+；API31/32 保留 blur + RGB 分离色散近似
     if (!isRuntimeShaderTrulySupported()) {
+        val fringeDp = if (allowChromaticAberration && material.chromaticAberration) {
+            // 与 API 33+ 一致：静止为 0，按压/运动时浮现
+            (progress * 1.8f + motion * 1.2f).coerceIn(0f, 2.2f)
+        } else {
+            0f
+        }
         return@with PhysicalLensParams(
             blurPx = blurPx,
             refractionHeightPx = 0f,
             refractionAmountPx = 0f,
             useLens = false,
-            chromaticAberration = false
+            chromaticAberration = false,
+            fringePx = fringeDp.dp.toPx()
         )
     }
 

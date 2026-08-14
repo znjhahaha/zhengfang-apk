@@ -6,9 +6,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 
 // 克莱因蓝（International Klein Blue）作为全局主色
-val BrandPrimary = Color(0xFF002FA7)
-val BrandPrimaryStrong = Color(0xFF00238A)
-val BrandPrimaryContainer = Color(0xFFDCE2F6)
+// iOS systemBlue：明亮饱和，在多彩壁纸与玻璃表面上保持鲜明（原克莱因蓝 0xFF002FA7 在灰玻璃上发闷）
+val BrandPrimary = Color(0xFF0A84FF)
+val BrandPrimaryStrong = Color(0xFF0069D9)
+val BrandPrimaryContainer = Color(0xFFD6E9FF)
 val BrandSecondary = Color(0xFF5C6772)
 val BrandSecondaryContainer = Color(0xFFE6EBF0)
 

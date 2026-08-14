@@ -92,19 +92,43 @@ object MotionSpring {
 
     /** Liquid-control settle: a single restrained overshoot when the capsule snaps to a tab. */
     fun <T> liquidSettle() = spring<T>(
-        dampingRatio = 0.68f,
-        stiffness = 380f
+        dampingRatio = 0.80f,
+        stiffness = 420f
     )
 
-    /** Liquid selection release: one-and-a-half gentle bounces, shared by tabs and segmented controls. */
-    fun <T> liquidSelectionRelease() = spring<T>(
+    /** Segmented settle: short travel distance, so keep the slide nearly critically damped. */
+    fun <T> segmentedSettle() = spring<T>(
+        dampingRatio = 0.88f,
+        stiffness = 430f
+    )
+
+    /** Segmented release: one barely-visible bounce when the indicator scale relaxes. */
+    fun <T> segmentedRelease() = spring<T>(
+        dampingRatio = 0.86f,
+        stiffness = 400f
+    )
+
+    /** Nav settle: long travel across the bar wants a pronounced jelly overshoot. */
+    fun <T> navSettle() = spring<T>(
+        dampingRatio = 0.60f,
+        stiffness = 310f
+    )
+
+    /** Nav release: springy scale relaxation matching the jelly slide. */
+    fun <T> navRelease() = spring<T>(
         dampingRatio = 0.55f,
-        stiffness = 320f
+        stiffness = 290f
+    )
+
+    /** Liquid selection release: one gentle bounce for generic liquid controls. */
+    fun <T> liquidSelectionRelease() = spring<T>(
+        dampingRatio = 0.72f,
+        stiffness = 360f
     )
 
     /** Jelly rebound for the track/panel drifting back to rest after a drag or tab switch. */
     fun liquidJellyRebound() = spring(
-        dampingRatio = 0.6f,
+        dampingRatio = 0.66f,
         stiffness = 320f,
         visibilityThreshold = 0.5f
     )

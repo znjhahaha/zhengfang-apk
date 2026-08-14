@@ -1,5 +1,6 @@
 package com.tyust.course.ui.route
 
+import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -28,7 +29,6 @@ import org.json.JSONObject
 import java.io.IOException
 import android.content.Context
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -301,7 +301,7 @@ fun CourseListRoute() {
                 allCourses = cached
                 courses = cached
                 isLoading = false
-                Toast.makeText(context, "已加载缓存 (${cached.size} 门，剩余 ${remaining} 分钟)", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("已加载缓存 (${cached.size} 门，剩余 ${remaining} 分钟)")
                 
                 // 🔧 关键修复：缓存模式下，后台获取 Display 参数
                 // 这样展开课程详情时才能使用完整参数
@@ -368,7 +368,7 @@ fun CourseListRoute() {
         courses = emptyList()
         displayParams = emptyMap() // 🔧 刷新时清除旧参数，防止交互锁误判
         if (forceRefresh) {
-            Toast.makeText(context, "正在刷新课程列表...", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("正在刷新课程列表...")
         }
 
         CourseApiClient.getInstance().fetchCourseParams(school, object : Callback {
@@ -377,7 +377,7 @@ fun CourseListRoute() {
                     isLoading = false
                     isFilterOptionsLoading = false
                     filterOptionsMessage = "筛选条件加载失败，请下拉刷新重试"
-                    Toast.makeText(context, "获取选课参数失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("获取选课参数失败: ${e.message}")
                 }
             }
 
@@ -400,14 +400,14 @@ fun CourseListRoute() {
                                 courses = newCourses
                                 isLoading = false
                                 if (forceRefresh) {
-                                    Toast.makeText(context, "刷新完成: ${newCourses.size} 门课程", Toast.LENGTH_SHORT).show()
+                                    GlassToaster.show("刷新完成: ${newCourses.size} 门课程")
                                 }
                             }
                         },
                         onError = { msg ->
                             runOnUiThreadForAccount(requestAccountKey) {
                                 isLoading = false
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                GlassToaster.show(msg)
                             }
                         },
                         // 🔧 渐进式加载：每个分类完成后立即更新UI
@@ -463,7 +463,7 @@ fun CourseListRoute() {
             if (school == null) {
                 isFilterLoading = false
                 activeFilter = null
-                Toast.makeText(context, "未找到当前学校配置", Toast.LENGTH_SHORT).show()
+                GlassToaster.show("未找到当前学校配置")
             } else {
                 val baseIndexParams = mutableMapOf<String, String>()
                 courseParams?.let { baseIndexParams.putAll(it) }
@@ -600,7 +600,7 @@ fun CourseListRoute() {
                         } else {
                             lastError ?: "筛选完成: 0 门课程"
                         }
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        GlassToaster.show(message)
                     }
                 }
             }
@@ -898,7 +898,7 @@ fun CourseListRoute() {
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
         if (school == null) {
-            Toast.makeText(context, "未登录，无法获取详情", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("未登录，无法获取详情")
             onComplete(false)
         } else {
             scope.launch(Dispatchers.IO) {
@@ -962,7 +962,7 @@ fun CourseListRoute() {
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
                         if (!success) {
-                            Toast.makeText(context, "❗获取详情失败，请重新点击展开", Toast.LENGTH_SHORT).show()
+                            GlassToaster.show("❗获取详情失败，请重新点击展开")
                         }
                         onComplete(success)
                     }
@@ -970,7 +970,7 @@ fun CourseListRoute() {
                     android.util.Log.e("CourseListRoute", "获取详情失败: ${e.message}")
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
-                        Toast.makeText(context, "❗网络错误: ${e.message}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("❗网络错误: ${e.message}")
                         onComplete(false)
                     }
                 }
@@ -985,7 +985,7 @@ fun CourseListRoute() {
             val school = userManager.currentSchool ?: return
             val requestAccountKey = userManager.currentAccountStorageKey
             val paramsSnapshot = courseParams?.toMap()
-            Toast.makeText(context, "正在选课: ${course.name}...", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("正在选课: ${course.name}...")
             
             // 使用协程异步执行选课，完成后显示结果
             scope.launch(Dispatchers.IO) {
@@ -996,7 +996,7 @@ fun CourseListRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     if (result) {
-                        Toast.makeText(context, "✅ 选课成功: ${course.name}", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("✅ 选课成功: ${course.name}")
                         course.isSelected = true
                         // 🔧 强制刷新 UI 并保存到持久化缓存
                         courses = courses.toList()
@@ -1018,7 +1018,7 @@ fun CourseListRoute() {
             val requestAccountKey = userManager.currentAccountStorageKey
             val paramsSnapshot = courseParams?.toMap()
             isBatchSelecting = true
-            Toast.makeText(context, "开始批量抢课，共 ${selectedCourses.size} 门课程", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("开始批量抢课，共 ${selectedCourses.size} 门课程")
             
             scope.launch(Dispatchers.IO) {
                 if (!isCurrentAccount(requestAccountKey)) return@launch
@@ -1030,7 +1030,7 @@ fun CourseListRoute() {
                     if (!isCurrentAccount(requestAccountKey)) return@launch
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
-                        Toast.makeText(context, "正在抢课 (${index + 1}/${selectedCourses.size}): ${course.name}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("正在抢课 (${index + 1}/${selectedCourses.size}): ${course.name}")
                     }
                     
                     val result = logic.performSelectionSync(course)
@@ -1043,7 +1043,7 @@ fun CourseListRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isBatchSelecting = false
-                    Toast.makeText(context, "批量抢课完成！成功: $successCount 门，失败: $failCount 门", Toast.LENGTH_LONG).show()
+                    GlassToaster.show("批量抢课完成！成功: $successCount 门，失败: $failCount 门")
                 }
             }
         }
@@ -1110,25 +1110,12 @@ fun CourseListRoute() {
                                 }) { 
                                     Icon(Icons.Default.Close, contentDescription = "取消搜索", tint = Neutral900) 
                                 }
-                                TextField(
+                                com.tyust.course.ui.system.GlassTextField(
                                     value = searchQuery,
                                     onValueChange = { onSearch(it) },
-                                    placeholder = { Text("搜索课程名、教师或ID", color = Neutral500) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = Neutral100,
-                                        unfocusedContainerColor = Neutral50,
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent,
-                                        cursorColor = NeuPrimary,
-                                        focusedTextColor = Neutral900,
-                                        unfocusedTextColor = Neutral900,
-                                        disabledTextColor = Neutral300,
-                                        focusedPlaceholderColor = Neutral300,
-                                        unfocusedPlaceholderColor = Neutral300
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    singleLine = true
+                                    placeholder = "搜索课程名、教师或ID",
+                                    leadingIcon = Icons.Default.Search,
+                                    modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
@@ -1241,7 +1228,7 @@ fun CourseListRoute() {
                         onSearch = { onSearch(it) },
                         onCourseSelect = { course ->
                             if (course.isSelected) {
-                                Toast.makeText(context, "课程已选: ${course.name}", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("课程已选: ${course.name}")
                             } else {
                                 scope.launch { performSelection(course) }
                             }
@@ -1282,14 +1269,14 @@ fun CourseListRoute() {
                                     Log.e("CourseListRoute", "Error resetting queue status: ${e.message}")
                                 }
                                 
-                                Toast.makeText(context, "已加入抢课队列: ${course.name}", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("已加入抢课队列: ${course.name}")
                             } else {
-                                Toast.makeText(context, "已经在队列中: ${course.name}", Toast.LENGTH_SHORT).show()
+                                GlassToaster.show("已经在队列中: ${course.name}")
                             }
                         },
                         onSetTargetCourse = { course ->
                             SmartSelector.getInstance().setTargetCourse(course)
-                            Toast.makeText(context, "🎯 已设为目标课程: ${course.name}", Toast.LENGTH_SHORT).show()
+                            GlassToaster.show("🎯 已设为目标课程: ${course.name}")
                         },
                         // 🔧 模糊匹配目标设置
                         onSetFuzzyMatchTarget = { courseId, courseName, xkkzId, kklxdm ->
@@ -1679,7 +1666,7 @@ private class CourseSelectionLogic(
     fun performSelection(course: Course) {
         if (!isCurrentAccount()) return
         if (course.courseId.isNullOrEmpty()) {
-            Toast.makeText(context, "缺少课程ID", Toast.LENGTH_SHORT).show()
+            GlassToaster.show("缺少课程ID")
             return
         }
 
@@ -1757,7 +1744,7 @@ private class CourseSelectionLogic(
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     postToCurrentAccount {
-                        Toast.makeText(context, "获取选课详情失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        GlassToaster.show("获取选课详情失败: ${e.message}")
                     }
                 }
 
@@ -1770,7 +1757,7 @@ private class CourseSelectionLogic(
 
                     if (details == null) {
                         postToCurrentAccount {
-                            Toast.makeText(context, "获取选课参数失败", Toast.LENGTH_SHORT).show()
+                            GlassToaster.show("获取选课参数失败")
                         }
                         return
                     }
@@ -1904,7 +1891,7 @@ private class CourseSelectionLogic(
             android.util.Log.e("CourseSelectionLogic", "Step 2 失败: $errorMsg")
             // 在主线程显示 Toast
             postToCurrentAccount {
-                android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
+                GlassToaster.show(errorMsg)
             }
             return false
         }
@@ -2083,7 +2070,7 @@ private class CourseSelectionLogic(
          CourseApiClient.getInstance().selectCourse(school, postBody, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 postToCurrentAccount {
-                    Toast.makeText(context, "请求失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    GlassToaster.show("请求失败: ${e.message}")
                 }
             }
 
@@ -2093,11 +2080,11 @@ private class CourseSelectionLogic(
                 
                 postToCurrentAccount {
                     if (success) {
-                        Toast.makeText(context, "✅ 选课请求成功，请刷新列表确认", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("✅ 选课请求成功，请刷新列表确认")
                     } else {
                         // 🔧 直接显示服务器返回的错误信息
                         val errorMsg = parseServerErrorMessage(result)
-                        Toast.makeText(context, "❌ $errorMsg", Toast.LENGTH_LONG).show()
+                        GlassToaster.show("❌ $errorMsg")
                     }
                 }
             }
