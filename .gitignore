@@ -80,6 +80,9 @@ k_b64.txt
 tmp.txt
 *base64.txt
 
+# Test screenshots & debug artifacts
+/test-screenshots/
+
 # Documentation & Tools (not needed in repo)
 api.md
 CHANGELOG.md
@@ -118,8 +121,3 @@ AndroidLiquidGlass
 .playwright-mcp/page-2026-07-13T15-35-30-767Z.yml
 .playwright-mcp/page-2026-07-13T15-35-51-585Z.png
 zfapk-app-screen-small.jpg
-zfapk-app-screen-small.png
-zfapk-app-screen.png
-zfapk-screen.png
-zfapk-screenshot.png
-zfapk-window.xml
