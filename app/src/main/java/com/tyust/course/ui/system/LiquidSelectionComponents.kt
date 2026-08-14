@@ -121,7 +121,7 @@ fun LiquidSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
+    backdrop: Backdrop? = LocalControlBackdrop.current,
     height: Dp = 52.dp
 ) {
     if (options.isEmpty()) return
@@ -485,15 +485,14 @@ fun LiquidSegmentedControl(
                     onDrawSurface = {
                         val press = dragAnimation.pressProgress
                         if (hasRealLens) {
-                            val solidColor = when {
-                                compact && isLightTheme -> Color.White
-                                compact -> Color.White
-                                isLightTheme -> Color(GlassRecipe.NavSelectedSolidColorLight)
-                                else -> Color(GlassRecipe.NavSelectedSolidColorDark)
+                            val solidColor = if (isLightTheme) {
+                                Color(GlassRecipe.NavSelectedSolidColorLight)
+                            } else {
+                                Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
                             val restAlpha = when {
                                 compact && isLightTheme -> 0.42f
-                                compact -> 0.16f
+                                compact -> 0.24f
                                 isLightTheme -> GlassRecipe.NavSelectedSolidAlpha
                                 else -> GlassRecipe.NavSelectedSolidAlphaDark
                             }
@@ -524,6 +523,20 @@ fun LiquidSegmentedControl(
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                // 与外层轨道共用同一套按压缩放：文字随轨道一起放大，
+                // 不再出现"轨道放大、文字停在底层"的分层错觉。
+                .graphicsLayer {
+                    val progress = dragAnimation.pressProgress
+                    val maxGain = 16.dp.toPx()
+                    val pressScale = lerp(1f, 1f + maxGain / size.width, progress)
+                    val indicatorBoost = (
+                        (dragAnimation.scaleX + dragAnimation.scaleY) / 2f - 1f
+                        ).coerceIn(0f, 0.4f)
+                    val scale = pressScale * (1f + indicatorBoost * 0.18f)
+                    scaleX = scale
+                    scaleY = scale
+                    clip = false
+                }
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 .pointerInput(enabled, optionCount, segmentWidthPx) {
                     if (!enabled) return@pointerInput
@@ -643,7 +656,7 @@ fun LiquidPicker(
     leadingIcon: ImageVector? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     var expanded by remember { mutableStateOf(false) }
     var popupVisible by remember { mutableStateOf(false) }

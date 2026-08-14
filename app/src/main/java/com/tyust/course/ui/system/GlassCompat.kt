@@ -82,10 +82,16 @@ fun canUseLiquidLens(
 val LocalAppBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
- * 交互控件专用的中性光学输入。它只记录灰阶明暗，不包含壁纸或页面内容，
- * 因而按钮、滑块和模态层可以保留折射而不会把背景流光带进表面。
+ * 交互控件（按钮、开关、分段栏、内联通知）的采样源。与底部 Tab 同源，
+ * 都采样壁纸层，因此折射与高光只来自真实底色，而不是人造灰阶。
  */
-val LocalNeutralGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+val LocalControlBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
+ * 模态层的采样源：包含壁纸与页面内容，由页面根容器在捕获层之外下发。
+ * 弹窗需要折射"身后真实画面"，因此比控件采样源多一层页面内容。
+ */
+val LocalModalBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
  * 页面底部不可被 Popup 覆盖的浮层高度，例如底部导航栏。

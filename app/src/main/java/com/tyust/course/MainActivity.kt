@@ -88,8 +88,9 @@ import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.drawWallpaperPattern
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalDialogHost
+import com.tyust.course.ui.system.LocalModalBackdrop
 import com.tyust.course.ui.system.LocalPageInlineNotice
-import com.tyust.course.ui.system.NeutralGlassBackdropProvider
+import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.PageInlineNotice
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
@@ -309,10 +310,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             null
         }
 
-        NeutralGlassBackdropProvider(
-            modifier = Modifier.fillMaxSize(),
-            enabled = useGlass
-        ) {
         val wallpaperBackdrop = if (useGlass) {
             rememberLayerBackdrop()
         } else {
@@ -329,6 +326,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val dialogHostState = rememberDialogHostState()
         CompositionLocalProvider(
             LocalAppBackdrop provides wallpaperBackdrop,
+            LocalControlBackdrop provides wallpaperBackdrop,
+            LocalModalBackdrop provides navBarBackdrop,
             LocalAppOverlayBottomInset provides 96.dp,
             LocalDialogHost provides dialogHostState,
             LocalPageInlineNotice provides tokenExpiredNotice
@@ -545,7 +544,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
         }
     }
-}
 }
 
 @Composable

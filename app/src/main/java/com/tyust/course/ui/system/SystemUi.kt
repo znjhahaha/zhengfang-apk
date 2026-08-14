@@ -51,8 +51,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Dialog
@@ -336,7 +339,7 @@ fun GlassCircleButton(
     enabled: Boolean = true,
     size: Dp = 40.dp,
     tint: Color = MaterialTheme.colorScheme.onSurface,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
     val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
@@ -628,7 +631,7 @@ fun SystemSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
+    backdrop: Backdrop? = LocalControlBackdrop.current,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -647,7 +650,7 @@ fun SystemCompactSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
+    backdrop: Backdrop? = LocalControlBackdrop.current,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -674,7 +677,7 @@ fun SystemPicker(
     leadingIcon: ImageVector? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     LiquidPicker(
         options = options.map(::LiquidPickerOption),
@@ -856,7 +859,7 @@ fun SystemActionButton(
     icon: ImageVector? = null,
     primary: Boolean = false,
     enabled: Boolean = true,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     val contentColor = if (primary) {
         Color.White
@@ -1000,7 +1003,7 @@ fun DisablePlatformDialogDim() {
 @Composable
 fun SystemDialog(
     onDismissRequest: () -> Unit,
-    backdrop: Backdrop? = LocalNeutralGlassBackdrop.current,
+    backdrop: Backdrop? = LocalModalBackdrop.current ?: LocalControlBackdrop.current,
     useVisualEffects: Boolean = true,
     confirmButton: @Composable (() -> Unit)? = null,
     dismissButton: @Composable (() -> Unit)? = null,
@@ -1030,7 +1033,20 @@ fun SystemDialog(
     } else {
         Dialog(onDismissRequest = onDismissRequest) {
             DisablePlatformDialogDim()
-            dialogBody()
+            // 平台窗口路径没有 DialogHost，自己补同一套淡入缩放，避免弹窗硬切出现。
+            var cardVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                withFrameNanos { }
+                cardVisible = true
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = cardVisible,
+                enter = androidx.compose.animation.fadeIn() +
+                    androidx.compose.animation.scaleIn(initialScale = 0.92f),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
+                dialogBody()
+            }
         }
     }
 }
@@ -1054,10 +1070,11 @@ private fun SystemDialogContent(
     )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
     val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    // 模态卡片是玻璃而不是实色板：只保留一层中性表面，让身后画面经 blur/lens 透出。
     val dialogSurfaceColor = if (isLightTheme) {
-        Color(0xFFD9DBDF).copy(alpha = dialogMaterial.surfaceAlpha)
+        Color(0xFFF4F5F7).copy(alpha = 0.55f)
     } else {
-        Color(0xFF25272B).copy(alpha = 0.82f)
+        Color(0xFF1E2024).copy(alpha = 0.58f)
     }
     val dialogBorderColor = Color.White.copy(
         alpha = if (isLightTheme) 0.64f else 0.16f
@@ -1109,7 +1126,6 @@ private fun SystemDialogContent(
                         shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
                         onDrawSurface = { drawRect(dialogSurfaceColor) }
                     )
-                    .border(0.75.dp, dialogBorderColor, dialogShape)
             )
         } else {
             Box(
@@ -1128,7 +1144,7 @@ private fun SystemDialogContent(
             )
         }
 
-        CompositionLocalProvider(LocalNeutralGlassBackdrop provides nestedControlBackdrop) {
+        CompositionLocalProvider(LocalControlBackdrop provides nestedControlBackdrop) {
             Column(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally

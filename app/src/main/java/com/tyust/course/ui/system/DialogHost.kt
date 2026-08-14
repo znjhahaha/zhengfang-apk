@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
@@ -83,6 +84,18 @@ fun DialogHost(
     }
 
     if (dialogContent != null) {
+        // 内容先挂载、下一帧再置为可见，否则 AnimatedVisibility 的首帧就是终态，
+        // 弹窗会直接"跳"出来而没有淡入缩放过渡。
+        var cardVisible by remember(dialogContent) { mutableStateOf(false) }
+        LaunchedEffect(dialogContent, state.isVisible) {
+            if (state.isVisible) {
+                withFrameNanos { }
+                cardVisible = true
+            } else {
+                cardVisible = false
+            }
+        }
+
         BackHandler { state.dismiss() }
         Box(
             modifier = modifier
@@ -95,7 +108,7 @@ fun DialogHost(
             contentAlignment = Alignment.Center
         ) {
             AnimatedVisibility(
-                visible = state.isVisible,
+                visible = cardVisible,
                 enter = enterTransition,
                 exit = exitTransition
             ) {

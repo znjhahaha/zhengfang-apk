@@ -263,13 +263,13 @@ object GlassRecipe {
     // 无 RuntimeShader 时与真 lens 平台共用 78/56 按压尺度（cba2a09）。
     val NavLegacyPressedScale = SelectionIndicatorPressedScale
 
-    // 选中胶囊静止即玻璃：低透明中性 tint（浅色暗 tint / 深色亮 tint），
-    // 与轨道形成明度差的同时透出折射与模糊背景；按压进一步降遮罩。
-    val NavSelectedSolidColorLight = 0xFF1C1C1E
+    // 选中胶囊靠"提亮"与轨道区分，而不是叠黑色 tint。浅色主题下叠黑会把
+    // 整块透镜压成灰片，视觉上比轨道更脏；白色低透明既保留折射也不发灰。
+    val NavSelectedSolidColorLight = 0xFFFFFFFF
     val NavSelectedSolidColorDark = 0xFFFFFFFF
-    val NavSelectedSolidAlpha = 0.10f
-    val NavSelectedSolidAlphaDark = 0.14f
-    val NavSelectedGlassAlpha = 0.05f
+    val NavSelectedSolidAlpha = 0.34f
+    val NavSelectedSolidAlphaDark = 0.20f
+    val NavSelectedGlassAlpha = 0.14f
     val NavPressedScale = SelectionIndicatorPressedScale
 
     val ActionBlurDp = control.blurDp

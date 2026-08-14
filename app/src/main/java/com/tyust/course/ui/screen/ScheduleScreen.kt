@@ -137,28 +137,32 @@ fun ScheduleScreen(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            WeekHeaderCompact(
-                currentWeek = pagerState.currentPage + 1,
-                onPrevClick = {
-                    coroutineScope.launch {
-                        if (pagerState.currentPage > 0) {
-                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+            // topBar slot 只测量单个子项，两个兄弟节点会叠放并让通知条压到状态栏，
+            // 因此顶栏与内联通知必须在同一个 Column 里纵向排布。
+            Column {
+                WeekHeaderCompact(
+                    currentWeek = pagerState.currentPage + 1,
+                    onPrevClick = {
+                        coroutineScope.launch {
+                            if (pagerState.currentPage > 0) {
+                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                            }
                         }
-                    }
-                },
-                onNextClick = {
-                    coroutineScope.launch {
-                        if (pagerState.currentPage < maxWeeks - 1) {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    },
+                    onNextClick = {
+                        coroutineScope.launch {
+                            if (pagerState.currentPage < maxWeeks - 1) {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
                         }
-                    }
-                },
-                onSettingsClick = onSettingsClick,
-                onExportClick = onExportClick,
-                isNextSemester = isNextSemester,
-                onToggleSemester = onToggleSemester
-            )
-            PageInlineNoticeHost()
+                    },
+                    onSettingsClick = onSettingsClick,
+                    onExportClick = onExportClick,
+                    isNextSemester = isNextSemester,
+                    onToggleSemester = onToggleSemester
+                )
+                PageInlineNoticeHost()
+            }
         }
     ) { paddingValues ->
         when {

@@ -5,8 +5,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,8 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
+import com.tyust.course.ui.theme.SemanticWarning
 
 @Immutable
 data class PageInlineNotice(
@@ -56,30 +69,73 @@ fun PageInlineNoticeHost(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth()
     ) {
         retainedNotice?.let { currentNotice ->
-            LiquidButton(
-                onClick = currentNotice.onClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                style = LiquidButtonStyle.Surface,
-                shape = RoundedCornerShape(16.dp),
-                cornerRadius = 16.dp,
-                minHeight = 44.dp,
-                horizontalPadding = 14.dp,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(17.dp)
-                )
-                Text(
-                    text = currentNotice.message,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            NoticeStrip(
+                message = currentNotice.message,
+                onClick = currentNotice.onClick
+            )
         }
+    }
+}
+
+/**
+ * 通知条自成一档材质：语义色薄玻璃，没有按钮的实心表面和投影，
+ * 因此不会在顶栏下方形成一圈灰壳。
+ */
+@Composable
+private fun NoticeStrip(
+    message: String,
+    onClick: () -> Unit
+) {
+    val isLightTheme = !isSystemInDarkTheme()
+    val shape = RoundedCornerShape(13.dp)
+    val backdrop = LocalControlBackdrop.current?.takeIf { isBackdropSupported() }
+    val surfaceColor = SemanticWarning.copy(alpha = if (isLightTheme) 0.14f else 0.20f)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(
+                if (backdrop != null) {
+                    Modifier.drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { shape },
+                        effects = {
+                            vibrancy()
+                            blur(5.dp.toPx())
+                        },
+                        onDrawSurface = { drawRect(surfaceColor) }
+                    )
+                } else {
+                    Modifier
+                        .clip(shape)
+                        .background(
+                            Color.White.copy(alpha = if (isLightTheme) 0.72f else 0.10f)
+                        )
+                }
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .heightIn(min = 38.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = SemanticWarning,
+            modifier = Modifier.size(15.dp)
+        )
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

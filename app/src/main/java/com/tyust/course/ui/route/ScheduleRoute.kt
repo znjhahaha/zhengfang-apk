@@ -334,7 +334,7 @@ fun ScheduleRoute() {
                     androidx.compose.runtime.CompositionLocalProvider(
                         com.tyust.course.ui.system.LocalDialogHost provides null,
                         com.tyust.course.ui.system.LocalAppBackdrop provides null,
-                        com.tyust.course.ui.system.LocalNeutralGlassBackdrop provides null
+                        com.tyust.course.ui.system.LocalControlBackdrop provides null
                     ) {
                         var showGlassDatePicker by remember { mutableStateOf(false) }
                         ScheduleSettingsScreen(
