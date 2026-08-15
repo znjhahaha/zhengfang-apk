@@ -17,7 +17,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +64,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -346,6 +346,14 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 )
             ) {
             val wallpaperPreset = AppearanceSettingsManager.wallpaper
+            // debug 水印画进壁纸捕获层，而不是盖在内容最上层。只有进入
+            // LocalControlBackdrop 的采样范围，顶栏玻璃芯片才可能折射它——
+            // 高对比斜线是验收折射管道最好的标靶：笔画在芯片边缘有没有弯，
+            // 一眼就能判定。release 构建只保留右下角角标。
+            val showPiracyTiles = (
+                LocalContext.current.applicationInfo.flags and
+                    ApplicationInfo.FLAG_DEBUGGABLE
+                ) != 0
             if (useGlass && wallpaperBackdrop != null) {
                 Canvas(
                     modifier = Modifier
@@ -353,13 +361,13 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         .layerBackdrop(wallpaperBackdrop)
                 ) {
                     drawWallpaperPattern(wallpaperPreset)
+                    if (showPiracyTiles) drawPiracyWatermarkTiles()
                 }
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(wallpaperPreset.baseColor)
-                ) {}
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawRect(wallpaperPreset.baseColor)
+                    if (showPiracyTiles) drawPiracyWatermarkTiles()
+                }
             }
 
             Column(modifier = Modifier.fillMaxSize()) {
@@ -462,7 +470,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     }
                 }
 
-            AppBuildWatermarks(fragmentActivity = fragmentActivity)
+            AppBuildWatermarks()
             } // 关闭 navBarBackdrop 捕获层
 
             // 底栏位于捕获层外，避免采样源包含底栏自身。
@@ -557,9 +565,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 }
 
 @Composable
-private fun BoxScope.AppBuildWatermarks(
-    fragmentActivity: FragmentActivity
-) {
+private fun BoxScope.AppBuildWatermarks() {
     Text(
         text = "开源版 · 请勿商用",
         modifier = Modifier
@@ -569,39 +575,42 @@ private fun BoxScope.AppBuildWatermarks(
         fontSize = 10.sp,
         fontWeight = FontWeight.Medium
     )
+    // debug 的平铺水印不在这里画。它必须落在壁纸捕获层内才能被玻璃芯片折射，
+    // 所以由 drawPiracyWatermarkTiles 在壁纸 Canvas 里绘制。画在这一层会盖在
+    // 所有内容之上，穿过按钮时笔画完全不弯——那正是之前看不出折射的原因之一。
+}
 
-    val isDebug = (fragmentActivity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    if (isDebug) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 88.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    textSize = 54f
-                    setColor(android.graphics.Color.argb(64, 199, 58, 47))
-                    textAlign = android.graphics.Paint.Align.CENTER
-                }
-                val centerX = size.width / 2f
-                val centerY = size.height / 2f
-                val nativeCanvas = drawContext.canvas.nativeCanvas
-                nativeCanvas.save()
-                nativeCanvas.rotate(-28f, centerX, centerY)
-                for (i in -2..2) {
-                    for (j in -3..3) {
-                        nativeCanvas.drawText(
-                            "开源版 / 严禁倒卖",
-                            centerX + (i * 560f),
-                            centerY + (j * 620f),
-                            paint
-                        )
-                    }
-                }
-                nativeCanvas.restore()
-            }
+/** 平铺水印避开底栏区域的底部内缩。原先由外层 Box 的 bottom padding 承担。 */
+private val PiracyWatermarkBottomInset = 88.dp
+
+/**
+ * debug 防倒卖水印的平铺绘制。
+ *
+ * 调用点在壁纸 Canvas 内（见 [layerBackdrop] 那一层），因此它进入
+ * LocalControlBackdrop 的采样范围，顶栏芯片会折射这些斜线。
+ * release 构建不调用。
+ */
+private fun DrawScope.drawPiracyWatermarkTiles() {
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 54f
+        setColor(android.graphics.Color.argb(64, 199, 58, 47))
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+    val centerX = size.width / 2f
+    val centerY = (size.height - PiracyWatermarkBottomInset.toPx()) / 2f
+    val nativeCanvas = drawContext.canvas.nativeCanvas
+    nativeCanvas.save()
+    nativeCanvas.rotate(-28f, centerX, centerY)
+    for (i in -2..2) {
+        for (j in -3..3) {
+            nativeCanvas.drawText(
+                "开源版 / 严禁倒卖",
+                centerX + (i * 560f),
+                centerY + (j * 620f),
+                paint
+            )
         }
     }
+    nativeCanvas.restore()
 }
 

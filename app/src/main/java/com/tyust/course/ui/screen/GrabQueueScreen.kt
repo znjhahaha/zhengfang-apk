@@ -53,7 +53,6 @@ import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.MotionSpecs
 import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.LiquidSwitch
-import com.tyust.course.ui.system.neumorphicShadow
 /**
  * 抢课队列项状态
  */

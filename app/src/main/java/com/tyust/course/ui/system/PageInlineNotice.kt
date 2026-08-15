@@ -39,6 +39,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -63,6 +65,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.glassRim
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.IOSBlueDark
 import com.tyust.course.ui.theme.IOSBlueLight
@@ -143,13 +146,20 @@ private fun noticeAccentColor(): Color =
  * 悬浮玻璃通知：单个元素在胶囊与药丸之间连续形变，右边缘始终贴右缘对齐，
  * 所以收起就是"向右收拢"而不是两块 UI 硬切。落位由顶栏上报的底边决定，
  * 不覆盖任何顶栏操作；右滑收起为药丸，点击药丸重新展开。
+ *
+ * @param backdrop 采样源。默认取壁纸层——**不要改成含页面内容的那一层**：
+ *                 通知渲染在页面内容之内，采样含页面内容的捕获层就是自采样。
  */
 @Composable
-fun FloatingNoticeHost(modifier: Modifier = Modifier) {
+fun FloatingNoticeHost(
+    modifier: Modifier = Modifier,
+    backdrop: Backdrop? = LocalControlBackdrop.current
+) {
     val notice = LocalFloatingNotice.current ?: return
     val anchor = LocalNoticeAnchor.current
     val accessibility = rememberGlassAccessibilityMode()
     val motion = !accessibility.reduceMotion
+    val optics = rememberInteractiveOptics()
 
     var phase by remember(notice.message) { mutableStateOf(NoticePhase.Expanded) }
 
@@ -231,10 +241,10 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
         val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
         val accentColor = noticeAccentColor()
         val shape: Shape = RoundedCornerShape(percent = 50)
-        // 采样含页面内容的捕获层而非纯壁纸：折射里要有东西可看，才是镜片不是雾。
-        // 通知位于该捕获层之外，不会自采样。
-        val backdrop = (LocalModalBackdrop.current ?: LocalAppBackdrop.current)
-            ?.takeIf { isBackdropSupported() }
+        // 采样壁纸层。这里曾经取 LocalModalBackdrop ?: LocalAppBackdrop 并注释
+        // "通知位于该捕获层之外，不会自采样"——那是错的：通知渲染在页面内容里，
+        // 而页面内容就在 Modal 那一层的捕获范围内，取它等于自采样。
+        val sampledBackdrop = backdrop?.takeIf { isBackdropSupported() }
 
         Box(
             modifier = Modifier
@@ -246,9 +256,9 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                     alpha = 1f - (dismissOffset.value / dismissThresholdPx).coerceIn(0f, 1f) * 0.85f
                 }
                 .then(
-                    if (backdrop != null) {
+                    if (sampledBackdrop != null) {
                         Modifier.drawBackdrop(
-                            backdrop = backdrop,
+                            backdrop = sampledBackdrop,
                             shape = { shape },
                             effects = {
                                 val params = resolvePhysicalLens(
@@ -257,7 +267,12 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                                     shape = shape,
                                     minCornerRadiusPx = size.minDimension / 2f,
                                     minDimensionPx = size.minDimension,
-                                    interactionProgress = 0f,
+                                    // 曾经写死 0f，于是 pressScalesRefraction 形同虚设，
+                                    // 折射永远停在 refractionFloor，按下去光学完全不动。
+                                    interactionProgress = optics.opticalProgress,
+                                    motionIntensity = optics.motionIntensity(
+                                        material.optics.velocityForFullEffect
+                                    ),
                                     enableBlur = false,
                                     allowChromaticAberration = true,
                                     chromaticAberrationAtRest = true,
@@ -290,8 +305,17 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                             onDrawSurface = { drawRect(surfaceColor) }
                         )
                             // 壁纸是平滑渐变，折射无内容可折射；边缘光不依赖背景，
-                            // 是这里唯一稳定成立的玻璃特征
-                            .glassRim(shape, intensity = 0.9f, isLightTheme = isLightTheme)
+                            // 是这里唯一稳定成立的玻璃特征。按压时最亮处移向触点。
+                            .glassRim(
+                                shape,
+                                intensity = 0.9f,
+                                isLightTheme = isLightTheme,
+                                pressProgress = { optics.pressProgress },
+                                pointerOffset = {
+                                    if (motion) optics.pointerPosition else Offset.Unspecified
+                                }
+                            )
+                            .then(if (motion) optics.gestureModifier else Modifier)
                     } else {
                         Modifier
                             .clip(shape)

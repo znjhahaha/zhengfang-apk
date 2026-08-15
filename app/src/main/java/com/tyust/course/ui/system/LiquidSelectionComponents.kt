@@ -97,7 +97,6 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
-import com.tyust.course.ui.system.glass.InteractiveHighlight
 import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
@@ -155,9 +154,6 @@ fun LiquidSegmentedControl(
         1f
     } else {
         GlassRecipe.SegIndicatorPressedScale
-    }
-    val interactiveHighlight = remember(animationScope) {
-        InteractiveHighlight(animationScope = animationScope)
     }
     val latestSelectedIndex by rememberUpdatedState(clampedSelectedIndex)
     val latestOnSelect by rememberUpdatedState(onSelect)
@@ -305,10 +301,7 @@ fun LiquidSegmentedControl(
                             }
                         }
                     }
-                }
-                .then(
-                    if (enabled) interactiveHighlight.gestureModifier else Modifier
-                ),
+                },
             verticalAlignment = Alignment.CenterVertically
         ) {
             options.forEachIndexed { index, label ->

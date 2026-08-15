@@ -62,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -101,10 +100,10 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
-import com.tyust.course.ui.system.glass.DampedDragAnimation
-import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.adaptiveGlassChip
+import com.tyust.course.ui.system.glass.applyPressSquash
 import com.tyust.course.ui.system.glass.glassRim
-import com.tyust.course.ui.system.glass.rememberPressMotion
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -162,26 +161,6 @@ fun Modifier.neumorphicShadow(
     ambientColor = darkColor.copy(alpha = 0.16f),
     spotColor = darkColor.copy(alpha = 0.22f)
 )
-
-/**
- * 兼容路径的静态高光只提示上缘，不模拟额外折射或内阴影。
- */
-@Suppress("UNUSED_PARAMETER")
-fun Modifier.glassHighlight(
-    highlightAlpha: Float = 0.12f,
-    spotAlpha: Float = 0f
-): Modifier = this.drawBehind {
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.White.copy(alpha = highlightAlpha),
-                Color.Transparent
-            ),
-            startY = 0f,
-            endY = size.height * 0.28f
-        )
-    )
-}
 
 enum class SystemTone {
     Info,
@@ -350,31 +329,22 @@ fun GlassCircleButton(
     tint: Color = MaterialTheme.colorScheme.onSurface,
     backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val accessibility = rememberGlassAccessibilityMode()
-    val press = rememberPressMotion(
-        pressed = isPressed,
-        enabled = enabled,
-        depth = 0.10f,
-        reduceMotion = accessibility.reduceMotion
-    )
+    val optics = rememberInteractiveOptics()
     Box(
         modifier = modifier
             .size(size)
-            .graphicsLayer {
-                scaleX = press.scaleX
-                scaleY = press.scaleY
-            }
-            // 与顶栏图标按钮同一套芯片：圆按钮的玻璃感来自光照而非折射，
-            // 因此不需要 backdrop，在纯色区域上也成立
-            .glassChip(
+            // 与顶栏图标按钮同一套芯片：有 backdrop 时走真折射，
+            // 无 backdrop（纯色区域）时自动退回边缘光，调用方无需关心
+            .adaptiveGlassChip(
+                backdrop = backdrop,
                 shape = CircleShape,
-                dimmed = !enabled,
-                pressProgress = { press.progress }
+                optics = optics,
+                enabled = enabled,
+                interactive = enabled
             )
             .clickable(
-                interactionSource = interactionSource,
+                interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = enabled,
                 role = Role.Button,
@@ -385,7 +355,19 @@ fun GlassCircleButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(size * 0.48f),
+            modifier = Modifier
+                .size(size * 0.48f)
+                .graphicsLayer {
+                    if (accessibility.reduceMotion) return@graphicsLayer
+                    // 与玻璃层同一段行程，否则拖动时图标会从圆钮里脱出
+                    val travel = optics.dragTravel(GlassRecipe.ChipDragTravelDp.dp.toPx())
+                    translationX = travel.x
+                    translationY = travel.y
+                    applyPressSquash(
+                        progress = optics.pressProgress,
+                        depth = GlassRecipe.ChipIconPressDepth
+                    )
+                },
             tint = if (enabled) tint else tint.copy(alpha = 0.38f)
         )
     }
@@ -835,15 +817,19 @@ fun SystemIconButton(
     contentDescription: String?,
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
     /** 顶栏/工具栏级别的图标按钮默认带玻璃芯片；行内小按钮传 false。 */
-    chip: Boolean = true
+    chip: Boolean = true,
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     AnimatedIconButton(
         onClick = onClick,
         icon = icon,
         contentDescription = contentDescription,
+        enabled = enabled,
         tint = tint,
-        chip = chip
+        chip = chip,
+        backdrop = backdrop
     )
 }
 

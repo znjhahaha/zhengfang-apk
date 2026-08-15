@@ -67,8 +67,7 @@ import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDivider
-import com.tyust.course.ui.system.neumorphicShadow
-import com.tyust.course.ui.system.AnimatedIconButton
+import com.tyust.course.ui.system.glass.LiquidActionGroup
 import com.tyust.course.ui.system.reportNoticeAnchor
 
 import com.tyust.course.ui.theme.MotionSpring
@@ -246,28 +245,29 @@ fun WeekHeaderCompact(
                     )
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AnimatedIconButton(
+                LiquidActionGroup(spacing = 4.dp) {
+                    action(
+                        index = 0,
                         icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                         contentDescription = "上一周",
                         onClick = onPrevClick,
                         enabled = currentWeek > 1
                     )
-                    AnimatedIconButton(
+                    action(
+                        index = 1,
                         icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = "下一周",
                         onClick = onNextClick,
                         enabled = currentWeek < 25
                     )
-                    AnimatedIconButton(
+                    action(
+                        index = 2,
                         icon = Icons.Default.Share,
                         contentDescription = "导出",
                         onClick = onExportClick
                     )
-                    AnimatedIconButton(
+                    action(
+                        index = 3,
                         icon = Icons.Default.Settings,
                         contentDescription = "设置",
                         onClick = onSettingsClick

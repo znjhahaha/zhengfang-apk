@@ -10,7 +10,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -58,7 +57,6 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
@@ -75,10 +73,10 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
-import com.tyust.course.ui.system.glass.InteractiveHighlight
+import com.tyust.course.ui.system.glass.adaptiveGlassChip
+import com.tyust.course.ui.system.glass.applyPressSquash
 import com.tyust.course.ui.system.glass.chromaticFringe
-import com.tyust.course.ui.system.glass.glassChip
-import com.tyust.course.ui.system.glass.rememberPressMotion
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.IOSDisabledFillDark
 import com.tyust.course.ui.theme.IOSDisabledFillLight
@@ -87,10 +85,6 @@ import com.tyust.course.ui.theme.IOSFillLight
 import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.tanh
 
 enum class LiquidButtonStyle {
     Transparent,
@@ -136,16 +130,12 @@ fun LiquidButton(
         alpha = GlassRecipe.ActionDisabledSurfaceAlpha
     )
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val accessibility = rememberGlassAccessibilityMode()
-    // iOS filled button 的按压：压扁 + 回弹过冲。玻璃分支不用它（那边由 layerBlock 做光学形变）。
-    val press = rememberPressMotion(
-        pressed = isPressed,
-        enabled = enabled,
-        depth = 0.06f,
-        reduceMotion = accessibility.reduceMotion
-    )
-    val hasRealLens = isRuntimeShaderTrulySupported()
+    // 两个分支共用同一交互源：玻璃分支用它驱动 layerBlock 的光学形变，
+    // 实色分支用它驱动压扁回弹。interactionSource 保留但只负责灰罩亮度——
+    // 几何与光学归 optics，亮度归 indication，两者不再各自播一条动画。
+    val optics = rememberInteractiveOptics()
+    val allowInteraction = isInteractive && enabled && !accessibility.reduceMotion
     // 玻璃分支的按压由 layerBlock 的光学形变表达；实色分支交给全局 iOS 按压（回缩 + 灰罩）。
     // 玻璃分支不能用 indication：drawBackdrop 不裁剪内容，灰罩会溢出成方块。
     val contentRow: @Composable (Modifier, Indication?) -> Unit = { baseModifier, pressIndication ->
@@ -170,49 +160,73 @@ fun LiquidButton(
     }
 
     if (glassBackdrop != null) {
-        val animationScope = rememberCoroutineScope()
-        val interactiveHighlight = remember(animationScope) {
-            InteractiveHighlight(animationScope = animationScope)
-        }
-        val allowInteraction = isInteractive && enabled && !accessibility.reduceMotion
         val glassModifier = modifier
             .drawBackdrop(
                 backdrop = glassBackdrop,
                 shape = { shape },
-                // 官方 LiquidButton 的光学管线：只有 vibrancy → blur → lens，
-                // 表面亮暗完全由 lens 对真实环境的折射产生。
+                // 与 liquidChip 同源的光学管线：参数从 GlassMaterials 解析而不是写死，
+                // 否则 reduceMotion 折射减半、highContrast 提亮、API31/32 退化色散
+                // 这三条策略要在每个组件里各抄一遍，迟早抄漏。
                 effects = {
                     vibrancy()
-                    if (hasRealLens) {
-                        blur(2.dp.toPx())
-                        lens(12.dp.toPx(), 24.dp.toPx())
+                    val material = GlassMaterials.resolve(
+                        role = GlassMaterialRole.Interactive,
+                        accessibility = accessibility,
+                        interactionProgress = optics.opticalProgress
+                    )
+                    val params = resolvePhysicalLens(
+                        density = this,
+                        material = material,
+                        shape = shape,
+                        minCornerRadiusPx = size.minDimension / 2f,
+                        minDimensionPx = size.minDimension,
+                        interactionProgress = optics.opticalProgress,
+                        motionIntensity = optics.motionIntensity(
+                            material.optics.velocityForFullEffect
+                        ),
+                        enableBlur = false,
+                        allowChromaticAberration = allowInteraction,
+                        chromaticAberrationAtRest = false,
+                        pressScalesRefraction = true,
+                        refractionFloor = 0.62f
+                    )
+                    // 顺序必须 blur → lens，两者在这里互斥所以不会踩到
+                    if (params.useLens) {
+                        lens(
+                            params.refractionHeightPx,
+                            params.refractionAmountPx,
+                            params.chromaticAberration
+                        )
                     } else {
+                        // Interactive 档在 API33+ 刻意不带 blur（靠折射与色散）；
+                        // 31/32 没有真 lens，按该档注释由调用侧补 blur 撑住质感。
                         blur(6.dp.toPx())
-                        val press = interactiveHighlight.pressProgress
-                        if (press > 0f) chromaticFringe(1.2.dp.toPx() * press)
+                        if (params.fringePx > 0f) chromaticFringe(params.fringePx)
                     }
                 },
                 layerBlock = if (allowInteraction) {
                     {
-                        // 官方 LiquidButton 同款拖拽形变：整体随按压放大，
-                        // 再按拖拽角度做各向异性拉伸，位移由相对按压起点的 offset 驱动。
-                        val progress = interactiveHighlight.pressProgress
-                        val scale = lerp(1f, 1f + 4.dp.toPx() / size.height, progress)
+                        val progress = optics.pressProgress
+                        val swell = lerp(
+                            1f,
+                            1f + GlassRecipe.ChipPressSwellDp.dp.toPx() / size.height,
+                            progress
+                        )
 
-                        val maxOffset = size.minDimension
-                        val initialDerivative = 0.05f
-                        val offset = interactiveHighlight.offset
-                        translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
-                        translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
+                        // 有界跟手，理由同 liquidChip：拿 size.minDimension 当上限
+                        // 会让玻璃层整体滑出按钮自己的插槽。
+                        val travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx()
+                        val travel = optics.dragTravel(travelPx)
+                        translationX = travel.x
+                        translationY = travel.y
 
-                        val maxDragScale = 4.dp.toPx() / size.height
-                        val offsetAngle = atan2(offset.y, offset.x)
-                        scaleX = scale +
-                            maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension) *
-                            (size.width / size.height).fastCoerceAtMost(1f)
-                        scaleY = scale +
-                            maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
-                            (size.height / size.width).fastCoerceAtMost(1f)
+                        // 等体积挤压，不是两轴同时放大
+                        val stretch = GlassRecipe.ChipDragStretch *
+                            (abs(travel.x) / travelPx).coerceIn(0f, 1f)
+                        val squash = GlassRecipe.ChipDragStretch *
+                            (abs(travel.y) / travelPx).coerceIn(0f, 1f)
+                        scaleX = swell * (1f + stretch - squash)
+                        scaleY = swell * (1f + squash - stretch)
                     }
                 } else {
                     null
@@ -235,13 +249,7 @@ fun LiquidButton(
                     }
                 }
             )
-            .then(
-                if (isInteractive && enabled) {
-                    interactiveHighlight.gestureModifier
-                } else {
-                    Modifier
-                }
-            )
+            .then(if (allowInteraction) optics.gestureModifier else Modifier)
         contentRow(glassModifier, null)
     } else {
         // iOS 实色路径：填充完全不透明，不参与折射，因此不会出现随环境游走的高光。
@@ -257,8 +265,8 @@ fun LiquidButton(
             // 回缩必须在 clip/background 之前：这样底色随内容一起缩，
             // 而不是只缩到文字。灰罩由 clickable 处的 GlassPressIndication 叠加。
             .graphicsLayer {
-                scaleX = press.scaleX
-                scaleY = press.scaleY
+                if (!allowInteraction) return@graphicsLayer
+                applyPressSquash(progress = optics.pressProgress, depth = 0.06f)
             }
             .clip(shape)
             .background(fallbackColor)
@@ -273,6 +281,9 @@ fun LiquidButton(
                     )
                 }
             )
+            // 实色分支也要挂手势：optics 的唯一驱动源是它，
+            // 漏挂会让上面那层压扁永远停在 1.0。
+            .then(if (allowInteraction) optics.gestureModifier else Modifier)
         contentRow(fallbackModifier, LocalIndication.current)
     }
 }
@@ -527,40 +538,36 @@ fun AnimatedIconButton(
     iconSize: Dp = 18.dp,
     tint: Color = LocalContentColor.current,
     /** 顶栏与工具栏的图标按钮默认成为玻璃芯片，不再是裸图标。 */
-    chip: Boolean = true
+    chip: Boolean = true,
+    backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val accessibility = rememberGlassAccessibilityMode()
-    // 图标芯片压得比文字按钮深一点，小控件需要更大幅度才看得出来
-    val press = rememberPressMotion(
-        pressed = isPressed,
-        enabled = enabled,
-        depth = if (chip) 0.10f else 0.14f,
-        reduceMotion = accessibility.reduceMotion
-    )
+    // 芯片的光学（折射、色散、边缘光、拖拽拉伸）全部由 optics 驱动；
+    // 图标自身的压扁另算：drawBackdrop 的 layerBlock 只变换被采样的玻璃层，
+    // 内容不在其中，所以图标要单独挂一层 graphicsLayer 才会跟着一起动。
+    val optics = rememberInteractiveOptics()
+    val chipModifier = if (chip) {
+        Modifier.adaptiveGlassChip(
+            backdrop = backdrop,
+            shape = CircleShape,
+            optics = optics,
+            enabled = enabled,
+            interactive = enabled
+        )
+    } else {
+        // 裸图标没有容器可折射，按压只能靠图标本身缩放。
+        // 但手势仍必须挂上：optics 的唯一驱动源是 gestureModifier，
+        // 漏挂会让 pressProgress 永远停在 0，下面那层 graphicsLayer
+        // 连同它专为裸图标预留的 depth 一起变成死代码。
+        if (enabled && !accessibility.reduceMotion) optics.gestureModifier else Modifier
+    }
 
     Box(
         modifier = modifier
             .size(buttonSize)
-            .graphicsLayer {
-                scaleX = press.scaleX
-                scaleY = press.scaleY
-            }
-            .then(
-                if (chip) {
-                    // 禁用时容器保留、只压暗：容器直接消失会让人以为这里没有按钮
-                    Modifier.glassChip(
-                        shape = CircleShape,
-                        dimmed = !enabled,
-                        pressProgress = { press.progress }
-                    )
-                } else {
-                    Modifier
-                }
-            )
+            .then(chipModifier)
             .clickable(
-                interactionSource = interactionSource,
+                interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = enabled,
                 role = Role.Button,
@@ -571,7 +578,26 @@ fun AnimatedIconButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(iconSize),
+            modifier = Modifier
+                .size(iconSize)
+                .graphicsLayer {
+                    if (accessibility.reduceMotion) return@graphicsLayer
+                    if (chip) {
+                        // 玻璃层在 drawBackdrop 的 layerBlock 里平移，内容不在其中；
+                        // 图标必须走同一段 dragTravel，否则拖动时会从芯片里脱出。
+                        val travel = optics.dragTravel(
+                            GlassRecipe.ChipDragTravelDp.dp.toPx()
+                        )
+                        translationX = travel.x
+                        translationY = travel.y
+                    }
+                    // 图标跟着容器一起被压：幅度比容器略小，
+                    // 否则小尺寸图标会先于容器触底，看起来像图标在独立抖动。
+                    applyPressSquash(
+                        progress = optics.pressProgress,
+                        depth = if (chip) 0.08f else 0.14f
+                    )
+                },
             tint = if (enabled) tint else tint.copy(alpha = 0.38f)
         )
     }

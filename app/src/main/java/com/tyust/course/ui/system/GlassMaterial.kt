@@ -336,4 +336,58 @@ object GlassRecipe {
 
     val LuminanceSampleSize = 5
     val LuminanceSampleHz = 3
+
+    // ── 交互液体芯片（顶栏图标钮、圆钮）────────────────────────────────
+    // 表面必须够淡：芯片尺寸只有 38dp，白雾一重折射就被盖死，成了白贴纸。
+    // 存在感交给 Fresnel 边缘，颜色交给背景折射。
+    val ChipSurfaceAlphaLight = 0.10f
+    val ChipSurfaceAlphaDark = 0.06f
+    /** 按压时进一步让位给折射：手指按下应该看到更多环境，而不是更多白色。 */
+    val ChipPressedSurfaceScale = 0.55f
+    val ChipRimAlphaLight = 0.30f
+    val ChipRimAlphaDark = 0.34f
+    val ChipContourAlphaLight = 0.20f
+    val ChipContourAlphaDark = 0.18f
+    /** 按压时边缘收紧变实，像玻璃被压出的应力边。 */
+    val ChipPressedRimBoost = 0.45f
+    /** 触点方向的高光偏置幅度：占半径的比例，过大就成了游走的塑料反光。 */
+    val ChipHighlightTravel = 0.34f
+    val ChipDisabledSurfaceScale = 0.55f
+    val ChipDisabledRimScale = 0.5f
+    /**
+     * 无 backdrop 回退路径的按压挤压深度。
+     *
+     * liquidChip 的形变发生在 drawBackdrop 的 layerBlock 里，回退路径没有
+     * drawBackdrop，挤压必须自己补一层 graphicsLayer，否则这条路径按下去
+     * 只有边缘光变化、没有任何几何反馈。
+     */
+    val ChipFallbackPressDepth = 0.06f
+
+    // ── 按压/拖拽形变预算 ────────────────────────────────────────────
+    /**
+     * 按压时的整体涨幅（dp）。原先 4dp 在 38dp 芯片上是 10% 的增长，
+     * 读起来是"变大了"而不是"被按下去"，收到 2dp。
+     */
+    val ChipPressSwellDp = 2f
+    /**
+     * 跟手行程上限（dp）。原先拿 size.minDimension 当上限，于是玻璃层能整体
+     * 滑出一整个直径——芯片跑出自己的插槽、压到邻居身上，而图标留在原地。
+     * 有界之后手指仍然 1:1 跟手，只是到 2.5dp 就饱和。
+     */
+    val ChipDragTravelDp = 2.5f
+    /**
+     * 拖拽各向异性幅度。**等体积**：沿运动方向拉长多少，垂直方向就收窄多少。
+     * 原先两个轴都只加不减，拖得越远芯片越大，最后成了一颗蛋。
+     */
+    val ChipDragStretch = 0.06f
+    /** 图标随按压的压扁深度。比容器涨幅小，图标才像"陷进玻璃"而不是各自动。 */
+    val ChipIconPressDepth = 0.05f
+
+    // ── 按压邻近液滴融合 ─────────────────────────────────────────────
+    /** 邻居间距超过芯片直径的这个倍数就不再连接，避免隔着一个按钮"远程拉丝"。 */
+    val ActionGroupMaxBridgeRatio = 0.62f
+    /** 连接桥腰宽相对芯片直径：细腰才像液体表面张力，粗了就是贴块矩形。 */
+    val ActionGroupBridgeWaist = 0.42f
+    /** 融合起效的按压阈值：轻触不该触发，避免误连。 */
+    val ActionGroupMergeThreshold = 0.18f
 }
