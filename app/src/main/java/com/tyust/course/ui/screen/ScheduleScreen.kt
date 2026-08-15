@@ -60,7 +60,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.GlassLoadingState
-import com.tyust.course.ui.system.PageInlineNoticeHost
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemCompactSegmentedControl
@@ -70,6 +69,7 @@ import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.system.neumorphicShadow
 import com.tyust.course.ui.system.AnimatedIconButton
+import com.tyust.course.ui.system.reportNoticeAnchor
 
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuDivider
@@ -139,7 +139,7 @@ fun ScheduleScreen(
         topBar = {
             // topBar slot 只测量单个子项，两个兄弟节点会叠放并让通知条压到状态栏，
             // 因此顶栏与内联通知必须在同一个 Column 里纵向排布。
-            Column {
+            Column(modifier = Modifier.reportNoticeAnchor()) {
                 WeekHeaderCompact(
                     currentWeek = pagerState.currentPage + 1,
                     onPrevClick = {
@@ -161,7 +161,6 @@ fun ScheduleScreen(
                     isNextSemester = isNextSemester,
                     onToggleSemester = onToggleSemester
                 )
-                PageInlineNoticeHost()
             }
         }
     ) { paddingValues ->

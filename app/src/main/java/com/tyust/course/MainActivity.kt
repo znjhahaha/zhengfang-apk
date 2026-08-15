@@ -89,9 +89,12 @@ import com.tyust.course.ui.system.drawWallpaperPattern
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalDialogHost
 import com.tyust.course.ui.system.LocalModalBackdrop
-import com.tyust.course.ui.system.LocalPageInlineNotice
+import com.tyust.course.ui.system.LocalFloatingNotice
+import com.tyust.course.ui.system.LocalNoticeAnchor
+import com.tyust.course.ui.system.NoticeAnchorState
 import com.tyust.course.ui.system.LocalControlBackdrop
-import com.tyust.course.ui.system.PageInlineNotice
+import com.tyust.course.ui.system.FloatingNotice
+import com.tyust.course.ui.system.FloatingNoticeHost
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.isBackdropSupported
@@ -298,8 +301,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     Box(modifier = Modifier.fillMaxSize()) {
         val useGlass = isBackdropSupported()
         val tokenExpiredNotice = if (isTokenExpired) {
-            PageInlineNotice(
-                message = "登录已过期，点击重新登录",
+            FloatingNotice(
+                message = "登录已过期",
+                actionLabel = "重新登录",
                 onClick = {
                     val intent = Intent(fragmentActivity, LoginActivity::class.java)
                     intent.putExtra("force_relogin", true)
@@ -324,13 +328,16 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         }
 
         val dialogHostState = rememberDialogHostState()
+        // 顶栏把底边写进这里，通知覆盖层据此落位，避免压住顶栏按钮
+        val noticeAnchorState = remember { NoticeAnchorState() }
         CompositionLocalProvider(
             LocalAppBackdrop provides wallpaperBackdrop,
             LocalControlBackdrop provides wallpaperBackdrop,
             LocalModalBackdrop provides navBarBackdrop,
             LocalAppOverlayBottomInset provides 96.dp,
             LocalDialogHost provides dialogHostState,
-            LocalPageInlineNotice provides tokenExpiredNotice
+            LocalFloatingNotice provides tokenExpiredNotice,
+            LocalNoticeAnchor provides noticeAnchorState
         ) {
             Box(
                 modifier = Modifier.fillMaxSize().then(
@@ -480,6 +487,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 state = dialogHostState,
                 modifier = Modifier.fillMaxSize()
             )
+
+            // 悬浮玻璃通知：叠加在正文之上，落点由顶栏上报的底边决定，不压顶栏操作
+            FloatingNoticeHost(modifier = Modifier.fillMaxSize())
 
             if (showStarDialog) {
                 val dialogTitle = when (dismissCount) {

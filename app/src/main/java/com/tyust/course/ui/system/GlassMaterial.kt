@@ -263,12 +263,13 @@ object GlassRecipe {
     // 无 RuntimeShader 时与真 lens 平台共用 78/56 按压尺度（cba2a09）。
     val NavLegacyPressedScale = SelectionIndicatorPressedScale
 
-    // 选中胶囊靠"提亮"与轨道区分，而不是叠黑色 tint。浅色主题下叠黑会把
-    // 整块透镜压成灰片，视觉上比轨道更脏；白色低透明既保留折射也不发灰。
-    val NavSelectedSolidColorLight = 0xFFFFFFFF
+    // 静态选中块必须能在白底壁纸上被看见，所以填充是冷灰实心而不是低透明白，
+    // 与 iOS 底栏一致。折射与色散并未关闭：按压/拖拽时填充按下面的 lerp
+    // 褪到 NavSelectedGlassAlpha，透镜效果照常输出。
+    val NavSelectedSolidColorLight = 0xFFE9EBEF
     val NavSelectedSolidColorDark = 0xFFFFFFFF
-    val NavSelectedSolidAlpha = 0.34f
-    val NavSelectedSolidAlphaDark = 0.20f
+    val NavSelectedSolidAlpha = 0.72f
+    val NavSelectedSolidAlphaDark = 0.26f
     val NavSelectedGlassAlpha = 0.14f
     val NavPressedScale = SelectionIndicatorPressedScale
 
@@ -279,8 +280,8 @@ object GlassRecipe {
     val ActionBorderAlpha = control.borderAlpha
     val ActionShadowAlpha = control.shadowAlpha
     val ActionPressedScale = 0.98f
-    // 中性采样源不会稀释色相，保留约三成透射用于展示折射和按压高光。
-    val ActionTintAlpha = 0.72f
+    // 官方 LiquidButton 模板的着色透明度：BlendMode.Hue 之后再叠一层 0.75 的 tint。
+    val ActionTintAlpha = 0.75f
     // 0.28→0.88：禁用态接近实色浅灰，与可用态干净区分，避免"半透明糊灰"
     val ActionDisabledSurfaceAlpha = 0.88f
 

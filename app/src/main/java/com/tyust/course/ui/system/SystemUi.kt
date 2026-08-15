@@ -98,7 +98,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.DampedDragAnimation
-import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -208,7 +207,7 @@ fun SystemTopBar(
         Color.Black.copy(alpha = 0.46f)
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().reportNoticeAnchor()) {
         val showShell = collapse > 0.01f
         val shellModifier = when {
             useGlass && backdrop != null && showShell -> Modifier.drawBackdrop(
@@ -303,7 +302,6 @@ fun SystemTopBar(
                 )
             }
         }
-        PageInlineNoticeHost()
         // scroll edge effect：折叠后底缘软渐隐，内容滚入头部时平滑没入
         if (useGlass && showShell) {
             Box(
@@ -1003,7 +1001,7 @@ fun DisablePlatformDialogDim() {
 @Composable
 fun SystemDialog(
     onDismissRequest: () -> Unit,
-    backdrop: Backdrop? = LocalModalBackdrop.current ?: LocalControlBackdrop.current,
+    backdrop: Backdrop? = LocalAppBackdrop.current ?: LocalModalBackdrop.current ?: LocalControlBackdrop.current,
     useVisualEffects: Boolean = true,
     confirmButton: @Composable (() -> Unit)? = null,
     dismissButton: @Composable (() -> Unit)? = null,
@@ -1043,7 +1041,13 @@ fun SystemDialog(
                 visible = cardVisible,
                 enter = androidx.compose.animation.fadeIn() +
                     androidx.compose.animation.scaleIn(initialScale = 0.92f),
-                exit = androidx.compose.animation.fadeOut()
+                exit = androidx.compose.animation.fadeOut(
+                        animationSpec = androidx.compose.animation.core.tween(150)
+                    ) +
+                        androidx.compose.animation.scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.tween(150)
+                        )
             ) {
                 dialogBody()
             }
@@ -1070,11 +1074,11 @@ private fun SystemDialogContent(
     )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
     val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
-    // 模态卡片是玻璃而不是实色板：只保留一层中性表面，让身后画面经 blur/lens 透出。
+    // 模态卡片是玻璃而不是实色板：只保留一层弱中性表面，让身后画面经 blur/lens 透出。
     val dialogSurfaceColor = if (isLightTheme) {
-        Color(0xFFF4F5F7).copy(alpha = 0.55f)
+        Color(0xFFF4F5F7).copy(alpha = 0.30f)
     } else {
-        Color(0xFF1E2024).copy(alpha = 0.58f)
+        Color(0xFF1E2024).copy(alpha = 0.34f)
     }
     val dialogBorderColor = Color.White.copy(
         alpha = if (isLightTheme) 0.64f else 0.16f
@@ -1097,32 +1101,22 @@ private fun SystemDialogContent(
                     .drawBackdrop(
                         backdrop = glassBackdrop,
                         shape = { dialogShape },
+                        // 与官方控件同源的模板管线：vibrancy → blur → lens，
+                        // 参数取 Modal 材质档，不再走 resolvePhysicalLens 自定义组合。
                         effects = {
-                            val params = resolvePhysicalLens(
-                                density = this,
-                                material = dialogMaterial,
-                                shape = dialogShape,
-                                minCornerRadiusPx = dialogCorner.toPx(),
-                                minDimensionPx = size.minDimension,
-                                interactionProgress = 0f,
-                                enableBlur = true,
-                                allowChromaticAberration = false
-                            )
                             vibrancy()
-                            if (params.blurPx > 0f) blur(params.blurPx)
-                            if (params.useLens) {
+                            if (isRuntimeShaderTrulySupported()) {
+                                blur(GlassRecipe.DialogBlurDp.dp.toPx())
                                 lens(
-                                    refractionHeight = params.refractionHeightPx,
-                                    refractionAmount = params.refractionAmountPx,
-                                    chromaticAberration = params.chromaticAberration
+                                    refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx(),
+                                    refractionAmount = GlassRecipe.DialogRefractionAmountDp.dp.toPx()
                                 )
+                            } else {
+                                blur((GlassRecipe.DialogBlurDp * 2f).dp.toPx())
                             }
                         },
-                        highlight = {
-                            Highlight.Default.copy(
-                                alpha = if (isLightTheme) 0.20f else 0.12f
-                            )
-                        },
+                        // 仅保留模板需要的光学表面和阴影，不再叠加常驻边缘高光描边。
+                        highlight = { null },
                         shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
                         onDrawSurface = { drawRect(dialogSurfaceColor) }
                     )

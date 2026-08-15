@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
@@ -77,6 +78,10 @@ import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.tanh
 
 enum class LiquidButtonStyle {
@@ -172,16 +177,25 @@ fun LiquidButton(
                 },
                 layerBlock = if (allowInteraction) {
                     {
+                        // 官方 LiquidButton 同款拖拽形变：整体随按压放大，
+                        // 再按拖拽角度做各向异性拉伸，位移由相对按压起点的 offset 驱动。
                         val progress = interactiveHighlight.pressProgress
                         val scale = lerp(1f, 1f + 4.dp.toPx() / size.height, progress)
-                        val pointer = interactiveHighlight.pointerPosition
-                        val maxOffset = size.minDimension.coerceAtLeast(1f)
-                        val dx = if (pointer.x.isFinite()) pointer.x - size.width / 2f else 0f
-                        val dy = if (pointer.y.isFinite()) pointer.y - size.height / 2f else 0f
-                        translationX = maxOffset * tanh(0.05f * dx / maxOffset) * progress
-                        translationY = maxOffset * tanh(0.05f * dy / maxOffset) * progress
-                        scaleX = scale
-                        scaleY = scale
+
+                        val maxOffset = size.minDimension
+                        val initialDerivative = 0.05f
+                        val offset = interactiveHighlight.offset
+                        translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
+                        translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
+
+                        val maxDragScale = 4.dp.toPx() / size.height
+                        val offsetAngle = atan2(offset.y, offset.x)
+                        scaleX = scale +
+                            maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension) *
+                            (size.width / size.height).fastCoerceAtMost(1f)
+                        scaleY = scale +
+                            maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
+                            (size.height / size.width).fastCoerceAtMost(1f)
                     }
                 } else {
                     null
@@ -263,6 +277,18 @@ fun LiquidSwitch(
     } else {
         Color(0xFF787880).copy(alpha = 0.36f)
     }
+    // 禁用态靠"实色降对比"表达，不靠整体降透明度：后者会让轨道色透进 thumb，
+    // 把绿轨道与白旋钮糊成一块灰绿。
+    val disabledTrackColor = if (isLightTheme) {
+        Color(0xFFE3E5E9)
+    } else {
+        Color(0xFF3A3C41)
+    }
+    val thumbColor = when {
+        enabled -> Color.White
+        isLightTheme -> Color(0xFFF2F2F4)
+        else -> Color(0xFFB8BABE)
+    }
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
     val accessibility = rememberGlassAccessibilityMode()
     val density = LocalDensity.current
@@ -318,12 +344,13 @@ fun LiquidSwitch(
     }
 
     val trackBackdrop = rememberLayerBackdrop()
-    // 轨道近场：静止也保留可见高度，让轨道颜色经 blur 后在滑块内形成散射；
-    // 按压时放大到接近实尺寸，配合 lens 输出完整折射。
+    // 轨道近场与官方 LiquidSlider 滑块同曲线：静止时轨道层纵向塔缩为 0，
+    // 滑块是不被轨道颜色污染的纯白实体；按压时轨道层展开到实尺寸，
+    // 配合 lens 在滑块内输出折射与色散。
     val scaledTrackBackdrop = rememberBackdrop(trackBackdrop) { drawTrackBackdrop ->
         val progress = dragAnimation.pressProgress
-        val scaleX = lerp(2f / 3f, 0.75f, progress)
-        val scaleY = lerp(0.4f, 0.75f, progress)
+        val scaleX = lerp(2f / 3f, 1f, progress)
+        val scaleY = lerp(0f, 1f, progress)
         scale(scaleX, scaleY) {
             drawTrackBackdrop()
         }
@@ -338,7 +365,6 @@ fun LiquidSwitch(
         modifier = modifier
             .width(64.dp)
             .height(48.dp)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.42f }
             .semantics {
                 role = Role.Switch
                 stateDescription = if (checked) "已开启" else "已关闭"
@@ -361,11 +387,15 @@ fun LiquidSwitch(
                 .clip(Capsule())
                 .drawBehind {
                     drawRect(
-                        lerp(
-                            inactiveTrackColor,
-                            activeCheckedColor,
-                            dragAnimation.value
-                        )
+                        if (enabled) {
+                            lerp(
+                                inactiveTrackColor,
+                                activeCheckedColor,
+                                dragAnimation.value
+                            )
+                        } else {
+                            disabledTrackColor
+                        }
                     )
                 }
                 .size(64.dp, 28.dp)
@@ -392,8 +422,8 @@ fun LiquidSwitch(
                             val progress = dragAnimation.pressProgress
                             blur(8.dp.toPx() * (1f - progress))
                             lens(
-                                refractionHeight = 5.dp.toPx() * progress,
-                                refractionAmount = 10.dp.toPx() * progress,
+                                refractionHeight = 10.dp.toPx() * progress,
+                                refractionAmount = 14.dp.toPx() * progress,
                                 chromaticAberration = true
                             )
                         },
@@ -434,11 +464,11 @@ fun LiquidSwitch(
                         },
                         onDrawSurface = {
                             val progress = dragAnimation.pressProgress
-                            // 静止保留半透明白色实体：轨道颜色经 blur 后透出形成散射，
-                            // 按压时白色继续退去，露出完整折射与色散。
+                            // 官方同款：静止为不透明纯白旋钮（轨道色不穿透），
+                            // 按压时白色退去，露出轨道折射与色散。
                             drawRect(
-                                Color.White.copy(
-                                    alpha = androidx.compose.ui.util.lerp(0.58f, 0f, progress)
+                                thumbColor.copy(
+                                    alpha = androidx.compose.ui.util.lerp(1f, 0f, progress)
                                 )
                             )
                         }
@@ -458,7 +488,7 @@ fun LiquidSwitch(
                         }
                     }
                     .clip(Capsule())
-                    .background(Color.White)
+                    .background(thumbColor)
                     .size(40.dp, 24.dp)
             )
         }

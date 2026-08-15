@@ -96,16 +96,16 @@ object MotionSpring {
         stiffness = 420f
     )
 
-    /** Segmented settle: decisive movement without visible overshoot. */
+    /** Segmented settle: decisive snap with a single restrained jelly overshoot. */
     fun <T> segmentedSettle() = spring<T>(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = 500f
+        dampingRatio = 0.78f,
+        stiffness = 460f
     )
 
-    /** Segmented release: return the lens to rest without a jelly rebound. */
+    /** Segmented release: return to rest with a slight jelly rebound. */
     fun <T> segmentedRelease() = spring<T>(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = 560f
+        dampingRatio = 0.80f,
+        stiffness = 520f
     )
 
     /** Nav settle: long travel across the bar wants a pronounced jelly overshoot. */

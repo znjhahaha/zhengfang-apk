@@ -1,6 +1,7 @@
 package com.tyust.course.ui.route
 
 import com.tyust.course.ui.system.GlassToaster
+import com.tyust.course.ui.system.reportNoticeAnchor
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -1073,7 +1074,7 @@ fun CourseListRoute() {
                     .fillMaxWidth()
                     .background(NeuSurface)
             }
-            Column {
+            Column(modifier = Modifier.reportNoticeAnchor()) {
             Box(modifier = topBarShellModifier) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     AnimatedContent(
@@ -1182,7 +1183,6 @@ fun CourseListRoute() {
                 }
                 }
             }
-            com.tyust.course.ui.system.PageInlineNoticeHost()
             // scroll edge effect：底缘软渐隐，与 SystemTopBar 一致
             if (topBarUseGlass) {
                 Box(

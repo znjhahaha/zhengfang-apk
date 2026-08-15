@@ -5,7 +5,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.util.fastCoerceIn
@@ -30,6 +29,10 @@ class InteractiveHighlight(
     val pointerPosition: Offset
         get() = optics.pointerPosition
 
+    /** 指针相对按压起点的位移，供 layerBlock 做官方拖拽形变。 */
+    val offset: Offset
+        get() = optics.offset
+
     private val shader = if (
         isRuntimeShaderSupported() &&
         GlassRuntimeGuard.isDynamicOpticsEnabled()
@@ -44,7 +47,7 @@ uniform float2 position;
 
 half4 main(float2 coord) {
     float dist = distance(coord, position);
-    float intensity = smoothstep(radius, radius * 0.16, dist);
+    float intensity = smoothstep(radius, radius * 0.5, dist);
     return color * intensity;
 }
 """
@@ -55,48 +58,44 @@ half4 main(float2 coord) {
     }
 
     val modifier: Modifier = Modifier.drawWithContent {
-        drawContent()
-
+        // 官方 LiquidButton 同款双层高光：先整体提亮，再叠加跟随指针的径向光，
+        // 都绘制在内容之下，避免文字发白。
         val progress = optics.pressProgress.coerceIn(0f, 1f)
-        if (progress <= 0.001f) return@drawWithContent
-
-        val rawPosition = optics.pointerPosition
-        val mappedPosition = if (rawPosition.x.isFinite() && rawPosition.y.isFinite()) {
-            position(size, rawPosition)
-        } else {
-            center
-        }
-        val lightPosition = Offset(
-            mappedPosition.x.fastCoerceIn(0f, size.width),
-            mappedPosition.y.fastCoerceIn(0f, size.height)
-        )
-
-        if (shader != null) {
-            shader.setFloatUniform("size", size.width, size.height)
-            shader.setColorUniform("color", Color.White.copy(alpha = 0.20f * progress))
-            shader.setFloatUniform("radius", size.maxDimension * 0.88f)
-            shader.setFloatUniform("position", lightPosition.x, lightPosition.y)
-            drawRect(
-                brush = ShaderBrush(shader.asComposeShader()),
-                blendMode = BlendMode.Plus
+        if (progress > 0.001f) {
+            val rawPosition = optics.pointerPosition
+            val mappedPosition = if (rawPosition.x.isFinite() && rawPosition.y.isFinite()) {
+                position(size, rawPosition)
+            } else {
+                center
+            }
+            val lightPosition = Offset(
+                mappedPosition.x.fastCoerceIn(0f, size.width),
+                mappedPosition.y.fastCoerceIn(0f, size.height)
             )
-        } else {
-            // 回退路径（API<33）：径向渐变柔光，避免实心白圆盘糊在表面上。
-            val radius = size.maxDimension * 0.75f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.10f * progress),
-                        Color.White.copy(alpha = 0f)
-                    ),
-                    center = lightPosition,
-                    radius = radius
-                ),
-                radius = radius,
-                center = lightPosition,
-                blendMode = BlendMode.Plus
-            )
+
+            if (shader != null) {
+                drawRect(
+                    color = Color.White.copy(alpha = 0.08f * progress),
+                    blendMode = BlendMode.Plus
+                )
+                shader.setFloatUniform("size", size.width, size.height)
+                shader.setColorUniform("color", Color.White.copy(alpha = 0.15f * progress))
+                shader.setFloatUniform("radius", size.minDimension * 1.5f)
+                shader.setFloatUniform("position", lightPosition.x, lightPosition.y)
+                drawRect(
+                    brush = ShaderBrush(shader.asComposeShader()),
+                    blendMode = BlendMode.Plus
+                )
+            } else {
+                // 回退路径（API<33）：官方同款整体提亮。
+                drawRect(
+                    color = Color.White.copy(alpha = 0.25f * progress),
+                    blendMode = BlendMode.Plus
+                )
+            }
         }
+
+        drawContent()
     }
 
     val gestureModifier: Modifier = optics.gestureModifier

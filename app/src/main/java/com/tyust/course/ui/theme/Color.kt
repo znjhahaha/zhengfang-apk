@@ -183,3 +183,12 @@ val NeuOnSurfaceVariant = Color(0xFF8494A7)
 
 /** 新拟态分割线（极微弱对比） */
 val NeuDivider = Color(0xFFD8DFE9)
+
+// ═══════════════════════════════════════════════════════════
+// 底栏选中态强调色
+// 与全局主色解耦：选中滑块改为冷灰实心后，#0A84FF 在灰底上对比不足，
+// 底栏单独下沉一档蓝；深色主题反向提亮，保证同样的对比强度。
+// ═══════════════════════════════════════════════════════════
+
+val NavSelectedAccentLight = Color(0xFF0057D9)
+val NavSelectedAccentDark = Color(0xFF4DA3FF)

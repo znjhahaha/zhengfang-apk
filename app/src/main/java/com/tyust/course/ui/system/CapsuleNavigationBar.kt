@@ -72,7 +72,8 @@ import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionSpring
-import com.tyust.course.ui.theme.NeuPrimary
+import com.tyust.course.ui.theme.NavSelectedAccentDark
+import com.tyust.course.ui.theme.NavSelectedAccentLight
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
@@ -156,6 +157,7 @@ private fun MinimizedNavCapsule(
     modifier: Modifier = Modifier
 ) {
     val isLightTheme = !isSystemInDarkTheme()
+    val accentColor = if (isLightTheme) NavSelectedAccentLight else NavSelectedAccentDark
     val containerColor = if (isLightTheme) {
         Color.White.copy(alpha = 0.28f)
     } else {
@@ -188,7 +190,7 @@ private fun MinimizedNavCapsule(
         Icon(
             imageVector = item.icon,
             contentDescription = item.label,
-            tint = NeuPrimary,
+            tint = accentColor,
             modifier = Modifier.size(20.dp)
         )
         Text(
@@ -232,7 +234,7 @@ private fun GlassNavigationBar(
             Color.Black.copy(alpha = GlassRecipe.NavLegacyTrackSurfaceAlpha)
         }
     }
-    val accentColor = NeuPrimary
+    val accentColor = if (isLightTheme) NavSelectedAccentLight else NavSelectedAccentDark
     val barMaterial = GlassMaterials.resolve(
         role = GlassMaterialRole.Navigation,
         accessibility = accessibility,
@@ -457,6 +459,7 @@ private fun GlassNavigationBar(
                     NavTab(
                         item = item,
                         selected = selectionWeight > 0.55f,
+                        accent = accentColor,
                         selectionWeight = selectionWeight,
                         onClick = null
                     )
@@ -523,6 +526,7 @@ private fun GlassNavigationBar(
                 NavTab(
                     item = item,
                     selected = true,
+                    accent = accentColor,
                     selectionWeight = 1f,
                     onClick = null,
                     forceAccent = true
@@ -679,6 +683,11 @@ private fun FallbackNavigationBar(
     onTabSelect: (Int) -> Unit
 ) {
     val capsuleShape = RoundedCornerShape(28.dp)
+    val accentColor = if (!isSystemInDarkTheme()) {
+        NavSelectedAccentLight
+    } else {
+        NavSelectedAccentDark
+    }
     androidx.compose.material3.Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -696,6 +705,7 @@ private fun FallbackNavigationBar(
                 NavTab(
                     item = item,
                     selected = selectedTab == index,
+                    accent = accentColor,
                     onClick = { onTabSelect(index) }
                 )
             }
@@ -707,6 +717,7 @@ private fun FallbackNavigationBar(
 private fun RowScope.NavTab(
     item: BottomNavItem,
     selected: Boolean,
+    accent: Color,
     selectionWeight: Float = if (selected) 1f else 0f,
     onClick: (() -> Unit)?,
     forceAccent: Boolean = false
@@ -714,11 +725,11 @@ private fun RowScope.NavTab(
     val weight = selectionWeight.fastCoerceIn(0f, 1f)
     val iconTint by animateColorAsState(
         targetValue = if (forceAccent) {
-            NeuPrimary
+            accent
         } else {
             androidx.compose.ui.graphics.lerp(
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                NeuPrimary,
+                accent,
                 weight
             )
         },
@@ -726,7 +737,7 @@ private fun RowScope.NavTab(
     )
     val labelColor by animateColorAsState(
         targetValue = if (forceAccent) {
-            NeuPrimary
+            accent
         } else {
             androidx.compose.ui.graphics.lerp(
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),

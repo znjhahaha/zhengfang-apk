@@ -1,141 +1,375 @@
 package com.tyust.course.ui.system
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import com.tyust.course.ui.theme.SemanticWarning
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
+import com.tyust.course.ui.system.glass.resolvePhysicalLens
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Immutable
-data class PageInlineNotice(
+data class FloatingNotice(
     val message: String,
+    val actionLabel: String = "重新登录",
     val onClick: () -> Unit
 )
 
-val LocalPageInlineNotice = staticCompositionLocalOf<PageInlineNotice?> { null }
+val LocalFloatingNotice = staticCompositionLocalOf<FloatingNotice?> { null }
+
+// ═══════════════════════════════════════════════════════════
+// 落位契约：顶栏上报底边，通知覆盖层据此落位
+// ═══════════════════════════════════════════════════════════
 
 /**
- * 由页面顶栏在自身内容之后承载，出现时参与测量并推开正文，
- * 不再以全局浮层覆盖顶栏操作区。
+ * 通知是不参与测量的覆盖层，它本身不知道当前页面顶栏有多高。
+ * 顶栏通过 [reportNoticeAnchor] 把自己的底边写进这里，覆盖层永远落在该线之下，
+ * 从根本上避免压住顶栏里的按钮，也不需要各页面手填落点数字。
  */
+@Stable
+class NoticeAnchorState {
+    var topBarBottom: Dp by mutableStateOf(Dp.Unspecified)
+}
+
+val LocalNoticeAnchor = staticCompositionLocalOf { NoticeAnchorState() }
+
+/** 顶栏挂在最外层：上报底边坐标。未接入的页面自动回落到默认落点。 */
 @Composable
-fun PageInlineNoticeHost(modifier: Modifier = Modifier) {
-    val notice = LocalPageInlineNotice.current
-    var retainedNotice by remember { mutableStateOf(notice) }
-
-    LaunchedEffect(notice) {
-        if (notice != null) retainedNotice = notice
-    }
-
-    AnimatedVisibility(
-        visible = notice != null,
-        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        retainedNotice?.let { currentNotice ->
-            NoticeStrip(
-                message = currentNotice.message,
-                onClick = currentNotice.onClick
-            )
+fun Modifier.reportNoticeAnchor(): Modifier {
+    val anchor = LocalNoticeAnchor.current
+    val density = LocalDensity.current
+    return this.onGloballyPositioned { coordinates ->
+        val bottomPx = coordinates.boundsInRoot().bottom
+        if (bottomPx > 0f) {
+            anchor.topBarBottom = with(density) { bottomPx.toDp() }
         }
     }
 }
 
+// ═══════════════════════════════════════════════════════════
+// 形态状态机
+// ═══════════════════════════════════════════════════════════
+
+private enum class NoticePhase {
+    /** 完整胶囊，展示文案与操作。 */
+    Expanded,
+
+    /** 药丸，只留一个警示点。 */
+    Collapsed,
+
+    /** 右滑抹掉，本次会话不再出现。 */
+    Dismissed
+}
+
+/** 展开后自动收起的时长：只够读完一行字，不长期占位。 */
+private const val AUTO_COLLAPSE_MS = 2800L
+
+private val PillSize = 26.dp
+private val CapsuleHeight = 38.dp
+
+/** 顶栏未上报时的兜底落点。 */
+private val FallbackTop = 128.dp
+
+/** 与屏幕右缘的间距：药丸与胶囊右端共用，形变时右边缘不动。 */
+private val EdgeInset = 14.dp
+
+/** 判定为"抹掉"的右滑距离。 */
+private val DismissThreshold = 72.dp
+
+/** 警示强调色：琥珀，仅用于图标点缀，表面保持中性玻璃。 */
+@Composable
+private fun noticeAccentColor(): Color =
+    if (!isSystemInDarkTheme()) Color(0xFFC26A00) else Color(0xFFFFB340)
+
 /**
- * 通知条自成一档材质：语义色薄玻璃，没有按钮的实心表面和投影，
- * 因此不会在顶栏下方形成一圈灰壳。
+ * 悬浮玻璃通知：单个元素在胶囊与药丸之间连续形变，右边缘始终贴右缘对齐，
+ * 所以收起就是"向右收拢"而不是两块 UI 硬切。落位由顶栏上报的底边决定，
+ * 不覆盖任何顶栏操作；右滑可直接抹掉。
  */
 @Composable
-private fun NoticeStrip(
-    message: String,
-    onClick: () -> Unit
-) {
-    val isLightTheme = !isSystemInDarkTheme()
-    val shape = RoundedCornerShape(13.dp)
-    val backdrop = LocalControlBackdrop.current?.takeIf { isBackdropSupported() }
-    val surfaceColor = SemanticWarning.copy(alpha = if (isLightTheme) 0.14f else 0.20f)
+fun FloatingNoticeHost(modifier: Modifier = Modifier) {
+    val notice = LocalFloatingNotice.current ?: return
+    val anchor = LocalNoticeAnchor.current
+    val accessibility = rememberGlassAccessibilityMode()
+    val motion = !accessibility.reduceMotion
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .then(
-                if (backdrop != null) {
-                    Modifier.drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { shape },
-                        effects = {
-                            vibrancy()
-                            blur(5.dp.toPx())
-                        },
-                        onDrawSurface = { drawRect(surfaceColor) }
-                    )
-                } else {
-                    Modifier
-                        .clip(shape)
-                        .background(
-                            Color.White.copy(alpha = if (isLightTheme) 0.72f else 0.10f)
-                        )
+    var phase by remember(notice.message) { mutableStateOf(NoticePhase.Expanded) }
+
+    // 只依赖通知本身：切 tab 不再重新弹出，避免反复占住同一块区域
+    LaunchedEffect(notice.message, phase) {
+        if (phase == NoticePhase.Expanded) {
+            delay(AUTO_COLLAPSE_MS)
+            phase = NoticePhase.Collapsed
+        }
+    }
+    if (phase == NoticePhase.Dismissed) return
+
+    val expanded = phase == NoticePhase.Expanded
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val dismissOffset = remember { Animatable(0f) }
+    val dismissThresholdPx = with(density) { DismissThreshold.toPx() }
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        var capsuleWidth by remember { mutableStateOf(Dp.Unspecified) }
+        val restingWidth = if (capsuleWidth.isSpecified) capsuleWidth else 208.dp
+        val escapeDistancePx = constraints.maxWidth.toFloat()
+
+        val baseTop = if (anchor.topBarBottom.isSpecified) {
+            anchor.topBarBottom + 6.dp
+        } else {
+            FallbackTop
+        }
+
+        val sizeSpec = spring<Dp>(dampingRatio = 0.84f, stiffness = 430f)
+        val posSpec = spring<Dp>(dampingRatio = 0.82f, stiffness = 380f)
+
+        val width by animateDpAsState(
+            targetValue = if (expanded) restingWidth else PillSize,
+            animationSpec = if (motion) sizeSpec else snap(),
+            label = "noticeWidth"
+        )
+        val height by animateDpAsState(
+            targetValue = if (expanded) CapsuleHeight else PillSize,
+            animationSpec = if (motion) sizeSpec else snap(),
+            label = "noticeHeight"
+        )
+        // 收起时向上吸 4dp，形成"贴回顶栏"的落位感
+        val topPadding by animateDpAsState(
+            targetValue = if (expanded) baseTop else baseTop - 4.dp,
+            animationSpec = if (motion) posSpec else snap(),
+            label = "noticeTop"
+        )
+        val capsuleAlpha by animateFloatAsState(
+            targetValue = if (expanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 120),
+            label = "noticeCapsuleAlpha"
+        )
+        val pillAlpha by animateFloatAsState(
+            targetValue = if (expanded) 0f else 1f,
+            animationSpec = tween(
+                durationMillis = 150,
+                delayMillis = if (expanded) 0 else 60
+            ),
+            label = "noticePillAlpha"
+        )
+
+        val isLightTheme = !isSystemInDarkTheme()
+        // 通知与对话框同属模态语义，但它悬在内容上方，表面必须比对话框薄得多，
+        // 否则会像一块贴纸压在页面上。
+        val material = remember(accessibility) {
+            GlassMaterials.resolve(GlassMaterialRole.Modal, accessibility)
+                .copy(surfaceAlpha = 0.20f)
+        }
+        val surfaceColor = if (isLightTheme) {
+            Color.White.copy(alpha = material.surfaceAlpha)
+        } else {
+            Color(0xFF1E2024).copy(alpha = material.surfaceAlpha + 0.10f)
+        }
+        val fallbackSurface = if (isLightTheme) {
+            Color.White.copy(alpha = 0.88f)
+        } else {
+            Color(0xFF1E2024).copy(alpha = 0.90f)
+        }
+        val shadowColor = Color.Black.copy(alpha = if (isLightTheme) 0.12f else 0.28f)
+        val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+        val accentColor = noticeAccentColor()
+        val shape: Shape = RoundedCornerShape(percent = 50)
+        val backdrop = LocalAppBackdrop.current?.takeIf { isBackdropSupported() }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = topPadding, end = EdgeInset)
+                .size(width = width, height = height)
+                .graphicsLayer {
+                    translationX = dismissOffset.value
+                    alpha = 1f - (dismissOffset.value / dismissThresholdPx).coerceIn(0f, 1f) * 0.85f
                 }
+                .then(
+                    if (backdrop != null) {
+                        Modifier.drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { shape },
+                            effects = {
+                                val params = resolvePhysicalLens(
+                                    density = this,
+                                    material = material,
+                                    shape = shape,
+                                    minCornerRadiusPx = size.minDimension / 2f,
+                                    minDimensionPx = size.minDimension,
+                                    interactionProgress = 0f,
+                                    enableBlur = true,
+                                    allowChromaticAberration = false
+                                )
+                                vibrancy()
+                                if (params.blurPx > 0f) blur(params.blurPx)
+                                if (params.useLens) {
+                                    lens(
+                                        refractionHeight = params.refractionHeightPx,
+                                        refractionAmount = params.refractionAmountPx,
+                                        chromaticAberration = params.chromaticAberration
+                                    )
+                                }
+                            },
+                            highlight = { Highlight.Default.copy(alpha = 0.18f) },
+                            shadow = { Shadow(radius = 12.dp, color = shadowColor) },
+                            onDrawSurface = { drawRect(surfaceColor) }
+                        )
+                    } else {
+                        Modifier
+                            .clip(shape)
+                            .background(fallbackSurface)
+                            .border(width = 0.5.dp, color = borderColor, shape = shape)
+                    }
+                )
+                .pointerInput(phase) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            scope.launch {
+                                if (dismissOffset.value >= dismissThresholdPx) {
+                                    dismissOffset.animateTo(
+                                        targetValue = escapeDistancePx,
+                                        animationSpec = tween(durationMillis = 160)
+                                    )
+                                    phase = NoticePhase.Dismissed
+                                } else {
+                                    dismissOffset.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = spring(
+                                            dampingRatio = 0.72f,
+                                            stiffness = 520f
+                                        )
+                                    )
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch { dismissOffset.animateTo(0f) }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                dismissOffset.snapTo(
+                                    (dismissOffset.value + dragAmount).coerceAtLeast(0f)
+                                )
+                            }
+                        }
+                    )
+                }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = {
+                        if (expanded) notice.onClick() else phase = NoticePhase.Expanded
+                    }
+                )
+                .semantics {
+                    contentDescription = if (expanded) {
+                        "${notice.message}，${notice.actionLabel}，右滑关闭"
+                    } else {
+                        "${notice.message}，点击展开，右滑关闭"
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // 展开态内容：收拢过程中不重排，保持自然尺寸整体淡出
+            Row(
+                modifier = Modifier
+                    .wrapContentSize(align = Alignment.Center, unbounded = true)
+                    .graphicsLayer { alpha = capsuleAlpha }
+                    .onSizeChanged {
+                        if (it.width > 0) capsuleWidth = with(density) { it.width.toDp() }
+                    }
+                    .padding(horizontal = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = notice.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = notice.actionLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier
+                    .graphicsLayer { alpha = pillAlpha }
+                    .size(13.dp)
             )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onClick
-            )
-            .heightIn(min = 38.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = null,
-            tint = SemanticWarning,
-            modifier = Modifier.size(15.dp)
-        )
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        }
     }
 }

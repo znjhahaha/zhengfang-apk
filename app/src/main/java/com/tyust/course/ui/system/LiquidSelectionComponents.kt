@@ -165,7 +165,6 @@ fun LiquidSegmentedControl(
             .fillMaxWidth()
             .height(height)
             .graphicsLayer {
-                alpha = if (enabled) 1f else 0.46f
                 clip = false
             }
     ) {
@@ -245,6 +244,123 @@ fun LiquidSegmentedControl(
             null
         }
 
+        // 可见标签层：作为轨道 Box 的内容绘制，随轨道 layerBlock 一起放大，
+        // 手势与语义也归属该内容层（与 CapsuleNavigationBar 结构一致）。
+        val segmentLabels: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding)
+                .pointerInput(enabled, optionCount, segmentWidthPx) {
+                    if (!enabled) return@pointerInput
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startValue = dragAnimation.value
+                        val touchSlop = viewConfiguration.touchSlop
+                        val tappedIndex =
+                            ((down.position.x - horizontalPaddingPx) / segmentWidthPx)
+                                .toInt()
+                                .coerceIn(0, optionCount - 1)
+                        var totalDragX = 0f
+                        var dragging = false
+                        var completed = false
+                        var pointerId = down.id
+
+                        dragAnimation.press()
+
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == pointerId }
+                                    ?: break
+                                if (change.changedToUpIgnoreConsumed()) {
+                                    completed = true
+                                    if (dragging) change.consume()
+                                    break
+                                }
+
+                                val dragAmount = change.positionChange()
+                                if (dragAmount != Offset.Zero) {
+                                    totalDragX += dragAmount.x
+                                    if (!dragging && abs(totalDragX) > touchSlop) {
+                                        dragging = true
+                                    }
+                                    if (dragging) {
+                                        change.consume()
+                                        dragAnimation.updateValue(
+                                            (startValue + totalDragX / segmentWidthPx)
+                                                .coerceIn(0f, (optionCount - 1).toFloat())
+                                        )
+                                    }
+                                }
+                                pointerId = change.id
+                            }
+                        } finally {
+                            when {
+                                !completed -> dragAnimation.release()
+                                dragging -> requestSelection(dragAnimation.targetValue.roundToInt())
+                                else -> requestSelection(tappedIndex)
+                            }
+                        }
+                    }
+                }
+                .then(
+                    if (enabled) interactiveHighlight.gestureModifier else Modifier
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            options.forEachIndexed { index, label ->
+                val selectionAmount =
+                    (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
+                val textColor = if (enabled) {
+                    lerpColor(
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f),
+                        MaterialTheme.colorScheme.onSurface,
+                        selectionAmount
+                    )
+                } else {
+                    // 禁用只降内容对比，轨道与滑块保持实色，避免整块糊成半透明灰
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(indicatorShape)
+                        .semantics(mergeDescendants = true) {
+                            selected = index == clampedSelectedIndex
+                            role = Role.Tab
+                            onClick {
+                                requestSelection(index)
+                                true
+                            }
+                            if (!enabled) disabled()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier.padding(horizontal = if (compact) 6.dp else 10.dp),
+                        style = if (compact) {
+                            MaterialTheme.typography.labelMedium
+                        } else {
+                            MaterialTheme.typography.labelLarge
+                        },
+                        fontWeight = if (selectionAmount >= 0.55f) {
+                            FontWeight.ExtraBold
+                        } else {
+                            FontWeight.SemiBold
+                        },
+                        color = textColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -304,7 +420,10 @@ fun LiquidSegmentedControl(
                             .border(0.75.dp, trackBorderColor, trackShape)
                     }
                 )
-        )
+        ) {
+            // 可见标签与手势收进轨道内容层：轨道 layerBlock 放大时文字同步放大（与底栏结构一致）
+            segmentLabels()
+        }
 
         val indicatorBaseModifier = Modifier
             .width(indicatorWidth)
@@ -491,8 +610,8 @@ fun LiquidSegmentedControl(
                                 Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
                             val restAlpha = when {
-                                compact && isLightTheme -> 0.42f
-                                compact -> 0.24f
+                                compact && isLightTheme -> 0.66f
+                                compact -> 0.30f
                                 isLightTheme -> GlassRecipe.NavSelectedSolidAlpha
                                 else -> GlassRecipe.NavSelectedSolidAlphaDark
                             }
@@ -520,127 +639,6 @@ fun LiquidSegmentedControl(
             )
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                // 与外层轨道共用同一套按压缩放：文字随轨道一起放大，
-                // 不再出现"轨道放大、文字停在底层"的分层错觉。
-                .graphicsLayer {
-                    val progress = dragAnimation.pressProgress
-                    val maxGain = 16.dp.toPx()
-                    val pressScale = lerp(1f, 1f + maxGain / size.width, progress)
-                    val indicatorBoost = (
-                        (dragAnimation.scaleX + dragAnimation.scaleY) / 2f - 1f
-                        ).coerceIn(0f, 0.4f)
-                    val scale = pressScale * (1f + indicatorBoost * 0.18f)
-                    scaleX = scale
-                    scaleY = scale
-                    clip = false
-                }
-                .padding(horizontal = horizontalPadding, vertical = verticalPadding)
-                .pointerInput(enabled, optionCount, segmentWidthPx) {
-                    if (!enabled) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val startValue = dragAnimation.value
-                        val touchSlop = viewConfiguration.touchSlop
-                        val tappedIndex =
-                            ((down.position.x - horizontalPaddingPx) / segmentWidthPx)
-                                .toInt()
-                                .coerceIn(0, optionCount - 1)
-                        var totalDragX = 0f
-                        var dragging = false
-                        var completed = false
-                        var pointerId = down.id
-
-                        dragAnimation.press()
-
-                        try {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == pointerId }
-                                    ?: break
-                                if (change.changedToUpIgnoreConsumed()) {
-                                    completed = true
-                                    if (dragging) change.consume()
-                                    break
-                                }
-
-                                val dragAmount = change.positionChange()
-                                if (dragAmount != Offset.Zero) {
-                                    totalDragX += dragAmount.x
-                                    if (!dragging && abs(totalDragX) > touchSlop) {
-                                        dragging = true
-                                    }
-                                    if (dragging) {
-                                        change.consume()
-                                        dragAnimation.updateValue(
-                                            (startValue + totalDragX / segmentWidthPx)
-                                                .coerceIn(0f, (optionCount - 1).toFloat())
-                                        )
-                                    }
-                                }
-                                pointerId = change.id
-                            }
-                        } finally {
-                            when {
-                                !completed -> dragAnimation.release()
-                                dragging -> requestSelection(dragAnimation.targetValue.roundToInt())
-                                else -> requestSelection(tappedIndex)
-                            }
-                        }
-                    }
-                }
-                .then(
-                    if (enabled) interactiveHighlight.gestureModifier else Modifier
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            options.forEachIndexed { index, label ->
-                val selectionAmount =
-                    (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
-                val textColor = lerpColor(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f),
-                    MaterialTheme.colorScheme.onSurface,
-                    selectionAmount
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(indicatorShape)
-                        .semantics(mergeDescendants = true) {
-                            selected = index == clampedSelectedIndex
-                            role = Role.Tab
-                            onClick {
-                                requestSelection(index)
-                                true
-                            }
-                            if (!enabled) disabled()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        modifier = Modifier.padding(horizontal = if (compact) 6.dp else 10.dp),
-                        style = if (compact) {
-                            MaterialTheme.typography.labelMedium
-                        } else {
-                            MaterialTheme.typography.labelLarge
-                        },
-                        fontWeight = if (selectionAmount >= 0.55f) {
-                            FontWeight.ExtraBold
-                        } else {
-                            FontWeight.SemiBold
-                        },
-                        color = textColor,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -744,6 +742,17 @@ fun LiquidPicker(
         ),
         label = "liquidPickerBorder"
     )
+    // 禁用只降内容对比，玻璃表面保持原样，避免整块半透明糊灰
+    val primaryContentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val secondaryContentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.30f)
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val anchorWidth = with(density) { constraints.maxWidth.toDp() }
@@ -816,7 +825,6 @@ fun LiquidPicker(
                 .graphicsLayer {
                     scaleX = fieldScale
                     scaleY = fieldScale
-                    alpha = if (enabled) 1f else 0.52f
                 }
                 .heightIn(min = 56.dp)
                 .clickable(
@@ -840,7 +848,7 @@ fun LiquidPicker(
                     imageVector = leadingIcon,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = secondaryContentColor
                 )
             }
             Column(
@@ -851,7 +859,7 @@ fun LiquidPicker(
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = secondaryContentColor,
                         maxLines = 1
                     )
                 }
@@ -860,9 +868,9 @@ fun LiquidPicker(
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (selectedLabel != null) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (selectedLabel != null) {
-                        MaterialTheme.colorScheme.onSurface
+                        primaryContentColor
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                        secondaryContentColor.copy(alpha = secondaryContentColor.alpha * 0.72f)
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -874,7 +882,7 @@ fun LiquidPicker(
                 modifier = Modifier
                     .size(21.dp)
                     .rotate(arrowRotation),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = secondaryContentColor
             )
         }
 

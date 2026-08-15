@@ -1,6 +1,8 @@
 package com.tyust.course.ui.system.glass
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -25,15 +27,25 @@ class InteractiveOptics(
     private val animationScope: CoroutineScope
 ) {
     private val pressAnimation = Animatable(0f, 0.001f)
+    private val offsetAnimation = Animatable(
+        Offset.Zero,
+        Offset.VectorConverter,
+        Offset.VisibilityThreshold
+    )
     private var pointerState by mutableStateOf(Offset.Unspecified)
     private var velocityState by mutableFloatStateOf(0f)
     private var velocitySettleJob: Job? = null
+    private var startPosition = Offset.Zero
 
     val pressProgress: Float
         get() = pressAnimation.value
 
     val pointerPosition: Offset
         get() = pointerState
+
+    /** 官方 InteractiveHighlight 语义：当前指针相对按压起点的位移，释放后弹回零点。 */
+    val offset: Offset
+        get() = offsetAnimation.value
 
     val velocityX: Float
         get() = velocityState
@@ -61,6 +73,10 @@ class InteractiveOptics(
             velocitySettleJob?.cancel()
             pointerState = down.position
             velocityState = 0f
+            startPosition = down.position
+            animationScope.launch {
+                offsetAnimation.snapTo(Offset.Zero)
+            }
             animationScope.launch {
                 pressAnimation.animateTo(
                     targetValue = 1f,
@@ -83,6 +99,9 @@ class InteractiveOptics(
 
                 pointerState = change.position
                 velocityState = velocityState * 0.56f + instantaneousVelocity * 0.44f
+                animationScope.launch {
+                    offsetAnimation.snapTo(change.position - startPosition)
+                }
                 previousPosition = change.position
                 previousTime = change.uptimeMillis
                 pointerId = change.id
@@ -92,6 +111,16 @@ class InteractiveOptics(
                 pressAnimation.animateTo(
                     targetValue = 0f,
                     animationSpec = tween(durationMillis = 180)
+                )
+            }
+            animationScope.launch {
+                offsetAnimation.animateTo(
+                    targetValue = Offset.Zero,
+                    animationSpec = spring(
+                        dampingRatio = 0.5f,
+                        stiffness = 300f,
+                        visibilityThreshold = Offset.VisibilityThreshold
+                    )
                 )
             }
             val releaseVelocity = velocityState
