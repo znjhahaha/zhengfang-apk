@@ -11,9 +11,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.util.fastCoerceIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -106,14 +109,24 @@ class DampedDragAnimation(
         val target = value.coerceIn(valueRange)
         animationScope.launch {
             mutatorMutex.mutate {
-                // 结构化会话：按下增亮先启动，褪光协程等 value 就位后才启动，
-                // 保证"褪光"永远排在"增亮"之后，杜绝按下态永久卡住的竞态；
-                // 新的 animateToValue 会整体取消旧会话（含等待中的褪光）。
+                // 结构化会话：增亮与位移并行推进，褪光协程等 value 走过大半程就启动，
+                // 于是"褪光"与"位移"是重叠的，而不是等位移完全结束才回弹。
                 coroutineScope {
                     launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
                     launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
                     launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
-                    launch { valueAnimation.animateTo(target, settleAnimationSpec) { updateVelocity() } }
+                    launch {
+                        // value 被另一路 animateTo 抢占是正常竞争，必须就地消化：
+                        // 一旦让它逃逸出去，会连坐取消同作用域的褪光协程，
+                        // 控件就永久卡在按下态（放大 + 表面透明）。
+                        try {
+                            valueAnimation.animateTo(target, settleAnimationSpec) {
+                                updateVelocity()
+                            }
+                        } catch (_: CancellationException) {
+                            currentCoroutineContext().ensureActive()
+                        }
+                    }
                     if (velocity != 0f) {
                         launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                     }

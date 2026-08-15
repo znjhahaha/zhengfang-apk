@@ -316,6 +316,7 @@ fun LiquidSwitch(
                 } else {
                     if (latestChecked) 0f else 1f
                 }
+                updateValue(fraction)
                 latestOnCheckedChange(fraction == 1f)
             },
             onDrag = { _, dragAmount ->
@@ -327,14 +328,14 @@ fun LiquidSwitch(
                 } else {
                     (fraction - delta).fastCoerceIn(0f, 1f)
                 }
+                updateValue(fraction)
             }
         )
     }
 
-    LaunchedEffect(dragAnimation) {
-        snapshotFlow { fraction }
-            .collectLatest(dragAnimation::updateValue)
-    }
+    // value 只允许一条驱动路径：手势内走 updateValue（直接操纵），
+    // 外部 checked 变化走 animateToValue（带按压释放）。两者若并发对同一个
+    // Animatable 发起 animateTo，先发起的会被抢占并连锁取消释放动画。
     LaunchedEffect(checked) {
         val target = if (checked) 1f else 0f
         if (target != fraction) {
@@ -349,8 +350,8 @@ fun LiquidSwitch(
     // 配合 lens 在滑块内输出折射与色散。
     val scaledTrackBackdrop = rememberBackdrop(trackBackdrop) { drawTrackBackdrop ->
         val progress = dragAnimation.pressProgress
-        val scaleX = lerp(2f / 3f, 1f, progress)
-        val scaleY = lerp(0f, 1f, progress)
+        val scaleX = lerp(2f / 3f, 0.75f, progress)
+        val scaleY = lerp(0f, 0.75f, progress)
         scale(scaleX, scaleY) {
             drawTrackBackdrop()
         }
@@ -422,8 +423,8 @@ fun LiquidSwitch(
                             val progress = dragAnimation.pressProgress
                             blur(8.dp.toPx() * (1f - progress))
                             lens(
-                                refractionHeight = 10.dp.toPx() * progress,
-                                refractionAmount = 14.dp.toPx() * progress,
+                                refractionHeight = 5.dp.toPx() * progress,
+                                refractionAmount = 10.dp.toPx() * progress,
                                 chromaticAberration = true
                             )
                         },

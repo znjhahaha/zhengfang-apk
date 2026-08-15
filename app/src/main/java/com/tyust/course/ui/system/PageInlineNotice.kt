@@ -211,11 +211,11 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
         )
 
         val isLightTheme = !isSystemInDarkTheme()
-        // 通知与对话框同属模态语义，但它悬在内容上方，表面必须比对话框薄得多，
-        // 否则会像一块贴纸压在页面上。
+        // 与底栏选中滑块同一档材质：Interactive 的 blurDp 为 0，靠折射与色散成形，
+        // 而不是 Modal 那种磨砂。表面必须够薄，否则会把折射盖掉。
         val material = remember(accessibility) {
-            GlassMaterials.resolve(GlassMaterialRole.Modal, accessibility)
-                .copy(surfaceAlpha = 0.20f)
+            GlassMaterials.resolve(GlassMaterialRole.Interactive, accessibility)
+                .copy(surfaceAlpha = 0.14f)
         }
         val surfaceColor = if (isLightTheme) {
             Color.White.copy(alpha = material.surfaceAlpha)
@@ -231,7 +231,10 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
         val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
         val accentColor = noticeAccentColor()
         val shape: Shape = RoundedCornerShape(percent = 50)
-        val backdrop = LocalAppBackdrop.current?.takeIf { isBackdropSupported() }
+        // 采样含页面内容的捕获层而非纯壁纸：折射里要有东西可看，才是镜片不是雾。
+        // 通知位于该捕获层之外，不会自采样。
+        val backdrop = (LocalModalBackdrop.current ?: LocalAppBackdrop.current)
+            ?.takeIf { isBackdropSupported() }
 
         Box(
             modifier = Modifier
@@ -255,8 +258,11 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                                     minCornerRadiusPx = size.minDimension / 2f,
                                     minDimensionPx = size.minDimension,
                                     interactionProgress = 0f,
-                                    enableBlur = true,
-                                    allowChromaticAberration = false
+                                    enableBlur = false,
+                                    allowChromaticAberration = true,
+                                    chromaticAberrationAtRest = true,
+                                    pressScalesRefraction = true,
+                                    refractionFloor = 0.42f
                                 )
                                 vibrancy()
                                 if (params.blurPx > 0f) blur(params.blurPx)
@@ -268,7 +274,7 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                                     )
                                 }
                             },
-                            highlight = { Highlight.Default.copy(alpha = 0.18f) },
+                            highlight = { Highlight.Default.copy(alpha = 0.24f) },
                             shadow = { Shadow(radius = 12.dp, color = shadowColor) },
                             onDrawSurface = { drawRect(surfaceColor) }
                         )

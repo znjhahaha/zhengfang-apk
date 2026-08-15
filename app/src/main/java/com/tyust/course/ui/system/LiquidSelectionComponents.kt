@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -135,7 +136,8 @@ fun LiquidSegmentedControl(
     val isLightTheme = !isSystemInDarkTheme()
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)
-    // 与底部 Tab 相同：隐藏内容层与环境层合成为选中透镜的采样源。
+    // 隐藏内容层与环境层合成为选中透镜的采样源：折射要看得见，
+    // 采样源里必须有高对比边缘（文字），只折射平滑壁纸等于没有折射。
     val segmentsBackdrop = rememberLayerBackdrop()
     val animationScope = rememberCoroutineScope()
     val accessibility = rememberGlassAccessibilityMode()
@@ -218,9 +220,9 @@ fun LiquidSegmentedControl(
 
         val trackBackgroundColor = if (hasRealLens) {
             if (isLightTheme) {
-                Color.White.copy(alpha = if (compact) 0.18f else 0.28f)
+                Color.White.copy(alpha = GlassRecipe.SegTrackSurfaceAlphaLight)
             } else {
-                Color.Black.copy(alpha = if (compact) 0.20f else 0.26f)
+                Color.Black.copy(alpha = GlassRecipe.SegTrackSurfaceAlphaDark)
             }
         } else {
             if (isLightTheme) {
@@ -313,9 +315,11 @@ fun LiquidSegmentedControl(
                 val selectionAmount =
                     (1f - abs(dragAnimation.value - index.toFloat())).coerceIn(0f, 1f)
                 val textColor = if (enabled) {
+                    // 分段栏嵌在页面里，只靠字重差提示太弱：选中直接走主色，
+                    // 未选中压到低对比，两端拉开后"当前在哪一段"一眼可见。
                     lerpColor(
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.94f),
-                        MaterialTheme.colorScheme.onSurface,
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                        MaterialTheme.colorScheme.primary,
                         selectionAmount
                     )
                 } else {
@@ -421,7 +425,8 @@ fun LiquidSegmentedControl(
                     }
                 )
         ) {
-            // 可见标签与手势收进轨道内容层：轨道 layerBlock 放大时文字同步放大（与底栏结构一致）
+            // 可见标签与手势收进轨道内容层：轨道 layerBlock 放大时文字同步放大。
+            // 它位于滑块之下，因此选中项是"透过玻璃看到的"，折射才有意义。
             segmentLabels()
         }
 
@@ -435,51 +440,20 @@ fun LiquidSegmentedControl(
             }
 
         if (glassBackdrop != null && indicatorBackdrop != null) {
+            // 专供滑块折射采样的隐藏层：染成主色后，透镜里浮出的就是饱和蓝字，
+            // 滑块表面因此可以做到几乎透明，不必靠白色填充去制造存在感。
             Row(
                 modifier = Modifier
                     .clearAndSetSemantics { }
                     .alpha(0f)
                     .layerBackdrop(segmentsBackdrop)
                     .align(Alignment.CenterStart)
-                    .drawBackdrop(
-                        backdrop = glassBackdrop,
-                        shape = { Capsule() },
-                        effects = {
-                            val progress = dragAnimation.pressProgress
-                            vibrancy()
-                            if (hasRealLens) {
-                                val params = resolvePhysicalLens(
-                                    density = this,
-                                    material = trackMaterial,
-                                    shape = Capsule(),
-                                    minCornerRadiusPx = size.minDimension / 2f,
-                                    minDimensionPx = size.minDimension,
-                                    interactionProgress = progress,
-                                    enableBlur = true,
-                                    allowChromaticAberration = false,
-                                    pressScalesRefraction = false
-                                )
-                                if (params.blurPx > 0f) blur(params.blurPx)
-                                else blur(8.dp.toPx())
-                                if (params.useLens) {
-                                    lens(
-                                        refractionHeight = params.refractionHeightPx,
-                                        refractionAmount = params.refractionAmountPx,
-                                        chromaticAberration = false
-                                    )
-                                }
-                            } else {
-                                blur(GlassRecipe.NavLegacyTrackBlurDp.dp.toPx())
-                            }
-                        },
-                        highlight = {
-                            Highlight.Default.copy(alpha = dragAnimation.pressProgress * 0.35f)
-                        },
-                        onDrawSurface = { drawRect(trackBackgroundColor) }
-                    )
                     .height(indicatorHeight)
                     .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding),
+                    .padding(horizontal = horizontalPadding)
+                    .graphicsLayer(
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary)
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 options.forEach { label ->
@@ -499,7 +473,7 @@ fun LiquidSegmentedControl(
                             } else {
                                 MaterialTheme.typography.labelLarge
                             },
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
                             softWrap = false,
                             overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis
@@ -566,21 +540,22 @@ fun LiquidSegmentedControl(
                             Highlight.Default.copy(
                                 width = Highlight.Default.width / scaleComp,
                                 blurRadius = Highlight.Default.blurRadius / scaleComp,
-                                alpha = 0.12f + progress * 0.35f
+                                alpha = GlassRecipe.SegSelectedRimAlpha + progress * 0.22f
                             )
                         } else {
                             Highlight.Default.copy(
                                 width = Highlight.Default.width / scaleComp,
-                                alpha = progress * 0.35f
+                                alpha = GlassRecipe.SegSelectedRimAlpha + progress * 0.22f
                             )
                         }
                     },
                     shadow = {
                         val progress = dragAnimation.pressProgress
                         if (hasRealLens) {
-                            Shadow(alpha = 0.10f + progress * 0.15f)
+                            // 静止就带明显投影：选中感来自"浮起"，不是给滑块上色
+                            Shadow(alpha = GlassRecipe.SegSelectedShadowAlpha + progress * 0.12f)
                         } else {
-                            Shadow(alpha = progress * 0.5f)
+                            Shadow(alpha = GlassRecipe.SegSelectedShadowAlpha + progress * 0.30f)
                         }
                     },
                     innerShadow = {
@@ -609,11 +584,10 @@ fun LiquidSegmentedControl(
                             } else {
                                 Color(GlassRecipe.NavSelectedSolidColorDark)
                             }
-                            val restAlpha = when {
-                                compact && isLightTheme -> 0.66f
-                                compact -> 0.30f
-                                isLightTheme -> GlassRecipe.NavSelectedSolidAlpha
-                                else -> GlassRecipe.NavSelectedSolidAlphaDark
+                            val restAlpha = if (isLightTheme) {
+                                GlassRecipe.SegSelectedSurfaceAlphaLight
+                            } else {
+                                GlassRecipe.SegSelectedSurfaceAlphaDark
                             }
                             val fillAlpha = lerp(
                                 restAlpha,

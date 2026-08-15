@@ -238,6 +238,16 @@ object GlassRecipe {
     val SegTrackBlurDp = control.blurDp
     val SegTrackSurfaceAlpha = 0.34f
     val SegTrackBorderAlpha = 0.16f
+    // 分段栏与底栏的观感诉求不同：底栏整条浮在壁纸上，轨道白雾就是它的主体；
+    // 分段栏嵌在页面内容里，轨道白雾越重整条越"灰蒙蒙"。
+    // 滑块表面刻意做到几乎透明：它一旦用白色填充制造存在感，就必然把底下被折射的
+    // 文字压成灰雾。存在感改由投影与边缘高光承担，颜色交给折射出来的主色文字。
+    val SegTrackSurfaceAlphaLight = 0.10f
+    val SegTrackSurfaceAlphaDark = 0.16f
+    val SegSelectedSurfaceAlphaLight = 0.18f
+    val SegSelectedSurfaceAlphaDark = 0.14f
+    val SegSelectedShadowAlpha = 0.22f
+    val SegSelectedRimAlpha = 0.36f
     val SelectionIndicatorPressedScale = 78f / 56f
     // 分段滑块只做轻微按压反馈，位移由接近临界阻尼的弹簧负责。
     val SegIndicatorPressedScale = 1.035f
@@ -263,13 +273,12 @@ object GlassRecipe {
     // 无 RuntimeShader 时与真 lens 平台共用 78/56 按压尺度（cba2a09）。
     val NavLegacyPressedScale = SelectionIndicatorPressedScale
 
-    // 静态选中块必须能在白底壁纸上被看见，所以填充是冷灰实心而不是低透明白，
-    // 与 iOS 底栏一致。折射与色散并未关闭：按压/拖拽时填充按下面的 lerp
-    // 褪到 NavSelectedGlassAlpha，透镜效果照常输出。
-    val NavSelectedSolidColorLight = 0xFFE9EBEF
+    // 选中胶囊靠"提亮"与轨道区分，而不是叠黑色 tint。浅色主题下叠黑会把
+    // 整块透镜压成灰片，视觉上比轨道更脏；白色低透明既保留折射也不发灰。
+    val NavSelectedSolidColorLight = 0xFFFFFFFF
     val NavSelectedSolidColorDark = 0xFFFFFFFF
-    val NavSelectedSolidAlpha = 0.72f
-    val NavSelectedSolidAlphaDark = 0.26f
+    val NavSelectedSolidAlpha = 0.34f
+    val NavSelectedSolidAlphaDark = 0.20f
     val NavSelectedGlassAlpha = 0.14f
     val NavPressedScale = SelectionIndicatorPressedScale
 
