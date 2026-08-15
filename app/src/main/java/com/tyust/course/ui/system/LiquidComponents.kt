@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,6 +77,8 @@ import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
 import com.tyust.course.ui.system.glass.chromaticFringe
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.rememberPressMotion
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.IOSDisabledFillDark
 import com.tyust.course.ui.theme.IOSDisabledFillLight
@@ -134,13 +137,14 @@ fun LiquidButton(
     )
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    // iOS filled button 的按压：整体轻微回缩。玻璃分支不用它（那边由 layerBlock 做光学形变）。
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.97f else 1f,
-        animationSpec = MotionSpring.liquidTap(),
-        label = "liquidButtonPressScale"
-    )
     val accessibility = rememberGlassAccessibilityMode()
+    // iOS filled button 的按压：压扁 + 回弹过冲。玻璃分支不用它（那边由 layerBlock 做光学形变）。
+    val press = rememberPressMotion(
+        pressed = isPressed,
+        enabled = enabled,
+        depth = 0.06f,
+        reduceMotion = accessibility.reduceMotion
+    )
     val hasRealLens = isRuntimeShaderTrulySupported()
     // 玻璃分支的按压由 layerBlock 的光学形变表达；实色分支交给全局 iOS 按压（回缩 + 灰罩）。
     // 玻璃分支不能用 indication：drawBackdrop 不裁剪内容，灰罩会溢出成方块。
@@ -253,8 +257,8 @@ fun LiquidButton(
             // 回缩必须在 clip/background 之前：这样底色随内容一起缩，
             // 而不是只缩到文字。灰罩由 clickable 处的 GlassPressIndication 叠加。
             .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
+                scaleX = press.scaleX
+                scaleY = press.scaleY
             }
             .clip(shape)
             .background(fallbackColor)
@@ -519,26 +523,42 @@ fun AnimatedIconButton(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     enabled: Boolean = true,
-    buttonSize: Dp = 36.dp,
+    buttonSize: Dp = 38.dp,
     iconSize: Dp = 18.dp,
-    tint: Color = LocalContentColor.current
+    tint: Color = LocalContentColor.current,
+    /** 顶栏与工具栏的图标按钮默认成为玻璃芯片，不再是裸图标。 */
+    chip: Boolean = true
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val accessibility = rememberGlassAccessibilityMode()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled && !accessibility.reduceMotion) 0.82f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
-        label = "iconBtnScale"
+    // 图标芯片压得比文字按钮深一点，小控件需要更大幅度才看得出来
+    val press = rememberPressMotion(
+        pressed = isPressed,
+        enabled = enabled,
+        depth = if (chip) 0.10f else 0.14f,
+        reduceMotion = accessibility.reduceMotion
     )
 
     Box(
         modifier = modifier
             .size(buttonSize)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                scaleX = press.scaleX
+                scaleY = press.scaleY
             }
+            .then(
+                if (chip) {
+                    // 禁用时容器保留、只压暗：容器直接消失会让人以为这里没有按钮
+                    Modifier.glassChip(
+                        shape = CircleShape,
+                        dimmed = !enabled,
+                        pressProgress = { press.progress }
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

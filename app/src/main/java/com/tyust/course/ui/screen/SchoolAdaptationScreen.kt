@@ -48,6 +48,7 @@ import com.tyust.course.network.SchoolAdaptationManager
 import com.tyust.course.network.SchoolAdaptationRequest
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemIconButton
 import com.tyust.course.ui.system.SystemTopBar
 import com.tyust.course.ui.theme.SemanticWarning
 import com.tyust.course.ui.theme.SemanticWarningContainer
@@ -156,9 +157,11 @@ fun SchoolAdaptationScreen(
                 title = "申请统一登录适配",
                 subtitle = "提交临时测试账号协助适配",
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
+                    SystemIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        onClick = onNavigateBack
+                    )
                 }
             )
         }

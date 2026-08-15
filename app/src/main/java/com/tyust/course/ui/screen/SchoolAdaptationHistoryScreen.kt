@@ -48,6 +48,7 @@ import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.system.SystemIconButton
 import com.tyust.course.ui.system.SystemTopBar
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -102,9 +103,11 @@ fun SchoolAdaptationHistoryScreen(
                 title = "统一登录适配",
                 subtitle = "查看申请状态和作者回复",
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
+                    SystemIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        onClick = onNavigateBack
+                    )
                 },
                 actions = {
                     IconButton(

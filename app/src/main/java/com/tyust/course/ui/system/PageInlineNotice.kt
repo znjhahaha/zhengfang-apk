@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import com.kyant.backdrop.drawBackdrop
@@ -59,7 +60,9 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.tyust.course.ui.system.glass.glassRim
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.IOSBlueDark
 import com.tyust.course.ui.theme.IOSBlueLight
@@ -113,10 +116,7 @@ private enum class NoticePhase {
     Expanded,
 
     /** 药丸，只留一个警示点。 */
-    Collapsed,
-
-    /** 右滑抹掉，本次会话不再出现。 */
-    Dismissed
+    Collapsed
 }
 
 /** 展开后自动收起的时长：只够读完一行字，不长期占位。 */
@@ -131,7 +131,7 @@ private val FallbackTop = 128.dp
 /** 与屏幕右缘的间距：药丸与胶囊右端共用，形变时右边缘不动。 */
 private val EdgeInset = 14.dp
 
-/** 判定为"抹掉"的右滑距离。 */
+/** 判定为"收起"的右滑距离。 */
 private val DismissThreshold = 72.dp
 
 /** 警示强调色：琥珀，仅用于图标点缀，表面保持中性玻璃。 */
@@ -142,7 +142,7 @@ private fun noticeAccentColor(): Color =
 /**
  * 悬浮玻璃通知：单个元素在胶囊与药丸之间连续形变，右边缘始终贴右缘对齐，
  * 所以收起就是"向右收拢"而不是两块 UI 硬切。落位由顶栏上报的底边决定，
- * 不覆盖任何顶栏操作；右滑可直接抹掉。
+ * 不覆盖任何顶栏操作；右滑收起为药丸，点击药丸重新展开。
  */
 @Composable
 fun FloatingNoticeHost(modifier: Modifier = Modifier) {
@@ -160,7 +160,6 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
             phase = NoticePhase.Collapsed
         }
     }
-    if (phase == NoticePhase.Dismissed) return
 
     val expanded = phase == NoticePhase.Expanded
     val density = LocalDensity.current
@@ -171,7 +170,6 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         var capsuleWidth by remember { mutableStateOf(Dp.Unspecified) }
         val restingWidth = if (capsuleWidth.isSpecified) capsuleWidth else 208.dp
-        val escapeDistancePx = constraints.maxWidth.toFloat()
 
         val baseTop = if (anchor.topBarBottom.isSpecified) {
             anchor.topBarBottom + 6.dp
@@ -217,7 +215,7 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
         // 而不是 Modal 那种磨砂。表面必须够薄，否则会把折射盖掉。
         val material = remember(accessibility) {
             GlassMaterials.resolve(GlassMaterialRole.Interactive, accessibility)
-                .copy(surfaceAlpha = 0.07f)
+                .copy(surfaceAlpha = 0.16f)
         }
         val surfaceColor = if (isLightTheme) {
             Color.White.copy(alpha = material.surfaceAlpha)
@@ -278,8 +276,22 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                             },
                             highlight = { Highlight.Default.copy(alpha = 0.32f) },
                             shadow = { Shadow(radius = 10.dp, color = shadowColor) },
+                            // drawBackdrop 一直有这个参数但从未传：缺了内阴影，
+                            // 玻璃就只是一层贴纸，没有壁厚
+                            innerShadow = {
+                                InnerShadow(
+                                    radius = 8.dp,
+                                    offset = DpOffset(0.dp, 2.dp),
+                                    color = Color.Black.copy(
+                                        alpha = if (isLightTheme) 0.07f else 0.16f
+                                    )
+                                )
+                            },
                             onDrawSurface = { drawRect(surfaceColor) }
                         )
+                            // 壁纸是平滑渐变，折射无内容可折射；边缘光不依赖背景，
+                            // 是这里唯一稳定成立的玻璃特征
+                            .glassRim(shape, intensity = 0.9f, isLightTheme = isLightTheme)
                     } else {
                         Modifier
                             .clip(shape)
@@ -291,21 +303,18 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {
+                                // 右滑越过阈值只是"收起"，不是抹掉：
+                                // 通知本身是 cookie 失效的持续状态，不该被一次手势永久丢弃
                                 if (dismissOffset.value >= dismissThresholdPx) {
-                                    dismissOffset.animateTo(
-                                        targetValue = escapeDistancePx,
-                                        animationSpec = tween(durationMillis = 160)
-                                    )
-                                    phase = NoticePhase.Dismissed
-                                } else {
-                                    dismissOffset.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = spring(
-                                            dampingRatio = 0.72f,
-                                            stiffness = 520f
-                                        )
-                                    )
+                                    phase = NoticePhase.Collapsed
                                 }
+                                dismissOffset.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = 0.72f,
+                                        stiffness = 520f
+                                    )
+                                )
                             }
                         },
                         onDragCancel = {
@@ -331,9 +340,9 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                 )
                 .semantics {
                     contentDescription = if (expanded) {
-                        "${notice.message}，${notice.actionLabel}，右滑关闭"
+                        "${notice.message}，${notice.actionLabel}，右滑收起"
                     } else {
-                        "${notice.message}，点击展开，右滑关闭"
+                        "${notice.message}，点击展开"
                     }
                 },
             contentAlignment = Alignment.Center

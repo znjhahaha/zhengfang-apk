@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.announcement.AnnouncementManager
 import com.tyust.course.announcement.AnnouncementDialog
+import com.tyust.course.ui.system.SystemIconButton
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -45,9 +46,11 @@ fun AnnouncementHistoryScreen(
             TopAppBar(
                 title = { Text("公告历史", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
+                    SystemIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        onClick = onBack
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,

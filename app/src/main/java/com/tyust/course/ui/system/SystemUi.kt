@@ -102,6 +102,9 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.glassRim
+import com.tyust.course.ui.system.glass.rememberPressMotion
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
@@ -347,46 +350,29 @@ fun GlassCircleButton(
     tint: Color = MaterialTheme.colorScheme.onSurface,
     backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
-    val useGlass = backdrop != null && isBackdropSupported()
-    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.9f else 1f,
-        animationSpec = MotionSpring.liquidTap(),
-        label = "glassCircleScale"
+    val accessibility = rememberGlassAccessibilityMode()
+    val press = rememberPressMotion(
+        pressed = isPressed,
+        enabled = enabled,
+        depth = 0.10f,
+        reduceMotion = accessibility.reduceMotion
     )
-    val surfaceColor = if (isLightTheme) {
-        Color.White.copy(alpha = 0.55f)
-    } else {
-        Color.Black.copy(alpha = 0.38f)
-    }
-    val shellModifier = if (useGlass && backdrop != null) {
-        Modifier.drawBackdrop(
-            backdrop = backdrop,
-            shape = { CircleShape },
-            effects = {
-                vibrancy()
-                blur(8.dp.toPx())
-            },
-            onDrawSurface = { drawRect(surfaceColor) }
-        )
-    } else {
-        Modifier
-            .clip(CircleShape)
-            .background(
-                if (isLightTheme) Color.White.copy(alpha = 0.85f)
-                else Color(0xFF2C2C2E).copy(alpha = 0.85f)
-            )
-    }
     Box(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                scaleX = press.scaleX
+                scaleY = press.scaleY
             }
-            .then(shellModifier)
+            // 与顶栏图标按钮同一套芯片：圆按钮的玻璃感来自光照而非折射，
+            // 因此不需要 backdrop，在纯色区域上也成立
+            .glassChip(
+                shape = CircleShape,
+                dimmed = !enabled,
+                pressProgress = { press.progress }
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -848,11 +834,17 @@ fun SystemIconButton(
     icon: ImageVector,
     contentDescription: String?,
     onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    /** 顶栏/工具栏级别的图标按钮默认带玻璃芯片；行内小按钮传 false。 */
+    chip: Boolean = true
 ) {
-    IconButton(onClick = onClick) {
-        Icon(icon, contentDescription = contentDescription, tint = tint)
-    }
+    AnimatedIconButton(
+        onClick = onClick,
+        icon = icon,
+        contentDescription = contentDescription,
+        tint = tint,
+        chip = chip
+    )
 }
 
 @Composable
@@ -1128,6 +1120,10 @@ private fun SystemDialogContent(
                         shadow = { Shadow(alpha = dialogMaterial.shadowAlpha) },
                         onDrawSurface = { drawRect(dialogSurfaceColor) }
                     )
+                    // 库的 Highlight shader 只认 CornerBasedShape，对连续曲率 squircle
+                    // 会退化成 minDimension/2 的圆角，高光位置整体错位。
+                    // 这里直接按 outline 描边，圆角多大就贴多大。
+                    .glassRim(dialogShape, intensity = 0.9f, isLightTheme = isLightTheme)
             )
         } else {
             Box(
