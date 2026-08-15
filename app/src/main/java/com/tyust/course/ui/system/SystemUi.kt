@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -97,12 +98,19 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedCornerStyle
+import com.kyant.shapes.RoundedRectangle
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.theme.GlassArcHighlight
 import com.tyust.course.ui.theme.GlassBorderDark
 import com.tyust.course.ui.theme.GlassBorderLight
 import com.tyust.course.ui.theme.GlassHighlight
 import com.tyust.course.ui.theme.GlassOverlay
+import com.tyust.course.ui.theme.IOSBlueDark
+import com.tyust.course.ui.theme.IOSBlueLight
+import com.tyust.course.ui.theme.IOSRedDark
+import com.tyust.course.ui.theme.IOSRedLight
 import com.tyust.course.ui.theme.NeuDarkShadow
 import com.tyust.course.ui.theme.NeuDivider
 import com.tyust.course.ui.theme.NeuInsetBackground
@@ -700,21 +708,20 @@ fun SystemPrimaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    // 主按钮使用高饱和 tint 覆盖中性折射层，保留玻璃边缘和按压形变。
+    // iOS filled button：不透明实色胶囊。按压回缩与灰罩由全局 GlassPressIndication 统一提供。
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Tinted,
-        tint = NeuPrimary,
-        shape = RoundedCornerShape(16.dp),
-        cornerRadius = 16.dp
+        style = LiquidButtonStyle.SolidTinted,
+        tint = if (!isSystemInDarkTheme()) IOSBlueLight else IOSBlueDark,
+        shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -727,14 +734,14 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
+    // iOS gray-fill：不透明浅灰胶囊，文字用 onSurface 实色，保证任何底色上都清晰。
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Surface,
+        style = LiquidButtonStyle.SolidSurface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(16.dp),
-        cornerRadius = 16.dp
+        shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
         Text(
@@ -757,16 +764,15 @@ fun SystemDestructiveButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
-        style = LiquidButtonStyle.Tinted,
-        tint = SemanticDanger,
-        shape = RoundedCornerShape(16.dp),
-        cornerRadius = 16.dp
+        style = LiquidButtonStyle.SolidTinted,
+        tint = if (!isSystemInDarkTheme()) IOSRedLight else IOSRedDark,
+        shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -862,7 +868,7 @@ fun SystemActionButton(
     val contentColor = if (primary) {
         Color.White
     } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onSurface
     }
 
     LiquidButton(
@@ -870,13 +876,12 @@ fun SystemActionButton(
         backdrop = backdrop,
         modifier = modifier,
         enabled = enabled,
-        style = if (primary) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface,
-        tint = NeuPrimary,
+        style = if (primary) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.SolidSurface,
+        tint = if (!isSystemInDarkTheme()) IOSBlueLight else IOSBlueDark,
         contentColor = contentColor,
-        shape = RoundedCornerShape(12.dp),
-        cornerRadius = 12.dp,
+        shape = Capsule(),
         minHeight = 36.dp,
-        horizontalPadding = 12.dp
+        horizontalPadding = 14.dp
     ) {
         if (icon != null) {
             Icon(
@@ -1065,8 +1070,11 @@ private fun SystemDialogContent(
     title: @Composable (() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val dialogCorner = GlassRecipe.DialogCornerDp.dp
-    val dialogShape = RoundedCornerShape(dialogCorner)
+    // iOS squircle：连续曲率，避免圆弧与直边交界处的折角感
+    val dialogShape = RoundedRectangle(
+        cornerRadius = GlassRecipe.DialogCornerDp.dp,
+        style = RoundedCornerStyle.Continuous
+    )
     val accessibility = rememberGlassAccessibilityMode()
     val dialogMaterial = GlassMaterials.resolve(
         role = GlassMaterialRole.Modal,

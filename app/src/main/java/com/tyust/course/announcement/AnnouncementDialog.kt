@@ -88,13 +88,12 @@ fun AnnouncementDialog(
                     .height(52.dp),
                 style = LiquidButtonStyle.SolidTinted,
                 tint = primaryColor,
-                shape = RoundedCornerShape(16.dp),
-                cornerRadius = 16.dp
+                shape = com.kyant.shapes.Capsule()
             ) {
                 Text(
                     text = "确认",
                     fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
             }

@@ -1,22 +1,23 @@
 package com.tyust.course.ui.system.glass
 
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.util.fastCoerceIn
-import com.kyant.backdrop.RuntimeShader
-import com.kyant.backdrop.asComposeShader
-import com.kyant.backdrop.isRuntimeShaderSupported
-import com.tyust.course.ui.system.GlassRuntimeGuard
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 
+/**
+ * 玻璃控件的按压光学状态源。
+ *
+ * 这里只提供【物理量】：按压进度、指针位置、相对按压起点的位移，
+ * 供 drawBackdrop 的 layerBlock 做真实的形变与折射缩放。
+ *
+ * 不再向表面叠加任何人造光斑：贴上去的白色 Plus 光会随手指游走，
+ * 在实色按钮上呈现为塑料反光，观感是假的。亮度变化统一由
+ * [com.tyust.course.ui.system.GlassPressIndication] 承担。
+ */
 class InteractiveHighlight(
     animationScope: CoroutineScope,
-    val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
+    @Suppress("unused") val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
 ) {
     private val optics = InteractiveOptics(animationScope)
 
@@ -32,71 +33,6 @@ class InteractiveHighlight(
     /** 指针相对按压起点的位移，供 layerBlock 做官方拖拽形变。 */
     val offset: Offset
         get() = optics.offset
-
-    private val shader = if (
-        isRuntimeShaderSupported() &&
-        GlassRuntimeGuard.isDynamicOpticsEnabled()
-    ) {
-        runCatching {
-            RuntimeShader(
-                """
-uniform float2 size;
-layout(color) uniform half4 color;
-uniform float radius;
-uniform float2 position;
-
-half4 main(float2 coord) {
-    float dist = distance(coord, position);
-    float intensity = smoothstep(radius, radius * 0.5, dist);
-    return color * intensity;
-}
-"""
-            )
-        }.onFailure(GlassRuntimeGuard::disableDynamicOpticsForSession).getOrNull()
-    } else {
-        null
-    }
-
-    val modifier: Modifier = Modifier.drawWithContent {
-        // 官方 LiquidButton 同款双层高光：先整体提亮，再叠加跟随指针的径向光，
-        // 都绘制在内容之下，避免文字发白。
-        val progress = optics.pressProgress.coerceIn(0f, 1f)
-        if (progress > 0.001f) {
-            val rawPosition = optics.pointerPosition
-            val mappedPosition = if (rawPosition.x.isFinite() && rawPosition.y.isFinite()) {
-                position(size, rawPosition)
-            } else {
-                center
-            }
-            val lightPosition = Offset(
-                mappedPosition.x.fastCoerceIn(0f, size.width),
-                mappedPosition.y.fastCoerceIn(0f, size.height)
-            )
-
-            if (shader != null) {
-                drawRect(
-                    color = Color.White.copy(alpha = 0.08f * progress),
-                    blendMode = BlendMode.Plus
-                )
-                shader.setFloatUniform("size", size.width, size.height)
-                shader.setColorUniform("color", Color.White.copy(alpha = 0.15f * progress))
-                shader.setFloatUniform("radius", size.minDimension * 1.5f)
-                shader.setFloatUniform("position", lightPosition.x, lightPosition.y)
-                drawRect(
-                    brush = ShaderBrush(shader.asComposeShader()),
-                    blendMode = BlendMode.Plus
-                )
-            } else {
-                // 回退路径（API<33）：官方同款整体提亮。
-                drawRect(
-                    color = Color.White.copy(alpha = 0.25f * progress),
-                    blendMode = BlendMode.Plus
-                )
-            }
-        }
-
-        drawContent()
-    }
 
     val gestureModifier: Modifier = optics.gestureModifier
 }

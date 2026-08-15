@@ -192,3 +192,25 @@ val NeuDivider = Color(0xFFD8DFE9)
 
 val NavSelectedAccentLight = Color(0xFF0057D9)
 val NavSelectedAccentDark = Color(0xFF4DA3FF)
+
+// ═══════════════════════════════════════════════════════════
+// iOS 按钮填充色板
+// 玻璃是容器的属性，不是按钮的属性：填充按钮必须是不透明实色，
+// 否则明度会被身后折射的环境亮度接管，出现随壁纸游走的伪高光。
+// ═══════════════════════════════════════════════════════════
+
+/** systemBlue */
+val IOSBlueLight = Color(0xFF007AFF)
+val IOSBlueDark = Color(0xFF0A84FF)
+
+/** systemRed */
+val IOSRedLight = Color(0xFFFF3B30)
+val IOSRedDark = Color(0xFFFF453A)
+
+/** secondarySystemFill：次按钮的灰底 */
+val IOSFillLight = Color(0xFFE9E9EB)
+val IOSFillDark = Color(0xFF2C2C2E)
+
+/** 禁用态填充：与正常态同族，只降对比 */
+val IOSDisabledFillLight = Color(0xFFEFEFF2)
+val IOSDisabledFillDark = Color(0xFF242426)

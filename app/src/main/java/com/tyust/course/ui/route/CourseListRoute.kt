@@ -1329,8 +1329,9 @@ fun CourseListRoute() {
                             exitMultiSelectMode()
                         }
                     },
-                    style = com.tyust.course.ui.system.LiquidButtonStyle.Tinted,
+                    style = com.tyust.course.ui.system.LiquidButtonStyle.SolidTinted,
                     tint = Color(0xFF34C759),
+                    shape = com.kyant.shapes.Capsule(),
                     minHeight = 52.dp,
                     horizontalPadding = 24.dp
                 ) {
@@ -1342,7 +1343,7 @@ fun CourseListRoute() {
                     Text(
                         text = "批量抢课 (${selectedClassIds.size})",
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                     )
                 }
             }

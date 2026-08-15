@@ -61,6 +61,8 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
+import com.tyust.course.ui.theme.IOSBlueDark
+import com.tyust.course.ui.theme.IOSBlueLight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -118,7 +120,7 @@ private enum class NoticePhase {
 }
 
 /** 展开后自动收起的时长：只够读完一行字，不长期占位。 */
-private const val AUTO_COLLAPSE_MS = 2800L
+private const val AUTO_COLLAPSE_MS = 3600L
 
 private val PillSize = 26.dp
 private val CapsuleHeight = 38.dp
@@ -215,19 +217,19 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
         // 而不是 Modal 那种磨砂。表面必须够薄，否则会把折射盖掉。
         val material = remember(accessibility) {
             GlassMaterials.resolve(GlassMaterialRole.Interactive, accessibility)
-                .copy(surfaceAlpha = 0.14f)
+                .copy(surfaceAlpha = 0.07f)
         }
         val surfaceColor = if (isLightTheme) {
             Color.White.copy(alpha = material.surfaceAlpha)
         } else {
-            Color(0xFF1E2024).copy(alpha = material.surfaceAlpha + 0.10f)
+            Color(0xFF1E2024).copy(alpha = material.surfaceAlpha + 0.06f)
         }
         val fallbackSurface = if (isLightTheme) {
             Color.White.copy(alpha = 0.88f)
         } else {
             Color(0xFF1E2024).copy(alpha = 0.90f)
         }
-        val shadowColor = Color.Black.copy(alpha = if (isLightTheme) 0.12f else 0.28f)
+        val shadowColor = Color.Black.copy(alpha = if (isLightTheme) 0.10f else 0.24f)
         val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
         val accentColor = noticeAccentColor()
         val shape: Shape = RoundedCornerShape(percent = 50)
@@ -274,8 +276,8 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                                     )
                                 }
                             },
-                            highlight = { Highlight.Default.copy(alpha = 0.24f) },
-                            shadow = { Shadow(radius = 12.dp, color = shadowColor) },
+                            highlight = { Highlight.Default.copy(alpha = 0.32f) },
+                            shadow = { Shadow(radius = 10.dp, color = shadowColor) },
                             onDrawSurface = { drawRect(surfaceColor) }
                         )
                     } else {
@@ -363,8 +365,8 @@ fun FloatingNoticeHost(modifier: Modifier = Modifier) {
                 Text(
                     text = notice.actionLabel,
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isLightTheme) IOSBlueLight else IOSBlueDark
                 )
             }
 

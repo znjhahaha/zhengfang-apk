@@ -3,6 +3,8 @@ package com.tyust.course.ui.system
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Indication
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -76,6 +77,10 @@ import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.InteractiveHighlight
 import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
+import com.tyust.course.ui.theme.IOSDisabledFillDark
+import com.tyust.course.ui.theme.IOSDisabledFillLight
+import com.tyust.course.ui.theme.IOSFillDark
+import com.tyust.course.ui.theme.IOSFillLight
 import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
@@ -102,8 +107,7 @@ fun LiquidButton(
     enabled: Boolean = true,
     isInteractive: Boolean = true,
     style: LiquidButtonStyle = LiquidButtonStyle.Surface,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(percent = 50),
-    cornerRadius: Dp = 24.dp,
+    shape: androidx.compose.ui.graphics.Shape = Capsule(),
     tint: Color = Color.Unspecified,
     contentColor: Color = Color.Unspecified,
     minHeight: Dp = 48.dp,
@@ -129,14 +133,23 @@ fun LiquidButton(
         alpha = GlassRecipe.ActionDisabledSurfaceAlpha
     )
     val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    // iOS filled button 的按压：整体轻微回缩。玻璃分支不用它（那边由 layerBlock 做光学形变）。
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.97f else 1f,
+        animationSpec = MotionSpring.liquidTap(),
+        label = "liquidButtonPressScale"
+    )
     val accessibility = rememberGlassAccessibilityMode()
     val hasRealLens = isRuntimeShaderTrulySupported()
-    val contentRow: @Composable (Modifier) -> Unit = { baseModifier ->
+    // 玻璃分支的按压由 layerBlock 的光学形变表达；实色分支交给全局 iOS 按压（回缩 + 灰罩）。
+    // 玻璃分支不能用 indication：drawBackdrop 不裁剪内容，灰罩会溢出成方块。
+    val contentRow: @Composable (Modifier, Indication?) -> Unit = { baseModifier, pressIndication ->
         Row(
             baseModifier
                 .clickable(
                     interactionSource = interactionSource,
-                    indication = null,
+                    indication = pressIndication,
                     enabled = enabled,
                     role = Role.Button,
                     onClick = onClick
@@ -203,10 +216,10 @@ fun LiquidButton(
                 onDrawSurface = {
                     when {
                         !enabled -> drawRect(disabledSurfaceColor)
-                        style == LiquidButtonStyle.Tinted -> {
-                            drawRect(activeTint, blendMode = BlendMode.Hue)
+                        // 不用 BlendMode.Hue：那样只贡献色相，明度会沿用身后折射的环境亮度，
+                        // 在壁纸上形成一条随位置游走的伪高光。这里直接实色覆盖。
+                        style == LiquidButtonStyle.Tinted ->
                             drawRect(activeTint.copy(alpha = GlassRecipe.ActionTintAlpha))
-                        }
                         style == LiquidButtonStyle.Surface -> drawRect(
                             if (isLightTheme) {
                                 Color.White.copy(alpha = 0.36f)
@@ -220,26 +233,29 @@ fun LiquidButton(
             )
             .then(
                 if (isInteractive && enabled) {
-                    Modifier
-                        .then(interactiveHighlight.modifier)
-                        .then(interactiveHighlight.gestureModifier)
+                    interactiveHighlight.gestureModifier
                 } else {
                     Modifier
                 }
             )
-        contentRow(glassModifier)
+        contentRow(glassModifier, null)
     } else {
+        // iOS 实色路径：填充完全不透明，不参与折射，因此不会出现随环境游走的高光。
         val fallbackColor = when {
-            !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
+            !enabled -> if (isLightTheme) IOSDisabledFillLight else IOSDisabledFillDark
             style == LiquidButtonStyle.SolidTinted -> activeTint
-            // iOS gray-fill：不透明浅灰/深灰，弹窗白底上干净清晰
-            style == LiquidButtonStyle.SolidSurface ->
-                if (isLightTheme) Color(0xFFEFEFF4) else Color(0xFF3A3A3C)
+            style == LiquidButtonStyle.SolidSurface -> if (isLightTheme) IOSFillLight else IOSFillDark
             style == LiquidButtonStyle.Tinted -> activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
             style == LiquidButtonStyle.Surface -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             else -> Color.Transparent
         }
         val fallbackModifier = modifier
+            // 回缩必须在 clip/background 之前：这样底色随内容一起缩，
+            // 而不是只缩到文字。灰罩由 clickable 处的 GlassPressIndication 叠加。
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(shape)
             .background(fallbackColor)
             .then(
@@ -253,7 +269,7 @@ fun LiquidButton(
                     )
                 }
             )
-        contentRow(fallbackModifier)
+        contentRow(fallbackModifier, LocalIndication.current)
     }
 }
 
