@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -393,4 +394,200 @@ fun GlassDateTimePickerDialog(
             }
         }
     }
+}
+
+/**
+ * 玻璃滚轮时间段选择弹窗：开始 时:分 / 结束 时:分 四列。
+ *
+ * 存在的理由是课表节次时间原本让用户手打 "HH:MM" 到 OutlinedTextField 里——
+ * 格式错了没有任何提示，是那一页最差的一处交互。分钟按 5 步进：节次时间
+ * 不需要分钟级精度，步进后一屏能扫完，比 60 行滚轮快得多。
+ *
+ * @param onConfirm 回调 "HH:mm" 形式的开始与结束时间
+ */
+@Composable
+fun GlassTimeRangePickerDialog(
+    initialStart: String,
+    initialEnd: String,
+    onConfirm: (start: String, end: String) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "编辑节次时间",
+    minuteStep: Int = 5
+) {
+    val hourLabels = remember { (0..23).map { "%02d".format(it) } }
+    val minuteValues = remember(minuteStep) { (0 until 60 step minuteStep).toList() }
+    val minuteLabels = remember(minuteValues) { minuteValues.map { "%02d".format(it) } }
+
+    var startHour by remember { mutableIntStateOf(parseHour(initialStart, 8)) }
+    var startMinute by remember {
+        mutableIntStateOf(nearestMinuteIndex(parseMinute(initialStart, 0), minuteValues))
+    }
+    var endHour by remember { mutableIntStateOf(parseHour(initialEnd, 8)) }
+    var endMinute by remember {
+        mutableIntStateOf(nearestMinuteIndex(parseMinute(initialEnd, 45), minuteValues))
+    }
+
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        dismissButton = {
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "保存",
+                onClick = {
+                    onConfirm(
+                        "%02d:%02d".format(startHour, minuteValues[startMinute]),
+                        "%02d:%02d".format(endHour, minuteValues[endMinute])
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            listOf(
+                Triple("开始", startHour to startMinute, true),
+                Triple("结束", endHour to endMinute, false)
+            ).forEach { (label, value, isStart) ->
+                Box(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.TopCenter)
+                    )
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
+                        // 中心行 systemFill 胶囊指示条
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .align(Alignment.Center)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF787880).copy(alpha = 0.12f))
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            GlassWheelColumn(
+                                items = hourLabels,
+                                selectedIndex = value.first,
+                                onSelect = { if (isStart) startHour = it else endHour = it },
+                                modifier = Modifier.weight(1f),
+                                visibleCount = 3
+                            )
+                            Text(
+                                text = ":",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            GlassWheelColumn(
+                                items = minuteLabels,
+                                selectedIndex = value.second,
+                                onSelect = { if (isStart) startMinute = it else endMinute = it },
+                                modifier = Modifier.weight(1f),
+                                visibleCount = 3
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 单列玻璃滚轮选择弹窗。用于「每天节数」这类选项不多但也不适合分段控件的场合
+ * （9 个选项塞进分段控件会挤成一排细条，而 LiquidPicker 是 56dp 的表单字段，
+ * 放进 inset grouped 行里就成了"表单里嵌表单"）。
+ */
+@Composable
+fun GlassOptionWheelDialog(
+    options: List<String>,
+    selectedIndex: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "请选择"
+) {
+    if (options.isEmpty()) return
+    var index by remember {
+        mutableIntStateOf(selectedIndex.coerceIn(0, options.lastIndex))
+    }
+
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        dismissButton = {
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "确定",
+                onClick = { onConfirm(index) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF787880).copy(alpha = 0.12f))
+            )
+            GlassWheelColumn(
+                items = options,
+                selectedIndex = index,
+                onSelect = { index = it },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+private fun parseHour(value: String, fallback: Int): Int =    value.substringBefore(':').trim().toIntOrNull()?.coerceIn(0, 23) ?: fallback
+
+private fun parseMinute(value: String, fallback: Int): Int =
+    value.substringAfter(':', "").trim().toIntOrNull()?.coerceIn(0, 59) ?: fallback
+
+/** 存档里的分钟可能不在步进点上（例如 08:47），取最近的一格而不是丢弃。 */
+private fun nearestMinuteIndex(minute: Int, values: List<Int>): Int {
+    var best = 0
+    values.forEachIndexed { index, value ->
+        if (abs(value - minute) < abs(values[best] - minute)) best = index
+    }
+    return best
 }

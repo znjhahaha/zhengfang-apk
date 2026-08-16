@@ -51,6 +51,7 @@ import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.theme.MotionDuration
 import com.tyust.course.ui.theme.MotionEasing
+import com.tyust.course.ui.theme.MotionSpring
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.Call
@@ -293,7 +294,9 @@ fun ScheduleRoute() {
         onToggleSemester = { isNextSemester = !isNextSemester }
     )
     
-    // 设置弹窗（使用滑入动画）
+    // 设置页：独立窗口 + 底部升起。它自己在窗口内铺壁纸捕获层、自带 DialogHost，
+    // 所以这里【不能】再把 LocalAppBackdrop/LocalControlBackdrop/LocalDialogHost
+    // 置为 null，也不能套一层不透明 Surface——那会把整页压成灰卡片。
     if (showSettingsDialog) {
         var animateTrigger by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { animateTrigger = true }
@@ -316,55 +319,30 @@ fun ScheduleRoute() {
             DisablePlatformDialogDim()
             AnimatedVisibility(
                 visible = animateTrigger,
+                // 进入用弹簧从屏幕底部整幅升起（原来是 1/4 屏高的 tween，
+                // 观感更像"淡入时轻轻抖一下"而不是"被推上来"）；
+                // 退出仍用加速 tween——退出要快，不要弹。
                 enter = slideInVertically(
-                    initialOffsetY = { it / 4 },
-                    animationSpec = tween(MotionDuration.DialogEnter, easing = MotionEasing.FastOutSlowIn)
+                    initialOffsetY = { it },
+                    animationSpec = MotionSpring.liquidSettle()
                 ) + fadeIn(animationSpec = tween(MotionDuration.Medium)),
                 exit = slideOutVertically(
-                    targetOffsetY = { it / 4 },
+                    targetOffsetY = { it / 3 },
                     animationSpec = tween(MotionDuration.Medium, easing = MotionEasing.Accelerate)
                 ) + fadeOut(animationSpec = tween(MotionDuration.Medium))
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    // 该弹窗是独立窗口：主窗口 DialogHost/Backdrop 跨窗口不可用，
-                    // 内部 SystemDialog 一律走本窗口 fallback，避免采样错位。
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        com.tyust.course.ui.system.LocalDialogHost provides null,
-                        com.tyust.course.ui.system.LocalAppBackdrop provides null,
-                        com.tyust.course.ui.system.LocalControlBackdrop provides null
-                    ) {
-                        var showGlassDatePicker by remember { mutableStateOf(false) }
-                        ScheduleSettingsScreen(
-                            manager = settingsManager,
-                            onClose = {
-                                periodCount = settingsManager.periodCount
-                                periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
-                                val w = settingsManager.calculateCurrentWeek()
-                                if (w > 0) currentWeek = w
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ScheduleSettingsScreen(
+                        manager = settingsManager,
+                        onClose = {
+                            periodCount = settingsManager.periodCount
+                            periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
+                            val w = settingsManager.calculateCurrentWeek()
+                            if (w > 0) currentWeek = w
 
-                                dismiss()
-                            },
-                            onShowDatePicker = { showGlassDatePicker = true }
-                        )
-                        if (showGlassDatePicker) {
-                            com.tyust.course.ui.system.GlassDatePickerDialog(
-                                title = "选择第一周周一日期",
-                                initialMillis = if (settingsManager.semesterStartDate > 0) {
-                                    settingsManager.semesterStartDate
-                                } else {
-                                    System.currentTimeMillis()
-                                },
-                                onConfirm = {
-                                    settingsManager.semesterStartDate = it
-                                    showGlassDatePicker = false
-                                },
-                                onDismiss = { showGlassDatePicker = false }
-                            )
+                            dismiss()
                         }
-                    }
+                    )
                 }
             }
         }

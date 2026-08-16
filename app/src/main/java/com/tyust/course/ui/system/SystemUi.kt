@@ -171,6 +171,15 @@ enum class SystemTone {
     Neutral
 }
 
+/**
+ * 折叠态顶栏底缘的渐隐高度。
+ *
+ * 这段渐隐【必须画在顶栏外壳自己那个 drawBackdrop 节点里】，不能另起一个兄弟节点：
+ * 外壳是模糊过的，另起的节点不是，接缝处于是同时出现"透明度台阶"和"模糊/不模糊分界"，
+ * 看起来就是标题下面一道灰边。
+ */
+private val TopBarEdgeFade = 12.dp
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SystemTopBar(
@@ -200,6 +209,9 @@ fun SystemTopBar(
 
     Column(modifier = Modifier.fillMaxWidth().reportNoticeAnchor()) {
         val showShell = collapse > 0.01f
+        // 底缘渐隐随折叠长出来（而不是一越过阈值就整段 12dp 弹出）：
+        // 它算在顶栏高度里，突然出现会让 Scaffold 的 topPadding 跳一格。
+        val edgeFade = TopBarEdgeFade * collapse
         val shellModifier = when {
             useGlass && backdrop != null && showShell -> Modifier.drawBackdrop(
                 backdrop = backdrop,
@@ -209,10 +221,31 @@ fun SystemTopBar(
                     val radius = 10.dp.toPx() * collapse
                     if (radius > 0.5f) blur(radius)
                 },
-                onDrawSurface = { drawRect(surfaceTint.copy(alpha = surfaceTint.alpha * collapse)) }
+                onDrawSurface = {
+                    val tint = surfaceTint.copy(alpha = surfaceTint.alpha * collapse)
+                    val fadePx = edgeFade.toPx()
+                    if (fadePx < 0.5f) {
+                        drawRect(tint)
+                    } else {
+                        // 白雾在最后 fadePx 内连续退到 0：模糊边界处白雾已经是透明，
+                        // 剩下的只是"模糊的壁纸"贴着"清晰的壁纸"，在软渐变壁纸上看不出线。
+                        val solidStop = ((size.height - fadePx) / size.height).coerceIn(0f, 1f)
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to tint,
+                                solidStop to tint,
+                                1f to Color.Transparent
+                            )
+                        )
+                    }
+                }
             )
             !useGlass && showShell -> Modifier.background(
-                MaterialTheme.colorScheme.surface.copy(alpha = collapse)
+                Brush.verticalGradient(
+                    0f to MaterialTheme.colorScheme.surface.copy(alpha = collapse),
+                    0.86f to MaterialTheme.colorScheme.surface.copy(alpha = collapse),
+                    1f to Color.Transparent
+                )
             )
             else -> Modifier
         }
@@ -224,10 +257,13 @@ fun SystemTopBar(
                     modifier = Modifier
                         .matchParentSize()
                         .background(
+                            // 四个色标、尾巴拉长：三色标那版在渐变末端有一处可见的斜率突变，
+                            // 在壁纸上读成"标题块的下边界"。
                             Brush.verticalGradient(
                                 colors = listOf(
                                     surfaceTint.copy(alpha = surfaceTint.alpha * 0.85f * (1f - collapse)),
-                                    surfaceTint.copy(alpha = surfaceTint.alpha * 0.35f * (1f - collapse)),
+                                    surfaceTint.copy(alpha = surfaceTint.alpha * 0.45f * (1f - collapse)),
+                                    surfaceTint.copy(alpha = surfaceTint.alpha * 0.12f * (1f - collapse)),
                                     Color.Transparent
                                 )
                             )
@@ -242,7 +278,9 @@ fun SystemTopBar(
                         start = PagePadding,
                         end = PagePadding,
                         top = lerpDp(10.dp, 6.dp, collapse),
-                        bottom = lerpDp(10.dp, 8.dp, collapse)
+                        // 渐隐区算在外壳内部：外壳高度 = 内容 + edgeFade，
+                        // 于是整条渐隐与外壳共享同一次模糊、同一个几何。
+                        bottom = lerpDp(10.dp, 8.dp, collapse) + edgeFade
                     ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -293,30 +331,11 @@ fun SystemTopBar(
                 )
             }
         }
-        // scroll edge effect：折叠后底缘软渐隐，内容滚入头部时平滑没入
-        if (useGlass && showShell) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                surfaceTint.copy(alpha = surfaceTint.alpha * 0.5f * collapse),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
-        }
     }
 }
 
-private fun lerpDp(start: Dp, stop: Dp, fraction: Float): Dp =
-    start + (stop - start) * fraction
-
-private fun lerpSp(startSp: Float, stopSp: Float, fraction: Float) =
-    (startSp + (stopSp - startSp) * fraction).sp
+// lerpDp / lerpSp 在同包的 CollapsingGlassHeader.kt 里（internal），课表与成绩的
+// 折叠顶栏也用同两个，不再各留一份私有副本。
 
 /** 分离式头部右上角的独立玻璃圆钮。 */
 @Composable

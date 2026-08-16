@@ -16,6 +16,7 @@ import com.tyust.course.model.Course
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.CourseListScreen
+import com.tyust.course.ui.screen.toDynamicDisplayTags
 import com.tyust.course.ui.route.SelectedCoursesRoute
 import com.tyust.course.utils.CourseParser
 import kotlinx.coroutines.Dispatchers
@@ -33,13 +34,16 @@ import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.theme.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1053,6 +1057,10 @@ fun CourseListRoute() {
     // 🔧 视图切换容器（带平滑动画）
     val topBarBackdrop = com.tyust.course.ui.system.LocalAppBackdrop.current
     val topBarUseGlass = topBarBackdrop != null && com.tyust.course.ui.system.isBackdropSupported()
+    // 顶栏筛选钮的角标数量。与已激活标签栏读同一个来源，两处永远一致。
+    val activeFilterCount = remember(activeFilter, filterCategories) {
+        activeFilter?.toDynamicDisplayTags(filterCategories)?.size ?: 0
+    }
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -1067,7 +1075,20 @@ fun CourseListRoute() {
                             vibrancy()
                             blur(6.dp.toPx())
                         },
-                        onDrawSurface = { drawRect(White.copy(alpha = 0.60f)) }
+                        // 底缘渐隐画在【外壳自己这个节点里】，不另起一个未模糊的兄弟节点：
+                        // 那样接缝处会同时出现透明度台阶和模糊分界，读成一条灰边。
+                        onDrawSurface = {
+                            val tint = White.copy(alpha = 0.60f)
+                            val fadePx = 14.dp.toPx()
+                            val solidStop = ((size.height - fadePx) / size.height).coerceIn(0f, 1f)
+                            drawRect(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    0f to tint,
+                                    solidStop to tint,
+                                    1f to Color.Transparent
+                                )
+                            )
+                        }
                     )
             } else {
                 Modifier
@@ -1076,7 +1097,12 @@ fun CourseListRoute() {
             }
             Column(modifier = Modifier.reportNoticeAnchor()) {
             Box(modifier = topBarShellModifier) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 给上面那段渐隐留出高度：外壳高度 = 内容 + 14dp
+                        .padding(bottom = if (topBarUseGlass) 14.dp else 0.dp)
+                ) {
                     AnimatedContent(
                     targetState = when {
                         isSearchActive -> "search"
@@ -1161,13 +1187,38 @@ fun CourseListRoute() {
                                     )
                                 },
                                 actions = {
-                                    if (!showSelectedCourses) {
-                                        IconButton(onClick = { isSearchActive = true }) {
-                                            Icon(Icons.Default.Search, contentDescription = "搜索", tint = Neutral900)
+                                    // 与课表/成绩顶栏同一套液体玻璃芯片组（静止独立、按压折射
+                                    // 并向最近邻居融合）。原先是两枚 Material IconButton，
+                                    // 在这套顶栏里是上一个版本遗留的控件。
+                                    com.tyust.course.ui.system.glass.LiquidActionGroup(
+                                        spacing = 4.dp,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    ) {
+                                        if (!showSelectedCourses) {
+                                            action(
+                                                index = 0,
+                                                icon = Icons.Default.Search,
+                                                contentDescription = "搜索",
+                                                onClick = { isSearchActive = true }
+                                            )
                                         }
-                                    }
-                                    IconButton(onClick = { loadCourses() }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = Neutral900)
+                                        action(
+                                            index = 1,
+                                            icon = Icons.Default.Refresh,
+                                            contentDescription = "刷新",
+                                            onClick = { loadCourses() }
+                                        )
+                                        if (!showSelectedCourses) {
+                                            // 筛选入口从"列表上方那条居中把手"搬到这里：
+                                            // 把手是抽屉的语言，也白吃一条 36dp 横带。
+                                            action(
+                                                index = 2,
+                                                contentDescription = "筛选",
+                                                onClick = { showFilterPanel = !showFilterPanel }
+                                            ) {
+                                                FilterActionContent(activeCount = activeFilterCount)
+                                            }
+                                        }
                                     }
                                 },
                                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -1182,22 +1233,6 @@ fun CourseListRoute() {
                     com.tyust.course.ui.system.SystemDivider(alpha = 0.6f)
                 }
                 }
-            }
-            // scroll edge effect：底缘软渐隐，与 SystemTopBar 一致
-            if (topBarUseGlass) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(14.dp)
-                        .background(
-                            androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    White.copy(alpha = 0.33f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
             }
             }
         }
@@ -1346,6 +1381,46 @@ fun CourseListRoute() {
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 顶栏筛选钮的内容：漏斗图标 + 数量角标。
+ *
+ * 角标贴在 34dp 方形容器的右上角——圆形玻璃面是这个方形的内切圆，所以那个角本来就在
+ * 玻璃之外，角标落在那里读起来正是 iOS 的角标。不要再往容器外 offset：
+ * 芯片组间距只有 4dp，越界就会压到隔壁那枚。
+ */
+@Composable
+private fun FilterActionContent(activeCount: Int) {
+    val active = activeCount > 0
+    Box(contentAlignment = Alignment.Center) {
+        Icon(
+            imageVector = Icons.Default.FilterList,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = if (active) NeuPrimary else androidx.compose.material3.LocalContentColor.current
+        )
+        if (active) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 6.dp, y = (-6).dp)
+                    .defaultMinSize(minWidth = 13.dp, minHeight = 13.dp)
+                    .clip(com.kyant.shapes.Capsule())
+                    .background(NeuPrimary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (activeCount > 9) "9+" else activeCount.toString(),
+                    modifier = Modifier.padding(horizontal = 3.dp),
+                    color = White,
+                    fontSize = 9.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    maxLines = 1
+                )
             }
         }
     }

@@ -3,31 +3,31 @@ package com.tyust.course.ui.screen
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
-import com.kyant.shapes.Capsule
-import com.tyust.course.ui.system.GlassRecipe
-import com.tyust.course.ui.system.LocalControlBackdrop
-import com.tyust.course.ui.system.glass.adaptiveGlassChip
-import com.tyust.course.ui.system.glass.applyChipContentDeformation
-import com.tyust.course.ui.system.glass.rememberInteractiveOptics
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.tyust.course.ui.system.GlassCircleButton
+import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -78,11 +78,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
@@ -150,6 +149,22 @@ fun CourseListScreen(
         courses.groupBy { (it.courseId ?: "") to (it.name ?: "") }.toList()
     }
 
+    // 课程列表的捕获层。筛选面板是列表的【兄弟】节点、不在这一层内，
+    // 所以采样「壁纸 + 这一层」不构成自采样，面板边缘能真实折射课程卡片。
+    // 注意不能取 LocalModalBackdrop：那一层的捕获范围包含整个页面内容（面板也在里面），
+    // 取它等于自采样 -> RenderThread 死循环 -> native SIGSEGV。
+    val wallpaperBackdrop = LocalAppBackdrop.current
+    val listBackdrop = if (wallpaperBackdrop != null && isBackdropSupported()) {
+        rememberLayerBackdrop()
+    } else {
+        null
+    }
+    val panelBackdrop = if (wallpaperBackdrop != null && listBackdrop != null) {
+        rememberCombinedBackdrop(wallpaperBackdrop, listBackdrop)
+    } else {
+        null
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -172,44 +187,7 @@ fun CourseListScreen(
             )
         }
 
-        // 把手常驻同一位置：展开/收起只旋转箭头，不再跳位
-        FilterToggleHandle(
-            expanded = showFilterPanel,
-            active = activeFilter != null && !activeFilter.isEmpty(),
-            onClick = onToggleFilterPanel,
-            modifier = Modifier.padding(horizontal = PagePadding)
-        )
-
-        // 筛选面板（可展开/收起）：弹簧展开，带一次轻微回弹
-        AnimatedVisibility(
-            visible = showFilterPanel,
-            enter = expandVertically(
-                animationSpec = spring(
-                    dampingRatio = 0.88f,
-                    stiffness = 380f,
-                    visibilityThreshold = IntSize.VisibilityThreshold
-                )
-            ) + fadeIn(animationSpec = tween(200, easing = MotionEasing.FastOutSlowIn)),
-            exit = shrinkVertically(
-                animationSpec = spring(
-                    dampingRatio = 1f,
-                    stiffness = 420f,
-                    visibilityThreshold = IntSize.VisibilityThreshold
-                )
-            ) + fadeOut(animationSpec = tween(150, easing = MotionEasing.Accelerate))
-        ) {
-            CourseFilterPanel(
-                filter = draftFilter,
-                onFilterChange = onDraftFilterChange,
-                onApply = onFilterApply,
-                onClear = onFilterClear,
-                filterCategories = filterCategories,
-                isLoading = isFilterOptionsLoading,
-                emptyMessage = filterOptionsMessage,
-                modifier = Modifier.padding(horizontal = PagePadding, vertical = 4.dp)
-            )
-        }
-
+        // 筛选入口在顶栏（CourseListRoute 的芯片组），这里不再有那条居中把手带。
         // 已激活筛选标签栏
         if (activeFilter != null && !activeFilter.isEmpty()) {
             ActiveFilterBar(
@@ -220,193 +198,174 @@ fun CourseListScreen(
             )
         }
 
-        GlassPullRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            when {
-                isLoading && courses.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        SystemLoadingState(text = "正在加载课程列表…")
+        // 列表与筛选浮层同属一个 Box：面板浮在列表之上，不占布局高度，
+        // 于是展开筛选不再把列表整体顶下去、列表滚动位置也不会被打断。
+        Box(modifier = Modifier.fillMaxSize()) {
+            GlassPullRefreshBox(
+                isRefreshing = isLoading,
+                onRefresh = onRefresh,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (listBackdrop != null) Modifier.layerBackdrop(listBackdrop) else Modifier
+                    )
+            ) {
+                when {
+                    isLoading && courses.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            SystemLoadingState(text = "正在加载课程列表…")
+                        }
                     }
-                }
 
-                courses.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        SystemEmptyState(
-                            title = "暂无可选课程",
-                            message = "下拉刷新获取最新数据"
-                        )
-                    }
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = PagePadding,
-                            end = PagePadding,
-                            top = PagePadding,
-                            bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(groupedCourses) { (key, classes) ->
-                            val courseId = key.first
-                            val courseName = key.second
-                            val isExpanded = expandedGroups[courseId] == true
-
-                            CourseGroupItem(
-                                courseId = courseId,
-                                courseName = courseName,
-                                classes = classes,
-                                isExpanded = isExpanded,
-                                isLoading = loadingGroups[courseId] == true,
-                                isDetailsReady = isDetailsReady,
-                                onExpandClick = {
-                                    if (!isExpanded && loadedGroups[courseId] != true) {
-                                        loadingGroups[courseId] = true
-                                        onFetchDetails(classes) { success ->
-                                            loadingGroups[courseId] = false
-                                            if (success) {
-                                                loadedGroups[courseId] = true
-                                                expandedGroups[courseId] = true
-                                            }
-                                        }
-                                    } else {
-                                        expandedGroups[courseId] = !isExpanded
-                                    }
-                                },
-                                isMultiSelectMode = isMultiSelectMode,
-                                selectedClassIds = selectedClassIds,
-                                onToggleSelection = onToggleSelection,
-                                onEnterMultiSelect = onEnterMultiSelect,
-                                onCourseSelect = onCourseSelect,
-                                onAutoGrab = onAutoGrab,
-                                onAddToQueue = onAddToQueue,
-                                onSetTargetCourse = onSetTargetCourse,
-                                onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
+                    courses.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            SystemEmptyState(
+                                title = "暂无可选课程",
+                                message = "下拉刷新获取最新数据"
                             )
+                        }
+                    }
+
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = PagePadding,
+                                end = PagePadding,
+                                top = PagePadding,
+                                bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(groupedCourses) { (key, classes) ->
+                                val courseId = key.first
+                                val courseName = key.second
+                                val isExpanded = expandedGroups[courseId] == true
+
+                                CourseGroupItem(
+                                    courseId = courseId,
+                                    courseName = courseName,
+                                    classes = classes,
+                                    isExpanded = isExpanded,
+                                    isLoading = loadingGroups[courseId] == true,
+                                    isDetailsReady = isDetailsReady,
+                                    onExpandClick = {
+                                        if (!isExpanded && loadedGroups[courseId] != true) {
+                                            loadingGroups[courseId] = true
+                                            onFetchDetails(classes) { success ->
+                                                loadingGroups[courseId] = false
+                                                if (success) {
+                                                    loadedGroups[courseId] = true
+                                                    expandedGroups[courseId] = true
+                                                }
+                                            }
+                                        } else {
+                                            expandedGroups[courseId] = !isExpanded
+                                        }
+                                    },
+                                    isMultiSelectMode = isMultiSelectMode,
+                                    selectedClassIds = selectedClassIds,
+                                    onToggleSelection = onToggleSelection,
+                                    onEnterMultiSelect = onEnterMultiSelect,
+                                    onCourseSelect = onCourseSelect,
+                                    onAutoGrab = onAutoGrab,
+                                    onAddToQueue = onAddToQueue,
+                                    onSetTargetCourse = onSetTargetCourse,
+                                    onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            // 点面板外关闭 + 筛选浮层。抽成 BoxScope 扩展是有原因的：
+            // ColumnScope 与 BoxScope 都带 @LayoutScopeMarker，在 Column 里再嵌 Box 时
+            // AnimatedVisibility 会解析到 ColumnScope 那个重载、而该 receiver 已被
+            // DslMarker 屏蔽，直接编译不过。函数里只有 BoxScope，解析到顶层重载。
+            FilterPanelOverlay(
+                visible = showFilterPanel,
+                draftFilter = draftFilter,
+                onDraftFilterChange = onDraftFilterChange,
+                onFilterApply = onFilterApply,
+                onFilterClear = onFilterClear,
+                filterCategories = filterCategories,
+                isFilterOptionsLoading = isFilterOptionsLoading,
+                filterOptionsMessage = filterOptionsMessage,
+                panelBackdrop = panelBackdrop,
+                onDismiss = onToggleFilterPanel
+            )
         }
     }
 }
 
 @Composable
-private fun FilterToggleHandle(
-    expanded: Boolean,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun BoxScope.FilterPanelOverlay(
+    visible: Boolean,
+    draftFilter: com.tyust.course.model.CourseFilter,
+    onDraftFilterChange: (com.tyust.course.model.CourseFilter) -> Unit,
+    onFilterApply: () -> Unit,
+    onFilterClear: () -> Unit,
+    filterCategories: List<CourseParser.FilterCategory>,
+    isFilterOptionsLoading: Boolean,
+    filterOptionsMessage: String,
+    panelBackdrop: com.kyant.backdrop.Backdrop?,
+    onDismiss: () -> Unit
 ) {
-    val accentColor = if (active) {
-        NeuPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    // 两侧发丝线保持中性。原先它跟着 accent 走，筛选一激活整条分割线都染成蓝色，
-    // 反而把"哪里可点"的视觉重点从把手上抢走了。
-    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
-    val handleWidth = 84.dp
-    val handleHeight = 32.dp
-    // 连续曲率胶囊，与顶栏芯片、底栏、分段控件同一套圆角语言；
-    // 原先是 RoundedCornerShape(15dp)，在这套体系里棱角偏硬。
-    val handleShape = Capsule()
-    val optics = rememberInteractiveOptics()
-    val backdrop = LocalControlBackdrop.current
-    // 箭头随展开状态旋转，位置形状全程不变，衔接连续
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = MotionSpring.liquidSettle(),
-        label = "filterHandleArrow"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(36.dp),
-        contentAlignment = Alignment.Center
+    // 极轻压暗让列表读起来被推远——不做重压暗：把手和顶部区域在这个 Box 之外，
+    // 盖不到，深压暗会在分界处露出一条硬边。
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(180)),
+        exit = fadeOut(animationSpec = tween(140))
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val centerX = size.width / 2f
-            val tabHalfWidth = handleWidth.toPx() / 2f
-            val lineY = size.height / 2f
-            val gap = 6.dp.toPx()
-            val strokeWidth = 1.dp.toPx()
-
-            drawLine(
-                color = lineColor,
-                start = androidx.compose.ui.geometry.Offset(0f, lineY),
-                end = androidx.compose.ui.geometry.Offset(centerX - tabHalfWidth - gap, lineY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = lineColor,
-                start = androidx.compose.ui.geometry.Offset(centerX + tabHalfWidth + gap, lineY),
-                end = androidx.compose.ui.geometry.Offset(size.width, lineY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
-            )
-        }
-
         Box(
             modifier = Modifier
-                .width(handleWidth)
-                .height(handleHeight)
-                // 与顶栏图标钮同一个材质入口：有 backdrop 就走真折射 + Fresnel 边缘光，
-                // 没有就自动退回边缘光。原先是 White×0.42 的实心贴纸加一圈手绘描边，
-                // 在这套玻璃体系里像是上一个版本遗留的控件。
-                .adaptiveGlassChip(
-                    backdrop = backdrop,
-                    shape = handleShape,
-                    optics = optics
-                )
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.10f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    // 按压反馈交给 adaptiveGlassChip 的光学形变，不用 Material 波纹：
-                    // 波纹是另一套设计语言，且 drawBackdrop 不裁剪内容会让它溢出成方块。
                     indication = null,
-                    role = Role.Button,
-                    onClick = onClick
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                modifier = Modifier.graphicsLayer {
-                    // 内容跟着玻璃一起走，否则按压拖动时文字会从把手里脱出
-                    applyChipContentDeformation(
-                        optics = optics,
-                        travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
-                        stretch = GlassRecipe.ChipDragStretch,
-                        pressDepth = GlassRecipe.ChipIconPressDepth,
-                        damping = GlassRecipe.ChipContentDeformDamping
-                    )
-                },
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(14.dp)
-                        .rotate(arrowRotation),
-                    tint = accentColor.copy(alpha = 0.82f)
+                    onClick = onDismiss
                 )
-                Spacer(modifier = Modifier.width(3.dp))
-                Text(
-                    text = if (expanded) "收起" else "筛选",
-                    color = accentColor.copy(alpha = 0.82f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
+        )
+    }
+
+    // 从顶栏那枚筛选钮"长出来"：以按钮为原点缩放 + 淡入。
+    //
+    // 原点写常量而不是 onGloballyPositioned 实测：面板左右各内缩 PagePadding(20dp)，
+    // 筛选钮是顶栏最右一枚（中心约在 W-21dp），算出来的 originX≈0.99；
+    // 0.96 已经落在按钮上，省掉一条跨 Route/Screen 的位置状态。
+    //
+    // 刻意不再用 expandVertically：那是"从无到有长高"，与"从哪个按钮打开的"无关。
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier.align(Alignment.TopCenter),
+        enter = fadeIn(animationSpec = tween(140)) +
+            scaleIn(
+                initialScale = 0.86f,
+                transformOrigin = TransformOrigin(0.96f, 0f),
+                animationSpec = MotionSpring.liquidSettle()
+            ),
+        exit = fadeOut(animationSpec = tween(120, easing = MotionEasing.Accelerate)) +
+            scaleOut(
+                targetScale = 0.90f,
+                transformOrigin = TransformOrigin(0.96f, 0f),
+                animationSpec = tween(160, easing = MotionEasing.Accelerate)
+            )
+    ) {
+        CourseFilterPanel(
+            filter = draftFilter,
+            onFilterChange = onDraftFilterChange,
+            onApply = onFilterApply,
+            onClear = onFilterClear,
+            filterCategories = filterCategories,
+            isLoading = isFilterOptionsLoading,
+            emptyMessage = filterOptionsMessage,
+            sampleBackdrop = panelBackdrop,
+            onDismiss = onDismiss,
+            modifier = Modifier.padding(horizontal = PagePadding, vertical = 4.dp)
+        )
     }
 }
 
@@ -844,60 +803,50 @@ private fun ActiveFilterBar(
     isLoading: Boolean
 ) {
     val tags = remember(filter, filterCategories) { filter.toDynamicDisplayTags(filterCategories) }
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.fillMaxWidth()
+    // 原先是一条 surfaceVariant×0.5 的实心横条，在玻璃页面里是一块死区。
+    // 标签自己就是玻璃芯片，横条不需要底。
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = PagePadding, end = PagePadding - 6.dp, top = 2.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = NeuPrimary
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        FlowRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 2.dp,
-                    color = NeuPrimary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            FlowRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                tags.forEach { tag ->
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = NeuPrimary.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = tag,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = NeuPrimary,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-            IconButton(
-                onClick = onClear,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "清除筛选",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            tags.forEach { tag ->
+                // 与面板里的筛选芯片同一枚组件，只是更小且不可点
+                GlassFilterChip(label = tag, selected = true, compact = true)
             }
         }
+        Spacer(modifier = Modifier.width(6.dp))
+        GlassCircleButton(
+            onClick = onClear,
+            icon = Icons.Default.Close,
+            contentDescription = "清除筛选",
+            size = 28.dp,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
-private fun com.tyust.course.model.CourseFilter.toDynamicDisplayTags(
+/**
+ * 把筛选条件翻成人读的标签。
+ *
+ * internal 而不是 private：顶栏那枚筛选钮的角标数量也读它（`CourseListRoute`），
+ * 两处必须是同一个来源，否则角标和标签栏会各说一套。
+ */
+internal fun com.tyust.course.model.CourseFilter.toDynamicDisplayTags(
     filterCategories: List<CourseParser.FilterCategory>
 ): List<String> {
     val labelByParamAndKey = filterCategories.associate { category ->
