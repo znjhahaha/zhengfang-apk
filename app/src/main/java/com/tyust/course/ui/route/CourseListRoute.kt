@@ -3,6 +3,7 @@ package com.tyust.course.ui.route
 import com.tyust.course.ui.system.GlassToaster
 import com.tyust.course.ui.system.reportNoticeAnchor
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,6 +53,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
+
+/**
+ * 分段栏按压时轨道会整块外扩约 8.7dp（`LiquidSegmentedControl` 的 layerBlock：
+ * 16dp 宽度增益 + 滑块 1.035 的联动），而 `CenterAlignedTopAppBar` 的居中逻辑会把
+ * 标题左移到刚好贴住 actions——静止态两者边缘相接，按压那一下就压到搜索芯片上。
+ * 这里留出的余量比外扩略大一点。
+ */
+private val SegmentedPressSlack = 10.dp
 
 private data class CourseTabParam(
     val kklxdm: String,
@@ -1068,6 +1077,10 @@ fun CourseListRoute() {
             val topBarShellModifier = if (topBarUseGlass && topBarBackdrop != null) {
                 Modifier
                     .fillMaxWidth()
+                    // 下缘【齐边】收尾，不做渐隐：把渐隐抹在模糊结果上只是把"模糊的那一份"
+                    // 按 alpha 混到清晰的原图上，两份图像叠在一起就是一条肉眼可见的重影带
+                    // （iOS 的 scroll edge effect 渐变的是模糊半径，一次 drawBackdrop 做不到）。
+                    // 这是一条"条"的边界，本来就该有边——那圈默认的边缘高光已经关掉了。
                     .drawBackdrop(
                         backdrop = topBarBackdrop,
                         shape = { RoundedCornerShape(0.dp) },
@@ -1075,20 +1088,12 @@ fun CourseListRoute() {
                             vibrancy()
                             blur(6.dp.toPx())
                         },
-                        // 底缘渐隐画在【外壳自己这个节点里】，不另起一个未模糊的兄弟节点：
-                        // 那样接缝处会同时出现透明度台阶和模糊分界，读成一条灰边。
-                        onDrawSurface = {
-                            val tint = White.copy(alpha = 0.60f)
-                            val fadePx = 14.dp.toPx()
-                            val solidStop = ((size.height - fadePx) / size.height).coerceIn(0f, 1f)
-                            drawRect(
-                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    0f to tint,
-                                    solidStop to tint,
-                                    1f to Color.Transparent
-                                )
-                            )
-                        }
+                        // 库的默认值不是 null：全宽直角矩形的那圈边缘高光在屏幕上只剩
+                        // "页眉底部一道亮线"，就是它。投影同理（Offscreen 遮罩也会裁掉它）。
+                        highlight = { null },
+                        shadow = { null },
+                        innerShadow = { null },
+                        onDrawSurface = { drawRect(White.copy(alpha = 0.60f)) }
                     )
             } else {
                 Modifier
@@ -1098,10 +1103,7 @@ fun CourseListRoute() {
             Column(modifier = Modifier.reportNoticeAnchor()) {
             Box(modifier = topBarShellModifier) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // 给上面那段渐隐留出高度：外壳高度 = 内容 + 14dp
-                        .padding(bottom = if (topBarUseGlass) 14.dp else 0.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     AnimatedContent(
                     targetState = when {
@@ -1179,45 +1181,63 @@ fun CourseListRoute() {
                             // 🏠 标准模式：液态玻璃分段选择器
                             CenterAlignedTopAppBar(
                                 title = {
-                                    com.tyust.course.ui.system.SystemSegmentedControl(
-                                        options = listOf("可选", "已选"),
-                                        selectedIndex = if (showSelectedCourses) 1 else 0,
-                                        onSelect = { index -> showSelectedCourses = index == 1 },
-                                        modifier = Modifier.width(200.dp)
-                                    )
+                                    // 尺寸不变（仍是 200dp），只在右侧留出按压外扩的余量
+                                    Box(modifier = Modifier.padding(end = SegmentedPressSlack)) {
+                                        com.tyust.course.ui.system.SystemSegmentedControl(
+                                            options = listOf("可选", "已选"),
+                                            selectedIndex = if (showSelectedCourses) 1 else 0,
+                                            onSelect = { index -> showSelectedCourses = index == 1 },
+                                            modifier = Modifier.width(200.dp)
+                                        )
+                                    }
                                 },
                                 actions = {
                                     // 与课表/成绩顶栏同一套液体玻璃芯片组（静止独立、按压折射
                                     // 并向最近邻居融合）。原先是两枚 Material IconButton，
                                     // 在这套顶栏里是上一个版本遗留的控件。
+                                    //
+                                    // 搜索与筛选只在"可选"页出现。一条主进度 + 两段子区间，
+                                    // 于是两枚芯片错相收拢：收起时筛选先被刷新芯片吸走、
+                                    // 搜索随后，回来时反过来——同时消失只读得出"没了"，
+                                    // 错开才读得出"被依次吸收"。
+                                    val chipsPresence by animateFloatAsState(
+                                        targetValue = if (showSelectedCourses) 0f else 1f,
+                                        animationSpec = MotionSpring.liquidSettle(),
+                                        label = "courseTopBarChips"
+                                    )
+                                    val searchPresence =
+                                        (chipsPresence / 0.72f).coerceIn(0f, 1f)
+                                    val filterPresence =
+                                        ((chipsPresence - 0.28f) / 0.72f).coerceIn(0f, 1f)
                                     com.tyust.course.ui.system.glass.LiquidActionGroup(
                                         spacing = 4.dp,
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
-                                        if (!showSelectedCourses) {
-                                            action(
-                                                index = 0,
-                                                icon = Icons.Default.Search,
-                                                contentDescription = "搜索",
-                                                onClick = { isSearchActive = true }
-                                            )
-                                        }
+                                        // 三枚常驻在组里，收完也不摘：摘掉 composable 会让
+                                        // spacedBy 的 4dp 在同一帧消失，刷新芯片往右跳一格。
+                                        // presence = 0 的芯片零宽零绘制，也已被排除在融合之外。
+                                        action(
+                                            index = 0,
+                                            icon = Icons.Default.Search,
+                                            contentDescription = "搜索",
+                                            onClick = { isSearchActive = true },
+                                            presence = searchPresence
+                                        )
                                         action(
                                             index = 1,
                                             icon = Icons.Default.Refresh,
                                             contentDescription = "刷新",
                                             onClick = { loadCourses() }
                                         )
-                                        if (!showSelectedCourses) {
-                                            // 筛选入口从"列表上方那条居中把手"搬到这里：
-                                            // 把手是抽屉的语言，也白吃一条 36dp 横带。
-                                            action(
-                                                index = 2,
-                                                contentDescription = "筛选",
-                                                onClick = { showFilterPanel = !showFilterPanel }
-                                            ) {
-                                                FilterActionContent(activeCount = activeFilterCount)
-                                            }
+                                        // 筛选入口从"列表上方那条居中把手"搬到这里：
+                                        // 把手是抽屉的语言，也白吃一条 36dp 横带。
+                                        action(
+                                            index = 2,
+                                            contentDescription = "筛选",
+                                            onClick = { showFilterPanel = !showFilterPanel },
+                                            presence = filterPresence
+                                        ) {
+                                            FilterActionContent(activeCount = activeFilterCount)
                                         }
                                     }
                                 },

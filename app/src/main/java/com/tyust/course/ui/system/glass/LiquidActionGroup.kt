@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -31,9 +32,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
@@ -46,6 +49,8 @@ import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * 按压时向邻居融合的液体按钮组。
@@ -95,6 +100,9 @@ fun LiquidActionGroup(
     // 表现为桥连到一枚刚刚被禁用的邻居。
     val bounds = remember { mutableStateMapOf<Int, Rect>() }
     val enabledFlags = remember { mutableStateMapOf<Int, Boolean>() }
+    // 出场进度也要上报：桥要知道"哪一枚正在被吸收"，而这一位信息只有子级自己有。
+    // 与 bounds 分开存的理由同 enabledFlags——presence 每帧在变，几何却未必。
+    val presenceFlags = remember { mutableStateMapOf<Int, Float>() }
     val animationScope = rememberCoroutineScope()
     var pressed by remember { mutableStateOf<PressedAction?>(null) }
 
@@ -111,7 +119,7 @@ fun LiquidActionGroup(
     }
     val allowMerge = !accessibility.reduceMotion
 
-    val scope = remember(bounds, enabledFlags, animationScope, backdrop) {
+    val scope = remember(bounds, enabledFlags, presenceFlags, animationScope, backdrop) {
         object : LiquidActionGroupScope {
             @Composable
             override fun action(
@@ -121,14 +129,16 @@ fun LiquidActionGroup(
                 onClick: () -> Unit,
                 enabled: Boolean,
                 buttonSize: Dp,
-                iconSize: Dp
+                iconSize: Dp,
+                presence: Float
             ) {
                 action(
                     index = index,
                     contentDescription = contentDescription,
                     onClick = onClick,
                     enabled = enabled,
-                    buttonSize = buttonSize
+                    buttonSize = buttonSize,
+                    presence = presence
                 ) {
                     Icon(
                         imageVector = icon,
@@ -150,23 +160,35 @@ fun LiquidActionGroup(
                 onClick: () -> Unit,
                 enabled: Boolean,
                 buttonSize: Dp,
+                presence: Float,
                 content: @Composable () -> Unit
             ) {
                 // 每枚按钮一套 optics：共用一套会让按下 A 时 B/C/D 一起形变，
                 // 因为它们读到的是同一个 pressProgress。
                 val itemOptics = remember(index) { InteractiveOptics(animationScope) }
+                val appearance = presence.coerceIn(0f, 1f)
 
                 // 只在真的变了才写：enabledFlags 被 drawBehind 读取，
                 // 每次重组都无条件写会让桥所在的绘制层白白失效一次。
+                //
+                // 收到 presence ≈ 0 的那一枚要一并从"可连接的邻居"里除名：调用方允许把
+                // 收拢完的芯片留在组里（摘掉它会让 spacedBy 的间距同帧消失、邻居跳一格），
+                // 而零宽的幽灵芯片仍在 bounds 里——不除名，按压时的桥会连到一枚看不见的
+                // 芯片上，画出一截通向虚空的短桥。
                 SideEffect {
-                    if (enabledFlags[index] != enabled) {
-                        enabledFlags[index] = enabled
+                    val connectable = enabled && appearance > 0.02f
+                    if (enabledFlags[index] != connectable) {
+                        enabledFlags[index] = connectable
+                    }
+                    if (presenceFlags[index] != appearance) {
+                        presenceFlags[index] = appearance
                     }
                 }
                 DisposableEffect(index) {
                     onDispose {
                         bounds.remove(index)
                         enabledFlags.remove(index)
+                        presenceFlags.remove(index)
                     }
                 }
 
@@ -175,6 +197,16 @@ fun LiquidActionGroup(
                     onClick = onClick,
                     enabled = enabled,
                     buttonSize = buttonSize,
+                    presence = appearance,
+                    // 邻居被吸收时自己要鼓一下。序号相邻即视为邻居——组内序号本来就
+                    // 要求稳定有序（见 scope 的 KDoc），而绘制期才需要这个值，
+                    // 用 lambda 读 → 只触发重绘、不触发重组。
+                    mergePulse = {
+                        maxOf(
+                            absorbStrength(presenceFlags[index - 1] ?: 1f),
+                            absorbStrength(presenceFlags[index + 1] ?: 1f)
+                        )
+                    },
                     backdrop = backdrop,
                     optics = itemOptics,
                     onPressChange = { isDown ->
@@ -196,35 +228,22 @@ fun LiquidActionGroup(
     Row(
         modifier = modifier.drawBehind {
             if (!allowMerge) return@drawBehind
-            val active = pressed ?: return@drawBehind
-            val progress = active.optics.opticalProgress
-            if (progress < GlassRecipe.ActionGroupMergeThreshold) return@drawBehind
-
-            val source = bounds[active.index] ?: return@drawBehind
-            // 只连最近的一个邻居：连两侧会让被按的按钮看起来"融进了整条"，
-            // 失去"这一枚被按下"的焦点。
-            val neighbour = bounds.entries
-                .filter { it.key != active.index && enabledFlags[it.key] == true }
-                .minByOrNull { abs(it.value.center.x - source.center.x) }
-                ?.value ?: return@drawBehind
-
-            val gap = abs(neighbour.center.x - source.center.x) -
-                (source.width + neighbour.width) / 2f
-            val maxGap = source.width * GlassRecipe.ActionGroupMaxBridgeRatio
-            if (gap > maxGap || gap < 0f) return@drawBehind
-
-            // 融合强度：按压越深、间距越小，桥越饱满。
-            // 距离项让远邻居即使被判定为最近也不会拉出一条明显的丝。
-            val proximity = 1f - (gap / maxGap).coerceIn(0f, 1f)
-            val strength = (progress * proximity).coerceIn(0f, 1f)
-            if (strength < 0.02f) return@drawBehind
-
-            drawLiquidBridge(
-                from = source,
-                to = neighbour,
-                strength = strength,
-                surfaceColor = Color.White.copy(alpha = bridgeBase * (1f + strength * 0.6f)),
-                rimColor = Color.White.copy(alpha = rimAlpha * strength * 0.9f)
+            // 两条独立的融合来源：按下（局部表面张力）与增减（被邻居吸收）。
+            // 它们各自可能提前退出，所以分成两个函数——写在同一个 lambda 里，
+            // 前者的 early return 会顺手把后者也跳过。
+            drawPressMerge(
+                pressed = pressed,
+                bounds = bounds,
+                enabledFlags = enabledFlags,
+                bridgeBase = bridgeBase,
+                rimAlpha = rimAlpha
+            )
+            drawAbsorbMerge(
+                presenceFlags = presenceFlags,
+                bounds = bounds,
+                enabledFlags = enabledFlags,
+                bridgeBase = bridgeBase,
+                rimAlpha = rimAlpha
             )
         },
         horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -234,12 +253,139 @@ fun LiquidActionGroup(
     }
 }
 
+/**
+ * 按下时向最近邻居融合。**这段数学不要改**：它与芯片的按压光学（opticalProgress）
+ * 是同一套手感，动了这里就得连带重调 [GlassRecipe.ActionGroupMergeThreshold] 与腰宽。
+ */
+private fun DrawScope.drawPressMerge(
+    pressed: PressedAction?,
+    bounds: Map<Int, Rect>,
+    enabledFlags: Map<Int, Boolean>,
+    bridgeBase: Float,
+    rimAlpha: Float
+) {
+    val active = pressed ?: return
+    val progress = active.optics.opticalProgress
+    if (progress < GlassRecipe.ActionGroupMergeThreshold) return
+
+    val source = bounds[active.index] ?: return
+    // 只连最近的一个邻居：连两侧会让被按的按钮看起来"融进了整条"，
+    // 失去"这一枚被按下"的焦点。
+    val neighbour = bounds.entries
+        .filter { it.key != active.index && enabledFlags[it.key] == true }
+        .minByOrNull { abs(it.value.center.x - source.center.x) }
+        ?.value ?: return
+
+    val gap = abs(neighbour.center.x - source.center.x) -
+        (source.width + neighbour.width) / 2f
+    val maxGap = source.width * GlassRecipe.ActionGroupMaxBridgeRatio
+    if (gap > maxGap || gap < 0f) return
+
+    // 融合强度：按压越深、间距越小，桥越饱满。
+    // 距离项让远邻居即使被判定为最近也不会拉出一条明显的丝。
+    val proximity = 1f - (gap / maxGap).coerceIn(0f, 1f)
+    val strength = (progress * proximity).coerceIn(0f, 1f)
+    if (strength < 0.02f) return
+
+    drawLiquidBridge(
+        from = source,
+        to = neighbour,
+        strength = strength,
+        surfaceColor = Color.White.copy(alpha = bridgeBase * (1f + strength * 0.6f)),
+        rimColor = Color.White.copy(alpha = rimAlpha * strength * 0.9f)
+    )
+}
+
+/**
+ * 增减时的吸收融合：presence 落在 (0,1) 的那一枚正在被吃掉，
+ * 与它之间拉一段随进度变细的颈。
+ *
+ * 只连【仍完整在场】的邻居：两枚同时在退场的芯片之间连桥，等于把两颗正在消失的液滴
+ * 粘成一条，读起来是"整条在融化"而不是"被那一枚吃掉"。
+ */
+private fun DrawScope.drawAbsorbMerge(
+    presenceFlags: Map<Int, Float>,
+    bounds: Map<Int, Rect>,
+    enabledFlags: Map<Int, Boolean>,
+    bridgeBase: Float,
+    rimAlpha: Float
+) {
+    presenceFlags.forEach { (index, presence) ->
+        val strengthBase = absorbStrength(presence)
+        if (strengthBase < 0.02f) return@forEach
+        val layoutRect = bounds[index] ?: return@forEach
+        val neighbour = bounds.entries
+            .filter { entry ->
+                entry.key != index &&
+                    enabledFlags[entry.key] == true &&
+                    (presenceFlags[entry.key] ?: 1f) >= 0.98f
+            }
+            .minByOrNull { abs(it.value.center.x - layoutRect.center.x) }
+            ?.value ?: return@forEach
+
+        // 上报的是布局矩形（高度仍是满高），画出来的液滴却被 chipPresenceScaleY 压过一次。
+        // 桥必须贴【画出来的那一颗】，否则它会从液滴的上下缘探出去。
+        val drawnHeight = layoutRect.height * chipPresenceScaleY(presence)
+        val source = Rect(
+            offset = Offset(
+                layoutRect.left,
+                layoutRect.center.y - drawnHeight / 2f
+            ),
+            size = Size(layoutRect.width, drawnHeight)
+        )
+
+        val gap = abs(neighbour.center.x - source.center.x) -
+            (source.width + neighbour.width) / 2f
+        val maxGap = neighbour.width * GlassRecipe.ActionGroupMaxBridgeRatio
+        if (gap > maxGap || gap < 0f) return@forEach
+
+        val proximity = 1f - (gap / maxGap).coerceIn(0f, 1f)
+        val strength = (strengthBase * proximity).coerceIn(0f, 1f)
+        if (strength < 0.02f) return@forEach
+
+        drawLiquidBridge(
+            from = source,
+            to = neighbour,
+            strength = strength,
+            surfaceColor = Color.White.copy(alpha = bridgeBase * (1f + strength * 0.6f)),
+            rimColor = Color.White.copy(alpha = rimAlpha * strength * 0.9f)
+        )
+    }
+}
+
+/**
+ * 吸收强度：两端为 0、中途最饱满。
+ *
+ * 静止态（presence = 1）与收拢完（0）都不该有桥，所以它必须是个鼓包而不是单调曲线；
+ * 用它同时驱动"退场那一枚拉出的颈"和"存活那一枚的吞咽回弹"，两者因此同相。
+ */
+private fun absorbStrength(presence: Float): Float =
+    (4f * presence * (1f - presence)).coerceIn(0f, 1f)
+
+/**
+ * 被吸收时的纵向收缩。
+ *
+ * 横向【必须】等于上报宽度（线性），这是锚左缘那条不变量的另一半：绘制的右缘要始终
+ * 等于 `x + width * presence`。纵向收得更快，于是液滴先被拉扁再断开——等比缩小读起来
+ * 是"一枚按钮变小了"，不是"一颗液滴被吸走了"。
+ */
+internal fun chipPresenceScaleY(presence: Float): Float =
+    presence.coerceIn(0f, 1f).pow(1.6f)
+
+/** 透明度最后才让步：液滴不是"变透明"，是"被吃掉"。 */
+internal fun chipPresenceAlpha(presence: Float): Float =
+    (presence * 2.4f).coerceIn(0f, 1f)
+
 interface LiquidActionGroupScope {
     /**
      * 图标操作。绝大多数调用点用这个。
      *
      * @param index 组内唯一且稳定的序号，用于定位相邻按钮。**调用方负责保证不重复、
      *              不跳号**——重复索引会让几何记录互相覆盖，融合连到错误的邻居。
+     * @param presence 出场进度。1 = 常态；0 = 完全收起（宽度与绘制都归零）。
+     *              收起途中会被相邻的那一枚"吸收"：拉出一段液体颈、自己被压扁、
+     *              邻居鼓一下。**允许把 presence = 0 的那一枚一直留在组里**——摘掉
+     *              composable 会让 `spacedBy` 的间距在同一帧消失，邻居跳一格。
      */
     @Composable
     fun action(
@@ -249,7 +395,8 @@ interface LiquidActionGroupScope {
         onClick: () -> Unit,
         enabled: Boolean = true,
         buttonSize: Dp = 34.dp,
-        iconSize: Dp = 16.dp
+        iconSize: Dp = 16.dp,
+        presence: Float = 1f
     )
 
     /**
@@ -265,16 +412,28 @@ interface LiquidActionGroupScope {
         onClick: () -> Unit,
         enabled: Boolean = true,
         buttonSize: Dp = 34.dp,
+        presence: Float = 1f,
         content: @Composable () -> Unit
     )
 }
 
+/**
+ * @param presence 出场进度。**动画必须挂在这一个节点自己身上**，不能用
+ *        `AnimatedVisibility` 或再套一个 Box 包起来：桥由父级 `drawBehind` 画，
+ *        几何靠下面那个 `onPlaced { positionInParent() }` 上报；中间插一个布局节点，
+ *        上报的坐标就变成"相对那个节点"的（≈0,0），桥会连到错误的位置。
+ * @param mergePulse 邻居正被吸收的强度（绘制期读取）。液滴吞掉旁边那颗时会先鼓一下
+ *        再回弹，这一下是"位置转换"读得出来的关键——少了它，存活的那一枚只是被布局
+ *        推着平移，看不出发生过融合。
+ */
 @Composable
 private fun LiquidActionItem(
     contentDescription: String?,
     onClick: () -> Unit,
     enabled: Boolean,
     buttonSize: Dp,
+    presence: Float,
+    mergePulse: () -> Float,
     backdrop: Backdrop?,
     optics: InteractiveOptics,
     onPressChange: (Boolean) -> Unit,
@@ -282,9 +441,48 @@ private fun LiquidActionItem(
     content: @Composable () -> Unit
 ) {
     val animateContent = enabled && !rememberGlassAccessibilityMode().reduceMotion
+    val appearance = presence.coerceIn(0f, 1f)
+    // 收拢途中就不再接受点击：presence 很小时可点区域已经不足一指宽，
+    // 命中它只会让人以为点错了。
+    val reachable = enabled && appearance > 0.6f
     Box(
         modifier = Modifier
             .size(buttonSize)
+            .then(
+                if (appearance >= 1f) {
+                    // 自己完整在场：只剩"邻居被吃掉时鼓一下"这一层形变。
+                    // graphicsLayer 的 block 是绘制期 lambda，读 mergePulse 只触发重绘。
+                    Modifier.graphicsLayer {
+                        if (!animateContent) return@graphicsLayer
+                        val pulse = mergePulse().coerceIn(0f, 1f)
+                        if (pulse < 0.01f) return@graphicsLayer
+                        // 朝被吸收的方向被拽长、纵向同时被挤——近似体积守恒，
+                        // 幅度必须小：大了就从"吞咽"变成"按钮在抖"。
+                        scaleX = 1f + 0.07f * pulse
+                        scaleY = 1f - 0.03f * pulse
+                    }
+                } else {
+                    Modifier
+                        // 子级仍按满尺寸测量（图标不会被挤扁），只把【上报给父级的宽度】
+                        // 按进度收窄，于是邻居连续滑过来、整组宽度跟着收。
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            val width = (placeable.width * appearance).roundToInt()
+                            layout(width, placeable.height) { placeable.place(0, 0) }
+                        }
+                        .graphicsLayer {
+                            // 横向线性、纵向更快、透明度最后走：这三条一起才是"被吸收"，
+                            // 曲线与桥的几何共用（见 chipPresenceScaleY 的注释）。
+                            alpha = chipPresenceAlpha(appearance)
+                            scaleX = appearance
+                            scaleY = chipPresenceScaleY(appearance)
+                            // 必须锚左缘：上面上报的宽度是 width * presence，绘制也就跟着
+                            // 从左缘收，两者右缘始终重合。锚右缘的话绘制会留在原处，
+                            // 而邻居已经滑过来了——收拢途中两枚芯片会叠在一起。
+                            transformOrigin = TransformOrigin(0f, 0.5f)
+                        }
+                }
+            )
             .onPlaced { coordinates ->
                 val position = coordinates.positionInParent()
                 onBoundsChange(
@@ -305,14 +503,20 @@ private fun LiquidActionItem(
                 interactive = enabled
             )
             .clickable(
-                enabled = enabled,
+                enabled = reachable,
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 role = Role.Button,
                 onClick = onClick
             )
-            .pressReporter(enabled = enabled, onPressChange = onPressChange)
-            .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
+            .pressReporter(enabled = reachable, onPressChange = onPressChange)
+            // 收拢完的那一枚不留语义：它零宽零绘制，但语义节点仍会被读屏摸到，
+            // 于是"已选"页会念出一枚根本不存在的搜索钮。
+            .semantics {
+                if (reachable && contentDescription != null) {
+                    this.contentDescription = contentDescription
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         Box(

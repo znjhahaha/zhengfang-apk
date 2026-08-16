@@ -171,15 +171,6 @@ enum class SystemTone {
     Neutral
 }
 
-/**
- * 折叠态顶栏底缘的渐隐高度。
- *
- * 这段渐隐【必须画在顶栏外壳自己那个 drawBackdrop 节点里】，不能另起一个兄弟节点：
- * 外壳是模糊过的，另起的节点不是，接缝处于是同时出现"透明度台阶"和"模糊/不模糊分界"，
- * 看起来就是标题下面一道灰边。
- */
-private val TopBarEdgeFade = 12.dp
-
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SystemTopBar(
@@ -209,37 +200,30 @@ fun SystemTopBar(
 
     Column(modifier = Modifier.fillMaxWidth().reportNoticeAnchor()) {
         val showShell = collapse > 0.01f
-        // 底缘渐隐随折叠长出来（而不是一越过阈值就整段 12dp 弹出）：
-        // 它算在顶栏高度里，突然出现会让 Scaffold 的 topPadding 跳一格。
-        val edgeFade = TopBarEdgeFade * collapse
         val shellModifier = when {
-            useGlass && backdrop != null && showShell -> Modifier.drawBackdrop(
-                backdrop = backdrop,
-                shape = { RoundedCornerShape(0.dp) },
-                effects = {
-                    vibrancy()
-                    val radius = 10.dp.toPx() * collapse
-                    if (radius > 0.5f) blur(radius)
-                },
-                onDrawSurface = {
-                    val tint = surfaceTint.copy(alpha = surfaceTint.alpha * collapse)
-                    val fadePx = edgeFade.toPx()
-                    if (fadePx < 0.5f) {
-                        drawRect(tint)
-                    } else {
-                        // 白雾在最后 fadePx 内连续退到 0：模糊边界处白雾已经是透明，
-                        // 剩下的只是"模糊的壁纸"贴着"清晰的壁纸"，在软渐变壁纸上看不出线。
-                        val solidStop = ((size.height - fadePx) / size.height).coerceIn(0f, 1f)
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to tint,
-                                solidStop to tint,
-                                1f to Color.Transparent
-                            )
-                        )
+            useGlass && backdrop != null && showShell -> Modifier
+                // 下缘【齐边】收尾：渐隐抹在模糊结果上只是把"模糊的那一份"按 alpha 混到
+                // 清晰的原图上，两份图像叠在一起就是一条重影带（iOS 渐变的是模糊半径，
+                // 一次 drawBackdrop 做不到）。玻璃条本来就该有边——那圈默认高光已关掉。
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { RoundedCornerShape(0.dp) },
+                    effects = {
+                        vibrancy()
+                        val radius = 10.dp.toPx() * collapse
+                        if (radius > 0.5f) blur(radius)
+                    },
+                    // 库的默认值不是 null：全宽直角矩形的那圈边缘高光在屏幕上只剩
+                    // "标题下面一道亮线"。投影同理，而 Offscreen 遮罩也会把它裁掉。
+                    highlight = { null },
+                    shadow = { null },
+                    innerShadow = { null },
+                    onDrawSurface = {
+                        // 平铺即可：渐隐由 glassEdgeFadeBottom 统一做，
+                        // 这里再叠一条渐变会让尾巴衰减得比线性更快。
+                        drawRect(surfaceTint.copy(alpha = surfaceTint.alpha * collapse))
                     }
-                }
-            )
+                )
             !useGlass && showShell -> Modifier.background(
                 Brush.verticalGradient(
                     0f to MaterialTheme.colorScheme.surface.copy(alpha = collapse),
@@ -278,9 +262,7 @@ fun SystemTopBar(
                         start = PagePadding,
                         end = PagePadding,
                         top = lerpDp(10.dp, 6.dp, collapse),
-                        // 渐隐区算在外壳内部：外壳高度 = 内容 + edgeFade，
-                        // 于是整条渐隐与外壳共享同一次模糊、同一个几何。
-                        bottom = lerpDp(10.dp, 8.dp, collapse) + edgeFade
+                        bottom = lerpDp(10.dp, 8.dp, collapse)
                     ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)

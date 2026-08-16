@@ -176,7 +176,11 @@ fun LiquidSegmentedControl(
                 .coerceAtLeast(1f)
         val segmentWidth = with(density) { segmentWidthPx.toDp() }
         val indicatorWidth = segmentWidth
-        val dragAnimation = remember(animationScope, optionCount, segmentWidthPx) {
+        // key 里【不放 segmentWidthPx】：这个动画的状态是"段序号"空间的
+        // （valueRange = 0..count-1，速度也按序号算），宽度只在手势里做 px→序号换算，
+        // 那处 pointerInput 自己带 key。写进来的后果是顶栏折叠时宽度每帧在变，
+        // 于是动画对象每帧重建一次、滑块状态被反复丢掉。
+        val dragAnimation = remember(animationScope, optionCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = clampedSelectedIndex.toFloat(),
@@ -624,8 +628,6 @@ fun LiquidPicker(
     backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var popupVisible by remember { mutableStateOf(false) }
-    val menuProgress = remember { Animatable(0f) }
     val validSelectedIndex = selectedIndex?.takeIf { it in options.indices }
     val selectedLabel = validSelectedIndex?.let { options[it].label }
     val hasAvailableOption = options.any { it.enabled }
@@ -635,42 +637,12 @@ fun LiquidPicker(
         role = GlassMaterialRole.Control,
         accessibility = accessibility
     )
-    val menuMaterial = GlassMaterials.resolve(
-        role = GlassMaterialRole.Modal,
-        accessibility = accessibility
-    )
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
     val shape = RoundedCornerShape(18.dp)
-    val menuShape = RoundedCornerShape(20.dp)
     val density = LocalDensity.current
-    val overlayBottomInset = LocalAppOverlayBottomInset.current
-    val gapPx = with(density) { 8.dp.roundToPx() }
-    val overlayBottomInsetPx = with(density) { overlayBottomInset.roundToPx() }
-    val menuSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-        alpha = menuMaterial.surfaceAlpha
-    )
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    LaunchedEffect(expanded, accessibility.reduceMotion) {
-        if (accessibility.reduceMotion) {
-            popupVisible = expanded
-            menuProgress.snapTo(if (expanded) 1f else 0f)
-        } else if (expanded) {
-            popupVisible = true
-            withFrameNanos { }
-            menuProgress.animateTo(1f, MotionSpring.liquidMenu())
-        } else if (popupVisible) {
-            menuProgress.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(
-                    durationMillis = 140,
-                    easing = MotionEasing.Accelerate
-                )
-            )
-            popupVisible = false
-        }
-    }
     LaunchedEffect(canOpen) {
         if (!canOpen) expanded = false
     }
@@ -723,12 +695,6 @@ fun LiquidPicker(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val anchorWidth = with(density) { constraints.maxWidth.toDp() }
-        val popupPositionProvider = remember(gapPx, overlayBottomInsetPx) {
-            AnchoredPickerPositionProvider(
-                gapPx = gapPx,
-                bottomInsetPx = overlayBottomInsetPx
-            )
-        }
         val fallbackModifier = Modifier
             .shadow(if (expanded) 5.dp else 2.dp, shape, clip = false)
             .clip(shape)
@@ -853,189 +819,278 @@ fun LiquidPicker(
             )
         }
 
-        if (popupVisible) {
-            Popup(
-                popupPositionProvider = popupPositionProvider,
-                onDismissRequest = { expanded = false },
-                properties = PopupProperties(
-                    focusable = true,
-                    dismissOnBackPress = true,
-                    dismissOnClickOutside = true
+        LiquidAnchoredOptionMenu(
+            expanded = expanded,
+            options = options,
+            selectedIndex = validSelectedIndex,
+            anchorWidth = anchorWidth,
+            onSelect = onSelect,
+            onDismiss = { expanded = false },
+            backdrop = backdrop,
+            actionLabel = actionLabel,
+            onAction = onAction
+        )
+    }
+}
+
+/**
+ * 从锚点长出来的玻璃选项菜单。
+ *
+ * 原先埋在 [LiquidPicker] 里。成绩页那一行紧凑学期行也要"从字段上长出来"的同一种展开，
+ * 于是抽出来两处共用——照抄一遍的代价不是行数，而是两份出场时序迟早会分叉。
+ *
+ * 两个不能动的细节：
+ * 1. `Popup` 必须【先挂载、下一帧再跑 menuProgress】。同一帧挂载并从 0 开始动画，
+ *    第一帧拿不到测量结果，读起来是"先闪一下再展开"。
+ * 2. 下方放不下就翻到锚点上方（[AnchoredPickerPositionProvider]），并据此把
+ *    `transformOrigin` 换到底边——否则向上弹出的菜单会从远离锚点的那头长出来。
+ *
+ * @param expanded 由调用方持有。菜单只负责在它变 false 之后把退场动画跑完再卸载自己。
+ * @param anchorWidth 锚点宽度，菜单以它为最小宽度（调用方用 `BoxWithConstraints` 量）。
+ */
+@Composable
+internal fun LiquidAnchoredOptionMenu(
+    expanded: Boolean,
+    options: List<LiquidPickerOption>,
+    selectedIndex: Int?,
+    anchorWidth: Dp,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    backdrop: Backdrop? = LocalControlBackdrop.current,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    val accessibility = rememberGlassAccessibilityMode()
+    // 选中行的底色要与字段表面同源，所以这里也解析一次 Control 档
+    val fieldMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Control,
+        accessibility = accessibility
+    )
+    val menuMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Modal,
+        accessibility = accessibility
+    )
+    val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
+    val menuShape = RoundedCornerShape(20.dp)
+    val menuSurfaceColor = MaterialTheme.colorScheme.surface.copy(
+        alpha = menuMaterial.surfaceAlpha
+    )
+    val validSelectedIndex = selectedIndex?.takeIf { it in options.indices }
+    val density = LocalDensity.current
+    val overlayBottomInset = LocalAppOverlayBottomInset.current
+    val gapPx = with(density) { 8.dp.roundToPx() }
+    val overlayBottomInsetPx = with(density) { overlayBottomInset.roundToPx() }
+    val popupPositionProvider = remember(gapPx, overlayBottomInsetPx) {
+        AnchoredPickerPositionProvider(
+            gapPx = gapPx,
+            bottomInsetPx = overlayBottomInsetPx
+        )
+    }
+    var popupVisible by remember { mutableStateOf(false) }
+    val menuProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(expanded, accessibility.reduceMotion) {
+        if (accessibility.reduceMotion) {
+            popupVisible = expanded
+            menuProgress.snapTo(if (expanded) 1f else 0f)
+        } else if (expanded) {
+            popupVisible = true
+            withFrameNanos { }
+            menuProgress.animateTo(1f, MotionSpring.liquidMenu())
+        } else if (popupVisible) {
+            menuProgress.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = 140,
+                    easing = MotionEasing.Accelerate
                 )
-            ) {
-                val menuFallbackModifier = Modifier
-                    .shadow(12.dp, menuShape, clip = false)
-                    .clip(menuShape)
-                    .background(
-                        MaterialTheme.colorScheme.surface.copy(
-                            alpha = if (accessibility.highContrast) 1f else 0.98f
+            )
+            popupVisible = false
+        }
+    }
+
+    if (popupVisible) {
+        Popup(
+            popupPositionProvider = popupPositionProvider,
+            onDismissRequest = onDismiss,
+            properties = PopupProperties(
+                focusable = true,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
+            val menuFallbackModifier = Modifier
+                .shadow(12.dp, menuShape, clip = false)
+                .clip(menuShape)
+                .background(
+                    MaterialTheme.colorScheme.surface.copy(
+                        alpha = if (accessibility.highContrast) 1f else 0.98f
+                    )
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(
+                        alpha = menuMaterial.borderAlpha
+                    ),
+                    menuShape
+                )
+            val menuGlassModifier = if (glassBackdrop != null) {
+                Modifier.drawBackdrop(
+                    backdrop = glassBackdrop,
+                    shape = { menuShape },
+                    effects = {
+                        val params = resolvePhysicalLens(
+                            density = this,
+                            material = menuMaterial,
+                            shape = menuShape,
+                            minCornerRadiusPx = 20.dp.toPx(),
+                            minDimensionPx = size.minDimension,
+                            interactionProgress = 0f,
+                            enableBlur = true,
+                            allowChromaticAberration = false
                         )
-                    )
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(
-                            alpha = menuMaterial.borderAlpha
-                        ),
-                        menuShape
-                    )
-                val menuGlassModifier = if (glassBackdrop != null) {
-                    Modifier.drawBackdrop(
-                        backdrop = glassBackdrop,
-                        shape = { menuShape },
-                        effects = {
-                            val params = resolvePhysicalLens(
-                                density = this,
-                                material = menuMaterial,
-                                shape = menuShape,
-                                minCornerRadiusPx = 20.dp.toPx(),
-                                minDimensionPx = size.minDimension,
-                                interactionProgress = 0f,
-                                enableBlur = true,
-                                allowChromaticAberration = false
-                            )
-                            vibrancy()
-                            if (params.blurPx > 0f) blur(params.blurPx)
-                            if (params.useLens) {
-                                lens(
-                                    refractionHeight = params.refractionHeightPx,
-                                    refractionAmount = params.refractionAmountPx,
-                                    chromaticAberration = params.chromaticAberration
-                                )
-                            }
-                        },
-                        shadow = { Shadow(alpha = menuMaterial.shadowAlpha) },
-                        onDrawSurface = {
-                            drawRect(menuSurfaceColor)
-                            drawRoundRect(
-                                color = Color.White.copy(
-                                    alpha = menuMaterial.borderAlpha
-                                ),
-                                cornerRadius = CornerRadius(20.dp.toPx()),
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                        vibrancy()
+                        if (params.blurPx > 0f) blur(params.blurPx)
+                        if (params.useLens) {
+                            lens(
+                                refractionHeight = params.refractionHeightPx,
+                                refractionAmount = params.refractionAmountPx,
+                                chromaticAberration = params.chromaticAberration
                             )
                         }
-                    )
-                } else {
-                    menuFallbackModifier
+                    },
+                    shadow = { Shadow(alpha = menuMaterial.shadowAlpha) },
+                    onDrawSurface = {
+                        drawRect(menuSurfaceColor)
+                        drawRoundRect(
+                            color = Color.White.copy(
+                                alpha = menuMaterial.borderAlpha
+                            ),
+                            cornerRadius = CornerRadius(20.dp.toPx()),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                        )
+                    }
+                )
+            } else {
+                menuFallbackModifier
+            }
+
+            Column(
+                modifier = Modifier
+                    .widthIn(min = anchorWidth, max = 420.dp)
+                    .then(menuGlassModifier)
+                    .graphicsLayer {
+                        val progress = menuProgress.value.coerceIn(0f, 1f)
+                        val opensAbove = popupPositionProvider.opensAbove
+                        alpha = progress
+                        scaleX = lerp(0.97f, 1f, progress)
+                        scaleY = lerp(0.96f, 1f, progress)
+                        transformOrigin = TransformOrigin(
+                            pivotFractionX = 0.5f,
+                            pivotFractionY = if (opensAbove) 1f else 0f
+                        )
+                        translationY = (1f - progress) *
+                            if (opensAbove) 6.dp.toPx() else -6.dp.toPx()
+                    }
+                    .padding(6.dp)
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                options.forEachIndexed { index, option ->
+                    val isSelected = index == validSelectedIndex
+                    val itemInteractionSource = remember(index) { MutableInteractionSource() }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (isSelected) {
+                                    Color.White.copy(
+                                        alpha = (fieldMaterial.surfaceAlpha * 0.6f)
+                                            .coerceIn(0.12f, 0.28f)
+                                    )
+                                } else {
+                                    Color.Transparent
+                                }
+                            )
+                            .clickable(
+                                interactionSource = itemInteractionSource,
+                                indication = null,
+                                enabled = option.enabled,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    onDismiss()
+                                    onSelect(index)
+                                }
+                            )
+                            .semantics { selected = isSelected }
+                            .graphicsLayer { alpha = if (option.enabled) 1f else 0.38f }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(22.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        Text(
+                            text = option.label,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                Column(
-                    modifier = Modifier
-                        .widthIn(min = anchorWidth, max = 420.dp)
-                        .then(menuGlassModifier)
-                        .graphicsLayer {
-                            val progress = menuProgress.value.coerceIn(0f, 1f)
-                            val opensAbove = popupPositionProvider.opensAbove
-                            alpha = progress
-                            scaleX = lerp(0.97f, 1f, progress)
-                            scaleY = lerp(0.96f, 1f, progress)
-                            transformOrigin = TransformOrigin(
-                                pivotFractionX = 0.5f,
-                                pivotFractionY = if (opensAbove) 1f else 0f
-                            )
-                            translationY = (1f - progress) *
-                                if (opensAbove) 6.dp.toPx() else -6.dp.toPx()
-                        }
-                        .padding(6.dp)
-                        .heightIn(max = 240.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    options.forEachIndexed { index, option ->
-                        val isSelected = index == validSelectedIndex
-                        val itemInteractionSource = remember(index) { MutableInteractionSource() }
-                        Row(
+                if (!actionLabel.isNullOrBlank() && onAction != null) {
+                    if (options.isNotEmpty()) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(14.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .height(1.dp)
                                 .background(
-                                    if (isSelected) {
-                                        Color.White.copy(
-                                            alpha = (fieldMaterial.surfaceAlpha * 0.6f)
-                                                .coerceIn(0.12f, 0.28f)
-                                        )
-                                    } else {
-                                        Color.Transparent
-                                    }
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
                                 )
-                                .clickable(
-                                    interactionSource = itemInteractionSource,
-                                    indication = null,
-                                    enabled = option.enabled,
-                                    role = Role.RadioButton,
-                                    onClick = {
-                                        expanded = false
-                                        onSelect(index)
-                                    }
-                                )
-                                .semantics { selected = isSelected }
-                                .graphicsLayer { alpha = if (option.enabled) 1f else 0.38f }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier.size(22.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                            Text(
-                                text = option.label,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        )
                     }
-
-                    if (!actionLabel.isNullOrBlank() && onAction != null) {
-                        if (options.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    .height(1.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
-                                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Button,
+                                onClick = {
+                                    onDismiss()
+                                    onAction()
+                                }
                             )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    role = Role.Button,
-                                    onClick = {
-                                        expanded = false
-                                        onAction()
-                                    }
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Spacer(modifier = Modifier.width(32.dp))
-                            Text(
-                                text = actionLabel,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Spacer(modifier = Modifier.width(32.dp))
+                        Text(
+                            text = actionLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }

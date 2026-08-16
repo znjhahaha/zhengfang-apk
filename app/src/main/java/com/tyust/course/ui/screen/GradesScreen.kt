@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -86,6 +87,10 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -93,17 +98,22 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.shapes.Capsule
-import com.tyust.course.ui.system.GlassOptionWheelDialog
+import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.HeaderGlassSlab
+import com.tyust.course.ui.system.LiquidAnchoredOptionMenu
+import com.tyust.course.ui.system.LiquidPickerOption
+import com.tyust.course.ui.system.LiquidSegmentedControl
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.StatusBarFrost
-import com.tyust.course.ui.system.SystemCompactSegmentedControl
 import com.tyust.course.ui.system.SystemDivider
+import com.tyust.course.ui.system.glass.applyChipContentDeformation
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.lerpDp
+import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.system.reportNoticeAnchor
 import com.tyust.course.ui.theme.MotionSpring
 import com.tyust.course.ui.theme.NeuPrimary
@@ -149,21 +159,115 @@ data class OverallStatsUi(
 // ── 顶栏折叠几何 ────────────────────────────────────────────────
 // 与课表页同一条铁律：展开态与折叠态的高度【差】必须等于折叠行程，
 // 于是顶栏收缩与内容上滚 1:1 对消、全程跟手。脱钩就会互相追赶。
-private val GradesHeaderExpandedHeight = 116.dp   // 状态栏以下：10 + 52 + 8 + 36 + 10
-private val GradesHeaderCollapsedHeight = 54.dp   // 状态栏以下：9 + 36 + 9
-private val GradesHeaderCollapseTravel = 62.dp    // == 两者之差
+//
+// 总高不再写死：标题块要跟着系统字体缩放走，三个高度全部由下面这组 token 推导，
+// 那条恒等式因此是结构性的（见 GradesHeaderMetrics.travel），不靠人肉对账。
 
-/** 大标题 + 副标题那一块。折叠时整块淡出上移，只留选择栏。 */
-private val GradesTitleBlockHeight = 52.dp
-/** 选择栏高度，两态不变——它是这一页的主导航，缩它没有收益只有风险。 */
-private val GradesSegmentHeight = 36.dp
+private val GradesTitleFontSize = 28.sp
+/**
+ * 标题与副标题都显式钉住行高。
+ *
+ * 中文字体的自然行高约 1.45em——28sp 的标题实际要 40dp 左右，比目测多出一截。
+ * 不钉住行高，容器就永远算不准；溢出的那部分会被之后绘制的分段栏盖掉，
+ * 表现为"副标题只显示了上半截"。
+ */
+private val GradesTitleLineHeight = 36.sp
+private val GradesSubtitleLineHeight = 18.sp
+private val GradesTitleSubtitleGap = 3.dp
 private val GradesTitleGap = 8.dp
+
+/**
+ * 选择栏高度。展开态取 52dp——那就是 `SystemSegmentedControl` 的默认值、这一页原本的尺寸。
+ *
+ * 它**独占一行、全宽**：与动作芯片共享一行会把三段中文标签挤成一条窄带（上一版的毛病）。
+ * 折叠态收到 44dp，仍远离 `LiquidSegmentedControl` 的 compact 阈值（`height <= 36.dp`），
+ * 于是全程都是同一档排版，不会中途翻档。
+ */
+private val GradesSegmentHeightExpanded = 52.dp
+private val GradesSegmentHeightCollapsed = 44.dp
+
+// 动作芯片：与课表顶栏同一套尺寸插值
+private val GradesChipSizeExpanded = 34.dp
+private val GradesChipSizeCollapsed = 30.dp
+private val GradesChipIconExpanded = 16.dp
+private val GradesChipIconCollapsed = 15.dp
+private val GradesChipSpacingExpanded = 4.dp
+private val GradesChipSpacingCollapsed = 3.dp
+/**
+ * 分段栏与芯片组之间的间距。折叠态"分段栏让出的那段"= 芯片组宽度 + 它。
+ *
+ * 取 12dp 而不是 8dp：分段栏按下时轨道会整块外扩约 8dp/侧（`LiquidSegmentedControl`
+ * 的 layerBlock 有 16dp 宽度增益），8dp 的缝会被那一下正好吃满。
+ */
+private val GradesChipGap = 12.dp
 
 private val GradesSlabInset = 12.dp
 private val GradesSlabTopGap = 6.dp
 private val GradesSlabBottomGap = 4.dp
-/** 折叠态玻璃条高 44dp（54 - 6 - 4），圆角取一半正好是胶囊。 */
-private val GradesSlabCorner = 22.dp
+/** 折叠条内壁到分段栏的呼吸量。缺了它分段栏会几乎贴满玻璃条，读成"条里又套一条"。 */
+private val GradesSlabRing = 4.dp
+
+private val GradesHeaderTopPadExpanded = 10.dp
+// 折叠态的上下内边距写成【玻璃条留白 + ring】，于是分段栏在玻璃条里天然居中，
+// 不靠人肉对账；两态上内边距又恰好相等，右上角那两枚芯片因此全程只走几 dp。
+private val GradesHeaderTopPadCollapsed = GradesSlabTopGap + GradesSlabRing
+private val GradesHeaderBottomPadExpanded = 10.dp
+private val GradesHeaderBottomPadCollapsed = GradesSlabBottomGap + GradesSlabRing
+
+/** 学期字段高度。比上一版 56dp 的表单字段轻一档，但仍是一件完整的可按控件。 */
+private val GradesSemesterFieldHeight = 40.dp
+
+/** 顶栏的三个高度与玻璃条圆角，全部由上面那组 token 推导出来。 */
+private class GradesHeaderMetrics(
+    /** 标题那一行的行高（芯片在展开态就按它居中）。 */
+    val titleLine: Dp,
+    val titleBlock: Dp,
+    val expanded: Dp,
+    val collapsed: Dp
+) {
+    /** 折叠行程。定义成差值，于是不可能与两态高度脱钩。 */
+    val travel: Dp get() = expanded - collapsed
+
+    /** 折叠态玻璃条高度的一半 = 胶囊；它同时是折射行程的上限（canUseLiquidLens）。 */
+    val slabCorner: Dp get() = (collapsed - GradesSlabTopGap - GradesSlabBottomGap) / 2
+
+    fun topPad(collapse: Float): Dp =
+        lerpDp(GradesHeaderTopPadExpanded, GradesHeaderTopPadCollapsed, collapse)
+
+    fun segmentHeight(collapse: Float): Dp =
+        lerpDp(GradesSegmentHeightExpanded, GradesSegmentHeightCollapsed, collapse)
+
+    fun chipSize(collapse: Float): Dp =
+        lerpDp(GradesChipSizeExpanded, GradesChipSizeCollapsed, collapse)
+
+    fun chipIconSize(collapse: Float): Dp =
+        lerpDp(GradesChipIconExpanded, GradesChipIconCollapsed, collapse)
+
+    fun chipSpacing(collapse: Float): Dp =
+        lerpDp(GradesChipSpacingExpanded, GradesChipSpacingCollapsed, collapse)
+}
+
+@Composable
+private fun rememberGradesHeaderMetrics(): GradesHeaderMetrics {
+    val density = LocalDensity.current
+    return remember(density.density, density.fontScale) {
+        with(density) {
+            // sp.toDp() 自带 fontScale：系统字体调大一档，标题块跟着长高
+            val titleLine = GradesTitleLineHeight.toDp()
+            val titleBlock = titleLine +
+                GradesTitleSubtitleGap +
+                GradesSubtitleLineHeight.toDp()
+            GradesHeaderMetrics(
+                titleLine = titleLine,
+                titleBlock = titleBlock,
+                expanded = GradesHeaderTopPadExpanded + titleBlock + GradesTitleGap +
+                    GradesSegmentHeightExpanded + GradesHeaderBottomPadExpanded,
+                collapsed = GradesHeaderTopPadCollapsed + GradesSegmentHeightCollapsed +
+                    GradesHeaderBottomPadCollapsed
+            )
+        }
+    }
+}
 
 @Composable
 fun GradesScreen(
@@ -200,7 +304,8 @@ fun GradesScreen(
         1 -> overallListState
         else -> examListState
     }
-    val travelPx = with(LocalDensity.current) { GradesHeaderCollapseTravel.toPx() }
+    val metrics = rememberGradesHeaderMetrics()
+    val travelPx = with(LocalDensity.current) { metrics.travel.toPx() }
     val headerCollapse by remember(travelPx, activeListState) {
         derivedStateOf {
             // 第 0 项就是首屏那一块内容，它比行程高得多，所以只看它的偏移；
@@ -230,7 +335,7 @@ fun GradesScreen(
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // 【常量】top inset：Scaffold 的 topPadding 随顶栏一起缩，喂给滚动容器会让
     // 内容走两倍行程（课表页踩过）。这里固定按展开态高度留白。
-    val contentTopInset = statusBarHeight + GradesHeaderExpandedHeight
+    val contentTopInset = statusBarHeight + metrics.expanded
     val contentBottomInset = LocalAppOverlayBottomInset.current + 24.dp
 
     Scaffold(
@@ -244,6 +349,7 @@ fun GradesScreen(
                     currentTab = currentTab,
                     onTabChange = onTabChange,
                     collapseFraction = headerCollapse,
+                    metrics = metrics,
                     sampleBackdrop = headerSampleBackdrop,
                     shareEnabled = when (currentTab) {
                         0 -> semesterGrades.isNotEmpty()
@@ -315,11 +421,13 @@ fun GradesScreen(
 /**
  * 成绩页顶栏：上划收拢成一条悬浮玻璃胶囊。
  *
- * 展开态是 iOS 的大标题（直接浮在内容上），折叠态只留【选择栏 + 动作钮】——
+ * 展开态是 iOS 的大标题（直接浮在内容上）+ 一条**全宽原尺寸**的选择栏；折叠态只留选择栏。
  * 三个标签本身就说明了在哪一页，小标题是多余信息。
  *
- * 动作钮两态都待在选择栏这一行、不跨行搬家：折叠于是是一段连续插值，
- * 没有"某一帧消失、另一处重生"的接缝。
+ * 两枚动作钮**不属于任何一行**——它们是这个 Box 的第二个子节点，钉在右上角。理由有两条：
+ * 1. 放进选择栏那一行就要和它抢宽度，三段中文标签会被挤成一条窄带；
+ * 2. 标题块整块收掉之后，"标题行右上角"与"选择栏右侧"这两个位置的 y 几乎重合，
+ *    所以芯片全程只走几 dp——真正在动的是选择栏升上来、以及它右侧连续让出的那一段。
  */
 @Composable
 private fun GradesHeader(
@@ -328,6 +436,7 @@ private fun GradesHeader(
     currentTab: Int,
     onTabChange: (Int) -> Unit,
     collapseFraction: Float,
+    metrics: GradesHeaderMetrics,
     sampleBackdrop: Backdrop?,
     showShare: Boolean,
     shareEnabled: Boolean,
@@ -351,12 +460,33 @@ private fun GradesHeader(
         null
     }
 
+    // 导出芯片只在成绩两页出现。走 presence 而不是直接增删：芯片组的液滴形变与融合
+    // 因此同样作用在"切到考试安排"这件事上，分段栏也跟着连续变宽。
+    val sharePresence by animateFloatAsState(
+        targetValue = if (showShare) 1f else 0f,
+        animationSpec = MotionSpring.liquidSettle(),
+        label = "gradesSharePresence"
+    )
+    val chipSize = metrics.chipSize(collapse)
+    val chipSpacing = metrics.chipSpacing(collapse)
+    val segmentHeight = metrics.segmentHeight(collapse)
+    // 芯片组实际占宽：刷新常驻，导出随 presence 收放
+    val chipsWidth = chipSize + (chipSize + chipSpacing) * sharePresence
+    val chipsReserve = chipsWidth + GradesChipGap
+    // 展开态按标题那一行的行高居中，折叠态按选择栏居中。两态上内边距相同，
+    // 所以这段位移只有几 dp——芯片是那个"不动的锚"。
+    val chipTop = lerpDp(
+        (metrics.titleLine - chipSize) / 2,
+        (segmentHeight - chipSize) / 2,
+        collapse
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(
                 statusBarHeight +
-                    lerpDp(GradesHeaderExpandedHeight, GradesHeaderCollapsedHeight, collapse)
+                    lerpDp(metrics.expanded, metrics.collapsed, collapse)
             )
     ) {
         // 玻璃层【必须是前景内容的兄弟节点】：layerBackdrop 捕获整棵子树，
@@ -377,7 +507,7 @@ private fun GradesHeader(
                     // 提前显形会让人先看到"卡"再看到"条"。
                     strength = ((collapse - 0.35f) / 0.65f).coerceIn(0f, 1f),
                     backdrop = sampleBackdrop,
-                    cornerRadius = GradesSlabCorner,
+                    cornerRadius = metrics.slabCorner,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
@@ -396,7 +526,7 @@ private fun GradesHeader(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(top = lerpDp(10.dp, 9.dp, collapse))
+                    .padding(top = metrics.topPad(collapse))
             ) {
                 // 收拢方式：容器高度与内容缩放走【同一个系数】，于是绘制尺寸永远等于
                 // 容器高度——既不会溢出压到下面那一行，也不会被压扁。
@@ -405,12 +535,13 @@ private fun GradesHeader(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(GradesTitleBlockHeight * titleFraction)
-                        .padding(horizontal = PagePadding)
+                        .height(metrics.titleBlock * titleFraction)
+                        // 右侧给钉在角上的芯片让位，副标题不会被压在它们下面
+                        .padding(start = PagePadding, end = PagePadding + chipsReserve)
                 ) {
                     Column(
                         modifier = Modifier
-                            .requiredHeight(GradesTitleBlockHeight)
+                            .requiredHeight(metrics.titleBlock)
                             .graphicsLayer {
                                 alpha = (titleFraction * 2.2f - 0.2f).coerceIn(0f, 1f)
                                 scaleX = titleFraction
@@ -421,13 +552,15 @@ private fun GradesHeader(
                     ) {
                         Text(
                             text = "成绩与考试",
-                            fontSize = 28.sp,
+                            fontSize = GradesTitleFontSize,
+                            // 行高与 metrics 同源：容器高度就是按这个算出来的
+                            lineHeight = GradesTitleLineHeight,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.5).sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1
                         )
-                        Spacer(modifier = Modifier.height(3.dp))
+                        Spacer(modifier = Modifier.height(GradesTitleSubtitleGap))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -441,6 +574,7 @@ private fun GradesHeader(
                             Text(
                                 text = subtitle,
                                 style = MaterialTheme.typography.labelMedium,
+                                lineHeight = GradesSubtitleLineHeight,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                     .copy(alpha = 0.80f),
@@ -456,55 +590,66 @@ private fun GradesHeader(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(GradesSegmentHeight)
+                        .height(segmentHeight)
                         .padding(horizontal = PagePadding),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SystemCompactSegmentedControl(
+                    // 直接用 LiquidSegmentedControl 而不是 SystemCompactSegmentedControl：
+                    // 后者把高度写死成 36dp，正好踩在 compact 阈值上（见 GradesSegmentHeight*）。
+                    LiquidSegmentedControl(
                         options = tabTitles,
                         selectedIndex = currentTab,
                         onSelect = onTabChange,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        height = segmentHeight
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // 与课表顶栏同一套液体玻璃芯片组。刷新中不掉出这套材质——
-                    // 用内容槽把图标换成进度圈，芯片本身不变。
-                    LiquidActionGroup(spacing = 4.dp) {
-                        if (showShare) {
-                            action(
-                                index = 0,
-                                icon = Icons.Default.Share,
-                                contentDescription = "导出成绩",
-                                onClick = onShare,
-                                enabled = shareEnabled && !isRefreshing,
-                                buttonSize = 32.dp,
-                                iconSize = 15.dp
-                            )
-                        }
-                        if (isRefreshing) {
-                            action(
-                                index = 1,
-                                contentDescription = "正在刷新",
-                                onClick = {},
-                                enabled = false,
-                                buttonSize = 32.dp
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(15.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        } else {
-                            action(
-                                index = 1,
-                                icon = Icons.Default.Refresh,
-                                contentDescription = "刷新",
-                                onClick = onRefresh,
-                                buttonSize = 32.dp,
-                                iconSize = 15.dp
-                            )
-                        }
+                    // 升到芯片那一行的同时连续让出右侧：展开态是 0，于是选择栏真的全宽
+                    Spacer(modifier = Modifier.width(chipsReserve * collapse))
+                }
+            }
+
+            // 钉在右上角的动作芯片。CompositionLocalProvider 不产生布局节点，
+            // 所以这里的 align 仍然相对外层那个 header Box。
+            LiquidActionGroup(
+                spacing = chipSpacing,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = metrics.topPad(collapse) + chipTop, end = PagePadding)
+            ) {
+                action(
+                    index = 0,
+                    icon = Icons.Default.Share,
+                    contentDescription = "导出成绩",
+                    onClick = onShare,
+                    enabled = showShare && shareEnabled && !isRefreshing,
+                    buttonSize = chipSize,
+                    iconSize = metrics.chipIconSize(collapse),
+                    presence = sharePresence
+                )
+                // 刷新中不掉出这套材质——用内容槽把图标换成进度圈，芯片本身不变
+                if (isRefreshing) {
+                    action(
+                        index = 1,
+                        contentDescription = "正在刷新",
+                        onClick = {},
+                        enabled = false,
+                        buttonSize = chipSize
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(metrics.chipIconSize(collapse)),
+                            strokeWidth = 2.dp
+                        )
                     }
+                } else {
+                    action(
+                        index = 1,
+                        icon = Icons.Default.Refresh,
+                        contentDescription = "刷新",
+                        onClick = onRefresh,
+                        buttonSize = chipSize,
+                        iconSize = metrics.chipIconSize(collapse)
+                    )
                 }
             }
         }
@@ -655,8 +800,13 @@ private fun SemesterGradesContent(
 /**
  * 学期选择。
  *
- * 原先是 `SystemPicker`——一枚 56dp 的全宽表单字段，值又与顶栏副标题重复，
- * 在这一屏里是最重的一块 chrome。换成一行紧凑玻璃行 + 复用课表设置页那枚滚轮弹窗。
+ * 上一版是 `SystemPicker`——一枚 56dp 的全宽表单字段，在这一屏里是最重的一块 chrome；
+ * 再上一版把它拆成"标签 + 一枚蓝药丸 + 行尾一个箭头"，轻了但散了：没有容器、
+ * 药丸用的是筛选标签的语言、箭头又是另一件东西，整行可点却看不出来。
+ *
+ * 现在是**一件完整的紧凑玻璃字段**（40dp）：按下整行有玻璃形变，值与箭头在同一块面上，
+ * 菜单仍从它的下缘长出（[LiquidAnchoredOptionMenu]）——居中滚轮弹窗会把"改一个筛选项"
+ * 升级成一次模态打断，和这一行的轻量感对不上。
  */
 @Composable
 private fun SemesterSelector(
@@ -664,57 +814,114 @@ private fun SemesterSelector(
     currentSemester: String,
     onSemesterChange: (String) -> Unit
 ) {
-    var showPicker by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    val canOpen = semesters.isNotEmpty()
+    val accessibility = rememberGlassAccessibilityMode()
+    val optics = rememberInteractiveOptics()
+    val interactive = canOpen && !accessibility.reduceMotion
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = MotionSpring.liquidSettle(),
+        label = "semesterArrow"
+    )
+    val fieldShape = RoundedCornerShape(16.dp)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(Capsule())
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = semesters.isNotEmpty()
-            ) { showPicker = true }
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.CalendarToday,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-        )
-        Text(
-            text = "学期",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        GlassFilterChip(
-            label = currentSemester.ifBlank { "选择学期" },
-            selected = currentSemester.isNotBlank(),
-            compact = true
-        )
-        Icon(
-            imageVector = Icons.Default.KeyboardArrowDown,
-            contentDescription = null,
-            modifier = Modifier.size(15.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
-    }
+    // 菜单以这一行为锚点：Popup 取父布局的边界，所以量宽度的 BoxWithConstraints
+    // 必须只包住这一行本身。
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val anchorWidth = with(LocalDensity.current) { constraints.maxWidth.toDp() }
 
-    if (showPicker && semesters.isNotEmpty()) {
-        GlassOptionWheelDialog(
-            title = "选择学期",
-            options = semesters,
-            selectedIndex = semesters.indexOf(currentSemester).coerceAtLeast(0),
-            onConfirm = { index ->
-                onSemesterChange(semesters[index])
-                showPicker = false
-            },
-            onDismiss = { showPicker = false }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(GradesSemesterFieldHeight)
+                // glassChip 而不是 drawBackdrop：这一行待在【被 layerBackdrop 捕获的
+                // 内容层里】，再去采样一个包含自己的图层就是自采样（RenderThread 死循环）。
+                // 它也不需要模糊——淡表面 + 边缘光已经交代了"这是一块玻璃"。
+                // 同一条理由见 GlassFilterChip。
+                .glassChip(
+                    shape = fieldShape,
+                    rimIntensity = if (expanded) 1.25f else 1f,
+                    pressProgress = { optics.pressProgress }
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = canOpen,
+                    role = Role.Button
+                ) { expanded = !expanded }
+                .then(if (interactive) optics.gestureModifier else Modifier)
+                .semantics {
+                    contentDescription = "学期"
+                    stateDescription = currentSemester.ifBlank { "未选择" }
+                }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        if (!interactive) return@graphicsLayer
+                        applyChipContentDeformation(
+                            optics = optics,
+                            travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                            stretch = GlassRecipe.ChipDragStretch,
+                            pressDepth = GlassRecipe.ChipIconPressDepth,
+                            damping = GlassRecipe.ChipContentDeformDamping
+                        )
+                    }
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CalendarToday,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                    tint = labelColor
+                )
+                Text(
+                    text = "学期",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = labelColor
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    // 值就是值，不再套一枚"选中的筛选标签"
+                    text = currentSemester.ifBlank { "选择学期" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (currentSemester.isBlank()) {
+                        FontWeight.Normal
+                    } else {
+                        FontWeight.SemiBold
+                    },
+                    color = if (currentSemester.isBlank()) {
+                        labelColor.copy(alpha = labelColor.alpha * 0.72f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "收起学期" else "展开学期",
+                    modifier = Modifier
+                        .size(17.dp)
+                        .rotate(arrowRotation),
+                    tint = labelColor.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        LiquidAnchoredOptionMenu(
+            expanded = expanded,
+            options = semesters.map(::LiquidPickerOption),
+            selectedIndex = semesters.indexOf(currentSemester).takeIf { it >= 0 },
+            anchorWidth = anchorWidth,
+            onSelect = { index -> onSemesterChange(semesters[index]) },
+            onDismiss = { expanded = false }
         )
     }
 }

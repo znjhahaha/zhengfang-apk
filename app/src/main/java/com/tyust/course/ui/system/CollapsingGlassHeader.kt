@@ -8,9 +8,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -33,13 +37,58 @@ import com.tyust.course.ui.system.glass.resolvePhysicalLens
  * 于是把玻璃部分搬到这里；页面各自负责自己的几何与前景排布——那部分本来就该不一样，
  * 硬做成一个"通用折叠顶栏"只会长出一堆互相打架的参数。
  *
- * 两条铁律（都是踩过的坑，改动前先读）：
+ * 三条铁律（都是踩过的坑，改动前先读）：
  * 1. 玻璃层必须是前景内容的【兄弟节点】。`layerBackdrop` 捕获所在节点的整棵子树，
  *    挂在包含按钮的父节点上，按钮就会采样一个含有自己的图层 → RenderThread 死循环
  *    → native SIGSEGV。
  * 2. `vibrancy()` 必须待在强度 guard 里面。它会提亮采样到的那块背景，展开态（强度 0）
  *    若照旧执行，顶栏后面就会留下一张比周围亮一档的"幽灵卡片"。
+ * 3. `drawBackdrop` 的 `highlight`/`shadow`/`innerShadow` 默认值【不是 null】。想要
+ *    "静止态一个像素都不画"，就必须显式传 `{ null }`——否则 guard 里的 effects 全被
+ *    跳过了，库照样沿轮廓描一圈边缘高光。全宽直角矩形的那圈高光就是一条横线。
  */
+
+/**
+ * 玻璃条下缘渐隐。
+ *
+ * **只用于收尾用的细渐隐（≤6dp）。** 它抹掉的是「模糊结果 + 白雾」整块，所以能让
+ * 一层几乎看不见的磨砂不以硬边结束；但**不要拿它去渐隐成条的玻璃**：DstIn 做的事情
+ * 是把"模糊过的那一份"按 alpha 混到"清晰的原图"上，两份图像叠在一起，渐隐区就是一条
+ * 肉眼可见的重影带（14dp 那一版在课程页页眉下面就是一条模糊带）。iOS 的 scroll edge
+ * effect 渐变的是**模糊半径**，单次 `drawBackdrop` 做不到按行改半径——玻璃条的下缘
+ * 就该齐边收尾，它是一条"条"的边界。
+ *
+ * **必须挂在 `drawBackdrop` 之前**（在修饰符链上靠外），否则抹的只是白雾。
+ *
+ * 代价：`CompositingStrategy.Offscreen` 会把绘制裁到节点边界，所以用它的节点不能
+ * 再指望库画投影或边缘高光（那两样本来就画在边界之外/正好在边界上）——调用点都要
+ * 显式 `shadow = { null }`、`highlight = { null }`。
+ */
+internal fun Modifier.glassEdgeFadeBottom(fadeHeight: Dp): Modifier =
+    if (fadeHeight <= 0.dp) {
+        this
+    } else {
+        this
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+            .drawWithContent {
+                drawContent()
+                val fadePx = fadeHeight.toPx().coerceAtMost(size.height)
+                if (fadePx > 0.5f) {
+                    val solidStop = ((size.height - fadePx) / size.height).coerceIn(0f, 1f)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Black,
+                            solidStop to Color.Black,
+                            1f to Color.Transparent
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+            }
+    }
+
+/** 状态栏磨砂的下缘渐隐带。只要 6dp——它是"别以硬边收尾"，不是一层软阴影。 */
+private val StatusBarFrostFade = 6.dp
 
 /**
  * 状态栏细磨砂。唯一职责是让内容滚过时时钟仍可读，
@@ -61,6 +110,7 @@ internal fun StatusBarFrost(
         modifier = Modifier
             .fillMaxWidth()
             .height(height)
+            .glassEdgeFadeBottom(StatusBarFrostFade)
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(0.dp) },
@@ -72,6 +122,12 @@ internal fun StatusBarFrost(
                         if (radius > 0.01f) blur(radius)
                     }
                 },
+                // 【三个都必须显式关掉】库的默认值不是 null：全宽直角矩形的那圈边缘高光
+                // 在屏幕上只剩"下缘一道亮线"，而这个节点在展开态（collapse = 0）本来
+                // 一个像素都不该画——用户看到的"每页顶部一条横带"就是它。
+                highlight = { null },
+                shadow = { null },
+                innerShadow = { null },
                 onDrawSurface = { drawRect(tint) }
             )
     )
