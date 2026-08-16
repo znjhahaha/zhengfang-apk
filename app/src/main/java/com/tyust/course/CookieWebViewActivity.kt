@@ -264,7 +264,7 @@ fun CookieWebViewScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Text(
-                        text = "💡 请先登录教务系统，再点击上方按钮获取 Cookie",
+                        text = "请先在页面中登录教务系统，再点击上方按钮获取 Cookie",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

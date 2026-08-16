@@ -302,7 +302,7 @@ fun GrabProRoute() {
                 context.startService(serviceIntent)
             }
             
-            appendLog("🚀 开始队列抢课: ${queueList.size} 门课程 (直接请求模式)")
+            appendLog("开始队列抢课：${queueList.size} 门课程（直接请求模式）")
             isRunning = true
             GlassToaster.show("队列抢课进程已启动")
         } else if (targetCourse != null) {
@@ -329,11 +329,11 @@ fun GrabProRoute() {
                 context.startService(serviceIntent)
             }
             
-            appendLog("🚀 开始后台抢课: ${targetCourse.name}")
+            appendLog("开始后台抢课：${targetCourse.name}")
             isRunning = true
             GlassToaster.show("后台抢课已启动")
         } else {
-            GlassToaster.show("请先在\"课程\"页面长按选择要抢的课程，或在下方添加课程到队列")
+            GlassToaster.show("请先在「课程」页面长按选择要抢的课程，或在下方添加课程到队列")
         }
     }
     
@@ -370,9 +370,9 @@ fun GrabProRoute() {
             context.startService(serviceIntent)
         }
         
-        appendLog("🔍 启动模糊匹配模式: $fuzzyTargetName")
+        appendLog("启动模糊匹配模式：$fuzzyTargetName")
         isRunning = true
-        GlassToaster.show("模糊匹配监控已启动: $fuzzyTargetName")
+        GlassToaster.show("模糊匹配监控已启动：$fuzzyTargetName")
     }
     
     fun stopGrabbing() {
@@ -384,7 +384,7 @@ fun GrabProRoute() {
         SmartSelector.getInstance().stop()
         SmartSelector.getInstance().setFuzzyMatchEnabled(false) // 🔧 关闭模糊匹配模式
         
-        appendLog("⏹ 已停止抢课")
+        appendLog("已停止抢课")
         isRunning = false
     }
     
@@ -741,7 +741,7 @@ fun GrabProRoute() {
                                     if (tempCourse.teacher.isNotEmpty()) append(" | ${tempCourse.teacher}")
                                     if (tempCourse.time.isNotEmpty()) append(" | ${tempCourse.time}")
                                 }
-                                GlassToaster.show("已添加: $displayInfo")
+                                GlassToaster.show("已添加：$displayInfo")
                             } else {
                                 GlassToaster.show("课程「${tempCourse.name}」已在队列中")
                             }

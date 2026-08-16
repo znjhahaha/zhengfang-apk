@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">正方选课工具</string>
+    <string name="app_name">正方教务助手</string>
     <string name="login_title">登录教务系统</string>
     <string name="username">学号</string>
     <string name="password">密码</string>
     <string name="captcha">验证码</string>
     <string name="login_btn">登录</string>
-    <string name="loading">加载中...</string>
+    <string name="loading">加载中…</string>
     <string name="refresh_captcha">看不清？换一张</string>
     <string name="school_select">选择学校</string>
 </resources>

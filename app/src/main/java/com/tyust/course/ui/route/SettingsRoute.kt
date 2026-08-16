@@ -99,6 +99,9 @@ fun SettingsRoute(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCreditsDialog by remember { mutableStateOf(false) }
     var showQuotaDialog by remember { mutableStateOf(false) }
+    var showAccountManagerDialog by remember { mutableStateOf(false) }
+    var pendingPasswordDelete by remember { mutableStateOf<UserManager.AccountRecord?>(null) }
+    var pendingAccountDelete by remember { mutableStateOf<UserManager.AccountRecord?>(null) }
     var showSchoolAdaptation by remember { mutableStateOf(false) }
     var showWallpaperDialog by remember { mutableStateOf(false) }
     val currentWallpaper = com.tyust.course.manager.AppearanceSettingsManager.wallpaper
@@ -110,6 +113,9 @@ fun SettingsRoute(
     var quotaMaxCount by remember { mutableIntStateOf(0) }
     var quotaBoundNames by remember { mutableStateOf<List<String>>(emptyList()) }
     var quotaAccounts by remember { mutableStateOf<List<UserManager.AccountRecord>>(emptyList()) }
+    // 账号管理走全量列表（跨学校）：这里是"管理"，不该被当前学校过滤掉
+    var allAccounts by remember { mutableStateOf<List<UserManager.AccountRecord>>(emptyList()) }
+    var accountsWithPassword by remember { mutableStateOf<Set<String>>(emptySet()) }
     var currentAccountKey by remember { mutableStateOf("") }
     var canRefreshCookie by remember { mutableStateOf(false) }
     var isRefreshingCookie by remember { mutableStateOf(false) }
@@ -141,6 +147,11 @@ fun SettingsRoute(
         quotaMaxCount = maxStudents
         quotaBoundNames = usedNames.toList()
         quotaAccounts = userManager.accountsForCurrentSchool
+        allAccounts = userManager.savedAccounts
+        accountsWithPassword = allAccounts
+            .filter { userManager.hasSavedPassword(it.key) }
+            .map { it.key }
+            .toSet()
         currentAccountKey = userManager.currentAccountKey
         canRefreshCookie = userManager.loginMode == "password"
         quotaInfo = if (isSuper) {
@@ -162,10 +173,47 @@ fun SettingsRoute(
         context.startActivity(intent)
         // If context is not activity, clean task might need validation but usually safe
     }
+
+    fun switchAccount(accountKey: String, onSwitched: () -> Unit) {
+        if (accountKey == currentAccountKey) return
+        if (UserManager.getInstance().switchToAccount(accountKey)) {
+            refreshAccountUiState()
+            onSwitched()
+            onAccountChanged()
+            GlassToaster.show("已切换账号")
+        } else {
+            GlassToaster.show("账号切换失败，请重新登录")
+        }
+    }
+
+    /** 只删密码：账号还在，但不再自动续期，下次失效需要手动登录。 */
+    fun deleteAccountPassword(record: UserManager.AccountRecord) {
+        UserManager.getInstance().deletePassword(record.key)
+        refreshAccountUiState()
+        GlassToaster.show("已删除该账号保存的密码")
+    }
+
+    /** 彻底删号：账号记录 + 已存密码 + 运行期 Cookie + 本地课程缓存。 */
+    fun deleteAccountEntirely(record: UserManager.AccountRecord) {
+        val userManager = UserManager.getInstance()
+        val isCurrent = record.key == userManager.currentAccountKey
+        val storageKey = userManager.deleteAccount(record.key)
+        if (storageKey.isNotEmpty()) {
+            com.tyust.course.manager.CourseCacheManager.clearAccountCache(context, storageKey)
+        }
+        refreshAccountUiState()
+        if (isCurrent) {
+            // 当前账号被删掉，会话已经没有依据了，直接回登录页
+            GlassToaster.show("账号已删除，请重新登录")
+            performLogout()
+        } else {
+            GlassToaster.show("账号已删除")
+        }
+    }
     
     fun checkForUpdate() {
         isCheckingUpdate = true
-        GlassToaster.show("正在检查更新...")
+        GlassToaster.show("正在检查更新…")
         
         updateManager.checkForUpdate { info ->
             isCheckingUpdate = false
@@ -213,14 +261,14 @@ fun SettingsRoute(
             return
         }
         if (!userManager.canAutoRelogin()) {
-            GlassToaster.show("当前会话未保存密码，请重新使用密码登录后再更新")
+            GlassToaster.show("未找到该账号的已存密码，请重新登录后再更新")
             return
         }
 
         val requestAccountKey = userManager.currentAccountStorageKey
         val requestSchoolId = school.id
         val requestUsername = userManager.username
-        val requestPassword = userManager.sessionPassword
+        val requestPassword = userManager.accountPassword
         isRefreshingCookie = true
         val gateway = PasswordLoginGatewayFactory.create(school)
         gateway.login(school, requestUsername, requestPassword, object : PasswordLoginCallback {
@@ -321,6 +369,8 @@ fun SettingsRoute(
         currentVersion = currentVersion,
         onSchoolSelect = { showSchoolDialog = true },
         onCookieConfig = { performLogout() },
+        onAccountManage = { showAccountManagerDialog = true },
+        savedAccountCount = allAccounts.size,
         onClearCache = { showClearCacheDialog = true },
         onCheckUpdate = { checkForUpdate() },
         onAbout = { showAboutDialog = true },
@@ -574,18 +624,52 @@ fun SettingsRoute(
             accounts = quotaAccounts,
             currentAccountKey = currentAccountKey,
             onSwitchAccount = { accountKey ->
-                if (accountKey == currentAccountKey) return@QuotaStatusDialog
-                val switched = UserManager.getInstance().switchToAccount(accountKey)
-                if (switched) {
-                    refreshAccountUiState()
-                    showQuotaDialog = false
-                    onAccountChanged()
-                    GlassToaster.show("已切换账号")
-                } else {
-                    GlassToaster.show("账号切换失败，请重新登录")
-                }
+                switchAccount(accountKey) { showQuotaDialog = false }
             },
             onDismiss = { showQuotaDialog = false }
+        )
+    }
+
+    if (showAccountManagerDialog) {
+        AccountManagerDialog(
+            accounts = allAccounts,
+            currentAccountKey = currentAccountKey,
+            accountsWithPassword = accountsWithPassword,
+            onSwitchAccount = { accountKey ->
+                switchAccount(accountKey) { showAccountManagerDialog = false }
+            },
+            onDeletePassword = { pendingPasswordDelete = it },
+            onDeleteAccount = { pendingAccountDelete = it },
+            onDismiss = { showAccountManagerDialog = false }
+        )
+    }
+
+    pendingPasswordDelete?.let { record ->
+        SimpleConfirmDialog(
+            title = "删除已保存的密码",
+            text = "删除后「${record.displayName}」将无法在登录状态失效时自动续期，" +
+                "需要你手动重新登录。账号本身与本地数据不会被删除。",
+            confirmText = "删除密码",
+            onConfirm = {
+                deleteAccountPassword(record)
+                pendingPasswordDelete = null
+            },
+            onDismiss = { pendingPasswordDelete = null }
+        )
+    }
+
+    pendingAccountDelete?.let { record ->
+        SimpleConfirmDialog(
+            title = "删除账号",
+            text = "将删除「${record.displayName}」的账号记录、已保存的密码、登录状态与本地课程缓存，" +
+                "此操作不可恢复。设备绑定名额不会因此释放。",
+            confirmText = "删除账号",
+            onConfirm = {
+                deleteAccountEntirely(record)
+                pendingAccountDelete = null
+                showAccountManagerDialog = false
+            },
+            onDismiss = { pendingAccountDelete = null }
         )
     }
 
@@ -638,7 +722,7 @@ fun SettingsRoute(
                             .clickable {
                                 UserManager.getInstance().clearLoginState()
                                 UserManager.getInstance().currentSchool = school
-                                GlassToaster.show("已切换到: ${school.name}")
+                                GlassToaster.show("已切换到：${school.name}")
                                 performLogout()
                                 dismiss()
                             }
@@ -856,6 +940,170 @@ private fun QuotaStatusDialog(
                 lineHeight = 18.sp
             )
         }
+    }
+}
+
+@Composable
+private fun AccountManagerDialog(
+    accounts: List<UserManager.AccountRecord>,
+    currentAccountKey: String,
+    accountsWithPassword: Set<String>,
+    onSwitchAccount: (String) -> Unit,
+    onDeletePassword: (UserManager.AccountRecord) -> Unit,
+    onDeleteAccount: (UserManager.AccountRecord) -> Unit,
+    onDismiss: () -> Unit
+) {
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "账号管理",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "切换账号、管理已保存的密码",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "完成",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (accounts.isEmpty()) {
+                Text(
+                    text = "本机还没有保存任何账号。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                accounts.forEach { account ->
+                    val isCurrent = account.key == currentAccountKey
+                    val hasPassword = accountsWithPassword.contains(account.key)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = if (isCurrent) NeuPrimary.copy(alpha = 0.12f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = account.displayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${account.accountIdText} · " +
+                                            if (account.loginMode == "password") "密码登录" else "Cookie 登录",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = account.schoolName.ifBlank { "未记录学校" },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                SystemStatusBadge(
+                                    text = if (hasPassword) "已存密码" else "未存密码",
+                                    tone = if (hasPassword) SystemTone.Success else SystemTone.Neutral
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isCurrent) {
+                                    SystemStatusBadge(text = "当前账号", tone = SystemTone.Info)
+                                } else {
+                                    AccountActionButton(
+                                        text = "切换",
+                                        onClick = { onSwitchAccount(account.key) }
+                                    )
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                                if (hasPassword) {
+                                    AccountActionButton(
+                                        text = "删除密码",
+                                        onClick = { onDeletePassword(account) }
+                                    )
+                                }
+                                AccountActionButton(
+                                    text = "删除账号",
+                                    tint = com.tyust.course.ui.theme.SemanticDanger,
+                                    onClick = { onDeleteAccount(account) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "密码经系统密钥库加密后仅保存在本机，用于登录状态失效时自动续期；" +
+                    "退出登录不会删除它。删除账号不会释放设备绑定名额。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+/** 账号卡里的小动作按钮：轻量胶囊，避免三个实心按钮在一行里互相抢注意力。 */
+@Composable
+private fun AccountActionButton(
+    text: String,
+    tint: Color = NeuPrimary,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = tint.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = tint
+        )
     }
 }
 

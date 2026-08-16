@@ -102,11 +102,6 @@ fun SelectedCoursesScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "📚",
-                                        style = MaterialTheme.typography.titleLarge
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
                                         text = "已选 ${courses.size} 门课程",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,

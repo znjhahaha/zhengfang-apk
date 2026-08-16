@@ -84,10 +84,27 @@ object CookieWatchdog {
                             html.contains("name=\"yhm\"")
 
                     if (isExpired) {
-                        Log.e(TAG, "Cookie expired! Sending broadcast...")
-                        CourseApiClient.getInstance().notifyCookieExpired(requestAccountStorageKey)
-                        // 过期后停止检查（等用户重新登录后会重新启动）
-                        running = false
+                        Log.w(TAG, "Cookie expired, trying silent renewal first")
+                        val ctx = context
+                        if (ctx != null && SessionRenewer.canRenew()) {
+                            SessionRenewer.renew(ctx) { renewed ->
+                                if (renewed) {
+                                    // 续期成功就继续巡检 —— 原先这里把 running 永久关掉，
+                                    // 一次过期之后整个看门狗就再也不工作了
+                                    Log.d(TAG, "Cookie renewed, keep watching")
+                                    scheduleNext()
+                                } else {
+                                    Log.e(TAG, "Renewal failed, notifying expiry")
+                                    CourseApiClient.getInstance().notifyCookieExpired(requestAccountStorageKey)
+                                    running = false
+                                    handler.removeCallbacks(checkRunnable)
+                                }
+                            }
+                        } else {
+                            Log.e(TAG, "Cookie expired and cannot renew, notifying expiry")
+                            CourseApiClient.getInstance().notifyCookieExpired(requestAccountStorageKey)
+                            running = false
+                        }
                         return
                     }
                     Log.d(TAG, "Cookie valid")

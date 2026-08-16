@@ -177,7 +177,7 @@ fun EditSchoolConfigDialog(
                         value = urlInput,
                         onValueChange = { urlInput = it },
                         label = { Text("粘贴教务系统 URL") },
-                        placeholder = { Text("http://xxx.edu.cn/jwglxt/...") },
+                        placeholder = { Text("http://jwxt.example.edu.cn/jwglxt") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)

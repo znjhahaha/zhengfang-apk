@@ -84,6 +84,7 @@ import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
 import com.tyust.course.ui.system.CapsuleNavigationBar
 import com.tyust.course.ui.system.DialogHost
 import com.tyust.course.ui.system.GlassToastHost
+import com.tyust.course.ui.system.GlassToaster
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.drawWallpaperPattern
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
@@ -228,6 +229,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     )
     val updateState = rememberUpdateState()
     var isTokenExpired by remember { mutableStateOf(false) }
+    var isRenewingSession by remember { mutableStateOf(false) }
 
     // 底栏滚动最小化：捕获页面内任意滚动的方向（nested scroll 冒泡，页面零改动）
     var navBarMinimized by remember { mutableStateOf(false) }
@@ -258,9 +260,28 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     val eventAccountKey = intent.getStringExtra(com.tyust.course.network.CourseApiClient.EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
                     val currentAccountKey = UserManager.getInstance().currentAccountStorageKey
                     if (eventAccountKey.isNotEmpty() && eventAccountKey != currentAccountKey) return
-                    // 幂等闸门：已在提醒态就不重复弹，避免多次 401 连环触发。
-                    // Toast 由过期处理链自带（GradesRoute.handleExpiredCookie），此处只驱动 Banner。
-                    isTokenExpired = true
+                    // 先试静默续期，横幅是最后手段：密码已加密存在本机，多数情况下
+                    // 用户完全不需要知道会话失效过。SessionRenewer 内部单飞，
+                    // 连环 401 不会打出多次登录请求。
+                    if (com.tyust.course.utils.SessionRenewer.canRenew()) {
+                        if (!isRenewingSession) {
+                            isRenewingSession = true
+                            GlassToaster.show("登录状态已失效，正在自动续期…")
+                        }
+                        com.tyust.course.utils.SessionRenewer.renew(fragmentActivity) { renewed ->
+                            isRenewingSession = false
+                            if (renewed) {
+                                isTokenExpired = false
+                                GlassToaster.show("登录状态已恢复")
+                                // 看门狗在失败分支里把自己停了，续上之后重新挂起来
+                                com.tyust.course.utils.CookieWatchdog.start(fragmentActivity)
+                            } else {
+                                isTokenExpired = true
+                            }
+                        }
+                    } else {
+                        isTokenExpired = true
+                    }
                 }
             }
         }
@@ -302,7 +323,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val useGlass = isBackdropSupported()
         val tokenExpiredNotice = if (isTokenExpired) {
             FloatingNotice(
-                message = "登录已过期",
+                message = "登录状态已失效",
                 actionLabel = "重新登录",
                 onClick = {
                     val intent = Intent(fragmentActivity, LoginActivity::class.java)
@@ -501,15 +522,15 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
             if (showStarDialog) {
                 val dialogTitle = when (dismissCount) {
-                    0 -> "点个 Star 支持一下 ⭐"
-                    1 -> "小小的 Star，大大的支持 ⭐"
-                    else -> "最后一次求 Star 支持 ⭐"
+                    0 -> "在 GitHub 上支持这个项目"
+                    1 -> "一个 Star，就是最好的反馈"
+                    else -> "最后一次邀请"
                 }
 
                 val dialogText = when (dismissCount) {
-                    0 -> "哈喽！感谢你使用抢课助手。\n\n如果你觉得这个应用对你有帮助，欢迎给我们的 GitHub 仓库点一颗 Star ⭐！你的支持是我们持续优化的最大动力～"
-                    1 -> "嗨，又见面啦！我们一直在努力优化体验。\n\n如果抢课助手帮到了你，不妨花几秒钟去 GitHub 点个 Star ⭐ 支持一下作者吧，非常感谢！"
-                    else -> "这是最后一次打扰啦～\n\n写这个小工具很不容易，如果你喜欢它，真心希望能得到你的一颗 Star ⭐ 鼓励。非常感谢一路以来的陪伴！"
+                    0 -> "感谢使用正方教务助手。\n\n如果它帮到了你，欢迎去 GitHub 仓库点一个 Star —— 这是项目持续维护最直接的动力。"
+                    1 -> "我们仍在持续优化体验。\n\n如果这个应用对你有用，花几秒钟给仓库点个 Star，就是对作者最好的支持。"
+                    else -> "这是最后一次提示。\n\n如果你愿意，欢迎去 GitHub 留下一个 Star；无论如何，都感谢你的使用。"
                 }
 
                 // 走 DialogHost portal（同窗口渲染），玻璃采样与按钮显示才正确

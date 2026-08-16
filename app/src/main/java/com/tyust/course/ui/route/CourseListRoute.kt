@@ -382,7 +382,7 @@ fun CourseListRoute() {
         courses = emptyList()
         displayParams = emptyMap() // 🔧 刷新时清除旧参数，防止交互锁误判
         if (forceRefresh) {
-            GlassToaster.show("正在刷新课程列表...")
+            GlassToaster.show("正在刷新课程列表…")
         }
 
         CourseApiClient.getInstance().fetchCourseParams(school, object : Callback {
@@ -391,7 +391,7 @@ fun CourseListRoute() {
                     isLoading = false
                     isFilterOptionsLoading = false
                     filterOptionsMessage = "筛选条件加载失败，请下拉刷新重试"
-                    GlassToaster.show("获取选课参数失败: ${e.message}")
+                    GlassToaster.show("获取选课参数失败：${e.message}")
                 }
             }
 
@@ -414,7 +414,7 @@ fun CourseListRoute() {
                                 courses = newCourses
                                 isLoading = false
                                 if (forceRefresh) {
-                                    GlassToaster.show("刷新完成: ${newCourses.size} 门课程")
+                                    GlassToaster.show("刷新完成：${newCourses.size} 门课程")
                                 }
                             }
                         },
@@ -976,7 +976,7 @@ fun CourseListRoute() {
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
                         if (!success) {
-                            GlassToaster.show("❗获取详情失败，请重新点击展开")
+                            GlassToaster.show("获取课程详情失败，请重新点击展开")
                         }
                         onComplete(success)
                     }
@@ -984,7 +984,7 @@ fun CourseListRoute() {
                     android.util.Log.e("CourseListRoute", "获取详情失败: ${e.message}")
                     withContext(Dispatchers.Main) {
                         if (!isCurrentAccount(requestAccountKey)) return@withContext
-                        GlassToaster.show("❗网络错误: ${e.message}")
+                        GlassToaster.show("网络错误：${e.message}")
                         onComplete(false)
                     }
                 }
@@ -999,7 +999,7 @@ fun CourseListRoute() {
             val school = userManager.currentSchool ?: return
             val requestAccountKey = userManager.currentAccountStorageKey
             val paramsSnapshot = courseParams?.toMap()
-            GlassToaster.show("正在选课: ${course.name}...")
+            GlassToaster.show("正在选课：${course.name}…")
             
             // 使用协程异步执行选课，完成后显示结果
             scope.launch(Dispatchers.IO) {
@@ -1010,7 +1010,7 @@ fun CourseListRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     if (result) {
-                        GlassToaster.show("✅ 选课成功: ${course.name}")
+                        GlassToaster.show("选课成功：${course.name}")
                         course.isSelected = true
                         // 🔧 强制刷新 UI 并保存到持久化缓存
                         courses = courses.toList()
@@ -1057,7 +1057,7 @@ fun CourseListRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isBatchSelecting = false
-                    GlassToaster.show("批量抢课完成！成功: $successCount 门，失败: $failCount 门")
+                    GlassToaster.show("批量抢课完成！成功：$successCount 门，失败：$failCount 门")
                 }
             }
         }
@@ -1284,7 +1284,7 @@ fun CourseListRoute() {
                         onSearch = { onSearch(it) },
                         onCourseSelect = { course ->
                             if (course.isSelected) {
-                                GlassToaster.show("课程已选: ${course.name}")
+                                GlassToaster.show("课程已选：${course.name}")
                             } else {
                                 scope.launch { performSelection(course) }
                             }
@@ -1325,14 +1325,14 @@ fun CourseListRoute() {
                                     Log.e("CourseListRoute", "Error resetting queue status: ${e.message}")
                                 }
                                 
-                                GlassToaster.show("已加入抢课队列: ${course.name}")
+                                GlassToaster.show("已加入抢课队列：${course.name}")
                             } else {
-                                GlassToaster.show("已经在队列中: ${course.name}")
+                                GlassToaster.show("已经在队列中：${course.name}")
                             }
                         },
                         onSetTargetCourse = { course ->
                             SmartSelector.getInstance().setTargetCourse(course)
-                            GlassToaster.show("🎯 已设为目标课程: ${course.name}")
+                            GlassToaster.show("已设为目标课程：${course.name}")
                         },
                         // 🔧 模糊匹配目标设置
                         onSetFuzzyMatchTarget = { courseId, courseName, xkkzId, kklxdm ->
@@ -1841,7 +1841,7 @@ private class CourseSelectionLogic(
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     postToCurrentAccount {
-                        GlassToaster.show("获取选课详情失败: ${e.message}")
+                        GlassToaster.show("获取选课详情失败：${e.message}")
                     }
                 }
 
@@ -2167,7 +2167,7 @@ private class CourseSelectionLogic(
          CourseApiClient.getInstance().selectCourse(school, postBody, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 postToCurrentAccount {
-                    GlassToaster.show("请求失败: ${e.message}")
+                    GlassToaster.show("请求失败：${e.message}")
                 }
             }
 
@@ -2177,11 +2177,11 @@ private class CourseSelectionLogic(
                 
                 postToCurrentAccount {
                     if (success) {
-                        GlassToaster.show("✅ 选课请求成功，请刷新列表确认")
+                        GlassToaster.show("选课请求已提交，请刷新列表确认")
                     } else {
                         // 🔧 直接显示服务器返回的错误信息
                         val errorMsg = parseServerErrorMessage(result)
-                        GlassToaster.show("❌ $errorMsg")
+                        GlassToaster.show(errorMsg)
                     }
                 }
             }

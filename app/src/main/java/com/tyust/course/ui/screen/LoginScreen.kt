@@ -31,8 +31,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tyust.course.ui.system.GlassMaterialRole
-import com.tyust.course.ui.system.GlassMaterials
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.system.LocalAppBackdrop
@@ -41,15 +39,11 @@ import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPicker
-import com.tyust.course.ui.system.glass.resolvePhysicalLens
+import com.tyust.course.ui.system.glass.glassSheet
 import com.tyust.course.ui.theme.*
 
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
@@ -199,7 +193,7 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                        text = "抢课助手",
+                        text = "正方教务助手",
                         style = MaterialTheme.typography.headlineLarge,
                         color = Neutral900,
                         fontWeight = FontWeight.ExtraBold,
@@ -209,7 +203,7 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     
                     Text(
-                        text = "极致纯粹的规则代理工具",
+                        text = "正方教务系统第三方客户端",
                         style = MaterialTheme.typography.bodyLarge,
                         color = Neutral500,
                         fontWeight = FontWeight.Medium
@@ -225,49 +219,11 @@ fun LoginScreen(
                 enter = loginPanelEnter
             ) {
                 val sheetShape = RoundedCornerShape(28.dp)
-                val sheetMaterial = GlassMaterials.resolve(
-                    role = GlassMaterialRole.Modal,
-                    accessibility = accessibility
-                )
-                val sheetSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-                    alpha = sheetMaterial.surfaceAlpha
-                )
+                // 配方搬到了 Modifier.glassSheet（引导页复用同一件），参数一一对齐，视觉不变
                 val cardGlassMod = if (backdrop != null && isBackdropSupported()) {
                     Modifier
                         .fillMaxWidth()
-                        .drawBackdrop(
-                            backdrop = backdrop,
-                            shape = { sheetShape },
-                            effects = {
-                                val params = resolvePhysicalLens(
-                                    density = this,
-                                    material = sheetMaterial,
-                                    shape = sheetShape,
-                                    minCornerRadiusPx = 28f.dp.toPx(),
-                                    minDimensionPx = size.minDimension,
-                                    interactionProgress = 0f,
-                                    enableBlur = true,
-                                    allowChromaticAberration = false
-                                )
-                                vibrancy()
-                                if (params.blurPx > 0f) blur(params.blurPx)
-                                if (params.useLens) {
-                                    lens(
-                                        refractionHeight = params.refractionHeightPx,
-                                        refractionAmount = params.refractionAmountPx,
-                                        chromaticAberration = params.chromaticAberration
-                                    )
-                                }
-                            },
-                            onDrawSurface = {
-                                drawRect(sheetSurfaceColor)
-                                drawRoundRect(
-                                    color = Color.White.copy(alpha = sheetMaterial.borderAlpha),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(28f.dp.toPx()),
-                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5f.dp.toPx())
-                                )
-                            }
-                        )
+                        .glassSheet(backdrop = backdrop, cornerRadius = 28.dp)
                 } else {
                     null
                 }
@@ -278,7 +234,7 @@ fun LoginScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "Cookie 登录",
+                                text = if (loginTab == 0 && onPasswordLogin != null) "登录教务系统" else "Cookie 登录",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = Neutral900,
@@ -302,7 +258,11 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         Text(
-                            text = "请从浏览器复制登录状态下所需的会话凭证",
+                            text = if (loginTab == 0 && onPasswordLogin != null) {
+                                "使用教务系统的学号与密码登录"
+                            } else {
+                                "请从浏览器复制教务系统登录后的会话 Cookie"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = Neutral500,
                             textAlign = TextAlign.Center
@@ -312,7 +272,7 @@ fun LoginScreen(
                         
                         // School Selector
                         Text(
-                            text = "选择教务系统预设配置",
+                            text = "选择学校",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = Neutral700,
@@ -347,7 +307,7 @@ fun LoginScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = "请选择学校",
-                            actionLabel = "+ 配置新终端",
+                            actionLabel = "+ 添加学校",
                             onAction = { showAddSchoolDialog = true },
                             backdrop = backdrop
                         )
@@ -487,7 +447,7 @@ fun LoginScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(120.dp),
-                            placeholder = "粘贴 Cookie 字符串...",
+                            placeholder = "粘贴 Cookie 字符串",
                             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                             singleLine = false,
@@ -524,7 +484,7 @@ fun LoginScreen(
                         // Login Button
                         if (loginTab == 0 && onPasswordLogin != null) {
                             SystemPrimaryButton(
-                                text = if (isLoading) "登入中…" else "密码登录",
+                                text = if (isLoading) "登录中…" else "密码登录",
                                 onClick = { onPasswordLogin(username, password) },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -533,7 +493,7 @@ fun LoginScreen(
                             )
                         } else {
                             SystemPrimaryButton(
-                                text = if (isLoading) "登入中…" else "登入控制台",
+                                text = if (isLoading) "登录中…" else "Cookie 登录",
                                 onClick = { onLoginClick(cookie) },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -643,7 +603,7 @@ fun LoginScreen(
             // Version Text
             AnimatedVisibility(visible = visible, enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(800))) {
                 Text(
-                    text = "Tyust Course Matrix • Version 2.0",
+                    text = "正方教务助手 · 第三方客户端",
                     style = MaterialTheme.typography.labelSmall,
                     color = Neutral300,
                     letterSpacing = 1.sp
@@ -744,7 +704,7 @@ fun BindingConfirmationDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "🔐 确认绑定账号",
+                text = "确认绑定账号",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -809,7 +769,7 @@ fun BindingConfirmationDialog(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "📊 绑定配额：",
+                            text = "绑定配额：",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -823,7 +783,7 @@ fun BindingConfirmationDialog(
                     if (usedNames.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "👥 已绑定：${usedNames.joinToString("、")}",
+                            text = "已绑定：${usedNames.joinToString("、")}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -834,7 +794,7 @@ fun BindingConfirmationDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "⚠️ 确认后此账号将与本设备永久绑定，完成后将占用 1 个名额，无法撤销。",
+                text = "确认后此账号将与本设备永久绑定，占用 1 个名额，且无法撤销。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -971,7 +931,7 @@ fun AddSchoolDialog(
                         modifier = Modifier.padding(12.dp)
                     ) {
                         Text(
-                            text = "🪄 智能识别",
+                            text = "智能识别",
                             style = MaterialTheme.typography.labelLarge,
                             color = NeuPrimary,
                             fontWeight = FontWeight.Medium
@@ -983,7 +943,7 @@ fun AddSchoolDialog(
                             value = urlInput,
                             onValueChange = { urlInput = it },
                             label = { Text("粘贴教务系统 URL") },
-                            placeholder = { Text("http://jwxt.xxx.edu.cn/...") },
+                            placeholder = { Text("http://jwxt.example.edu.cn/jwglxt") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp)
@@ -1006,8 +966,8 @@ fun AddSchoolDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("学校名称 (可选)") },
-                    placeholder = { Text("例如: XX大学") },
+                    label = { Text("学校名称（可选）") },
+                    placeholder = { Text("例如：XX 大学") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)

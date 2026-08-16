@@ -22,7 +22,8 @@ public class UserManager {
     private boolean isLoggedIn = false;
     private boolean isDemoMode = false;
     private String savedCookie = "";
-    private String sessionPassword = ""; // 内存中保存，用于会话期间自动刷新Cookie，不持久化
+    // 内存缓存，避免每次续期都过一次 Keystore 解密；真正的落盘在 CredentialStore
+    private String sessionPassword = "";
     private String currentAccountKey = "";
     private final Map<String, String> sessionPasswords = new HashMap<>();
     private List<Course> selectedCourses = new ArrayList<>();
@@ -339,6 +340,10 @@ public class UserManager {
             currentAccountKey = key;
             if (!this.sessionPassword.isEmpty()) {
                 sessionPasswords.put(key, this.sessionPassword);
+                // 落盘（Keystore 加密）：冷启动后仍能静默续期，这是"账号永久保存"的落点
+                if (appContext != null) {
+                    CredentialStore.INSTANCE.save(appContext, key, this.sessionPassword);
+                }
             }
         }
         if (appContext != null) {
@@ -351,19 +356,81 @@ public class UserManager {
         saveLoginState();
     }
 
-    /** 获取会话期间保存的密码（仅内存，不持久化） */
-    public String getSessionPassword() {
-        if (currentAccountKey != null && !currentAccountKey.isEmpty() && sessionPasswords.containsKey(currentAccountKey)) {
-            return sessionPasswords.get(currentAccountKey);
+    /**
+     * 当前账号的密码。内存缓存 miss 就回 {@link CredentialStore} 解密读取，
+     * 所以杀进程重开之后依然拿得到 —— 会话失效时的自动续期靠的就是这一条。
+     */
+    public String getAccountPassword() {
+        String key = currentAccountKey;
+        if (key != null && !key.isEmpty()) {
+            String cached = sessionPasswords.get(key);
+            if (cached != null && !cached.isEmpty()) return cached;
+            if (appContext != null) {
+                String stored = CredentialStore.INSTANCE.load(appContext, key);
+                if (stored != null && !stored.isEmpty()) {
+                    sessionPasswords.put(key, stored);
+                    sessionPassword = stored;
+                    return stored;
+                }
+            }
         }
         return sessionPassword != null ? sessionPassword : "";
+    }
+
+    /** 指定账号是否有已保存的密码（账号管理界面用来决定要不要显示"删除密码"）。 */
+    public boolean hasSavedPassword(String accountKey) {
+        if (accountKey == null || accountKey.isEmpty()) return false;
+        String cached = sessionPasswords.get(accountKey);
+        if (cached != null && !cached.isEmpty()) return true;
+        return appContext != null && CredentialStore.INSTANCE.has(appContext, accountKey);
+    }
+
+    /** 只删密码，账号记录与 Cookie 保留：之后仍能用这个账号，但不再自动续期。 */
+    public void deletePassword(String accountKey) {
+        if (accountKey == null || accountKey.isEmpty()) return;
+        sessionPasswords.remove(accountKey);
+        if (accountKey.equals(currentAccountKey)) {
+            sessionPassword = "";
+        }
+        if (appContext != null) {
+            CredentialStore.INSTANCE.remove(appContext, accountKey);
+        }
+        Log.d(TAG, "已删除账号密码: " + accountKey);
+    }
+
+    /**
+     * 彻底删除一个账号：账号记录、已存密码、运行期 Cookie。
+     *
+     * @return 该账号的 storage key，方便调用方接着清它的本地缓存
+     *         （{@code CourseCacheManager.clearAccountCache}）；账号不存在时返回空串。
+     */
+    public String deleteAccount(String accountKey) {
+        if (accountKey == null || accountKey.isEmpty()) return "";
+        String storageKey = toStorageKey(accountKey);
+
+        List<AccountRecord> records = loadAccountRecords();
+        boolean removed = records.removeIf(record -> accountKey.equals(record.key));
+        if (removed) {
+            saveAccountRecords(records);
+        }
+
+        deletePassword(accountKey);
+
+        try {
+            CourseApiClient.getInstance().clearCookies(storageKey);
+        } catch (Exception e) {
+            Log.w(TAG, "清理账号 Cookie 失败: " + e.getMessage());
+        }
+
+        Log.d(TAG, "已删除账号: " + accountKey + " (removed=" + removed + ")");
+        return storageKey;
     }
 
     /** 是否可以通过密码模式自动刷新 Cookie */
     public boolean canAutoRelogin() {
         return "password".equals(getLoginMode())
                 && !getUsername().isEmpty()
-                && !getSessionPassword().isEmpty()
+                && !getAccountPassword().isEmpty()
                 && currentSchool != null;
     }
 
@@ -570,6 +637,12 @@ public class UserManager {
         if (key.isEmpty() && currentSchool != null) {
             key = currentSchool.id + "::" + firstNotBlank(getUsername(), studentId, studentName, "default");
         }
+        return toStorageKey(key);
+    }
+
+    /** 账号 key → 运行期/缓存用的 storage key。两处必须走同一条规则，否则清不干净。 */
+    private String toStorageKey(String accountKey) {
+        String key = accountKey != null ? accountKey : "";
         if (key.isEmpty()) key = "default";
         return key.replaceAll("[^A-Za-z0-9_.-]", "_");
     }
@@ -595,7 +668,18 @@ public class UserManager {
         currentAccountKey = record.key != null ? record.key : "";
         isLoggedIn = true;
         isDemoMode = false;
-        sessionPassword = sessionPasswords.containsKey(currentAccountKey) ? sessionPasswords.get(currentAccountKey) : "";
+        // 密码从内存缓存回填，miss 就读 Keystore —— loadLoginState() 也走这里，
+        // 所以这一行就是"杀进程重开后仍能自动续期"的关键。
+        String cachedPassword = sessionPasswords.get(currentAccountKey);
+        if (cachedPassword == null || cachedPassword.isEmpty()) {
+            if (appContext != null && !currentAccountKey.isEmpty()) {
+                cachedPassword = CredentialStore.INSTANCE.load(appContext, currentAccountKey);
+                if (cachedPassword != null && !cachedPassword.isEmpty()) {
+                    sessionPasswords.put(currentAccountKey, cachedPassword);
+                }
+            }
+        }
+        sessionPassword = cachedPassword != null ? cachedPassword : "";
 
         if (persist && appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -632,7 +716,13 @@ public class UserManager {
         }
     }
 
-    // 清除登录状态（退出登录时调用）
+    /**
+     * 清除登录状态（退出登录时调用）。
+     *
+     * **故意不删 {@link CredentialStore} 里的密码**：退出登录只是结束这次会话，
+     * 账号本身是用户资产，重新登录时不该再让他手打一遍密码。真要清掉，
+     * 走「设置 → 账号管理」里的删除动作（{@link #deletePassword} / {@link #deleteAccount}）。
+     */
     public void clearLoginState() {
         String accountStorageKeyToClear = getCurrentAccountStorageKey();
         isLoggedIn = false;

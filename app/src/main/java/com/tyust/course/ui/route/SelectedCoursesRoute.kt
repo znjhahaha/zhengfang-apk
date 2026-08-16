@@ -88,7 +88,7 @@ fun SelectedCoursesRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isLoading = false
-                    GlassToaster.show("加载失败: ${e.message}")
+                    GlassToaster.show("加载失败：${e.message}")
                 }
             }
         }
@@ -118,7 +118,7 @@ fun SelectedCoursesRoute() {
                     isDropping = false
                     // 服务器返回 "1" 或 {"flag":"1"} 都表示成功
                     if (result != null && (result.trim() == "\"1\"" || result.contains("\"flag\":\"1\""))) {
-                        GlassToaster.show("退课成功: ${course.name}")
+                        GlassToaster.show("退课成功：${course.name}")
                         // 同步更新本地缓存的 isSelected 状态
                         val cached = CourseCacheManager.getCachedCourses(context, requestAccountKey)
                         if (cached != null) {
@@ -141,7 +141,7 @@ fun SelectedCoursesRoute() {
                 withContext(Dispatchers.Main) {
                     if (!isCurrentAccount(requestAccountKey)) return@withContext
                     isDropping = false
-                    GlassToaster.show("退课异常: ${e.message}")
+                    GlassToaster.show("退课异常：${e.message}")
                 }
             }
         }

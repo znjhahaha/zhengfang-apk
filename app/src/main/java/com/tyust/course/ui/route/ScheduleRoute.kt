@@ -218,7 +218,7 @@ fun ScheduleRoute() {
                     scope.launch(Dispatchers.Main) {
                         if (!isRequestAccountActive()) return@launch
                         isLoading = false
-                        if (courses.isEmpty()) GlassToaster.show("加载失败: ${e.message}")
+                        if (courses.isEmpty()) GlassToaster.show("加载失败：${e.message}")
                     }
                 }
 
@@ -286,7 +286,7 @@ fun ScheduleRoute() {
                     )
                     GlassToaster.show("课表已导出，可导入到系统日历中查看")
                 } catch (e: Exception) {
-                    GlassToaster.show("导出失败: ${e.message}")
+                    GlassToaster.show("导出失败：${e.message}")
                 }
             }
         },

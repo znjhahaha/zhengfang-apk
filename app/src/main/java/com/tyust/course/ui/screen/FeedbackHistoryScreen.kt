@@ -234,7 +234,7 @@ private fun FeedbackCard(feedback: FeedbackManager.FeedbackItem) {
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "等待回复中...",
+                        text = "等待回复中…",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )

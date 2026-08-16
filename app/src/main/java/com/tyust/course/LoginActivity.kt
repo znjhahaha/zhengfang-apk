@@ -249,7 +249,7 @@ class LoginActivity : ComponentActivity() {
             userManager.currentSchool = userManager.supportedSchools[0]
         }
         
-        Toast.makeText(this, "🎮 已进入演示模式", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "已进入演示模式", Toast.LENGTH_SHORT).show()
         
         startActivity(Intent(this, MainActivity::class.java))
         finish()

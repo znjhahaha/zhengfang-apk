@@ -5,11 +5,10 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
-import com.tyust.course.login.PasswordLoginCallback
-import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
+import com.tyust.course.utils.SessionRenewer
 import com.tyust.course.ui.screen.ExamItemUi
 import com.tyust.course.ui.screen.GradeItemUi
 import com.tyust.course.ui.screen.GradesScreen
@@ -76,10 +75,9 @@ fun GradesRoute() {
         }
     }
 
-    // 检测到Cookie过期时，尝试自动重新登录
+    // 检测到登录状态失效时，先尝试静默续期，续不上才提示用户
     fun handleExpiredCookie(requestAccountKey: String, retryAction: () -> Unit) {
         if (!isCurrentAccount(requestAccountKey)) return
-        val userManager = UserManager.getInstance()
         val sendExpiredBroadcast = {
             val intent = Intent(CourseApiClient.ACTION_COOKIE_EXPIRED).apply {
                 setPackage(context.packageName)
@@ -88,55 +86,23 @@ fun GradesRoute() {
             context.sendBroadcast(intent)
         }
 
-        if (userManager.canAutoRelogin()) {
+        if (SessionRenewer.canRenew()) {
             runOnUiThread {
-                GlassToaster.show("Cookie已过期，正在自动重新登录…")
+                GlassToaster.show("登录状态已失效，正在自动续期…")
             }
-            val school = userManager.currentSchool!!
-            val username = userManager.username
-            val password = userManager.sessionPassword
-            val gateway = PasswordLoginGatewayFactory.create(school)
-            gateway.login(school, username, password, object : PasswordLoginCallback {
-                override fun onSuccess(cookie: String) {
-                    gateway.clearSensitiveState()
-                    if (!isCurrentAccount(requestAccountKey)) return
-                    userManager.saveCookie(cookie)
-                    CourseApiClient.getInstance().setCookie(school.baseUrl, cookie)
-                    Log.d("GradesRoute", "自动重新登录成功，重试操作")
+            SessionRenewer.renew(context) { renewed ->
+                if (!isCurrentAccount(requestAccountKey)) return@renew
+                if (renewed) {
+                    Log.d("GradesRoute", "自动续期成功，重试操作")
                     retryAction()
+                } else {
+                    GlassToaster.show("登录状态已失效，请重新登录")
+                    sendExpiredBroadcast()
                 }
-                override fun onCaptchaRequired(imageBytes: ByteArray) {
-                    gateway.clearSensitiveState()
-                    runOnUiThread {
-                        GlassToaster.show("自动登录需要验证码，请手动重新登录")
-                        sendExpiredBroadcast()
-                    }
-                }
-                override fun onCaptchaInvalid() {
-                    gateway.clearSensitiveState()
-                    runOnUiThread {
-                        GlassToaster.show("自动登录失败，请手动重新登录")
-                        sendExpiredBroadcast()
-                    }
-                }
-                override fun onInvalidCredentials() {
-                    gateway.clearSensitiveState()
-                    runOnUiThread {
-                        GlassToaster.show("密码已失效，请手动重新登录")
-                        sendExpiredBroadcast()
-                    }
-                }
-                override fun onError(message: String) {
-                    gateway.clearSensitiveState()
-                    runOnUiThread {
-                        GlassToaster.show("自动登录失败: $message")
-                        sendExpiredBroadcast()
-                    }
-                }
-            })
+            }
         } else {
             runOnUiThread {
-                GlassToaster.show("Cookie已过期，请重新登录")
+                GlassToaster.show("登录状态已失效，请重新登录")
                 sendExpiredBroadcast()
             }
         }
@@ -162,7 +128,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         semesterIsLoading = false
-                        GlassToaster.show("加载失败: ${e.message}")
+                        GlassToaster.show("加载失败：${e.message}")
                     }
                 }
 
@@ -234,7 +200,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         overallIsLoading = false
-                        GlassToaster.show("获取参数失败: ${e.message}")
+                        GlassToaster.show("获取参数失败：${e.message}")
                     }
                 }
 
@@ -304,7 +270,7 @@ fun GradesRoute() {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThreadForAccount(requestAccountKey) {
                         examIsLoading = false
-                        GlassToaster.show("获取考试安排失败: ${e.message}")
+                        GlassToaster.show("获取考试安排失败：${e.message}")
                     }
                 }
 
@@ -407,7 +373,7 @@ fun GradesRoute() {
                 context.startActivity(Intent.createChooser(intent, "导出成绩单"))
             } catch (e: Exception) {
                 Log.e("GradesRoute", "导出成绩失败: ${e.message}", e)
-                GlassToaster.show("导出失败: ${e.message}")
+                GlassToaster.show("导出失败：${e.message}")
             }
         }
     )

@@ -42,7 +42,7 @@ class TyustSsoLoginManager internal constructor(
     ) {
         clearSensitiveState()
         if (school.id != TYUST_SCHOOL_ID) {
-            callback.onError("该登录方式仅适用于太原科技大学")
+            callback.onError("当前学校未配置统一身份认证登录")
             return
         }
         if (username.isBlank() || password.isEmpty()) {

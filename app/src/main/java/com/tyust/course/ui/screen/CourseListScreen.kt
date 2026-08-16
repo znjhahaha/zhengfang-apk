@@ -524,7 +524,7 @@ fun CourseGroupItem(
                                     val xkkzId = firstCourse?._xkkz_id
                                     val kklxdm = firstCourse?.kklxdm
                                     onSetFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
-                                    GlassToaster.show("已设为监控目标: $courseName")
+                                    GlassToaster.show("已设为监控目标：$courseName")
                                 }
                             )
                         }

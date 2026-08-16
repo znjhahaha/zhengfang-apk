@@ -400,7 +400,7 @@ class GrabService : Service() {
                     startGrabbing()
                 } else {
                     Log.e(TAG, "Missing course or school info")
-                    broadcastLog("❌ 缺少课程或学校信息")
+                    broadcastLog("失败：缺少课程或学校信息")
                     stopSelf()
                 }
             }
@@ -420,7 +420,7 @@ class GrabService : Service() {
                 
                 if (currentSchool == null) {
                     Log.e(TAG, "未登录")
-                    broadcastLog("❌ 未登录，无法抢课")
+                    broadcastLog("失败：未登录，无法抢课")
                     stopSelf()
                     return START_STICKY
                 }
@@ -431,7 +431,7 @@ class GrabService : Service() {
                     
                     val modeText = if (isParallelMode) "并行模式(${parallelWorkerCount}门)" else "顺序模式"
                     startForeground(NOTIFICATION_ID, createNotification("正在获取课程列表..."))
-                    broadcastLog("📚 正在获取课程列表... [$modeText]")
+                    broadcastLog("正在获取课程列表… [$modeText]")
                     
                     // 开始关键词抢课流程
                     startKeywordGrabbing(keywords)
@@ -451,7 +451,7 @@ class GrabService : Service() {
                 
                 if (currentSchool == null || queue.isEmpty()) {
                     Log.e(TAG, "未登录或队列为空")
-                    broadcastLog("❌ 未登录或队列为空")
+                    broadcastLog("失败：未登录或队列为空")
                     stopSelf()
                     return START_STICKY
                 }
@@ -495,7 +495,7 @@ class GrabService : Service() {
                 
                 if (currentSchool == null || fuzzyTargetId.isNullOrEmpty()) {
                     Log.e(TAG, "未登录或未设置模糊匹配目标")
-                    broadcastLog("❌ 未登录或未设置监控目标")
+                    broadcastLog("失败：未登录或未设置监控目标")
                     stopSelf()
                     return START_STICKY
                 }
@@ -504,8 +504,8 @@ class GrabService : Service() {
                 courseParams = SmartSelector.getInstance().courseParams?.toMap()
                 
                 startForeground(NOTIFICATION_ID, createNotification("模糊匹配：监控 $fuzzyTargetName"))
-                broadcastLog("🔍 启动模糊匹配模式: $fuzzyTargetName")
-                broadcastLog("📊 每 ${interval}ms 轮询一次，检测人数变化")
+                broadcastLog("启动模糊匹配模式：$fuzzyTargetName")
+                broadcastLog("每 ${interval}ms 轮询一次，检测人数变化")
                 
                 isFuzzyMatchMode = true
                 fuzzyMatchPollingCount = 0
@@ -666,7 +666,7 @@ class GrabService : Service() {
             broadcastLog("线程 ${task.workerId} 开始处理：${courseDisplayName(task.course)}")
             runParallelTaskLoop(school, task)
         }
-        updateNotification("并行抢课中 | 运行: ${activeGrabTasks.size} | 等待: ${pendingGrabTasks.size} | 成功: $successCount | 失败: $failCount")
+        updateNotification("并行抢课中 | 运行：${activeGrabTasks.size} | 等待：${pendingGrabTasks.size} | 成功：$successCount | 失败：$failCount")
         finishParallelPoolIfIdle()
     }
 
@@ -711,7 +711,7 @@ class GrabService : Service() {
                     fetchHiddenParamsAndProceed(school, task)
                 }
             }
-            updateNotification("并行抢课中 | 成功: $successCount | 失败: $failCount | 尝试: $retryCount")
+            updateNotification("并行抢课中 | 成功：$successCount | 失败：$failCount | 尝试：$retryCount")
         }
     }
 
@@ -806,7 +806,7 @@ class GrabService : Service() {
 
         CourseApiClient.getInstance().fetchAvailableCourses(school, buildCourseListBody(task.params, task.course), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("线程 ${task.workerId} 获取课程列表失败: ${e.message}")
+                broadcastLog("线程 ${task.workerId} 获取课程列表失败：${e.message}")
                 scheduleParallelTaskRetry(school, task)
             }
 
@@ -880,7 +880,7 @@ class GrabService : Service() {
 
         CourseApiClient.getInstance().fetchCourseSelectionDetails(school, postBody, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("线程 ${task.workerId} 获取详情失败: ${e.message}")
+                broadcastLog("线程 ${task.workerId} 获取详情失败：${e.message}")
                 scheduleParallelTaskRetry(school, task)
             }
 
@@ -945,7 +945,7 @@ class GrabService : Service() {
 
         CourseApiClient.getInstance().selectCourse(school, postBody, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("线程 ${task.workerId} 选课请求失败: ${e.message}")
+                broadcastLog("线程 ${task.workerId} 选课请求失败：${e.message}")
                 scheduleParallelTaskRetry(school, task)
             }
 
@@ -956,7 +956,7 @@ class GrabService : Service() {
                     verifyParallelSelectionAsync(school, task)
                 } else {
                     val errorMsg = parseErrorMessage(result)
-                    broadcastLog("线程 ${task.workerId} 第 ${task.retryCount} 次失败: $errorMsg")
+                    broadcastLog("线程 ${task.workerId} 第 ${task.retryCount} 次失败：$errorMsg")
                     scheduleParallelTaskRetry(school, task)
                 }
             }
@@ -1047,7 +1047,7 @@ class GrabService : Service() {
         }
         
         val course = targetCourse
-        broadcastUpdate("🚀 开始抢课: ${course?.name}")
+        broadcastUpdate("开始抢课：${course?.name}")
         
         // 发送 GRABBING 状态给 UI
         if (course != null) {
@@ -1065,7 +1065,7 @@ class GrabService : Service() {
     private fun startNextQueueItem() {
         val queue = serviceQueue
         if (currentQueueIndex >= queue.size) {
-            broadcastLog("🏁 队列处理完成。成功: $totalQueueSuccess/${queue.size}")
+            broadcastLog("队列处理完成。成功：$totalQueueSuccess/${queue.size}")
             stopGrabbing()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -1080,8 +1080,8 @@ class GrabService : Service() {
         skipCount = 0
         
         isRunning = false // 先重置状态以允许启动
-        broadcastLog("🎯 队列进度 [${currentQueueIndex + 1}/${queue.size}]: ${course.name}")
-        updateNotification("队列抢课: ${course.name} [${currentQueueIndex + 1}/${queue.size}]")
+        broadcastLog("队列进度 [${currentQueueIndex + 1}/${queue.size}]: ${course.name}")
+        updateNotification("队列抢课：${course.name} [${currentQueueIndex + 1}/${queue.size}]")
         
         // 🔧 发送 GRABBING 状态 (使用完整课程名，与UI匹配)
         broadcastQueueUpdate(
@@ -1124,7 +1124,7 @@ class GrabService : Service() {
     private fun runGrabLoop() {
         if (!isRunning || retryCount >= maxRetry) {
             if (retryCount >= maxRetry) {
-                broadcastLog("⚠️ 已达最大重试次数 ($maxRetry)")
+                broadcastLog("注意：已达最大重试次数 ($maxRetry)")
                 
                 // 标记当前课程为失败
                 failCount++
@@ -1135,7 +1135,7 @@ class GrabService : Service() {
                 
                 // 🔧 检查是否还有更多关键词需要处理
                 if (keywordQueue.size > 1 && currentKeywordIndex < keywordQueue.size - 1) {
-                    broadcastLog("⏭️ 当前关键词未抢到，切换到下一个关键词...")
+                    broadcastLog("当前关键词未抢到，切换到下一个关键词…")
                     currentKeywordIndex++
                     isRunning = false
                     handler.postDelayed({
@@ -1146,7 +1146,7 @@ class GrabService : Service() {
                 
                 // 🔧 队列模式自动跳到下一个
                 if (isQueueMode && currentQueueIndex < serviceQueue.size - 1) {
-                    broadcastLog("⏭️ 自动切换到队列下一门课程...")
+                    broadcastLog("自动切换到队列下一门课程…")
                     currentQueueIndex++
                     isRunning = false
                     handler.postDelayed({ startNextQueueItem() }, 1000)
@@ -1156,9 +1156,9 @@ class GrabService : Service() {
             
             // 没有更多任务，彻底停止
             if (keywordQueue.size > 1) {
-                broadcastLog("🏁 全部关键词处理完成，成功: $multiKeywordTotalSuccess/${keywordQueue.size}")
+                broadcastLog("全部关键词处理完成，成功：$multiKeywordTotalSuccess/${keywordQueue.size}")
             } else if (isQueueMode) {
-                broadcastLog("🏁 队列处理完成。总成功: $totalQueueSuccess")
+                broadcastLog("队列处理完成。总成功：$totalQueueSuccess")
             }
             stopGrabbing()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1186,7 +1186,7 @@ class GrabService : Service() {
     }
 
     private fun proceedToServerHealthCheck(school: SchoolConfig, course: Course) {
-        broadcastLog("🔍 检测服务器状态...")
+        broadcastLog("检测服务器状态…")
         checkServerHealth(school) { result ->
             if (!isRunning) return@checkServerHealth
 
@@ -1194,8 +1194,8 @@ class GrabService : Service() {
                 is ServerHealthCheckResult.Healthy -> {
                     // 服务器正常，开始抢课
                     retryCount++
-                    broadcastLog("🔄 第 $retryCount 次尝试 (响应: ${result.responseTimeMs}ms)")
-                    updateNotification("第 $retryCount 次尝试 | 成功: $successCount | 失败: $failCount | 跳过: $skipCount")
+                    broadcastLog("第 $retryCount 次尝试 (响应：${result.responseTimeMs}ms)")
+                    updateNotification("第 $retryCount 次尝试 | 成功：$successCount | 失败：$failCount | 跳过：$skipCount")
 
                     // Step 0: 获取隐藏参数
                     fetchHiddenParamsAndProceed(school, course)
@@ -1203,8 +1203,8 @@ class GrabService : Service() {
                 is ServerHealthCheckResult.Slow -> {
                     // 只有真实超过阈值时才跳过本次尝试
                     skipCount++
-                    broadcastLog("⏸️ 服务器响应慢 (${result.responseTimeMs}ms > ${pingTimeoutMs}ms)，跳过本次，已跳过 $skipCount 次")
-                    updateNotification("等待服务器恢复 | 跳过: $skipCount | 剩余尝试: ${maxRetry - retryCount}")
+                    broadcastLog("服务器响应慢 (${result.responseTimeMs}ms > ${pingTimeoutMs}ms)，跳过本次，已跳过 $skipCount 次")
+                    updateNotification("等待服务器恢复 | 跳过：$skipCount | 剩余尝试：${maxRetry - retryCount}")
 
                     // 等待后重试，但不计入重试次数
                     scheduleNextAttempt()
@@ -1214,7 +1214,7 @@ class GrabService : Service() {
                     retryCount++
                     broadcastLog("健康检查失败 (${result.responseTimeMs}ms)：${result.reason}，改为直接尝试")
                     broadcastLog("第 $retryCount 次尝试 (健康探针异常)")
-                    updateNotification("第 $retryCount 次尝试 | 成功: $successCount | 失败: $failCount | 跳过: $skipCount")
+                    updateNotification("第 $retryCount 次尝试 | 成功：$successCount | 失败：$failCount | 跳过：$skipCount")
                     fetchHiddenParamsAndProceed(school, course)
                 }
             }
@@ -1240,12 +1240,25 @@ class GrabService : Service() {
 
                 handler.post {
                     if (isValid) {
-                        Log.d(TAG, "✅ Cookie 有效，学生姓名: $studentName")
+                        Log.d(TAG, "Cookie 有效，学生姓名: $studentName")
                         callback(true)
                     } else {
-                        Log.e(TAG, "❌ Cookie 已失效，无法解析学生姓名")
-                        handleCookieInvalid()
-                        callback(false)
+                        Log.w(TAG, "Cookie 已失效，尝试静默续期")
+                        if (com.tyust.course.utils.SessionRenewer.canRenew()) {
+                            broadcastLog("注意：登录状态已失效，正在自动续期")
+                            com.tyust.course.utils.SessionRenewer.renew(this@GrabService) { renewed ->
+                                if (renewed) {
+                                    broadcastLog("成功：登录状态已恢复，继续执行")
+                                    callback(true)
+                                } else {
+                                    handleCookieInvalid()
+                                    callback(false)
+                                }
+                            }
+                        } else {
+                            handleCookieInvalid()
+                            callback(false)
+                        }
                     }
                 }
             }
@@ -1265,8 +1278,8 @@ class GrabService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("⚠️ 登录已过期")
-            .setContentText("抢课已停止，请点击此通知重新登录！")
+            .setContentTitle("登录状态已失效")
+            .setContentText("抢课已停止，请点击此通知重新登录")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_HIGH) // 强提醒
             .setDefaults(Notification.DEFAULT_ALL)         // 震动+声音
@@ -1277,8 +1290,8 @@ class GrabService : Service() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID + 1, notification) //都不把常驻通知顶掉
 
-        broadcastLog("❌ 严重错误: Cookie 已失效！请重新登录")
-        broadcastUpdate("❌ Cookie 已失效，请重新登录")
+        broadcastLog("失败：登录状态已失效，请重新登录")
+        broadcastUpdate("登录状态已失效，请重新登录")
     }
 
     // 检查服务器健康状态（复用 CourseApiClient 的统一网络栈，探测真实教务路径）
@@ -1347,7 +1360,7 @@ class GrabService : Service() {
                 // 🔧 新智能模式：获取所有可选课程→本地匹配→获取详情→匹配教学班
                 Log.d(TAG, "🔄 智能模式: 获取所有课程并匹配 ${course.name} | ${course.teacher} | ${course.time}")
                 handler.post { 
-                    broadcastLog("🔄 智能模式: 获取课程列表...")
+                    broadcastLog("智能模式：获取课程列表…")
                     smartModeMatchFromAllCourses(school, course) 
                 }
             }
@@ -1358,7 +1371,7 @@ class GrabService : Service() {
     private fun searchAndMatchCourse(school: SchoolConfig, targetCourse: Course) {
         val searchName = targetCourse.name ?: ""
         if (searchName.isEmpty()) {
-            broadcastLog("❌ 智能模式失败: 课程名为空")
+            broadcastLog("失败：课程名为空，无法匹配")
             scheduleNextAttempt()
             return
         }
@@ -1429,7 +1442,7 @@ class GrabService : Service() {
         
         CourseApiClient.getInstance().fetchAvailableCourses(school, postBody, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("❌ 搜索课程失败: ${e.message}")
+                broadcastLog("失败：搜索课程出错：${e.message}")
                 scheduleNextAttempt()
             }
             
@@ -1451,7 +1464,7 @@ class GrabService : Service() {
                     
                     if (matched != null) {
                         Log.d(TAG, "✅ 智能模式匹配成功: ${matched.name} | ${matched.teacher} | classId=${matched.classId}")
-                        broadcastLog("✅ 匹配到课程: ${matched.teacher ?: "未知老师"}")
+                        broadcastLog("成功：匹配到课程：${matched.teacher ?: "未知老师"}")
                         
                         // 更新 targetCourse 的 ID
                         targetCourse.classId = matched.classId
@@ -1467,12 +1480,12 @@ class GrabService : Service() {
                         fetchSelectionDetails(school, targetCourse)
 
                     } else {
-                        broadcastLog("❌ 未找到匹配的课程: ${targetCourse.name}")
+                        broadcastLog("失败：未找到匹配的课程：${targetCourse.name}")
                         scheduleNextAttempt()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "智能模式解析失败: ${e.message}")
-                    broadcastLog("❌ 解析课程列表失败")
+                    broadcastLog("失败：无法解析课程列表")
                     scheduleNextAttempt()
                 }
             }
@@ -1483,7 +1496,7 @@ class GrabService : Service() {
     private fun smartModeMatchFromAllCourses(school: SchoolConfig, targetCourse: Course) {
         val targetName = targetCourse.name ?: ""
         if (targetName.isEmpty()) {
-            broadcastLog("❌ 智能模式失败: 课程名为空")
+            broadcastLog("失败：课程名为空，无法匹配")
             scheduleNextAttempt()
             return
         }
@@ -1491,7 +1504,7 @@ class GrabService : Service() {
         // 🔧 优先使用缓存的课程列表（如果有）
         if (cachedAllCourses.isNotEmpty()) {
             Log.d(TAG, "🔄 智能模式: 使用缓存课程 (${cachedAllCourses.size}门)")
-            broadcastLog("📋 使用缓存 ${cachedAllCourses.size} 门课程")
+            broadcastLog("使用缓存 ${cachedAllCourses.size} 门课程")
             matchCourseFromList(school, targetCourse, cachedAllCourses)
             return
         }
@@ -1572,7 +1585,7 @@ class GrabService : Service() {
         
         CourseApiClient.getInstance().fetchAvailableCourses(school, postBody, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("❌ 获取课程列表失败: ${e.message}")
+                broadcastLog("失败：获取课程列表出错：${e.message}")
                 scheduleNextAttempt()
             }
             
@@ -1581,10 +1594,10 @@ class GrabService : Service() {
                 try {
                     val courses = com.tyust.course.utils.CourseParser.parseCourseListFromJson(json)
                     Log.d(TAG, "🔄 智能模式: 获取到 ${courses.size} 门课程，开始本地匹配...")
-                    broadcastLog("📋 获取到 ${courses.size} 门课程")
+                    broadcastLog("获取到 ${courses.size} 门课程")
                     
                     if (courses.isEmpty()) {
-                        broadcastLog("❌ 课程列表为空")
+                        broadcastLog("失败：课程列表为空")
                         scheduleNextAttempt()
                         return
                     }
@@ -1642,7 +1655,7 @@ class GrabService : Service() {
                     }
                     
                     if (scoredCourses.isEmpty()) {
-                        broadcastLog("❌ 未找到课程: $targetName")
+                        broadcastLog("失败：未找到课程：$targetName")
                         scheduleNextAttempt()
                         return
                     }
@@ -1650,7 +1663,7 @@ class GrabService : Service() {
                     // 取分数最高的课程
                     val matched = scoredCourses.first().course
                     Log.d(TAG, "✅ 智能模式匹配: ${matched.name} (${scoredCourses.first().score}分) | courseId=${matched.courseId}")
-                    broadcastLog("✅ 匹配到: ${matched.name} (${scoredCourses.first().score}分)")
+                    broadcastLog("成功：匹配到：${matched.name} (${scoredCourses.first().score}分)")
                     
                     // 🔧 更新目标课程的关键参数
                     targetCourse.courseId = matched.courseId
@@ -1668,7 +1681,7 @@ class GrabService : Service() {
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "智能模式解析失败: ${e.message}")
-                    broadcastLog("❌ 解析课程列表失败")
+                    broadcastLog("失败：无法解析课程列表")
                     scheduleNextAttempt()
                 }
             }
@@ -1741,7 +1754,7 @@ class GrabService : Service() {
         }
         
         if (scoredCourses.isEmpty()) {
-            broadcastLog("❌ 未找到课程: $targetName")
+            broadcastLog("失败：未找到课程：$targetName")
             scheduleNextAttempt()
             return
         }
@@ -1749,7 +1762,7 @@ class GrabService : Service() {
         // 取分数最高的课程
         val matched = scoredCourses.first().course
         Log.d(TAG, "✅ 智能模式匹配: ${matched.name} (${scoredCourses.first().score}分) | courseId=${matched.courseId}")
-        broadcastLog("✅ 匹配到: ${matched.name} (${scoredCourses.first().score}分)")
+        broadcastLog("成功：匹配到：${matched.name} (${scoredCourses.first().score}分)")
         
         // 更新目标课程的关键参数
         targetCourse.courseId = matched.courseId
@@ -1871,7 +1884,7 @@ class GrabService : Service() {
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     failCount++
-                    broadcastUpdate("❌ 获取详情失败: ${e.message}")
+                    broadcastUpdate("失败：获取课程详情出错：${e.message}")
                     scheduleNextAttempt()
                 }
                 
@@ -1887,7 +1900,7 @@ class GrabService : Service() {
                         // 🔧 Fallback: 如果解析失败（如返回"0"）但我们有保存的 doJxbId，直接尝试抢课
                         if (!course.doJxbId.isNullOrEmpty() && !course.classId.isNullOrEmpty()) {
                             Log.w(TAG, "⚠️ 解析失败，强制使用保存的 doJxbId=${course.doJxbId}")
-                            broadcastLog("⚠️ 解析失败，强制使用保存的 ID 抢课")
+                            broadcastLog("注意：解析失败，强制使用保存的 ID 抢课")
                             
                             val fallbackDetails = SelectionDetails(
                                 doJxbId = course.doJxbId!!,
@@ -1908,7 +1921,7 @@ class GrabService : Service() {
                         }
                         
                         failCount++
-                        broadcastUpdate("❌ 获取加密ID失败")
+                        broadcastUpdate("失败：获取加密 ID 失败")
                         scheduleNextAttempt()
                     }
                 }
@@ -2062,7 +2075,7 @@ class GrabService : Service() {
         CourseApiClient.getInstance().selectCourse(school, postBody.toString(), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 failCount++
-                broadcastUpdate("❌ 选课请求失败: ${e.message}")
+                broadcastUpdate("失败：选课请求出错：${e.message}")
                 scheduleNextAttempt()
             }
             
@@ -2072,14 +2085,14 @@ class GrabService : Service() {
                 
                 if (success) {
                     successCount++
-                    broadcastUpdate("🎉 抢课成功！${course.name}")
+                    broadcastUpdate("成功：已选上 ${course.name}")
                     
                     // Step 3: 验证选课结果 (Web版 verifyCourseSelection)
                     verifySelectionAsync(school, course)
                 } else {
                     failCount++
                     val errorMsg = parseErrorMessage(result)
-                    broadcastUpdate("❌ 第 $retryCount 次失败: $errorMsg")
+                    broadcastUpdate("失败：第 $retryCount 次尝试：$errorMsg")
                     scheduleNextAttempt()
                 }
             }
@@ -2093,17 +2106,17 @@ class GrabService : Service() {
             
             handler.post {
                 if (verified) {
-                    broadcastLog("✅ 验证成功: 课程已加入已选列表")
+                    broadcastLog("成功：课程已加入已选列表")
                 } else {
-                    broadcastLog("⚠️ 验证未通过，但服务器已返回成功")
+                    broadcastLog("注意：验证未通过，但服务器已返回成功")
                 }
                 
                 // 成功抢到后从服务队列快照中移除
                 val removedFromServiceQueue = removeCourseFromServiceQueue(course)
                 if (removedFromServiceQueue) {
-                    broadcastLog("📋 已从队列移除: ${course.name}")
+                    broadcastLog("已从队列移除：${course.name}")
                 } else {
-                    broadcastLog("📋 服务队列中未找到待移除课程: ${course.name}")
+                    broadcastLog("服务队列中未找到待移除课程：${course.name}")
                 }
                 
                 successCount++
@@ -2116,8 +2129,8 @@ class GrabService : Service() {
                 
                 // 检查是否还有更多关键词需要处理
                 if (keywordQueue.size > 1 && currentKeywordIndex < keywordQueue.size - 1) {
-                    broadcastLog("🎉 课程「${course.name}」抢课成功！继续处理下一个...")
-                    updateNotification("✅ 成功 $multiKeywordTotalSuccess/${keywordQueue.size} | 继续下一个...")
+                    broadcastLog("成功：已选上「${course.name}」，继续处理下一个")
+                    updateNotification("已成功 $multiKeywordTotalSuccess/${keywordQueue.size} | 继续下一个…")
                     
                     // 处理下一个关键词
                     currentKeywordIndex++
@@ -2131,7 +2144,7 @@ class GrabService : Service() {
                 if (isQueueMode) {
                     val currentQueue = serviceQueue
                     if (currentQueue.isEmpty()) {
-                        broadcastLog("🎊 队列处理完成！共抢到 $totalQueueSuccess 门课程")
+                        broadcastLog("成功：队列处理完成，共选上 $totalQueueSuccess 门课程")
                         isRunning = false
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
@@ -2142,7 +2155,7 @@ class GrabService : Service() {
                             currentQueueIndex = 0 // 回到开头（如果需要循环）或在此停止
                         }
                         
-                        broadcastLog("🎉 课程「${course.name}」抢课成功！继续队列下一门...")
+                        broadcastLog("成功：已选上「${course.name}」，继续队列下一门")
                         totalQueueSuccess++
                         // 1.5秒后开始下一门
                         handler.postDelayed({ startNextQueueItem() }, 1500)
@@ -2152,12 +2165,12 @@ class GrabService : Service() {
                 
                 // 所有处理完成
                 if (keywordQueue.size > 1) {
-                    broadcastLog("🎊 全部完成！成功抢到 $multiKeywordTotalSuccess/${keywordQueue.size} 门课程")
+                    broadcastLog("成功：全部处理完成，共选上 $multiKeywordTotalSuccess/${keywordQueue.size} 门课程")
                 } else if (isQueueMode) {
                     totalQueueSuccess++
-                    broadcastLog("🎊 队列处理完成！共抢到 $totalQueueSuccess 门课程")
+                    broadcastLog("成功：队列处理完成，共选上 $totalQueueSuccess 门课程")
                 }
-                updateNotification("✅ 抢课成功！${course.name}")
+                updateNotification("成功：已选上 ${course.name}")
                 
                 isRunning = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -2245,8 +2258,8 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         )
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🎉 抢课成功！")
-            .setContentText("已成功选上: $courseName")
+            .setContentTitle("抢课成功")
+            .setContentText("已成功选上：$courseName")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -2315,14 +2328,14 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         multiKeywordTotalSuccess = 0
         
         if (keywordQueue.isEmpty()) {
-            broadcastLog("❌ 未提供有效的课程关键词")
+            broadcastLog("失败：未提供有效的课程关键词")
             stopSelf()
             return
         }
         
         if (keywordQueue.size > 1) {
             val modeDesc = if (isParallelMode) "并行处理" else "顺序处理"
-            broadcastLog("📋 检测到 ${keywordQueue.size} 组课程关键词，将 $modeDesc")
+            broadcastLog("检测到 ${keywordQueue.size} 组课程关键词，将 $modeDesc")
             keywordQueue.forEachIndexed { index, kw ->
                 broadcastLog("   ${index + 1}. $kw")
             }
@@ -2340,7 +2353,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     // 并行抢课：同时处理多个关键词
     private fun startParallelGrabbing() {
         val workersToStart = minOf(parallelWorkerCount, keywordQueue.size)
-        broadcastLog("⚡ 并行启动 $workersToStart 个抢课任务")
+        broadcastLog("并行启动 $workersToStart 个抢课任务")
         
         activeWorkers.clear()
         
@@ -2359,7 +2372,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     
     // 并行工作线程：独立处理一个关键词
     private fun startParallelWorker(workerId: Int, keywords: String) {
-        broadcastLog("🔄 工作线程 $workerId 启动: $keywords")
+        broadcastLog("工作线程 $workerId 启动：$keywords")
         
         // 发送 GRABBING 状态
         val keyParts = keywords.split(",", "，", " ")
@@ -2389,7 +2402,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         retryCount = 0
         skipCount = 0
         
-        broadcastLog("🎯 开始处理关键词 [${currentKeywordIndex + 1}/${keywordQueue.size}]: $keywords")
+        broadcastLog("开始处理关键词 [${currentKeywordIndex + 1}/${keywordQueue.size}]: $keywords")
         
         // 发送 GRABBING 状态给 UI
         val keyParts = keywords.split(",", "，", " ", ";", "；")
@@ -2403,11 +2416,11 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         val school = currentSchool ?: return
         
         keywordFetchRetryCount++
-        broadcastLog("📚 获取选课参数 (第${keywordFetchRetryCount}/${MAX_FETCH_RETRIES}次)...")
+        broadcastLog("获取选课参数 (第${keywordFetchRetryCount}/${MAX_FETCH_RETRIES}次)…")
         
         CourseApiClient.getInstance().fetchCourseParams(school, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("⚠️ 请求失败: ${e.message}")
+                broadcastLog("注意：请求出错：${e.message}")
                 retryOrFail("网络错误")
             }
             
@@ -2424,14 +2437,14 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     
     private fun retryOrFail(reason: String) {
         if (keywordFetchRetryCount < MAX_FETCH_RETRIES) {
-            broadcastLog("⏳ ${reason}，${FETCH_RETRY_DELAY/1000}秒后重试...")
+            broadcastLog("${reason}，${FETCH_RETRY_DELAY/1000}秒后重试…")
             handler.postDelayed({
                 if (isRunning || keywordFetchRetryCount < MAX_FETCH_RETRIES) {
                     fetchCourseParamsWithRetry()
                 }
             }, FETCH_RETRY_DELAY)
         } else {
-            broadcastLog("❌ 连续${MAX_FETCH_RETRIES}次获取失败")
+            broadcastLog("失败：连续 ${MAX_FETCH_RETRIES} 次获取选课参数均失败")
             
             // 标记当前课程为失败 - 使用 currentKeywords 作为 courseId
             failCount++
@@ -2440,7 +2453,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             
             // 检查是否还有更多关键词需要处理
             if (keywordQueue.size > 1 && currentKeywordIndex < keywordQueue.size - 1) {
-                broadcastLog("⏭️ 当前课程获取失败，切换到下一个关键词...")
+                broadcastLog("当前课程获取失败，切换到下一个关键词…")
                 currentKeywordIndex++
                 isRunning = false  // 重置以便下一个关键词可以启动
                 
@@ -2450,7 +2463,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             } else {
                 // 没有更多关键词，停止服务
                 if (keywordQueue.size > 1) {
-                    broadcastLog("🏁 全部关键词处理完成，成功: $multiKeywordTotalSuccess/${keywordQueue.size}")
+                    broadcastLog("全部关键词处理完成，成功：$multiKeywordTotalSuccess/${keywordQueue.size}")
                 }
                 stopSelf()
             }
@@ -2509,7 +2522,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                 return
             }
             
-            broadcastLog("📝 解析到 ${tabParamsList.size} 个选课分类")
+            broadcastLog("解析到 ${tabParamsList.size} 个选课分类")
             
             // 开始遍历所有分类
             currentTabIndex = 0
@@ -2517,7 +2530,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             fetchNextCategory()
             
         } catch (e: Exception) {
-            broadcastLog("❌ 解析参数失败: ${e.message}")
+            broadcastLog("失败：解析选课参数出错：${e.message}")
             retryOrFail("解析失败")
         }
     }
@@ -2534,7 +2547,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         currentTabIndex++
         val school = currentSchool ?: return
         
-        broadcastLog("📂 获取分类 $currentTabIndex/${tabParamsList.size} (kklxdm=${tab.kklxdm})...")
+        broadcastLog("获取分类 $currentTabIndex/${tabParamsList.size} (kklxdm=${tab.kklxdm})…")
         
         // 先获取 Display 页面参数
         CourseApiClient.getInstance().fetchCourseDisplayParams(
@@ -2713,12 +2726,12 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     // 所有分类获取完成后的处理
     private fun onAllCategoriesFetched() {
         if (allFetchedCourses.isEmpty()) {
-            broadcastLog("❌ 所有分类课程列表为空，可能选课未开放")
+            broadcastLog("失败：所有分类课程列表为空，可能选课未开放")
             retryOrFail("课程列表为空")
             return
         }
         
-        broadcastLog("✅ 共获取到 ${allFetchedCourses.size} 门课程")
+        broadcastLog("成功：共获取到 ${allFetchedCourses.size} 门课程")
         
         // 🔧 缓存课程列表供智能模式复用
         cachedAllCourses = allFetchedCourses.toList()
@@ -2726,7 +2739,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         // 匹配关键词
         val match = findBestMatch(allFetchedCourses, currentKeywords)
         if (match == null) {
-            broadcastLog("❌ 未找到匹配「$currentKeywords」的课程")
+            broadcastLog("失败：未找到匹配「$currentKeywords」的课程")
             
             // 标记当前课程为失败 - 使用 currentKeywords 作为 courseId
             failCount++
@@ -2735,7 +2748,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             
             // 检查是否还有更多关键词需要处理
             if (keywordQueue.size > 1 && currentKeywordIndex < keywordQueue.size - 1) {
-                broadcastLog("⏭️ 当前课程未找到，切换到下一个关键词...")
+                broadcastLog("当前课程未找到，切换到下一个关键词…")
                 currentKeywordIndex++
                 isRunning = false
                 
@@ -2745,14 +2758,14 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             } else {
                 // 没有更多关键词
                 if (keywordQueue.size > 1) {
-                    broadcastLog("🏁 全部关键词处理完成，成功: $multiKeywordTotalSuccess/${keywordQueue.size}")
+                    broadcastLog("全部关键词处理完成，成功：$multiKeywordTotalSuccess/${keywordQueue.size}")
                 }
                 stopSelf()
             }
             return
         }
         
-        broadcastLog("🎯 匹配到课程: ${match.name} (${match.teacher})")
+        broadcastLog("匹配到课程：${match.name} (${match.teacher})")
         
         // 🔧 新增：获取课程详情，匹配具体教学班（按老师/时间）
         fetchCourseDetailsAndMatch(match, currentKeywords, currentSchool!!)
@@ -2794,7 +2807,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         Log.d(TAG, "🔍 匹配关键词列表: $keywordList")
         
         if (useExactMatch) {
-            broadcastLog("🔒 精确模式: 使用队列中的 classId=$targetClassId")
+            broadcastLog("精确模式：使用队列中的 classId=$targetClassId")
         }
         
         // 🔧 构建详情请求参数 - 与 fetchSelectionDetails 一致，使用特定的约 40 个参数
@@ -2856,11 +2869,11 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         val detailBody = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
         Log.d(TAG, "详情请求参数数量: ${formData.size}")
         
-        broadcastLog("📋 获取课程详情，匹配教学班...")
+        broadcastLog("获取课程详情，匹配教学班…")
         
         CourseApiClient.getInstance().fetchCourseSelectionDetails(school, detailBody.toString(), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("⚠️ 获取课程详情失败: ${e.message}")
+                broadcastLog("注意：获取课程详情出错：${e.message}")
                 handleFallback(baseCourse, queueCourse)
             }
             
@@ -2895,7 +2908,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                                     sxbj = cls.optString("sxbj", "0")
                                     xxkbj = cls.optString("xxkbj", "0")
                                 }
-                                broadcastLog("✅ 精确匹配成功: ${matchedClass.teacher} | classId=$jxbId")
+                                broadcastLog("成功：精确匹配到教学班 ${matchedClass.teacher} | classId=$jxbId")
                                 break
                             }
                         }
@@ -2904,7 +2917,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                             useMatchedCourseAndGrab(matchedClass)
                             return
                         } else {
-                            broadcastLog("⚠️ 精确匹配失败，回退到智能匹配")
+                            broadcastLog("注意：精确匹配失败，回退到智能匹配")
                         }
                     }
                     
@@ -2955,15 +2968,15 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                     }
                     
                     if (matchedClass != null) {
-                        broadcastLog("✅ 智能匹配成功: ${matchedClass.teacher} | ${matchedClass.time}")
+                        broadcastLog("成功：智能匹配到教学班 ${matchedClass.teacher} | ${matchedClass.time}")
                         useMatchedCourseAndGrab(matchedClass)
                     } else {
-                        broadcastLog("⚠️ 未找到匹配的教学班，随机尝试...")
+                        broadcastLog("注意：未找到匹配的教学班，随机尝试…")
                         handleFallback(baseCourse, queueCourse)
                     }
                     
                 } catch (e: Exception) {
-                    broadcastLog("⚠️ 解析课程详情失败: ${e.message}")
+                    broadcastLog("注意：解析课程详情出错：${e.message}")
                     handleFallback(baseCourse, queueCourse)
                 }
             }
@@ -2973,7 +2986,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     // 处理回退逻辑：优先使用队列中的 Course 信息
     private fun handleFallback(baseCourse: Course, queueCourse: Course?) {
         if (queueCourse != null && queueCourse.useExactMatch && !queueCourse.classId.isNullOrEmpty()) {
-            broadcastLog("⚠️ 使用队列中的精确配置进行强制抢课: classId=${queueCourse.classId}")
+            broadcastLog("注意：使用队列中的精确配置进行强制抢课：classId=${queueCourse.classId}")
             val fallbackCourse = Course().apply {
                 name = baseCourse.name
                 courseId = baseCourse.courseId
@@ -3025,7 +3038,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         // 保存 courseParams 供抢课使用
         courseParams = indexParams.toMap()
         
-        updateNotification("正在抢课: ${match.name}")
+        updateNotification("正在抢课：${match.name}")
         startGrabbing()
     }
     
@@ -3122,7 +3135,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
      * 获取隐藏参数并启动模糊匹配轮询
      */
     private fun fetchHiddenParamsAndStartFuzzyMatch(school: SchoolConfig) {
-        broadcastLog("📌 正在获取选课参数...")
+        broadcastLog("正在获取选课参数…")
         
         Thread {
             val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school, serviceAccountStorageKey)
@@ -3142,7 +3155,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             }
             
             handler.post {
-                broadcastLog("✅ 参数就绪 (共 ${courseParams?.size ?: 0} 个)，开始轮询...")
+                broadcastLog("成功：参数就绪 (共 ${courseParams?.size ?: 0} 个)，开始轮询…")
                 startFuzzyMatchPolling()
             }
         }.start()
@@ -3163,15 +3176,15 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         
         // 达到最大轮询次数时停止
         if (fuzzyMatchPollingCount > maxRetry) {
-            broadcastLog("⏹ 模糊匹配已达最大轮询次数 ($maxRetry)，停止监控")
+            broadcastLog("模糊匹配已达最大轮询次数 ($maxRetry)，停止监控")
             stopGrabbing()
             return
         }
         
         // 更新通知
         if (fuzzyMatchPollingCount % 10 == 0) {
-            updateNotification("模糊匹配: 已轮询 $fuzzyMatchPollingCount 次")
-            broadcastLog("📊 轮询中... ($fuzzyMatchPollingCount/$maxRetry)")
+            updateNotification("模糊匹配：已轮询 $fuzzyMatchPollingCount 次")
+            broadcastLog("轮询中… ($fuzzyMatchPollingCount/$maxRetry)")
         }
         
         // 构建详情请求参数
@@ -3193,7 +3206,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                 // 🔧 检查是否返回 "0"（课程不可查询）
                 if (body.trim() == "0" || body.trim() == "null") {
                     Log.w(TAG, "模糊匹配: 服务器返回 '$body'，课程可能不在当前选课批次内")
-                    broadcastLog("⚠️ 无法获取课程详情，可能不在当前选课批次")
+                    broadcastLog("注意：无法获取课程详情，可能不在当前选课批次")
                     // 继续轮询，但间隔稍长
                     handler.postDelayed({ startFuzzyMatchPolling() }, interval.toLong() * 2)
                     return
@@ -3204,7 +3217,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                     
                     // 🔧 如果是第一次，输出日志
                     if (fuzzyMatchPollingCount == 1) {
-                        broadcastLog("📋 发现 ${classes.length()} 个教学班")
+                        broadcastLog("发现 ${classes.length()} 个教学班")
                     }
                     
                     val vacancyCourses = mutableListOf<Course>()
@@ -3344,7 +3357,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
      * 执行模糊匹配抢课
      */
     private fun executeFuzzyMatchSelection(school: SchoolConfig, course: Course) {
-        broadcastLog("🚀 开始抢课: ${course.name} [${course.teacher}]")
+        broadcastLog("开始抢课：${course.name} [${course.teacher}]")
         successCount = 0
         failCount = 0
         retryCount = 0
@@ -3365,7 +3378,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         
         retryCount++
         if (retryCount > 10) { // 模糊匹配抢课最多尝试10次
-            broadcastLog("⚠️ 抢课失败次数过多，恢复监控")
+            broadcastLog("注意：抢课失败次数过多，恢复监控")
             isFuzzyMatchMode = true
             // 🔧 恢复监控时重新获取隐藏参数
             handler.postDelayed({ fetchHiddenParamsAndStartFuzzyMatch(school) }, interval.toLong())
@@ -3396,7 +3409,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         CourseApiClient.getInstance().selectCourse(school, postBody.toString(), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 failCount++
-                broadcastLog("⚠️ 请求失败: ${e.message} [$retryCount/10]")
+                broadcastLog("注意：请求出错：${e.message} [$retryCount/10]")
                 handler.postDelayed({ executeDirectSelection(school, course) }, 500)
             }
             
@@ -3429,15 +3442,15 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                     
                     if (success) {
                         successCount++
-                        broadcastLog("🎉 模糊匹配抢课成功: ${course.name}")
-                        updateNotification("抢课成功: ${course.name}")
+                        broadcastLog("成功：模糊匹配已选上 ${course.name}")
+                        updateNotification("抢课成功：${course.name}")
                         
                         // 清除模糊匹配目标，停止服务
                         clearServiceFuzzyMatchTarget()
                         stopGrabbing()
                     } else {
                         failCount++
-                        broadcastLog("❌ $msg [$retryCount/10]")
+                        broadcastLog("失败：$msg [$retryCount/10]")
                         handler.postDelayed({ executeDirectSelection(school, course) }, 500)
                     }
                 } catch (e: Exception) {

@@ -360,7 +360,7 @@ fun GrabQueueItem(
                     val hasClassId = !course.classId.isNullOrEmpty()
                     val effectiveExactMode = hasClassId && useExactMatch
                     Text(
-                        text = if (effectiveExactMode) "🔒 精确模式" else "🔄 智能模式",
+                        text = if (effectiveExactMode) "精确模式" else "智能模式",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (effectiveExactMode) NeuPrimary else SemanticSuccess,
                         fontSize = 10.sp

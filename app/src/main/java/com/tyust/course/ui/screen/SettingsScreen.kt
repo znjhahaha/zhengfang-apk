@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.ContentPasteSearch
 import androidx.compose.material.icons.outlined.Cookie
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.School
@@ -63,6 +64,8 @@ fun SettingsScreen(
     currentVersion: String = "1.0.0",
     onSchoolSelect: () -> Unit,
     onCookieConfig: () -> Unit,
+    onAccountManage: () -> Unit = {},
+    savedAccountCount: Int = 0,
     onClearCache: () -> Unit,
     onCheckUpdate: () -> Unit,
     onAbout: () -> Unit,
@@ -89,7 +92,7 @@ fun SettingsScreen(
         topBar = {
             SystemTopBar(
                 title = "设置",
-                subtitle = "账号管理与偏好设置",
+                subtitle = "账号、外观与应用偏好",
                 collapseFraction = headerCollapse
             )
         }
@@ -135,10 +138,21 @@ fun SettingsScreen(
                     onClick = onQuotaClick
                 )
                 SettingsRow(
+                    icon = Icons.Outlined.ManageAccounts,
+                    iconTint = Color(0xFF32ADE6),
+                    title = "账号管理",
+                    subtitle = if (savedAccountCount > 0) {
+                        "已保存 $savedAccountCount 个账号 · 可切换或删除"
+                    } else {
+                        "切换账号、删除已存密码与账号"
+                    },
+                    onClick = onAccountManage
+                )
+                SettingsRow(
                     icon = Icons.Outlined.Cookie,
                     iconTint = Color(0xFFFF9F0A),
-                    title = "凭证管理",
-                    subtitle = "更新登录状态与身份信息",
+                    title = "重新登录",
+                    subtitle = "退出当前会话并返回登录页（保留已存密码）",
                     onClick = onCookieConfig,
                     showDivider = false
                 )
@@ -217,7 +231,7 @@ fun SettingsScreen(
             }
 
             Text(
-                text = "Tyust Course Matrix · $currentVersion",
+                text = "正方教务助手 · $currentVersion",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally)

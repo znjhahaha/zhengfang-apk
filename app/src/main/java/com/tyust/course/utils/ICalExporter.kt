@@ -49,7 +49,7 @@ object ICalExporter {
         // iCal 文件头
         sb.appendLine("BEGIN:VCALENDAR")
         sb.appendLine("VERSION:2.0")
-        sb.appendLine("PRODID:-//TYUST Course Selector//CN")
+        sb.appendLine("PRODID:-//Zhengfang Course Assistant//CN")
         sb.appendLine("CALSCALE:GREGORIAN")
         sb.appendLine("METHOD:PUBLISH")
         sb.appendLine("X-WR-CALNAME:我的课表")
