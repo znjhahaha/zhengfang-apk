@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.School
@@ -33,7 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
+import com.tyust.course.ui.system.DialogHost
 import com.tyust.course.ui.system.LocalAppBackdrop
+import com.tyust.course.ui.system.LocalControlBackdrop
+import com.tyust.course.ui.system.LocalDialogHost
+import com.tyust.course.ui.system.rememberDialogHostState
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemSegmentedControl
@@ -130,20 +135,33 @@ fun LoginScreen(
     
     // 与主界面同款 Aurora 流体壁纸，登录卡的玻璃采样有真实的多彩层次
     val wallpaperPreset = AppearanceSettingsManager.wallpaper
+    val backdrop = if (isBackdropSupported()) {
+        rememberLayerBackdrop {
+            drawWallpaperPattern(wallpaperPreset)
+            drawContent()
+        }
+    } else {
+        null
+    }
+
+    // 登录页原先根本没有把 backdrop 提供出去，于是页面内的选择器、分段控件和
+    // 所有弹窗都只能走"不透明白底"回退——「添加学校」「编辑学校配置」看起来
+    // 像另一个 App 就是这个原因。
+    //
+    // DialogHost 同样是必需的：没有它，SystemDialog 会退回平台 Dialog（独立窗口），
+    // 而玻璃采样的是本窗口的图层，跨窗口取不到（MainActivity 里那条注释就是这件事）。
+    // 挂上之后弹窗在同一窗口渲染，玻璃、压暗、返回键与点击外部关闭都成立。
+    val dialogHostState = rememberDialogHostState()
+    CompositionLocalProvider(
+        LocalAppBackdrop provides backdrop,
+        LocalControlBackdrop provides backdrop,
+        LocalDialogHost provides dialogHostState
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(wallpaperPreset.baseColor)
     ) {
-        val backdrop = if (isBackdropSupported()) {
-            rememberLayerBackdrop {
-                drawWallpaperPattern(wallpaperPreset)
-                drawContent()
-            }
-        } else {
-            null
-        }
-
         if (backdrop != null) {
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop))
         } else {
@@ -610,6 +628,16 @@ fun LoginScreen(
                 )
             }
         }
+
+        // 弹窗层：与内容列同级，压在最上面。
+        // imePadding 是必需的——添加学校/验证码弹窗里都有输入框，键盘弹起时
+        // 弹窗要在剩余空间里重新居中，否则确认按钮会被键盘压住。
+        DialogHost(
+            state = dialogHostState,
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+        )
     }
 
     // Student Binding Confirmation Dialog
@@ -679,17 +707,18 @@ fun LoginScreen(
                     Text("看不清？点击刷新")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
+                GlassTextField(
                     value = captchaInput,
                     onValueChange = { captchaInput = it },
-                    label = { Text("验证码") },
-                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    placeholder = "验证码",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    minHeight = 50.dp
                 )
             }
         }
     }
+    } // 关闭 CompositionLocalProvider
 }
 
 @Composable
@@ -919,99 +948,74 @@ fun AddSchoolDialog(
         Column(
             modifier = Modifier
                 .heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-                // Smart URL input section
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp)
-                    ) {
-                        Text(
-                            text = "智能识别",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = NeuPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        OutlinedTextField(
-                            value = urlInput,
-                            onValueChange = { urlInput = it },
-                            label = { Text("粘贴教务系统 URL") },
-                            placeholder = { Text("http://jwxt.example.edu.cn/jwglxt") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        SystemPrimaryButton(
-                            text = "自动识别",
-                            onClick = { parseUrl(urlInput) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = urlInput.isNotBlank()
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // School Name Input
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("学校名称（可选）") },
-                    placeholder = { Text("例如：XX 大学") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+            SchoolFormPanel {
+                SchoolFormPanelTitle(
+                    icon = Icons.Default.AutoAwesome,
+                    text = "智能识别"
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Domain Input
-                OutlinedTextField(
-                    value = domain,
-                    onValueChange = { domain = it },
-                    label = { Text("教务系统域名") },
-                    placeholder = { Text("jwxt.example.edu.cn") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = showError,
-                    supportingText = if (showError) {
-                        { Text("请输入有效域名", color = MaterialTheme.colorScheme.error) }
-                    } else null
+                SchoolFormField(
+                    label = "教务系统网址",
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
+                    placeholder = "http://jwxt.example.edu.cn/jwglxt",
+                    helper = "粘贴登录后的任意教务页面地址，下面的字段会自动填好"
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Base Path Input
-                OutlinedTextField(
-                    value = basePath,
-                    onValueChange = { basePath = it },
-                    label = { Text("基础路径") },
-                    placeholder = { Text("/jwglxt 或留空") },
-                    singleLine = true,
+                SystemPrimaryButton(
+                    text = "自动识别",
+                    onClick = { parseUrl(urlInput) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    supportingText = { Text("如 /jwglxt、/jwxt 或留空") }
+                    enabled = urlInput.isNotBlank()
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                SystemPicker(
-                    options = listOf("HTTPS（推荐）", "HTTP"),
+            }
+
+            SchoolFormSectionTitle("基本信息")
+
+            SchoolFormField(
+                label = "学校名称（可选）",
+                value = name,
+                onValueChange = { name = it },
+                placeholder = "例如：XX 大学"
+            )
+
+            SchoolFormField(
+                label = "教务系统域名",
+                value = domain,
+                onValueChange = { domain = it },
+                placeholder = "jwxt.example.edu.cn",
+                error = if (showError) "请输入有效域名" else null
+            )
+
+            SchoolFormField(
+                label = "基础路径",
+                value = basePath,
+                onValueChange = { basePath = it },
+                placeholder = "/jwglxt 或留空",
+                helper = "如 /jwglxt、/jwxt；模块直接挂在根目录时留空"
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "协议",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // 两个选项用分段控件，不用下拉：一次点击就能选完，也和全 App 一致
+                SystemSegmentedControl(
+                    options = listOf("HTTPS", "HTTP"),
                     selectedIndex = if (protocol == "https") 0 else 1,
                     onSelect = { index -> protocol = if (index == 0) "https" else "http" },
-                    label = "协议"
+                    modifier = Modifier.fillMaxWidth()
                 )
+                Text(
+                    text = if (protocol == "https") "加密连接，推荐优先尝试" else "非加密连接",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }

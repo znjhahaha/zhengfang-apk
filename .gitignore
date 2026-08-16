@@ -9,6 +9,9 @@ app/build/
 *.iml
 .DS_Store
 
+# Cursor / agent plan scratch
+/.zcode/
+
 # Android
 /local.properties
 local.properties

@@ -19,7 +19,10 @@ interface PasswordLoginGateway {
 
 object PasswordLoginGatewayFactory {
     fun create(school: SchoolConfig): PasswordLoginGateway =
-        if (school.id == TYUST_SCHOOL_ID) TyustSsoLoginManager() else PasswordLoginManager()
+        if (school.id == TYUST_SCHOOL_ID) TyustSsoLoginManager()
+        else if (school.id == ZJUT_SCHOOL_ID) ZjutSsoLoginManager()
+        else PasswordLoginManager()
 
     private const val TYUST_SCHOOL_ID = "tyust"
+    private const val ZJUT_SCHOOL_ID = "zjut"
 }

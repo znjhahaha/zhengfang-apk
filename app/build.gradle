@@ -191,4 +191,6 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    // org.json 在 JVM 单测中来自 android.jar 桩(默认抛异常), 补真实实现供单元测试使用
+    testImplementation 'org.json:json:20231013'
 }

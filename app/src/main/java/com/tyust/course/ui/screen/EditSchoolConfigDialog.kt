@@ -1,24 +1,44 @@
 package com.tyust.course.ui.screen
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import com.tyust.course.ui.system.SystemSegmentedControl
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.rememberGlassAccessibilityMode
+import com.tyust.course.ui.theme.MotionEasing
+import com.tyust.course.ui.theme.MotionSpring
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditSchoolConfigDialog(
     school: SchoolConfig,
@@ -33,10 +53,10 @@ fun EditSchoolConfigDialog(
     var courseGnmkdm by remember { mutableStateOf(school.courseGnmkdm) }
     var gradeGnmkdm by remember { mutableStateOf(school.gradeGnmkdm) }
     var scheduleGnmkdm by remember { mutableStateOf(school.scheduleGnmkdm) }
-    
+
     // URL input for smart parsing
     var urlInput by remember { mutableStateOf("") }
-    
+
     // Advanced paths
     var showAdvanced by remember { mutableStateOf(false) }
     var studentInfoPath by remember { mutableStateOf(school.studentInfoPath) }
@@ -45,16 +65,13 @@ fun EditSchoolConfigDialog(
     var selectCoursePath by remember { mutableStateOf(school.selectCoursePath) }
     var schedulePath by remember { mutableStateOf(school.schedulePath) }
     var gradesPath by remember { mutableStateOf(school.gradesPath) }
-    
-    // Protocol dropdown state
-    var protocolExpanded by remember { mutableStateOf(false) }
-    
+
     // Smart URL parsing function
     fun parseUrl(url: String) {
         if (url.isBlank()) return
-        
+
         var cleanUrl = url.trim()
-        
+
         // Extract protocol
         when {
             cleanUrl.startsWith("https://") -> {
@@ -66,13 +83,13 @@ fun EditSchoolConfigDialog(
                 cleanUrl = cleanUrl.removePrefix("http://")
             }
         }
-        
+
         // Extract domain and base path
         val pathStart = cleanUrl.indexOf('/')
         if (pathStart > 0) {
             domain = cleanUrl.substring(0, pathStart)
             val pathPart = cleanUrl.substring(pathStart)
-            
+
             // Find common base paths like /jwglxt, /jwxt, /jw
             val commonPaths = listOf("/jwglxt", "/jwxt", "/jwxs", "/jw", "/xk")
             for (commonPath in commonPaths) {
@@ -86,7 +103,7 @@ fun EditSchoolConfigDialog(
                     break
                 }
             }
-            
+
             // If no common path found, try to extract first path segment
             if (basePath == school.basePath && pathPart.length > 1) {
                 val secondSlash = pathPart.indexOf('/', 1)
@@ -98,14 +115,15 @@ fun EditSchoolConfigDialog(
             domain = cleanUrl.split("?")[0]
         }
     }
-    
+
     SystemDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                "编辑学校配置",
+                text = "编辑学校配置",
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         confirmButton = {
@@ -141,284 +159,184 @@ fun EditSchoolConfigDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 350.dp) // 限制最大高度以容纳下方大圆角按钮
-                .verticalScroll(rememberScrollState())
+                .heightIn(max = 380.dp) // 留出下方大圆角按钮的空间
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Smart URL Parser Section
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "智能识别 URL",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    OutlinedTextField(
-                        value = urlInput,
-                        onValueChange = { urlInput = it },
-                        label = { Text("粘贴教务系统 URL") },
-                        placeholder = { Text("http://jwxt.example.edu.cn/jwglxt") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Button(
-                        onClick = { parseUrl(urlInput) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        enabled = urlInput.isNotBlank()
-                    ) {
-                        Text("自动识别并填充")
-                    }
-                }
+            SchoolFormPanel {
+                SchoolFormPanelTitle(
+                    icon = Icons.Default.AutoAwesome,
+                    text = "智能识别"
+                )
+                SchoolFormField(
+                    label = "教务系统网址",
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
+                    placeholder = "http://jwxt.example.edu.cn/jwglxt",
+                    helper = "识别后会覆盖下方的域名、协议与基础路径"
+                )
+                SystemPrimaryButton(
+                    text = "识别并填充",
+                    onClick = { parseUrl(urlInput) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = urlInput.isNotBlank()
+                )
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Text(
-                text = "基本配置",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // School Name
-            OutlinedTextField(
+
+            SchoolFormSectionTitle("基本配置")
+
+            SchoolFormField(
+                label = "学校名称",
                 value = name,
-                onValueChange = { name = it },
-                label = { Text("学校名称") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                onValueChange = { name = it }
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Domain
-            OutlinedTextField(
+
+            SchoolFormField(
+                label = "教务系统域名",
                 value = domain,
                 onValueChange = { domain = it },
-                label = { Text("教务系统域名") },
-                placeholder = { Text("jwxt.example.edu.cn") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                placeholder = "jwxt.example.edu.cn"
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Protocol Dropdown
-            ExposedDropdownMenuBox(
-                expanded = protocolExpanded,
-                onExpandedChange = { protocolExpanded = !protocolExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = protocol.uppercase(),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("协议") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = protocolExpanded) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                    )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "协议",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
-                ExposedDropdownMenu(
-                    expanded = protocolExpanded,
-                    onDismissRequest = { protocolExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { 
-                            Column {
-                                Text("HTTPS", fontWeight = FontWeight.Medium)
-                                Text("安全连接 (推荐)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        },
-                        onClick = {
-                            protocol = "https"
-                            protocolExpanded = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { 
-                            Column {
-                                Text("HTTP", fontWeight = FontWeight.Medium)
-                                Text("非加密连接", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        },
-                        onClick = {
-                            protocol = "http"
-                            protocolExpanded = false
-                        }
-                    )
-                }
+                // 原先是 ExposedDropdownMenuBox：两个选项开一个下拉太重，也不是本 App 的语言
+                SystemSegmentedControl(
+                    options = listOf("HTTPS", "HTTP"),
+                    selectedIndex = if (protocol == "https") 0 else 1,
+                    onSelect = { index -> protocol = if (index == 0) "https" else "http" },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = if (protocol == "https") "加密连接，推荐优先尝试" else "非加密连接",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Base Path
-            OutlinedTextField(
+
+            SchoolFormField(
+                label = "基础路径",
                 value = basePath,
                 onValueChange = { basePath = it },
-                label = { Text("基础路径") },
-                placeholder = { Text("/jwglxt") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                supportingText = { Text("如 /jwglxt 或 /jwxt") }
+                placeholder = "/jwglxt",
+                helper = "如 /jwglxt 或 /jwxt"
             )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Text(
-                text = "模块代码 (gnmkdm)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
+
+            SchoolFormSectionTitle("模块代码（gnmkdm）")
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "选课",
                     value = courseGnmkdm,
                     onValueChange = { courseGnmkdm = it },
-                    label = { Text("选课") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "成绩",
                     value = gradeGnmkdm,
                     onValueChange = { gradeGnmkdm = it },
-                    label = { Text("成绩") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.weight(1f)
                 )
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Advanced toggle
-            TextButton(
-                onClick = { showAdvanced = !showAdvanced },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (showAdvanced) "隐藏高级配置 ▲" else "显示高级配置 ▼")
-            }
-            
-            // Advanced paths
+
+            SchoolFormField(
+                label = "课表",
+                value = scheduleGnmkdm,
+                onValueChange = { scheduleGnmkdm = it }
+            )
+
+            AdvancedSectionToggle(
+                expanded = showAdvanced,
+                onToggle = { showAdvanced = !showAdvanced }
+            )
+
             if (showAdvanced) {
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "URL 路径配置",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormSectionTitle("URL 路径配置")
+
+                SchoolFormField(
+                    label = "学生信息验证",
                     value = studentInfoPath,
-                    onValueChange = { studentInfoPath = it },
-                    label = { Text("学生信息验证") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { studentInfoPath = it }
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "选课首页",
                     value = courseIndexPath,
-                    onValueChange = { courseIndexPath = it },
-                    label = { Text("选课首页") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { courseIndexPath = it }
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "课程列表",
                     value = courseListPath,
-                    onValueChange = { courseListPath = it },
-                    label = { Text("课程列表") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { courseListPath = it }
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "选课提交",
                     value = selectCoursePath,
-                    onValueChange = { selectCoursePath = it },
-                    label = { Text("选课提交") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { selectCoursePath = it }
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "课表查询",
                     value = schedulePath,
-                    onValueChange = { schedulePath = it },
-                    label = { Text("课表查询") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { schedulePath = it }
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
+                SchoolFormField(
+                    label = "成绩查询",
                     value = gradesPath,
-                    onValueChange = { gradesPath = it },
-                    label = { Text("成绩查询") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    onValueChange = { gradesPath = it }
                 )
             }
         }
+    }
+}
+
+/** 高级配置的折叠开关。原先是一行带 `▲▼` 字符的 TextButton，这里换成会转的 chevron。 */
+@Composable
+private fun AdvancedSectionToggle(
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val reduceMotion = rememberGlassAccessibilityMode().reduceMotion
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = if (reduceMotion) {
+            androidx.compose.animation.core.snap()
+        } else if (expanded) {
+            MotionSpring.liquidMenu()
+        } else {
+            androidx.compose.animation.core.tween(140, easing = MotionEasing.Accelerate)
+        },
+        label = "advancedToggleArrow"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassChip(shape = RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = if (expanded) "隐藏高级配置" else "显示高级配置",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(rotation)
+        )
     }
 }

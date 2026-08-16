@@ -977,7 +977,13 @@ internal fun LiquidAnchoredOptionMenu(
 
             Column(
                 modifier = Modifier
-                    .widthIn(min = anchorWidth, max = 420.dp)
+                    // 【必须是 width，不能是 widthIn】菜单里每一行都是 fillMaxWidth，
+                    // 所以 widthIn(min = anchorWidth, max = 420.dp) 会让它们撑到 max 那一档，
+                    // 菜单于是比字段宽出一截；再被 AnchoredPickerPositionProvider 的
+                    // `x.coerceIn(0, windowWidth - popupWidth)` 夹到 0，就成了一条贴着
+                    // 屏幕左右边的白板（登录页学校选择器上肉眼可见）。
+                    // 锚点同宽本来就是这个菜单的设计意图——它是"从字段下缘长出来的那一段"。
+                    .width(anchorWidth)
                     .then(menuGlassModifier)
                     .graphicsLayer {
                         val progress = menuProgress.value.coerceIn(0f, 1f)
