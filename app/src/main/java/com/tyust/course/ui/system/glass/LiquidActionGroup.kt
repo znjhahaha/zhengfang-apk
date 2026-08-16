@@ -254,8 +254,8 @@ fun LiquidActionGroup(
 }
 
 /**
- * 按下时向最近邻居融合。**这段数学不要改**：它与芯片的按压光学（opticalProgress）
- * 是同一套手感，动了这里就得连带重调 [GlassRecipe.ActionGroupMergeThreshold] 与腰宽。
+ * 按下时向最近邻居融合。按压阈值与 [GlassRecipe.ActionGroupMergeThreshold] 和芯片的
+ * 按压光学（opticalProgress）是同一套手感，动了这里就得连带重调那两处。
  */
 private fun DrawScope.drawPressMerge(
     pressed: PressedAction?,
@@ -265,20 +265,35 @@ private fun DrawScope.drawPressMerge(
     rimAlpha: Float
 ) {
     val active = pressed ?: return
-    val progress = active.optics.opticalProgress
+    val optics = active.optics
+    val progress = optics.opticalProgress
     if (progress < GlassRecipe.ActionGroupMergeThreshold) return
 
-    val source = bounds[active.index] ?: return
+    val layoutSource = bounds[active.index] ?: return
     // 只连最近的一个邻居：连两侧会让被按的按钮看起来"融进了整条"，
     // 失去"这一枚被按下"的焦点。
     val neighbour = bounds.entries
         .filter { it.key != active.index && enabledFlags[it.key] == true }
-        .minByOrNull { abs(it.value.center.x - source.center.x) }
+        .minByOrNull { abs(it.value.center.x - layoutSource.center.x) }
         ?.value ?: return
 
-    val gap = abs(neighbour.center.x - source.center.x) -
+    // 桥要贴【画出来的那一颗】：被按芯片绘制期有跟手平移和按压膨胀
+    // （drawBackdrop layerBlock 里的同一套公式），静态布局 bounds 会在
+    // 按住拖动时与芯片错位、从圆边外露出一段悬空的桥。
+    // 在 drawBehind 里读 optics 的状态只触发重绘，不额外引发重组。
+    val travel = optics.dragTravel(GlassRecipe.ChipDragTravelDp.dp.toPx())
+    val swell = 1f + optics.pressProgress *
+        GlassRecipe.ChipPressSwellDp.dp.toPx() / layoutSource.height
+    val pressedRadius = layoutSource.width / 2f * swell
+    val pressedCenter = layoutSource.center + travel
+    val source = Rect(
+        offset = Offset(pressedCenter.x - pressedRadius, pressedCenter.y - pressedRadius),
+        size = Size(pressedRadius * 2f, pressedRadius * 2f)
+    )
+
+    val gap = (neighbour.center - source.center).getDistance() -
         (source.width + neighbour.width) / 2f
-    val maxGap = source.width * GlassRecipe.ActionGroupMaxBridgeRatio
+    val maxGap = maxOf(source.width, neighbour.width) * GlassRecipe.ActionGroupMaxBridgeRatio
     if (gap > maxGap || gap < 0f) return
 
     // 融合强度：按压越深、间距越小，桥越饱满。
@@ -336,7 +351,7 @@ private fun DrawScope.drawAbsorbMerge(
 
         val gap = abs(neighbour.center.x - source.center.x) -
             (source.width + neighbour.width) / 2f
-        val maxGap = neighbour.width * GlassRecipe.ActionGroupMaxBridgeRatio
+        val maxGap = maxOf(source.width, neighbour.width) * GlassRecipe.ActionGroupMaxBridgeRatio
         if (gap > maxGap || gap < 0f) return@forEach
 
         val proximity = 1f - (gap / maxGap).coerceIn(0f, 1f)
@@ -567,12 +582,15 @@ private fun Modifier.pressReporter(
 }
 
 /**
- * 液体连接桥：两圆之间的双曲内凹腰身。
+ * 液体连接桥：两圆 SDF 的 smooth-min 等值面轮廓（Apple Liquid Glass「控件融合」/
+ * 社区 metaball 同款算法，几何见 [LiquidMergeGeometry]）。
  *
- * 形状取自表面张力下两液滴接触时的轮廓——不是矩形，也不是等宽胶囊，
- * 而是【中间细、两端外扩】并与圆相切。用二次贝塞尔的控制点落在腰部
- * 就能得到这条内凹曲线，成本远低于真正的 metaball 场求解，
- * 在 38dp 的尺度下肉眼无法区分。
+ * strength 不再直接决定腰宽，而是映射到平滑半径 k：出生点（k = 2.02×边距）之上
+ * 桥是一条细丝，随按压连续长到腰宽约 3/4 直径——替代旧的"贝塞尔控制点落在腰部"
+ * 近似（锚点几何在圆外，衔接处会出翼片尖刺，且最小腰就有半直径宽、没有细丝阶段）。
+ *
+ * 轮廓端站在圆心正上/下方，竖直端边整段藏进芯片后面被盖住，无需相切计算。
+ * 采样 16 站 × 12 步二分 ≈ 每帧两百次场求值，仅按压/吸收动画期间执行。
  */
 private fun DrawScope.drawLiquidBridge(
     from: Rect,
@@ -585,38 +603,73 @@ private fun DrawScope.drawLiquidBridge(
     val left = if (leftIsFrom) from else to
     val right = if (leftIsFrom) to else from
 
-    val startX = left.center.x + left.width / 2f * 0.72f
-    val endX = right.center.x - right.width / 2f * 0.72f
-    if (endX <= startX) return
+    val leftCircle = LiquidMergeGeometry.MergeCircle(
+        center = left.center,
+        radius = left.width / 2f
+    )
+    val rightCircle = LiquidMergeGeometry.MergeCircle(
+        center = right.center,
+        radius = right.width / 2f
+    )
+    val gap = (rightCircle.center - leftCircle.center).getDistance() -
+        leftCircle.radius - rightCircle.radius
+    if (gap <= 0f) return
 
-    val centerY = (left.center.y + right.center.y) / 2f
-    // 腰宽随强度增长：刚开始只是一条细丝，压满才接近芯片直径的一半
-    val waist = left.height * GlassRecipe.ActionGroupBridgeWaist * strength
-    if (waist < 0.5f) return
+    val kMin = GlassRecipe.ActionGroupBridgeKBirthGapRatio * gap
+    val kMax = GlassRecipe.ActionGroupBridgeKFullGapRatio * gap +
+        GlassRecipe.ActionGroupBridgeKFullRadiusRatio *
+        (leftCircle.radius + rightCircle.radius) / 2f
+    val k = kMin + (kMax - kMin) * strength.coerceIn(0f, 1f)
 
-    val edgeHalf = left.height / 2f * 0.92f
-    val midX = (startX + endX) / 2f
+    val points = LiquidMergeGeometry.mergeOutlinePoints(leftCircle, rightCircle, k)
+        // 颈未形成（strength 贴地或几何退化）时不画——桥必须从细丝"长"出来
+        ?: return
+    val stationCount = points.size / 2
 
-    val path = Path().apply {
-        moveTo(startX, centerY - edgeHalf)
-        // 上缘：从左圆边缘内凹到腰部，再外扩到右圆边缘
-        quadraticTo(midX, centerY - waist, endX, centerY - edgeHalf)
-        lineTo(endX, centerY + edgeHalf)
-        quadraticTo(midX, centerY + waist, startX, centerY + edgeHalf)
-        close()
-    }
+    drawPath(closedSmoothPath(points), color = surfaceColor)
 
-    drawPath(path, color = surfaceColor)
-    // 桥的上下缘要有和芯片同源的亮线，否则桥看起来是"贴上去的"而不是同一块玻璃
-    val rimPath = Path().apply {
-        moveTo(startX, centerY - edgeHalf)
-        quadraticTo(midX, centerY - waist, endX, centerY - edgeHalf)
-    }
-    val rimPathBottom = Path().apply {
-        moveTo(startX, centerY + edgeHalf)
-        quadraticTo(midX, centerY + waist, endX, centerY + edgeHalf)
-    }
+    // 上下缘亮线与芯片 rim 同源：上亮下暗，暗示光源方向；两端藏进圆内的部分
+    // 会被芯片盖住，实际可见的只有间隙段。
     val stroke = Stroke(width = 1.2.dp.toPx())
-    drawPath(rimPath, color = rimColor, style = stroke)
-    drawPath(rimPathBottom, color = rimColor.copy(alpha = rimColor.alpha * 0.7f), style = stroke)
+    val upper = points.subList(0, stationCount)
+    val lower = points.subList(stationCount, points.size)
+    // 屏幕坐标系 y 向下：靠下的那一段更暗
+    val upperIsFirstHalf = upper.first().y < lower.first().y
+    val firstCurve = openSmoothPath(if (upperIsFirstHalf) upper else lower)
+    val secondCurve = openSmoothPath(if (upperIsFirstHalf) lower else upper)
+    drawPath(firstCurve, color = rimColor, style = stroke)
+    drawPath(
+        secondCurve,
+        color = rimColor.copy(alpha = rimColor.alpha * 0.7f),
+        style = stroke
+    )
+}
+
+/**
+ * 采样折线 → 平滑闭合 Path：段中点之间连二次贝塞尔，控制点取原采样点。
+ * 端站之间的两条竖直边藏在芯片后面，平滑不平滑都看不见。
+ */
+private fun closedSmoothPath(points: List<Offset>): Path {
+    val path = Path()
+    path.moveTo(points.first().x, points.first().y)
+    appendSmoothSegment(path, points)
+    path.close()
+    return path
+}
+
+/** 采样折线 → 平滑开放曲线（只描边缘亮线用）。 */
+private fun openSmoothPath(points: List<Offset>): Path {
+    val path = Path()
+    path.moveTo(points.first().x, points.first().y)
+    appendSmoothSegment(path, points)
+    return path
+}
+
+private fun appendSmoothSegment(path: Path, points: List<Offset>) {
+    for (i in 1 until points.size - 1) {
+        val midX = (points[i].x + points[i + 1].x) / 2f
+        val midY = (points[i].y + points[i + 1].y) / 2f
+        path.quadraticTo(points[i].x, points[i].y, midX, midY)
+    }
+    path.lineTo(points.last().x, points.last().y)
 }

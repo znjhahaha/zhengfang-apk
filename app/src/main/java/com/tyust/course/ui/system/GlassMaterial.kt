@@ -391,8 +391,16 @@ object GlassRecipe {
     // ── 按压邻近液滴融合 ─────────────────────────────────────────────
     /** 邻居间距超过芯片直径的这个倍数就不再连接，避免隔着一个按钮"远程拉丝"。 */
     val ActionGroupMaxBridgeRatio = 0.62f
-    /** 连接桥腰宽相对芯片直径：细腰才像液体表面张力，粗了就是贴块矩形。 */
-    val ActionGroupBridgeWaist = 0.42f
+    /**
+     * 融合颈出生 k（×两圆边距）：多项式 smin 在 k = 2×边距 时中点场值恰好过零，
+     * 取 2.02 让桥一出生就是一条细丝而不是半宽矩形（实测出生腰宽 7%~20% 直径，
+     * 随间距增大而变粗——间距上限被 MaxBridgeRatio 拦住，不会失控）。
+     */
+    val ActionGroupBridgeKBirthGapRatio = 2.02f
+    /** 压满 k 的边距分量。 */
+    val ActionGroupBridgeKFullGapRatio = 2.0f
+    /** 压满 k 的半径分量：与边距分量相加后腰宽约为直径的 3/4（全间距段稳定）。 */
+    val ActionGroupBridgeKFullRadiusRatio = 0.24f
     /** 融合起效的按压阈值：轻触不该触发，避免误连。 */
     val ActionGroupMergeThreshold = 0.18f
 }

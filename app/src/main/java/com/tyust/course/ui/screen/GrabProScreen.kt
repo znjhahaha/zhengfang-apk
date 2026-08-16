@@ -73,6 +73,11 @@ import com.tyust.course.ui.system.SystemSectionHeader
 import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemStatusBadge
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
+import com.tyust.course.ui.system.rememberGlassAccessibilityMode
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.Role
 import com.tyust.course.ui.system.SystemTone
 import com.tyust.course.ui.system.SystemTopBar
 import com.tyust.course.ui.theme.SemanticDanger
@@ -535,13 +540,24 @@ private fun ScheduledTaskForm(
             )
         }
 
-        Surface(
+        // 时间选择字段：边缘光玻璃（同成绩页 SemesterSelector 的紧凑字段语言）。
+        // 旧版硬编码 White.copy(0.35) 假玻璃在深色主题下会泛白。
+        val timeOptics = rememberInteractiveOptics()
+        val timeInteractive = !rememberGlassAccessibilityMode().reduceMotion
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onDateTimeClick),
-            color = Color.White.copy(alpha = 0.35f),
-            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.55f)),
-            shape = RoundedCornerShape(16.dp)
+                .glassChip(
+                    shape = RoundedCornerShape(16.dp),
+                    pressProgress = { timeOptics.pressProgress }
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onDateTimeClick
+                )
+                .then(if (timeInteractive) timeOptics.gestureModifier else Modifier)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
@@ -574,7 +590,7 @@ private fun ScheduledTaskForm(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (isRunning) SemanticSuccess.copy(alpha = 0.12f) else SemanticWarning.copy(alpha = 0.12f),
-                shape = MaterialTheme.shapes.small
+                shape = RoundedCornerShape(14.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -646,11 +662,11 @@ private fun TargetSummaryCard(
     tone: SystemTone,
     onClear: (() -> Unit)?
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color.White.copy(alpha = 0.35f),
-        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.50f)),
-        shape = RoundedCornerShape(16.dp)
+    // 目标摘要：边缘光玻璃字段，与时间选择字段同一语言
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassChip(shape = RoundedCornerShape(16.dp))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
