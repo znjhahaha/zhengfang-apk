@@ -1009,8 +1009,14 @@ fun SystemDialog(
     }
 
     if (dialogHost != null) {
+        // 【必须过 rememberUpdatedState】dialogHost.show 只在挂载时调用一次，
+        // 直接把 dialogBody 交出去，Host 拿到的就永远是第一次组合时那个闭包——
+        // 闭包里按值捕获的东西（传进来的参数、当次算出的 val）之后再也不会更新。
+        // 大多数弹窗看不出来（内容开着的时候不变），但背景取色那种"拖一下就变"的
+        // 内容会整块定格。这里让 Host 读一个 State，闭包换新它就重组。
+        val currentBody by androidx.compose.runtime.rememberUpdatedState(dialogBody)
         androidx.compose.runtime.DisposableEffect(Unit) {
-            dialogHost.show(onDismissRequest, dialogBody)
+            dialogHost.show(onDismissRequest) { currentBody() }
             onDispose { dialogHost.dismiss() }
         }
     } else {

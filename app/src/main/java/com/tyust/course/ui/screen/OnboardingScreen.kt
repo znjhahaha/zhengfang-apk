@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,16 +111,17 @@ fun OnboardingScreen(
     val scope = rememberCoroutineScope()
     val accessibility = rememberGlassAccessibilityMode()
     val isLastPage = pagerState.currentPage == pages.lastIndex
-    val wallpaperPreset = AppearanceSettingsManager.wallpaper
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(wallpaperPreset.baseColor)
+            .drawBehind { drawRect(AppearanceSettingsManager.style.baseColor) }
     ) {
+        // 每处都在【绘制 lambda 内部】读 state：rememberLayerBackdrop 没有 key，
+        // 捕获外面的快照会让图片壁纸异步解码完成后这一层不重绘。
         val backdrop = if (isBackdropSupported()) {
             rememberLayerBackdrop {
-                drawWallpaperPattern(wallpaperPreset)
+                drawWallpaperPattern(AppearanceSettingsManager.style)
                 drawContent()
             }
         } else {
@@ -131,7 +133,7 @@ fun OnboardingScreen(
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop))
         } else {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                drawWallpaperPattern(wallpaperPreset)
+                drawWallpaperPattern(AppearanceSettingsManager.style)
             }
         }
 

@@ -162,8 +162,8 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Outlined.Palette,
                     iconTint = Color(0xFFBF5AF2),
-                    title = "背景颜色",
-                    subtitle = wallpaperName.ifBlank { "选择应用背景色" },
+                    title = "背景",
+                    subtitle = wallpaperName.ifBlank { "选择背景色或图片" },
                     onClick = onWallpaperSelect,
                     showDivider = false
                 )

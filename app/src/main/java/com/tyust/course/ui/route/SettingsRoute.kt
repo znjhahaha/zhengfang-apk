@@ -104,7 +104,7 @@ fun SettingsRoute(
     var pendingAccountDelete by remember { mutableStateOf<UserManager.AccountRecord?>(null) }
     var showSchoolAdaptation by remember { mutableStateOf(false) }
     var showWallpaperDialog by remember { mutableStateOf(false) }
-    val currentWallpaper = com.tyust.course.manager.AppearanceSettingsManager.wallpaper
+    val currentWallpaperName = com.tyust.course.manager.AppearanceSettingsManager.currentWallpaperName
     
     // Quota States
     var isSuper by remember { mutableStateOf(false) }
@@ -381,7 +381,7 @@ fun SettingsRoute(
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
         onSchoolAdaptation = { showSchoolAdaptation = true },
         onWallpaperSelect = { showWallpaperDialog = true },
-        wallpaperName = currentWallpaper.displayName,
+        wallpaperName = currentWallpaperName,
         isSuper = isSuper,
         quotaInfo = quotaInfo,
         canRefreshCookie = canRefreshCookie,
@@ -389,53 +389,9 @@ fun SettingsRoute(
     )
     
     if (showWallpaperDialog) {
-        com.tyust.course.ui.system.SystemDialog(
-            onDismissRequest = { showWallpaperDialog = false },
-            title = { Text("背景颜色") },
-            confirmButton = {
-                SystemSecondaryButton(
-                    text = "关闭",
-                    onClick = { showWallpaperDialog = false }
-                )
-            }
-        ) {
-            com.tyust.course.manager.WallpaperPreset.values().forEach { preset ->
-                val selected = preset == currentWallpaper
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            com.tyust.course.manager.AppearanceSettingsManager.updateWallpaper(preset)
-                            showWallpaperDialog = false
-                        }
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(preset.baseColor)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text(
-                        text = preset.displayName,
-                        modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                    if (selected) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = NeuPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
+        com.tyust.course.ui.screen.WallpaperSettingsDialog(
+            onDismiss = { showWallpaperDialog = false }
+        )
     }
 
     // Dialogs

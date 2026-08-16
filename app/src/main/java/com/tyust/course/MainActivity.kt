@@ -77,7 +77,6 @@ import com.tyust.course.activation.ActivationManager
 import com.tyust.course.activation.ActivationScreen
 import com.tyust.course.manager.AppearanceSettingsManager
 import com.tyust.course.manager.SmartSelector
-import com.tyust.course.manager.WallpaperPreset
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.screen.OnboardingScreen
 import com.tyust.course.ui.screen.SchoolAdaptationCompletionReminder
@@ -366,7 +365,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     else Modifier
                 )
             ) {
-            val wallpaperPreset = AppearanceSettingsManager.wallpaper
             // debug 水印画进壁纸捕获层，而不是盖在内容最上层。只有进入
             // LocalControlBackdrop 的采样范围，顶栏玻璃芯片才可能折射它——
             // 高对比斜线是验收折射管道最好的标靶：笔画在芯片边缘有没有弯，
@@ -381,12 +379,14 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         .fillMaxSize()
                         .layerBackdrop(wallpaperBackdrop)
                 ) {
-                    drawWallpaperPattern(wallpaperPreset)
+                    // 在绘制 lambda 内部再读一次 state：图片壁纸的位图是异步解码的，
+                    // 只读外面那份快照的话，位图到位时这一层不会重绘。
+                    drawWallpaperPattern(AppearanceSettingsManager.style)
                     if (showPiracyTiles) drawPiracyWatermarkTiles()
                 }
             } else {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawRect(wallpaperPreset.baseColor)
+                    drawRect(AppearanceSettingsManager.style.baseColor)
                     if (showPiracyTiles) drawPiracyWatermarkTiles()
                 }
             }

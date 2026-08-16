@@ -133,7 +133,6 @@ fun ScheduleSettingsScreen(
     // 顶栏会 reportNoticeAnchor()，不隔离的话本窗口顶栏的底边会被写进主窗口的
     // 锚点状态，关掉设置页后主窗口的悬浮通知会停在一个错误的落点上。
     val noticeAnchorState = remember { NoticeAnchorState() }
-    val wallpaperPreset = AppearanceSettingsManager.wallpaper
 
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(
@@ -147,7 +146,8 @@ fun ScheduleSettingsScreen(
                     }
                 )
         ) {
-            drawWallpaperPattern(wallpaperPreset)
+            // 在绘制 lambda 内部读 state：图片壁纸的位图异步到位时这一层才会重绘
+            drawWallpaperPattern(AppearanceSettingsManager.style)
         }
 
         CompositionLocalProvider(

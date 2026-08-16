@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -133,11 +134,13 @@ fun LoginScreen(
         }
     }
     
-    // 与主界面同款 Aurora 流体壁纸，登录卡的玻璃采样有真实的多彩层次
-    val wallpaperPreset = AppearanceSettingsManager.wallpaper
+    // 与主界面同款流体壁纸，登录卡的玻璃采样有真实的多彩层次。
+    //
+    // 每一处都在【绘制 lambda 内部】读 state：这个 rememberLayerBackdrop 没有 key，
+    // 捕获外面那个快照的话，壁纸换了、或者图片壁纸异步解码完成，这一层都不会重绘。
     val backdrop = if (isBackdropSupported()) {
         rememberLayerBackdrop {
-            drawWallpaperPattern(wallpaperPreset)
+            drawWallpaperPattern(AppearanceSettingsManager.style)
             drawContent()
         }
     } else {
@@ -160,13 +163,13 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(wallpaperPreset.baseColor)
+            .drawBehind { drawRect(AppearanceSettingsManager.style.baseColor) }
     ) {
         if (backdrop != null) {
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop))
         } else {
             androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                drawWallpaperPattern(wallpaperPreset)
+                drawWallpaperPattern(AppearanceSettingsManager.style)
             }
         }
 

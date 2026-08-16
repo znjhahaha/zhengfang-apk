@@ -181,6 +181,11 @@ dependencies {
     // Coil for image loading in Compose
     implementation 'io.coil-kt:coil-compose:2.5.0'
 
+    // EXIF 取向（自定义图片壁纸导入时正过来）。一条路径覆盖 minSdk 24+，
+    // 不必在 ImageDecoder(28+) 与已废弃的 android.media.ExifInterface 之间分叉。
+    // 版本跟随 Coil 已传递引入的那一档，避免多解析出一个副本。
+    implementation 'androidx.exifinterface:exifinterface:1.3.6'
+
     // Markdown Rendering for Compose
     implementation "com.halilibo.compose-richtext:richtext-commonmark:0.17.0"
     implementation "com.halilibo.compose-richtext:richtext-ui-material3:0.17.0"
