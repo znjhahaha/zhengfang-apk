@@ -37,6 +37,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
@@ -121,6 +123,35 @@ fun LiquidActionGroup(
                 buttonSize: Dp,
                 iconSize: Dp
             ) {
+                action(
+                    index = index,
+                    contentDescription = contentDescription,
+                    onClick = onClick,
+                    enabled = enabled,
+                    buttonSize = buttonSize
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(iconSize),
+                        tint = if (enabled) {
+                            LocalContentColor.current
+                        } else {
+                            LocalContentColor.current.copy(alpha = 0.38f)
+                        }
+                    )
+                }
+            }
+
+            @Composable
+            override fun action(
+                index: Int,
+                contentDescription: String?,
+                onClick: () -> Unit,
+                enabled: Boolean,
+                buttonSize: Dp,
+                content: @Composable () -> Unit
+            ) {
                 // 每枚按钮一套 optics：共用一套会让按下 A 时 B/C/D 一起形变，
                 // 因为它们读到的是同一个 pressProgress。
                 val itemOptics = remember(index) { InteractiveOptics(animationScope) }
@@ -140,12 +171,10 @@ fun LiquidActionGroup(
                 }
 
                 LiquidActionItem(
-                    icon = icon,
                     contentDescription = contentDescription,
                     onClick = onClick,
                     enabled = enabled,
                     buttonSize = buttonSize,
-                    iconSize = iconSize,
                     backdrop = backdrop,
                     optics = itemOptics,
                     onPressChange = { isDown ->
@@ -157,7 +186,8 @@ fun LiquidActionGroup(
                             pressed = null
                         }
                     },
-                    onBoundsChange = { rect -> bounds[index] = rect }
+                    onBoundsChange = { rect -> bounds[index] = rect },
+                    content = content
                 )
             }
         }
@@ -206,6 +236,8 @@ fun LiquidActionGroup(
 
 interface LiquidActionGroupScope {
     /**
+     * 图标操作。绝大多数调用点用这个。
+     *
      * @param index 组内唯一且稳定的序号，用于定位相邻按钮。**调用方负责保证不重复、
      *              不跳号**——重复索引会让几何记录互相覆盖，融合连到错误的邻居。
      */
@@ -219,21 +251,37 @@ interface LiquidActionGroupScope {
         buttonSize: Dp = 34.dp,
         iconSize: Dp = 16.dp
     )
+
+    /**
+     * 自定义内容的操作。用于芯片里放的不是图标的场合——例如刷新中要把图标换成
+     * 进度圈，又不想因此掉出这套玻璃材质和融合逻辑。
+     *
+     * 内容会自动获得与玻璃层一致的跟手形变，不需要调用方自己挂 graphicsLayer。
+     */
+    @Composable
+    fun action(
+        index: Int,
+        contentDescription: String?,
+        onClick: () -> Unit,
+        enabled: Boolean = true,
+        buttonSize: Dp = 34.dp,
+        content: @Composable () -> Unit
+    )
 }
 
 @Composable
 private fun LiquidActionItem(
-    icon: ImageVector,
     contentDescription: String?,
     onClick: () -> Unit,
     enabled: Boolean,
     buttonSize: Dp,
-    iconSize: Dp,
     backdrop: Backdrop?,
     optics: InteractiveOptics,
     onPressChange: (Boolean) -> Unit,
-    onBoundsChange: (Rect) -> Unit
+    onBoundsChange: (Rect) -> Unit,
+    content: @Composable () -> Unit
 ) {
+    val animateContent = enabled && !rememberGlassAccessibilityMode().reduceMotion
     Box(
         modifier = Modifier
             .size(buttonSize)
@@ -263,34 +311,27 @@ private fun LiquidActionItem(
                 role = Role.Button,
                 onClick = onClick
             )
-            .pressReporter(enabled = enabled, onPressChange = onPressChange),
+            .pressReporter(enabled = enabled, onPressChange = onPressChange)
+            .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center
     ) {
-        val animateContent = enabled && !rememberGlassAccessibilityMode().reduceMotion
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier
-                .size(iconSize)
-                .graphicsLayer {
-                    if (!animateContent) return@graphicsLayer
-                    // drawBackdrop 的 layerBlock 只变换被采样的玻璃层，图标不在其中。
-                    // 必须用同一个 dragTravel 把图标带上同样的行程，否则拖动时
-                    // 玻璃滑走、图标钉在原地，看起来就是图标从芯片里掉出来了。
-                    val travel = optics.dragTravel(GlassRecipe.ChipDragTravelDp.dp.toPx())
-                    translationX = travel.x
-                    translationY = travel.y
-                    applyPressSquash(
-                        progress = optics.pressProgress,
-                        depth = GlassRecipe.ChipIconPressDepth
-                    )
-                },
-            tint = if (enabled) {
-                LocalContentColor.current
-            } else {
-                LocalContentColor.current.copy(alpha = 0.38f)
-            }
-        )
+        Box(
+            modifier = Modifier.graphicsLayer {
+                if (!animateContent) return@graphicsLayer
+                // 形变挂在内容【外层】而不是 Icon 上：这样进度圈之类的自定义内容
+                // 也能自动跟随玻璃，调用方不需要各自再挂一遍 graphicsLayer。
+                applyChipContentDeformation(
+                    optics = optics,
+                    travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                    stretch = GlassRecipe.ChipDragStretch,
+                    pressDepth = GlassRecipe.ChipIconPressDepth,
+                    damping = GlassRecipe.ChipContentDeformDamping
+                )
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
     }
 }
 

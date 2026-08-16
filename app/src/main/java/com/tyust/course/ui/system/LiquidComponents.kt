@@ -74,6 +74,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.adaptiveGlassChip
+import com.tyust.course.ui.system.glass.applyChipContentDeformation
 import com.tyust.course.ui.system.glass.applyPressSquash
 import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.rememberInteractiveOptics
@@ -583,20 +584,19 @@ fun AnimatedIconButton(
                 .graphicsLayer {
                     if (accessibility.reduceMotion) return@graphicsLayer
                     if (chip) {
-                        // 玻璃层在 drawBackdrop 的 layerBlock 里平移，内容不在其中；
-                        // 图标必须走同一段 dragTravel，否则拖动时会从芯片里脱出。
-                        val travel = optics.dragTravel(
-                            GlassRecipe.ChipDragTravelDp.dp.toPx()
+                        // 玻璃层在 drawBackdrop 的 layerBlock 里形变，内容不在其中；
+                        // 内容必须走同一段行程与同向的各向异性，否则拖动时图标会脱出。
+                        applyChipContentDeformation(
+                            optics = optics,
+                            travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                            stretch = GlassRecipe.ChipDragStretch,
+                            pressDepth = 0.08f,
+                            damping = GlassRecipe.ChipContentDeformDamping
                         )
-                        translationX = travel.x
-                        translationY = travel.y
+                    } else {
+                        // 裸图标没有玻璃层可跟随，只有自身压扁
+                        applyPressSquash(progress = optics.pressProgress, depth = 0.14f)
                     }
-                    // 图标跟着容器一起被压：幅度比容器略小，
-                    // 否则小尺寸图标会先于容器触底，看起来像图标在独立抖动。
-                    applyPressSquash(
-                        progress = optics.pressProgress,
-                        depth = if (chip) 0.08f else 0.14f
-                    )
                 },
             tint = if (enabled) tint else tint.copy(alpha = 0.38f)
         )

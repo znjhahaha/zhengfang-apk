@@ -101,6 +101,7 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
 import com.tyust.course.ui.system.glass.adaptiveGlassChip
+import com.tyust.course.ui.system.glass.applyChipContentDeformation
 import com.tyust.course.ui.system.glass.applyPressSquash
 import com.tyust.course.ui.system.glass.glassRim
 import com.tyust.course.ui.system.glass.rememberInteractiveOptics
@@ -359,13 +360,13 @@ fun GlassCircleButton(
                 .size(size * 0.48f)
                 .graphicsLayer {
                     if (accessibility.reduceMotion) return@graphicsLayer
-                    // 与玻璃层同一段行程，否则拖动时图标会从圆钮里脱出
-                    val travel = optics.dragTravel(GlassRecipe.ChipDragTravelDp.dp.toPx())
-                    translationX = travel.x
-                    translationY = travel.y
-                    applyPressSquash(
-                        progress = optics.pressProgress,
-                        depth = GlassRecipe.ChipIconPressDepth
+                    // 与玻璃层同一段行程、同向各向异性，否则拖动时图标会脱出
+                    applyChipContentDeformation(
+                        optics = optics,
+                        travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                        stretch = GlassRecipe.ChipDragStretch,
+                        pressDepth = GlassRecipe.ChipIconPressDepth,
+                        damping = GlassRecipe.ChipContentDeformDamping
                     )
                 },
             tint = if (enabled) tint else tint.copy(alpha = 0.38f)

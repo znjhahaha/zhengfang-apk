@@ -132,26 +132,12 @@ fun Modifier.liquidChip(
             },
             layerBlock = if (allowInteraction) {
                 {
-                    val progress = optics.pressProgress
-                    val swell = 1f +
-                        progress * GlassRecipe.ChipPressSwellDp.dp.toPx() / size.height
-
-                    // 有界跟手：芯片可以被推动，但推不出自己的插槽。
-                    // 图标在 LiquidActionItem / AnimatedIconButton 里调用同一个
-                    // optics.dragTravel，两者行程一致才不会脱开。
-                    val travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx()
-                    val travel = optics.dragTravel(travelPx)
-                    translationX = travel.x
-                    translationY = travel.y
-
-                    // 等体积挤压：沿运动方向拉长多少，垂直方向就收窄同样多。
-                    // 两个轴都只加不减会让芯片越拖越大，最后是一颗蛋而不是液滴。
-                    val stretch = GlassRecipe.ChipDragStretch *
-                        (abs(travel.x) / travelPx).coerceIn(0f, 1f)
-                    val squash = GlassRecipe.ChipDragStretch *
-                        (abs(travel.y) / travelPx).coerceIn(0f, 1f)
-                    scaleX = swell * (1f + stretch - squash)
-                    scaleY = swell * (1f + squash - stretch)
+                    applyChipGlassDeformation(
+                        optics = optics,
+                        travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                        swellPx = GlassRecipe.ChipPressSwellDp.dp.toPx(),
+                        stretch = GlassRecipe.ChipDragStretch
+                    )
                 }
             } else {
                 null

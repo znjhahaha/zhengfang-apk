@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyust.course.ui.system.GlassSegmentedBar
 import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.glass.LiquidActionGroup
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemLoadingState
@@ -140,35 +141,37 @@ fun GradesScreen(
                 title = "成绩与考试",
                 subtitle = subtitle,
                 actions = {
-                    if (currentTab != 2) {
-                        val grades = if (currentTab == 0) semesterGrades else overallGrades
-                        IconButton(
-                            onClick = { if (grades.isNotEmpty()) onExportGrades(grades) },
-                            enabled = grades.isNotEmpty() && !isRefreshing
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "导出成绩"
+                    // 与课表顶栏同一套液体玻璃芯片组：静止独立、按压折射并向邻居融合。
+                    // 刷新中不掉出这套材质——用内容槽把图标换成进度圈，芯片本身不变。
+                    LiquidActionGroup(spacing = 4.dp) {
+                        if (currentTab != 2) {
+                            val grades = if (currentTab == 0) semesterGrades else overallGrades
+                            action(
+                                index = 0,
+                                icon = Icons.Default.Share,
+                                contentDescription = "导出成绩",
+                                onClick = { if (grades.isNotEmpty()) onExportGrades(grades) },
+                                enabled = grades.isNotEmpty() && !isRefreshing
                             )
                         }
-                    }
-                    if (isRefreshing) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 12.dp)
-                                .size(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onRefresh) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "刷新"
+                        if (isRefreshing) {
+                            action(
+                                index = 1,
+                                contentDescription = "正在刷新",
+                                onClick = {},
+                                enabled = false
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        } else {
+                            action(
+                                index = 1,
+                                icon = Icons.Default.Refresh,
+                                contentDescription = "刷新",
+                                onClick = onRefresh
                             )
                         }
                     }

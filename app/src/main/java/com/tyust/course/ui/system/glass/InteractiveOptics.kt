@@ -40,11 +40,16 @@ class InteractiveOptics(
     private val animationScope: CoroutineScope
 ) {
     private val pressAnimation = Animatable(0f, 0.001f)
-    private val offsetAnimation = Animatable(
-        Offset.Zero,
-        Offset.VectorConverter,
-        Offset.VisibilityThreshold
-    )
+    /**
+     * 拖拽位移。按住期间在 pointer 事件里【同步】写入，不经过 Animatable。
+     *
+     * 这里踩过一个坑：原先每来一个 move 事件就 `launch { animatable.snapTo(...) }`。
+     * 每次 launch 都要等一次协程调度，而 Animatable.snapTo 还要抢 mutatorMutex、
+     * 顺带取消上一次未完成的调用——于是位移比手指慢一帧且时快时慢，
+     * 表现出来就是"卡顿"。松手回弹才需要动画，按住跟手不需要。
+     */
+    private var offsetState by mutableStateOf(Offset.Zero)
+    private var offsetReleaseJob: Job? = null
     private var pointerState by mutableStateOf(Offset.Unspecified)
     private var velocityState by mutableFloatStateOf(0f)
     private var pressedState by mutableStateOf(false)
@@ -72,7 +77,7 @@ class InteractiveOptics(
 
     /** 指针相对按压起点的位移，释放后弹回零点。 */
     val offset: Offset
-        get() = offsetAnimation.value
+        get() = offsetState
 
     val velocityX: Float
         get() = velocityState
@@ -88,22 +93,25 @@ class InteractiveOptics(
         (abs(velocityX) / fullEffectVelocity.coerceAtLeast(1f)).coerceIn(0f, 1f)
 
     /**
-     * 有界跟手行程：把原始拖拽位移压进 ±[maxTravelPx]。
+     * 有界跟手行程：把原始拖拽位移压进半径 [maxTravelPx] 的圆内。
      *
-     * `m * tanh(x / m)` 在原点导数为 1，所以小位移是【完全跟手】的，
-     * 接近 m 时平滑饱和，永远不会越过 m。这正是"能拖动但拖不走"的手感。
+     * `m * tanh(d / m)` 作用在【位移长度】上，不是分别作用在两个分量上。
+     * 这一点是手感的关键：分量各自饱和时可达区域是个【正方形】，手指画圆时
+     * 芯片走的是方形轨迹、在四个角上发滞，对角方向还能跑到 1.41m ——
+     * 那就是"八向摇杆"的由来。按长度饱和后可达区域是正圆，各方向同性。
+     *
+     * 原点处导数为 1，所以小位移完全跟手，接近 m 时平滑停住。
      *
      * **玻璃层与内容层必须调用同一个函数、传同一个上限。** drawBackdrop 的
-     * layerBlock 只变换被采样的玻璃层，图标不在其中；两边算出不同的行程，
-     * 拖动时图标就会从玻璃里脱出。
+     * layerBlock 只变换被采样的玻璃层，内容不在其中；两边算出不同的行程，
+     * 拖动时内容就会从玻璃里脱出。
      */
     fun dragTravel(maxTravelPx: Float): Offset {
         if (maxTravelPx <= 0f) return Offset.Zero
         val raw = offset
-        return Offset(
-            maxTravelPx * tanh(raw.x / maxTravelPx),
-            maxTravelPx * tanh(raw.y / maxTravelPx)
-        )
+        val distance = raw.getDistance()
+        if (distance <= 0.01f) return Offset.Zero
+        return raw * (maxTravelPx * tanh(distance / maxTravelPx) / distance)
     }
 
     /**
@@ -131,13 +139,12 @@ class InteractiveOptics(
             var previousTime = down.uptimeMillis
 
             velocitySettleJob?.cancel()
+            offsetReleaseJob?.cancel()
             pointerState = down.position
             velocityState = 0f
             pressedState = true
             startPosition = down.position
-            animationScope.launch {
-                offsetAnimation.snapTo(Offset.Zero)
-            }
+            offsetState = Offset.Zero
             animationScope.launch {
                 pressAnimation.animateTo(1f, PressDownSpring)
             }
@@ -153,9 +160,8 @@ class InteractiveOptics(
 
                 pointerState = change.position
                 velocityState = velocityState * 0.56f + instantaneousVelocity * 0.44f
-                animationScope.launch {
-                    offsetAnimation.snapTo(change.position - startPosition)
-                }
+                // 同步写入，事件到达的那一帧就生效
+                offsetState = change.position - startPosition
                 previousPosition = change.position
                 previousTime = change.uptimeMillis
                 pointerId = change.id
@@ -167,8 +173,14 @@ class InteractiveOptics(
             animationScope.launch {
                 pressAnimation.animateTo(0f, ReleaseSpring)
             }
-            animationScope.launch {
-                offsetAnimation.animateTo(Offset.Zero, ReleaseOffsetSpring)
+            offsetReleaseJob = animationScope.launch {
+                Animatable(
+                    offsetState,
+                    Offset.VectorConverter,
+                    Offset.VisibilityThreshold
+                ).animateTo(Offset.Zero, ReleaseOffsetSpring) {
+                    offsetState = value
+                }
             }
             val releaseVelocity = velocityState
             velocitySettleJob = animationScope.launch {
@@ -221,14 +233,71 @@ fun rememberInteractiveOptics(): InteractiveOptics {
  * 等比缩放在小控件上看起来像"整体后退"，而 iOS filled button 的手感是纵向
  * 压扁得更多，所以横向只压一半，读起来才是"被按下去"。
  *
- * 两处复用它，都是【没有 drawBackdrop 可用】的场合——liquidChip 的形变发生在
- * drawBackdrop 的 layerBlock 里，那一层不存在时挤压只能自己挂 graphicsLayer：
- *   1. adaptiveGlassChip 的无 backdrop 回退分支
- *   2. LiquidButton 的实色分支（实色不参与折射，本就没有 backdrop 层）
+ * 用在【没有 drawBackdrop 可用】的场合：adaptiveGlassChip 的无 backdrop 回退
+ * 分支，以及 LiquidButton 的实色分支（实色不参与折射，本就没有玻璃层）。
  */
 fun GraphicsLayerScope.applyPressSquash(progress: Float, depth: Float) {
     val p = progress.coerceIn(0f, 1f)
     val squash = depth * 0.5f
     scaleX = 1f - (depth - squash) * p
     scaleY = 1f - depth * p
+}
+
+/**
+ * 玻璃层形变：跟手平移 + 按压涨 + 等体积各向异性。
+ *
+ * 装到 drawBackdrop 的 `layerBlock` 上——只有那里的矩阵变换不会把被折射的
+ * 背景图像一起拉伸。外层 graphicsLayer 缩放会让折射内容跟着变形，成为假的
+ * "纸片贴图拉伸"。
+ */
+fun GraphicsLayerScope.applyChipGlassDeformation(
+    optics: InteractiveOptics,
+    travelPx: Float,
+    swellPx: Float,
+    stretch: Float
+) {
+    val travel = optics.dragTravel(travelPx)
+    translationX = travel.x
+    translationY = travel.y
+
+    val swell = 1f + optics.pressProgress * swellPx / size.height
+    val (sx, sy) = anisotropy(travel, travelPx, stretch)
+    scaleX = swell * (1f + sx)
+    scaleY = swell * (1f + sy)
+}
+
+/**
+ * 内容层形变：与玻璃【同一段行程、同向的各向异性】，但幅度打折、且按压是压扁
+ * 而不是涨。
+ *
+ * 为什么内容不能照抄玻璃：玻璃是液体、图标是固体。等幅跟着拉伸会让整个按钮
+ * 显得在橡皮化；完全不跟，横拖时玻璃变扁而图标仍是正圆，两者又会明显脱节。
+ * 折一半是这两者之间唯一说得通的位置。
+ */
+fun GraphicsLayerScope.applyChipContentDeformation(
+    optics: InteractiveOptics,
+    travelPx: Float,
+    stretch: Float,
+    pressDepth: Float,
+    damping: Float
+) {
+    val travel = optics.dragTravel(travelPx)
+    translationX = travel.x
+    translationY = travel.y
+
+    val p = optics.pressProgress.coerceIn(0f, 1f)
+    val (sx, sy) = anisotropy(travel, travelPx, stretch * damping)
+    scaleX = (1f - pressDepth * 0.5f * p) * (1f + sx)
+    scaleY = (1f - pressDepth * p) * (1f + sy)
+}
+
+/**
+ * 等体积各向异性：沿运动方向拉长多少，垂直方向就收窄同样多。
+ * 两个轴都只加不减会让芯片越拖越大，最后是一颗蛋而不是液滴。
+ */
+private fun anisotropy(travel: Offset, travelPx: Float, stretch: Float): Pair<Float, Float> {
+    if (travelPx <= 0f || stretch == 0f) return 0f to 0f
+    val ax = stretch * (abs(travel.x) / travelPx).coerceIn(0f, 1f)
+    val ay = stretch * (abs(travel.y) / travelPx).coerceIn(0f, 1f)
+    return (ax - ay) to (ay - ax)
 }

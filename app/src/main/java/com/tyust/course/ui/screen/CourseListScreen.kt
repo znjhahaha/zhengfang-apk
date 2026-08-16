@@ -1,5 +1,14 @@
 package com.tyust.course.ui.screen
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import com.kyant.shapes.Capsule
+import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.LocalControlBackdrop
+import com.tyust.course.ui.system.glass.adaptiveGlassChip
+import com.tyust.course.ui.system.glass.applyChipContentDeformation
+import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -299,10 +308,16 @@ private fun FilterToggleHandle(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val lineColor = accentColor.copy(alpha = 0.26f)
-    val buttonWidth = 84.dp
-    val buttonHeight = 30.dp
-    val buttonShape = RoundedCornerShape(15.dp)
+    // 两侧发丝线保持中性。原先它跟着 accent 走，筛选一激活整条分割线都染成蓝色，
+    // 反而把"哪里可点"的视觉重点从把手上抢走了。
+    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+    val handleWidth = 84.dp
+    val handleHeight = 32.dp
+    // 连续曲率胶囊，与顶栏芯片、底栏、分段控件同一套圆角语言；
+    // 原先是 RoundedCornerShape(15dp)，在这套体系里棱角偏硬。
+    val handleShape = Capsule()
+    val optics = rememberInteractiveOptics()
+    val backdrop = LocalControlBackdrop.current
     // 箭头随展开状态旋转，位置形状全程不变，衔接连续
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
@@ -318,7 +333,7 @@ private fun FilterToggleHandle(
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val centerX = size.width / 2f
-            val tabHalfWidth = buttonWidth.toPx() / 2f
+            val tabHalfWidth = handleWidth.toPx() / 2f
             val lineY = size.height / 2f
             val gap = 6.dp.toPx()
             val strokeWidth = 1.dp.toPx()
@@ -339,25 +354,39 @@ private fun FilterToggleHandle(
             )
         }
 
-        Surface(
+        Box(
             modifier = Modifier
-                .width(buttonWidth)
-                .height(buttonHeight)
-                .border(
-                    width = 0.5.dp,
-                    color = Color.White.copy(alpha = 0.55f),
-                    shape = buttonShape
+                .width(handleWidth)
+                .height(handleHeight)
+                // 与顶栏图标钮同一个材质入口：有 backdrop 就走真折射 + Fresnel 边缘光，
+                // 没有就自动退回边缘光。原先是 White×0.42 的实心贴纸加一圈手绘描边，
+                // 在这套玻璃体系里像是上一个版本遗留的控件。
+                .adaptiveGlassChip(
+                    backdrop = backdrop,
+                    shape = handleShape,
+                    optics = optics
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    // 按压反馈交给 adaptiveGlassChip 的光学形变，不用 Material 波纹：
+                    // 波纹是另一套设计语言，且 drawBackdrop 不裁剪内容会让它溢出成方块。
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick
                 ),
-            shape = buttonShape,
-            color = Color.White.copy(alpha = 0.42f),
-            shadowElevation = 0.dp,
-            tonalElevation = 0.dp
+            contentAlignment = Alignment.Center
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(buttonShape)
-                    .clickable(onClick = onClick),
+                modifier = Modifier.graphicsLayer {
+                    // 内容跟着玻璃一起走，否则按压拖动时文字会从把手里脱出
+                    applyChipContentDeformation(
+                        optics = optics,
+                        travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                        stretch = GlassRecipe.ChipDragStretch,
+                        pressDepth = GlassRecipe.ChipIconPressDepth,
+                        damping = GlassRecipe.ChipContentDeformDamping
+                    )
+                },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
