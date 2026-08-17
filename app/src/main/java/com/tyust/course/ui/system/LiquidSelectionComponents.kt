@@ -1,8 +1,17 @@
 package com.tyust.course.ui.system
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,12 +32,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -38,7 +48,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,14 +61,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,18 +85,14 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -96,8 +106,15 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedCornerStyle
+import com.kyant.shapes.RoundedRectangle
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.LiquidPickerLayerPolicy
+import com.tyust.course.ui.system.glass.LiquidPickerMotionPhysics
+import com.tyust.course.ui.system.glass.RoundedRectMergeGeometry
 import com.tyust.course.ui.system.glass.chromaticFringe
+import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.glassRim
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionEasing
@@ -113,6 +130,212 @@ data class LiquidPickerOption(
     val label: String,
     val enabled: Boolean = true
 )
+
+private val PickerHeaderHeight = 50.dp
+private val PickerItemHeight = 40.dp
+private val PickerItemGap = 3.dp
+private val PickerBodyVerticalPadding = 6.dp
+private val PickerBodyHorizontalPadding = 10.dp
+private val PickerMaxBodyHeight = 184.dp
+private val PickerCornerRadius = 20.dp
+private val PickerExpandedGap = 12.dp
+private val PickerOpeningOverlap = 16.dp
+private val PickerClosingOverlap = 24.dp
+private const val PickerItemStaggerSeconds = 0.018f
+private val PickerItemEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+private const val PickerCircleBezier = 0.5522848f
+
+/** Adds a clockwise rounded-rectangle contour without allocating an intermediate geometry. */
+private fun Path.addPickerRoundedContour(
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    radius: Float
+) {
+    val width = (right - left).coerceAtLeast(0f)
+    val height = (bottom - top).coerceAtLeast(0f)
+    if (width <= 0.5f || height <= 0.5f) return
+
+    val r = radius.coerceIn(0f, minOf(width, height) / 2f)
+    val c = r * PickerCircleBezier
+    moveTo(left + r, top)
+    lineTo(right - r, top)
+    cubicTo(right - r + c, top, right, top + r - c, right, top + r)
+    lineTo(right, bottom - r)
+    cubicTo(right, bottom - r + c, right - r + c, bottom, right - r, bottom)
+    lineTo(left + r, bottom)
+    cubicTo(left + r - c, bottom, left, bottom - r + c, left, bottom - r)
+    lineTo(left, top + r)
+    cubicTo(left, top + r - c, left + r - c, top, left + r, top)
+    close()
+}
+
+/** Smooths sampled implicit-surface stations without inventing the underlying neck geometry. */
+private fun Path.addPickerImplicitContour(points: List<Offset>) {
+    if (points.size < 3) return
+    fun midpoint(first: Offset, second: Offset) = Offset(
+        x = (first.x + second.x) / 2f,
+        y = (first.y + second.y) / 2f
+    )
+
+    val firstMidpoint = midpoint(points.last(), points.first())
+    moveTo(firstMidpoint.x, firstMidpoint.y)
+    points.forEachIndexed { index, point ->
+        val next = points[(index + 1) % points.size]
+        val nextMidpoint = midpoint(point, next)
+        quadraticTo(point.x, point.y, nextMidpoint.x, nextMidpoint.y)
+    }
+    close()
+}
+
+private fun smoothStep(value: Float): Float {
+    val x = value.coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
+}
+
+@Stable
+private class PickerMotionState(initialPosition: Float) {
+    var travelPosition by mutableFloatStateOf(initialPosition)
+        private set
+    var travelVelocity by mutableFloatStateOf(0f)
+        private set
+    var extentPosition by mutableFloatStateOf(initialPosition)
+        private set
+    var extentVelocity by mutableFloatStateOf(0f)
+        private set
+    var phaseTimeSeconds by mutableFloatStateOf(0f)
+        private set
+
+    suspend fun animateTo(
+        expanded: Boolean,
+        reducedMotion: Boolean
+    ) {
+        phaseTimeSeconds = 0f
+        val target = if (expanded) 1f else 0f
+        if (reducedMotion) {
+            snapTo(target)
+            return
+        }
+        var state = LiquidPickerMotionPhysics.State(
+            travel = LiquidPickerMotionPhysics.Axis(travelPosition, travelVelocity),
+            extent = LiquidPickerMotionPhysics.Axis(extentPosition, extentVelocity)
+        )
+        if (LiquidPickerMotionPhysics.isAtRest(state, expanded)) {
+            snapTo(target)
+            return
+        }
+
+        var previousFrame = withFrameNanos { it }
+        while (true) {
+            val frame = withFrameNanos { it }
+            val deltaSeconds = ((frame - previousFrame) / 1_000_000_000f)
+                .coerceIn(0f, 0.1f)
+            previousFrame = frame
+            phaseTimeSeconds += deltaSeconds
+            state = LiquidPickerMotionPhysics.step(
+                state = state,
+                expanded = expanded,
+                deltaSeconds = deltaSeconds
+            )
+            travelPosition = state.travel.position
+            travelVelocity = state.travel.velocity
+            extentPosition = state.extent.position
+            extentVelocity = state.extent.velocity
+
+            if (LiquidPickerMotionPhysics.isAtRest(state, expanded)) {
+                snapTo(target)
+                return
+            }
+        }
+    }
+
+    private fun snapTo(target: Float) {
+        travelPosition = target
+        travelVelocity = 0f
+        extentPosition = target
+        extentVelocity = 0f
+    }
+}
+
+/**
+ * Real rounded-surface lens used under the picker union contour.
+ *
+ * The AGSL lens only accepts rounded-rectangular shapes, while the temporary SDF bridge is a
+ * generic path. Header and body therefore refract the real wallpaper independently; a very thin
+ * unified contour above them supplies the transient liquid neck without covering the refraction.
+ */
+@Composable
+private fun PickerLensLayer(
+    modifier: Modifier,
+    backdrop: Backdrop,
+    shape: Shape,
+    cornerRadius: Dp,
+    motionVelocity: Float,
+    pressProgress: Float,
+    enabled: Boolean,
+    forceBlurFallback: Boolean = false
+) {
+    val accessibility = rememberGlassAccessibilityMode()
+    val isLightTheme = !rememberGlassDarkTheme()
+    val hasRealLens = isRuntimeLensEnabled() && !forceBlurFallback
+    val resolvedMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Interactive,
+        accessibility = accessibility,
+        interactionProgress = pressProgress
+    )
+    val material = if (hasRealLens) {
+        resolvedMaterial
+    } else {
+        // API 31/32 cannot refract with AGSL, so retain a restrained blur fallback.
+        resolvedMaterial.copy(blurDp = GlassRecipe.PickerBlurDp)
+    }
+    val motionIntensity = (abs(motionVelocity) / 9f).coerceIn(0f, 1f)
+    val enabledScale = if (enabled) 1f else GlassRecipe.ChipDisabledSurfaceScale
+    val surfaceAlpha = material.surfaceAlpha * enabledScale *
+        if (isLightTheme) 1f else 0.72f
+
+    Box(
+        modifier = modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                val effectiveCornerRadius = minOf(
+                    cornerRadius.toPx(),
+                    size.minDimension / 2f
+                ).coerceAtLeast(0.5f)
+                val params = resolvePhysicalLens(
+                    density = this,
+                    material = material,
+                    shape = shape,
+                    minCornerRadiusPx = effectiveCornerRadius,
+                    minDimensionPx = size.minDimension.coerceAtLeast(1f),
+                    interactionProgress = pressProgress,
+                    motionIntensity = motionIntensity,
+                    enableBlur = !hasRealLens,
+                    allowChromaticAberration = !accessibility.reduceMotion,
+                    chromaticAberrationAtRest = false,
+                    // The selector is transparent glass even at rest; press/motion only intensify it.
+                    pressScalesRefraction = false
+                )
+                vibrancy()
+                if (params.blurPx > 0f) blur(params.blurPx)
+                if (params.useLens) {
+                    lens(
+                        refractionHeight = params.refractionHeightPx,
+                        refractionAmount = params.refractionAmountPx,
+                        chromaticAberration = params.chromaticAberration
+                    )
+                } else if (params.fringePx > 0f) {
+                    chromaticFringe(params.fringePx)
+                }
+            },
+            onDrawSurface = {
+                drawRect(Color.White.copy(alpha = surfaceAlpha))
+            }
+        )
+    )
+}
 
 @Composable
 fun LiquidSegmentedControl(
@@ -613,6 +836,14 @@ fun LiquidSegmentedControl(
     }
 }
 
+/**
+ * Fluid dropdown used by every Compose selector in the app.
+ *
+ * The stable expanded state is deliberately two objects: a pill trigger and a separate squircle
+ * menu with a clear gap. During opening and closing, the menu briefly overlaps the trigger and a
+ * both side walls pinch inward into a temporary hourglass bridge, creating a liquid
+ * collision/absorption beat without keeping both surfaces permanently glued together.
+ */
 @Composable
 fun LiquidPicker(
     options: List<LiquidPickerOption>,
@@ -628,140 +859,372 @@ fun LiquidPicker(
     backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var highlightedRow by remember { mutableStateOf<Int?>(null) }
     val validSelectedIndex = selectedIndex?.takeIf { it in options.indices }
     val selectedLabel = validSelectedIndex?.let { options[it].label }
+    val hasAction = !actionLabel.isNullOrBlank() && onAction != null
+    val rowCount = options.size + if (hasAction) 1 else 0
     val hasAvailableOption = options.any { it.enabled }
-    val canOpen = enabled && (hasAvailableOption || onAction != null)
+    val canOpen = enabled && (hasAvailableOption || hasAction)
     val accessibility = rememberGlassAccessibilityMode()
-    val fieldMaterial = GlassMaterials.resolve(
-        role = GlassMaterialRole.Control,
-        accessibility = accessibility
-    )
+    val reduceMotion = accessibility.reduceMotion
+    val isLightTheme = !rememberGlassDarkTheme()
+    // Keep the backdrop contract but avoid animated backdrop sampling. Both settled surfaces use
+    // the cheap captured-content glass recipe, and the transient bridge is a single cached path.
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
-    val shape = RoundedCornerShape(18.dp)
+    val backdropToneAvailable = glassBackdrop != null
+    val headerInteraction = remember { MutableInteractionSource() }
+    val headerPressed by headerInteraction.collectIsPressedAsState()
+    val scrollState = rememberScrollState()
     val density = LocalDensity.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
 
-    LaunchedEffect(canOpen) {
-        if (!canOpen) expanded = false
+    val bodyContentHeight = if (rowCount == 0) {
+        0.dp
+    } else {
+        PickerBodyVerticalPadding * 2f +
+            PickerItemHeight * rowCount.toFloat() +
+            PickerItemGap * (rowCount - 1).toFloat()
     }
-
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = if (accessibility.reduceMotion) {
-            tween(durationMillis = 0)
-        } else if (expanded) {
-            MotionSpring.liquidMenu()
-        } else {
-            tween(durationMillis = 140, easing = MotionEasing.Accelerate)
-        },
-        label = "liquidPickerArrow"
-    )
-    val fieldScale by animateFloatAsState(
-        targetValue = if (
-            !accessibility.reduceMotion &&
-            (isPressed || expanded) &&
-            canOpen
-        ) {
-            0.985f
-        } else {
-            1f
-        },
+    val bodyHeight = minOf(bodyContentHeight, PickerMaxBodyHeight)
+    val motion = remember { PickerMotionState(initialPosition = 0f) }
+    LaunchedEffect(expanded, reduceMotion) {
+        motion.animateTo(
+            expanded = expanded,
+            reducedMotion = reduceMotion
+        )
+    }
+    val motionProgress = motion.travelPosition
+    val motionVelocity = motion.travelVelocity
+    val extentProgress = motion.extentPosition
+    val extentVelocity = motion.extentVelocity
+    val motionTimeSeconds = motion.phaseTimeSeconds
+    val headerScale by animateFloatAsState(
+        targetValue = if (!reduceMotion && headerPressed && canOpen) 0.985f else 1f,
         animationSpec = MotionSpring.liquidTap(),
-        label = "liquidPickerScale"
+        label = "morphPickerHeaderScale"
     )
-    val borderColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.outlineVariant.copy(
-            alpha = if (expanded) {
-                (fieldMaterial.borderAlpha + 0.08f).coerceAtMost(0.72f)
-            } else {
-                fieldMaterial.borderAlpha
-            }
-        ),
-        label = "liquidPickerBorder"
+    val settledProgress = motionProgress.coerceIn(0f, 1f)
+    val heightProgress = extentProgress.coerceIn(0f, 1.09f)
+    // Keep row composition warm while collapsed. Creating the list and its semantics on the first
+    // open frame caused MuMu to miss the small-bud frames and made continuous geometry look like a
+    // pop-in. The subtree stays clipped and undrawn until the physical body leaves the header.
+    val bodyPrecomposed = rowCount > 0
+    val bodyActive = rowCount > 0 && (
+        expanded || maxOf(motionProgress, extentProgress) > 0.005f
     )
-    // 禁用只降内容对比，玻璃表面保持原样，避免整块半透明糊灰
-    val primaryContentColor = if (enabled) {
+    val arrowRotation = 180f * smoothStep(settledProgress)
+
+    // The spring position is also the body's physical travel coordinate. There is no authored
+    // detach keyframe: as the rounded boxes move from overlap to a 12dp gap, the SDF neck
+    // exists only while the smooth-min field is still one connected zero-level set.
+    val bodyTravelProgress = motionProgress.coerceIn(-0.08f, 1.12f)
+    val bodyOverlap = if (expanded) PickerOpeningOverlap else PickerClosingOverlap
+    val bodyOffset = PickerHeaderHeight - bodyOverlap +
+        (bodyOverlap + PickerExpandedGap) * bodyTravelProgress
+    val visualBodyHeight = bodyHeight * heightProgress
+    val layoutHeight = maxOf(
+        PickerHeaderHeight,
+        bodyOffset + visualBodyHeight
+    )
+    // The surface itself never fades. It begins fully inside the header, grows out as one mass,
+    // develops an SDF neck, then separates. Only the final sub-pixel body is hidden.
+    val bodyAlpha = if (bodyActive && visualBodyHeight >= 1.dp) 1f else 0f
+    val bodySeparated = bodyOffset >= PickerHeaderHeight + 0.5.dp
+    val layerPolicy = LiquidPickerLayerPolicy.resolve(
+        bodyActive = bodyActive,
+        bodySeparated = bodySeparated,
+        bodyAlpha = bodyAlpha,
+        interactionProgress = if (headerPressed && canOpen) 1f else 0f
+    )
+    val mergedMotionVelocity = if (abs(extentVelocity) > abs(motionVelocity)) {
+        extentVelocity
+    } else {
+        motionVelocity
+    }
+    val collisionPenetration = (-motionProgress).coerceIn(0f, 0.13f)
+    val collisionScaleX = 1f + collisionPenetration * 0.20f
+    val collisionScaleY = 1f - collisionPenetration * 0.32f
+    val mergeSmoothnessDp = 9.5f + minOf(
+        maxOf(abs(motionVelocity), abs(extentVelocity)) * 0.45f,
+        3.5f
+    )
+    val descriptorPresent = leadingIcon != null || !label.isNullOrBlank()
+    val contentEnabled = enabled && (hasAvailableOption || hasAction)
+    val primaryContentColor = if (contentEnabled) {
         MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
-    val secondaryContentColor = if (enabled) {
+    val secondaryContentColor = if (contentEnabled) {
         MaterialTheme.colorScheme.onSurfaceVariant
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.30f)
     }
-
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val anchorWidth = with(density) { constraints.maxWidth.toDp() }
-        val fallbackModifier = Modifier
-            .shadow(if (expanded) 5.dp else 2.dp, shape, clip = false)
-            .clip(shape)
-            .background(
-                MaterialTheme.colorScheme.surface.copy(
-                    alpha = if (accessibility.highContrast) 1f else 0.94f
-                )
+    val highlightColor = if (isLightTheme) {
+        Color.White.copy(alpha = if (backdropToneAvailable) 0.42f else 0.34f)
+    } else {
+        Color.White.copy(alpha = 0.11f)
+    }
+    val highlightedOffset = animateDpAsState(
+        targetValue = highlightedRow
+            ?.takeIf { it in 0 until rowCount }
+            ?.let { index ->
+                PickerBodyVerticalPadding +
+                    (PickerItemHeight + PickerItemGap) * index.toFloat()
+            }
+            ?: PickerBodyVerticalPadding,
+        animationSpec = if (reduceMotion) {
+            tween(durationMillis = 0)
+        } else {
+            spring(dampingRatio = 0.82f, stiffness = 500f)
+        },
+        label = "morphPickerHighlightOffset"
+    )
+    val highlightedAlpha = if (highlightedRow == null) {
+        0f
+    } else if (expanded) {
+        smoothStep((motionTimeSeconds - 0.34f) / 0.14f)
+    } else {
+        smoothStep((heightProgress - 0.02f) / 0.12f)
+    }
+    fun rowRevealProgress(index: Int): Float {
+        if (reduceMotion) return if (expanded) 1f else 0f
+        return if (expanded) {
+            val timed = smoothStep(
+                (motionTimeSeconds - 0.22f - index * PickerItemStaggerSeconds) / 0.20f
             )
-            .border(1.dp, borderColor, shape)
-        val glassModifier = if (glassBackdrop != null) {
-            Modifier.drawBackdrop(
-                backdrop = glassBackdrop,
-                shape = { shape },
-                effects = {
-                    val params = resolvePhysicalLens(
-                        density = this,
-                        material = fieldMaterial,
-                        shape = shape,
-                        minCornerRadiusPx = 18.dp.toPx(),
-                        minDimensionPx = size.minDimension,
-                        interactionProgress = if (expanded) 0.35f else 0f,
-                        enableBlur = true,
-                        allowChromaticAberration = false
-                    )
-                    vibrancy()
-                    if (params.blurPx > 0f) blur(params.blurPx)
-                    if (params.useLens) {
-                        lens(
-                            refractionHeight = params.refractionHeightPx,
-                            refractionAmount = params.refractionAmountPx,
-                            chromaticAberration = params.chromaticAberration
-                        )
-                    }
-                },
-                shadow = {
-                    Shadow(
-                        alpha = fieldMaterial.shadowAlpha + if (expanded) 0.06f else 0f
-                    )
-                },
-                onDrawSurface = {
-                    drawRect(
-                        Color.White.copy(
-                            alpha = fieldMaterial.surfaceAlpha + if (expanded) 0.08f else 0f
-                        )
-                    )
-                    drawRoundRect(
-                        color = Color.White.copy(alpha = borderColor.alpha),
-                        cornerRadius = CornerRadius(18.dp.toPx()),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+            val containerReady = smoothStep((settledProgress - 0.50f) / 0.34f)
+            minOf(timed, containerReady)
+        } else {
+            // Closing is driven by geometry, not a reverse authored cascade. The body clip removes
+            // rows from bottom to top while the remaining content stays legible until absorption.
+            smoothStep((heightProgress - 0.015f) / 0.11f)
+        }
+    }
+
+    LaunchedEffect(canOpen) {
+        if (!canOpen) expanded = false
+    }
+    LaunchedEffect(expanded, validSelectedIndex, bodyHeight) {
+        if (expanded) {
+            highlightedRow = validSelectedIndex
+            if (validSelectedIndex != null && bodyHeight > 0.dp) {
+                withFrameNanos { }
+                val rowTop = with(density) {
+                    (PickerBodyVerticalPadding +
+                        (PickerItemHeight + PickerItemGap) * validSelectedIndex.toFloat())
+                        .roundToPx()
+                }
+                val viewport = with(density) { bodyHeight.roundToPx() }
+                val itemHeight = with(density) { PickerItemHeight.roundToPx() }
+                val centered = rowTop - (viewport - itemHeight) / 2
+                scrollState.scrollTo(centered.coerceIn(0, scrollState.maxValue))
+            }
+        }
+    }
+    BackHandler(enabled = expanded) { expanded = false }
+
+    val headerShape = remember { Capsule() }
+    val bodyShape = remember {
+        RoundedRectangle(
+            cornerRadius = PickerCornerRadius,
+            style = RoundedCornerStyle.Continuous
+        )
+    }
+    val resolvedLayoutHeight = layoutHeight.coerceAtLeast(48.dp)
+    val headerHeightFraction =
+        (PickerHeaderHeight.value / resolvedLayoutHeight.value).coerceIn(0f, 1f)
+    val bodyTopFraction =
+        (bodyOffset.value / resolvedLayoutHeight.value).coerceIn(0f, 1f)
+    val bodyCornerToHeaderRatio = PickerCornerRadius.value / PickerHeaderHeight.value
+    val mergeSmoothnessToHeaderRatio = mergeSmoothnessDp / PickerHeaderHeight.value
+    val surfaceShape = remember(
+        headerHeightFraction,
+        bodyTopFraction,
+        bodyCornerToHeaderRatio,
+        bodyActive,
+        mergeSmoothnessToHeaderRatio
+    ) {
+        GenericShape { size, _ ->
+            val headerHeightPx = (size.height * headerHeightFraction)
+                .coerceIn(0f, size.height)
+            val bodyTopPx = (size.height * bodyTopFraction)
+                .coerceIn(0f, size.height)
+            val bodyCornerPx = headerHeightPx * bodyCornerToHeaderRatio
+            val bodyVisible = bodyActive && size.height > bodyTopPx + 0.5f
+            val implicitContour = if (bodyVisible) {
+                RoundedRectMergeGeometry.mergedVerticalOutline(
+                    header = RoundedRectMergeGeometry.RoundedBox(
+                        left = 0f,
+                        top = 0f,
+                        right = size.width,
+                        bottom = headerHeightPx,
+                        radius = headerHeightPx / 2f
+                    ),
+                    body = RoundedRectMergeGeometry.RoundedBox(
+                        left = 0f,
+                        top = bodyTopPx,
+                        right = size.width,
+                        bottom = size.height,
+                        radius = bodyCornerPx
+                    ),
+                    smoothness = headerHeightPx * mergeSmoothnessToHeaderRatio,
+                    stationCount = 44
+                )
+            } else {
+                null
+            }
+
+            if (implicitContour != null) {
+                addPickerImplicitContour(implicitContour)
+            } else {
+                addPickerRoundedContour(
+                    left = 0f,
+                    top = 0f,
+                    right = size.width,
+                    bottom = headerHeightPx,
+                    radius = headerHeightPx / 2f
+                )
+                if (bodyVisible) {
+                    addPickerRoundedContour(
+                        left = 0f,
+                        top = bodyTopPx,
+                        right = size.width,
+                        bottom = size.height,
+                        radius = bodyCornerPx
                     )
                 }
-            )
-        } else {
-            fallbackModifier
+            }
         }
+    }
+    val surfaceModifier = if (accessibility.highContrast) {
+        Modifier
+            .clip(surfaceShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, surfaceShape)
+    } else if (glassBackdrop != null) {
+        // Keep the SDF bridge almost clear. The two rounded children below carry the actual
+        // wallpaper refraction; this contour only supplies one continuous low-alpha surface/rim.
+        Modifier
+            .clip(surfaceShape)
+            .background(
+                Color.White.copy(alpha = if (isLightTheme) 0.055f else 0.035f)
+            )
+            .glassRim(
+                shape = surfaceShape,
+                intensity = if (contentEnabled) 1.14f else 0.62f,
+                isLightTheme = isLightTheme,
+                pressProgress = { layerPolicy.perimeterInteractionProgress }
+            )
+    } else {
+        Modifier.glassChip(
+            shape = surfaceShape,
+            elevation = if (bodyActive) 3.dp else 1.dp,
+            rimIntensity = if (backdropToneAvailable) 1f else 1.06f,
+            dimmed = !contentEnabled,
+            pressProgress = { layerPolicy.perimeterInteractionProgress }
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(resolvedLayoutHeight)
+    ) {
+        // Rounded children use the real lens path (the backdrop library requires a rounded-
+        // rectangular shape). While the body is still connected, one generic-outline backdrop
+        // layer owns the entire mass so no independent body-top refraction edge can appear.
+        if (glassBackdrop != null && !accessibility.highContrast) {
+            PickerLensLayer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(resolvedLayoutHeight)
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                        scaleX = headerScale * collisionScaleX
+                        scaleY = headerScale * collisionScaleY
+                        alpha = layerPolicy.mergedBodyLensAlpha
+                    }
+                    .drawWithContent {
+                        // The persistent header lens owns the complete outer capsule. Restrict the
+                        // temporary generic blur to the newly emerged body so its different edge
+                        // sampling cannot flash a second ring around the header during hand-off.
+                        val clipTop = PickerHeaderHeight.toPx().coerceAtMost(size.height)
+                        clipRect(top = clipTop) {
+                            this@drawWithContent.drawContent()
+                        }
+                    },
+                backdrop = glassBackdrop,
+                shape = surfaceShape,
+                cornerRadius = PickerCornerRadius,
+                motionVelocity = mergedMotionVelocity,
+                pressProgress = layerPolicy.perimeterInteractionProgress,
+                enabled = contentEnabled,
+                // The runtime lens is rounded-rectangular. The transient implicit outline uses a
+                // backdrop blur so it remains one sampled glass surface without an internal seam.
+                forceBlurFallback = true
+            )
+            PickerLensLayer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PickerHeaderHeight)
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                        scaleX = headerScale * collisionScaleX
+                        scaleY = headerScale * collisionScaleY
+                        alpha = layerPolicy.headerLensAlpha
+                    },
+                backdrop = glassBackdrop,
+                shape = headerShape,
+                cornerRadius = PickerHeaderHeight / 2f,
+                motionVelocity = 0f,
+                pressProgress = layerPolicy.perimeterInteractionProgress,
+                enabled = contentEnabled
+            )
+            if (bodyPrecomposed) {
+                PickerLensLayer(
+                    modifier = Modifier
+                        .offset(y = bodyOffset)
+                        .fillMaxWidth()
+                        .height(visualBodyHeight.coerceAtLeast(1.dp))
+                        .graphicsLayer {
+                            alpha = layerPolicy.separatedBodyLensAlpha
+                        },
+                    backdrop = glassBackdrop,
+                    shape = bodyShape,
+                    cornerRadius = PickerCornerRadius,
+                    motionVelocity = extentVelocity,
+                    pressProgress = layerPolicy.perimeterInteractionProgress,
+                    enabled = contentEnabled
+                )
+            }
+        }
+
+        // One low-alpha contour owns the complete silhouette. During the collision it is one
+        // implicit surface; once detached the same Shape contains two independent contours.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin(0.5f, 0f)
+                    scaleX = headerScale * collisionScaleX
+                    scaleY = headerScale * collisionScaleY
+                }
+                .then(surfaceModifier)
+        )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(glassModifier)
+                .height(PickerHeaderHeight)
                 .graphicsLayer {
-                    scaleX = fieldScale
-                    scaleY = fieldScale
+                    transformOrigin = TransformOrigin(0.5f, 0f)
+                    scaleX = headerScale * collisionScaleX
+                    scaleY = headerScale * collisionScaleY
                 }
-                .heightIn(min = 56.dp)
+                .clip(headerShape)
                 .clickable(
-                    interactionSource = interactionSource,
+                    interactionSource = headerInteraction,
                     indication = null,
                     enabled = canOpen,
                     role = Role.Button,
@@ -769,334 +1232,184 @@ fun LiquidPicker(
                 )
                 .semantics {
                     contentDescription = label ?: placeholder
-                    stateDescription = selectedLabel ?: placeholder
+                    stateDescription = buildString {
+                        append(selectedLabel ?: placeholder)
+                        append(if (expanded) "，已展开" else "，已收起")
+                    }
                     if (!canOpen) disabled()
                 }
-                .padding(horizontal = 16.dp, vertical = 9.dp),
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (leadingIcon != null) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = secondaryContentColor
-                )
+            if (descriptorPresent) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (leadingIcon != null) {
+                        Icon(
+                            imageVector = leadingIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = secondaryContentColor
+                        )
+                    }
+                    if (!label.isNullOrBlank()) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = secondaryContentColor,
+                            maxLines = 1
+                        )
+                    }
+                }
             }
-            Column(
+
+            Box(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                contentAlignment = if (descriptorPresent) {
+                    Alignment.CenterEnd
+                } else {
+                    Alignment.CenterStart
+                }
             ) {
-                if (!label.isNullOrBlank()) {
+                AnimatedContent(
+                    targetState = selectedLabel ?: placeholder,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = if (descriptorPresent) {
+                        Alignment.CenterEnd
+                    } else {
+                        Alignment.CenterStart
+                    },
+                    transitionSpec = {
+                        if (reduceMotion) {
+                            fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                        } else {
+                            (fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = 160,
+                                    delayMillis = 20,
+                                    easing = PickerItemEasing
+                                )
+                            ) + slideInVertically(
+                                animationSpec = tween(
+                                    durationMillis = 180,
+                                    easing = PickerItemEasing
+                                ),
+                                initialOffsetY = { it / 5 }
+                            )) togetherWith fadeOut(tween(durationMillis = 90))
+                        }
+                    },
+                    label = "morphPickerSelectedLabel"
+                ) { value ->
                     Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = secondaryContentColor,
-                        maxLines = 1
+                        text = value,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (selectedLabel == null) {
+                            FontWeight.Normal
+                        } else {
+                            FontWeight.SemiBold
+                        },
+                        color = if (selectedLabel == null) {
+                            secondaryContentColor.copy(
+                                alpha = secondaryContentColor.alpha * 0.72f
+                            )
+                        } else {
+                            primaryContentColor
+                        },
+                        textAlign = if (descriptorPresent) TextAlign.End else TextAlign.Start,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    text = selectedLabel ?: placeholder,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (selectedLabel != null) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selectedLabel != null) {
-                        primaryContentColor
-                    } else {
-                        secondaryContentColor.copy(alpha = secondaryContentColor.alpha * 0.72f)
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
+
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
                 contentDescription = if (expanded) "收起选项" else "展开选项",
                 modifier = Modifier
-                    .size(21.dp)
+                    .size(19.dp)
                     .rotate(arrowRotation),
-                tint = secondaryContentColor
+                tint = secondaryContentColor.copy(alpha = 0.82f)
             )
         }
 
-        LiquidAnchoredOptionMenu(
-            expanded = expanded,
-            options = options,
-            selectedIndex = validSelectedIndex,
-            anchorWidth = anchorWidth,
-            onSelect = onSelect,
-            onDismiss = { expanded = false },
-            backdrop = backdrop,
-            actionLabel = actionLabel,
-            onAction = onAction
-        )
-    }
-}
-
-/**
- * 从锚点长出来的玻璃选项菜单。
- *
- * 原先埋在 [LiquidPicker] 里。成绩页那一行紧凑学期行也要"从字段上长出来"的同一种展开，
- * 于是抽出来两处共用——照抄一遍的代价不是行数，而是两份出场时序迟早会分叉。
- *
- * 两个不能动的细节：
- * 1. `Popup` 必须【先挂载、下一帧再跑 menuProgress】。同一帧挂载并从 0 开始动画，
- *    第一帧拿不到测量结果，读起来是"先闪一下再展开"。
- * 2. 下方放不下就翻到锚点上方（[AnchoredPickerPositionProvider]），并据此把
- *    `transformOrigin` 换到底边——否则向上弹出的菜单会从远离锚点的那头长出来。
- *
- * @param expanded 由调用方持有。菜单只负责在它变 false 之后把退场动画跑完再卸载自己。
- * @param anchorWidth 锚点宽度，菜单以它为最小宽度（调用方用 `BoxWithConstraints` 量）。
- */
-@Composable
-internal fun LiquidAnchoredOptionMenu(
-    expanded: Boolean,
-    options: List<LiquidPickerOption>,
-    selectedIndex: Int?,
-    anchorWidth: Dp,
-    onSelect: (Int) -> Unit,
-    onDismiss: () -> Unit,
-    backdrop: Backdrop? = LocalControlBackdrop.current,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
-) {
-    val accessibility = rememberGlassAccessibilityMode()
-    // 选中行的底色要与字段表面同源，所以这里也解析一次 Control 档
-    val fieldMaterial = GlassMaterials.resolve(
-        role = GlassMaterialRole.Control,
-        accessibility = accessibility
-    )
-    val menuMaterial = GlassMaterials.resolve(
-        role = GlassMaterialRole.Modal,
-        accessibility = accessibility
-    )
-    val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
-    val menuShape = RoundedCornerShape(20.dp)
-    val menuSurfaceColor = MaterialTheme.colorScheme.surface.copy(
-        alpha = menuMaterial.surfaceAlpha
-    )
-    val validSelectedIndex = selectedIndex?.takeIf { it in options.indices }
-    val density = LocalDensity.current
-    val overlayBottomInset = LocalAppOverlayBottomInset.current
-    val gapPx = with(density) { 8.dp.roundToPx() }
-    val overlayBottomInsetPx = with(density) { overlayBottomInset.roundToPx() }
-    val popupPositionProvider = remember(gapPx, overlayBottomInsetPx) {
-        AnchoredPickerPositionProvider(
-            gapPx = gapPx,
-            bottomInsetPx = overlayBottomInsetPx
-        )
-    }
-    var popupVisible by remember { mutableStateOf(false) }
-    val menuProgress = remember { Animatable(0f) }
-
-    LaunchedEffect(expanded, accessibility.reduceMotion) {
-        if (accessibility.reduceMotion) {
-            popupVisible = expanded
-            menuProgress.snapTo(if (expanded) 1f else 0f)
-        } else if (expanded) {
-            popupVisible = true
-            withFrameNanos { }
-            menuProgress.animateTo(1f, MotionSpring.liquidMenu())
-        } else if (popupVisible) {
-            menuProgress.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(
-                    durationMillis = 140,
-                    easing = MotionEasing.Accelerate
-                )
-            )
-            popupVisible = false
-        }
-    }
-
-    if (popupVisible) {
-        Popup(
-            popupPositionProvider = popupPositionProvider,
-            onDismissRequest = onDismiss,
-            properties = PopupProperties(
-                focusable = true,
-                dismissOnBackPress = true,
-                dismissOnClickOutside = true
-            )
-        ) {
-            val menuFallbackModifier = Modifier
-                .shadow(12.dp, menuShape, clip = false)
-                .clip(menuShape)
-                .background(
-                    MaterialTheme.colorScheme.surface.copy(
-                        alpha = if (accessibility.highContrast) 1f else 0.98f
-                    )
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(
-                        alpha = menuMaterial.borderAlpha
-                    ),
-                    menuShape
-                )
-            val menuGlassModifier = if (glassBackdrop != null) {
-                Modifier.drawBackdrop(
-                    backdrop = glassBackdrop,
-                    shape = { menuShape },
-                    effects = {
-                        val params = resolvePhysicalLens(
-                            density = this,
-                            material = menuMaterial,
-                            shape = menuShape,
-                            minCornerRadiusPx = 20.dp.toPx(),
-                            minDimensionPx = size.minDimension,
-                            interactionProgress = 0f,
-                            enableBlur = true,
-                            allowChromaticAberration = false
-                        )
-                        vibrancy()
-                        if (params.blurPx > 0f) blur(params.blurPx)
-                        if (params.useLens) {
-                            lens(
-                                refractionHeight = params.refractionHeightPx,
-                                refractionAmount = params.refractionAmountPx,
-                                chromaticAberration = params.chromaticAberration
-                            )
-                        }
-                    },
-                    shadow = { Shadow(alpha = menuMaterial.shadowAlpha) },
-                    onDrawSurface = {
-                        drawRect(menuSurfaceColor)
-                        drawRoundRect(
-                            color = Color.White.copy(
-                                alpha = menuMaterial.borderAlpha
-                            ),
-                            cornerRadius = CornerRadius(20.dp.toPx()),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
-                        )
-                    }
-                )
-            } else {
-                menuFallbackModifier
-            }
-
-            Column(
+        if (bodyPrecomposed) {
+            Box(
                 modifier = Modifier
-                    // 【必须是 width，不能是 widthIn】菜单里每一行都是 fillMaxWidth，
-                    // 所以 widthIn(min = anchorWidth, max = 420.dp) 会让它们撑到 max 那一档，
-                    // 菜单于是比字段宽出一截；再被 AnchoredPickerPositionProvider 的
-                    // `x.coerceIn(0, windowWidth - popupWidth)` 夹到 0，就成了一条贴着
-                    // 屏幕左右边的白板（登录页学校选择器上肉眼可见）。
-                    // 锚点同宽本来就是这个菜单的设计意图——它是"从字段下缘长出来的那一段"。
-                    .width(anchorWidth)
-                    .then(menuGlassModifier)
+                    .offset(y = bodyOffset)
+                    .fillMaxWidth()
+                    .height(visualBodyHeight.coerceAtLeast(1.dp))
                     .graphicsLayer {
-                        val progress = menuProgress.value.coerceIn(0f, 1f)
-                        val opensAbove = popupPositionProvider.opensAbove
-                        alpha = progress
-                        scaleX = lerp(0.97f, 1f, progress)
-                        scaleY = lerp(0.96f, 1f, progress)
-                        transformOrigin = TransformOrigin(
-                            pivotFractionX = 0.5f,
-                            pivotFractionY = if (opensAbove) 1f else 0f
-                        )
-                        translationY = (1f - progress) *
-                            if (opensAbove) 6.dp.toPx() else -6.dp.toPx()
+                        alpha = bodyAlpha
                     }
-                    .padding(6.dp)
-                    .heightIn(max = 240.dp)
-                    .verticalScroll(rememberScrollState())
+                    .clip(bodyShape)
+                    .padding(horizontal = PickerBodyHorizontalPadding)
             ) {
-                options.forEachIndexed { index, option ->
-                    val isSelected = index == validSelectedIndex
-                    val itemInteractionSource = remember(index) { MutableInteractionSource() }
-                    Row(
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                ) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (isSelected) {
-                                    Color.White.copy(
-                                        alpha = (fieldMaterial.surfaceAlpha * 0.6f)
-                                            .coerceIn(0.12f, 0.28f)
-                                    )
-                                } else {
-                                    Color.Transparent
-                                }
-                            )
-                            .clickable(
-                                interactionSource = itemInteractionSource,
-                                indication = null,
-                                enabled = option.enabled,
-                                role = Role.RadioButton,
-                                onClick = {
-                                    onDismiss()
-                                    onSelect(index)
-                                }
-                            )
-                            .semantics { selected = isSelected }
-                            .graphicsLayer { alpha = if (option.enabled) 1f else 0.38f }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            .height(bodyContentHeight)
                     ) {
-                        Box(
-                            modifier = Modifier.size(22.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        Text(
-                            text = option.label,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                if (!actionLabel.isNullOrBlank() && onAction != null) {
-                    if (options.isNotEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                                .height(1.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
-                                )
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                role = Role.Button,
-                                onClick = {
-                                    onDismiss()
-                                    onAction()
+                                .height(PickerItemHeight)
+                                .graphicsLayer {
+                                    translationY = highlightedOffset.value.toPx()
+                                    alpha = highlightedAlpha
                                 }
-                            )
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Spacer(modifier = Modifier.width(32.dp))
-                        Text(
-                            text = actionLabel,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
+                                .clip(Capsule())
+                                .background(highlightColor)
                         )
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = PickerBodyVerticalPadding),
+                            verticalArrangement = Arrangement.spacedBy(PickerItemGap)
+                        ) {
+                            options.forEachIndexed { index, option ->
+                                MorphingPickerRow(
+                                    label = option.label,
+                                    expanded = expanded,
+                                    revealProgress = rowRevealProgress(index),
+                                    enabled = option.enabled,
+                                    selected = index == validSelectedIndex,
+                                    action = false,
+                                    onHighlight = { highlightedRow = index },
+                                    onClick = {
+                                        highlightedRow = index
+                                        onSelect(index)
+                                        expanded = false
+                                    }
+                                )
+                            }
+
+                            if (hasAction) {
+                                MorphingPickerRow(
+                                    label = actionLabel.orEmpty(),
+                                    expanded = expanded,
+                                    revealProgress = rowRevealProgress(options.size),
+                                    enabled = true,
+                                    selected = false,
+                                    action = true,
+                                    onHighlight = { highlightedRow = options.size },
+                                    onClick = {
+                                        expanded = false
+                                        onAction()
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1104,33 +1417,69 @@ internal fun LiquidAnchoredOptionMenu(
     }
 }
 
-private class AnchoredPickerPositionProvider(
-    private val gapPx: Int,
-    private val bottomInsetPx: Int
-) : PopupPositionProvider {
-    var opensAbove: Boolean = false
-        private set
+@Composable
+private fun MorphingPickerRow(
+    label: String,
+    expanded: Boolean,
+    revealProgress: Float,
+    enabled: Boolean,
+    selected: Boolean,
+    action: Boolean,
+    onHighlight: () -> Unit,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
 
-    override fun calculatePosition(
-        anchorBounds: IntRect,
-        windowSize: IntSize,
-        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-        popupContentSize: IntSize
-    ): IntOffset {
-        val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
-        val x = anchorBounds.left.coerceIn(0, maxX)
-        val safeBottom = (windowSize.height - bottomInsetPx).coerceAtLeast(0)
-        val belowY = anchorBounds.bottom + gapPx
-        val aboveY = anchorBounds.top - gapPx - popupContentSize.height
-        val fitsBelow = belowY + popupContentSize.height <= safeBottom
-        val fitsAbove = aboveY >= 0
-        opensAbove = !fitsBelow && fitsAbove
-        val maxY = (safeBottom - popupContentSize.height).coerceAtLeast(0)
-        val y = when {
-            opensAbove -> aboveY
-            fitsBelow -> belowY
-            else -> belowY.coerceIn(0, maxY)
+    LaunchedEffect(pressed, expanded, enabled) {
+        if (pressed && expanded && enabled) onHighlight()
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(PickerItemHeight)
+            .graphicsLayer {
+                val progress = revealProgress.coerceIn(0f, 1f)
+                alpha = progress * if (enabled) 1f else 0.38f
+                translationY = (1f - progress) * 6.dp.toPx()
+            }
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = expanded && enabled,
+                role = if (action) Role.Button else Role.RadioButton,
+                onClick = onClick
+            )
+            .semantics {
+                if (!expanded) hideFromAccessibility()
+                if (!action) this.selected = selected
+            }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected || action) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (action) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
-        return IntOffset(x, y.coerceIn(0, maxY))
     }
 }

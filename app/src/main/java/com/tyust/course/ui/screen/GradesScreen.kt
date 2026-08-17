@@ -9,10 +9,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
@@ -87,10 +84,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -98,19 +91,14 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.HeaderGlassSlab
-import com.tyust.course.ui.system.LiquidAnchoredOptionMenu
-import com.tyust.course.ui.system.LiquidPickerOption
 import com.tyust.course.ui.system.LiquidSegmentedControl
 import com.tyust.course.ui.system.LocalAppBackdrop
 import com.tyust.course.ui.system.LocalAppOverlayBottomInset
 import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.StatusBarFrost
 import com.tyust.course.ui.system.SystemDivider
-import com.tyust.course.ui.system.glass.applyChipContentDeformation
-import com.tyust.course.ui.system.glass.glassChip
-import com.tyust.course.ui.system.glass.rememberInteractiveOptics
+import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.lerpDp
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
@@ -213,9 +201,6 @@ private val GradesHeaderTopPadExpanded = 10.dp
 private val GradesHeaderTopPadCollapsed = GradesSlabTopGap + GradesSlabRing
 private val GradesHeaderBottomPadExpanded = 10.dp
 private val GradesHeaderBottomPadCollapsed = GradesSlabBottomGap + GradesSlabRing
-
-/** 学期字段高度。比上一版 56dp 的表单字段轻一档，但仍是一件完整的可按控件。 */
-private val GradesSemesterFieldHeight = 40.dp
 
 /** 顶栏的三个高度与玻璃条圆角，全部由上面那组 token 推导出来。 */
 private class GradesHeaderMetrics(
@@ -798,15 +783,8 @@ private fun SemesterGradesContent(
 }
 
 /**
- * 学期选择。
- *
- * 上一版是 `SystemPicker`——一枚 56dp 的全宽表单字段，在这一屏里是最重的一块 chrome；
- * 再上一版把它拆成"标签 + 一枚蓝药丸 + 行尾一个箭头"，轻了但散了：没有容器、
- * 药丸用的是筛选标签的语言、箭头又是另一件东西，整行可点却看不出来。
- *
- * 现在是**一件完整的紧凑玻璃字段**（40dp）：按下整行有玻璃形变，值与箭头在同一块面上，
- * 菜单仍从它的下缘长出（[LiquidAnchoredOptionMenu]）——居中滚轮弹窗会把"改一个筛选项"
- * 升级成一次模态打断，和这一行的轻量感对不上。
+ * 学期选择与登录、筛选场景共用同一套单体液态选择器：顶部始终锚定，菜单内容直接
+ * 向下撑开布局，不再创建独立 Popup 或第二层玻璃表面。
  */
 @Composable
 private fun SemesterSelector(
@@ -814,116 +792,15 @@ private fun SemesterSelector(
     currentSemester: String,
     onSemesterChange: (String) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val canOpen = semesters.isNotEmpty()
-    val accessibility = rememberGlassAccessibilityMode()
-    val optics = rememberInteractiveOptics()
-    val interactive = canOpen && !accessibility.reduceMotion
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = MotionSpring.liquidSettle(),
-        label = "semesterArrow"
+    val selectedIndex = semesters.indexOf(currentSemester).takeIf { it >= 0 }
+    SystemPicker(
+        options = semesters,
+        selectedIndex = selectedIndex,
+        onSelect = { index -> onSemesterChange(semesters[index]) },
+        modifier = Modifier.fillMaxWidth(),
+        label = "学期",
+        placeholder = "选择学期"
     )
-    val fieldShape = RoundedCornerShape(16.dp)
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-
-    // 菜单以这一行为锚点：Popup 取父布局的边界，所以量宽度的 BoxWithConstraints
-    // 必须只包住这一行本身。
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val anchorWidth = with(LocalDensity.current) { constraints.maxWidth.toDp() }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(GradesSemesterFieldHeight)
-                // glassChip 而不是 drawBackdrop：这一行待在【被 layerBackdrop 捕获的
-                // 内容层里】，再去采样一个包含自己的图层就是自采样（RenderThread 死循环）。
-                // 它也不需要模糊——淡表面 + 边缘光已经交代了"这是一块玻璃"。
-                // 同一条理由见 GlassFilterChip。
-                .glassChip(
-                    shape = fieldShape,
-                    rimIntensity = if (expanded) 1.25f else 1f,
-                    pressProgress = { optics.pressProgress }
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    enabled = canOpen,
-                    role = Role.Button
-                ) { expanded = !expanded }
-                .then(if (interactive) optics.gestureModifier else Modifier)
-                .semantics {
-                    contentDescription = "学期"
-                    stateDescription = currentSemester.ifBlank { "未选择" }
-                }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (!interactive) return@graphicsLayer
-                        applyChipContentDeformation(
-                            optics = optics,
-                            travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
-                            stretch = GlassRecipe.ChipDragStretch,
-                            pressDepth = GlassRecipe.ChipIconPressDepth,
-                            damping = GlassRecipe.ChipContentDeformDamping
-                        )
-                    }
-                    .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CalendarToday,
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                    tint = labelColor
-                )
-                Text(
-                    text = "学期",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = labelColor
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    // 值就是值，不再套一枚"选中的筛选标签"
-                    text = currentSemester.ifBlank { "选择学期" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (currentSemester.isBlank()) {
-                        FontWeight.Normal
-                    } else {
-                        FontWeight.SemiBold
-                    },
-                    color = if (currentSemester.isBlank()) {
-                        labelColor.copy(alpha = labelColor.alpha * 0.72f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "收起学期" else "展开学期",
-                    modifier = Modifier
-                        .size(17.dp)
-                        .rotate(arrowRotation),
-                    tint = labelColor.copy(alpha = 0.8f)
-                )
-            }
-        }
-
-        LiquidAnchoredOptionMenu(
-            expanded = expanded,
-            options = semesters.map(::LiquidPickerOption),
-            selectedIndex = semesters.indexOf(currentSemester).takeIf { it >= 0 },
-            anchorWidth = anchorWidth,
-            onSelect = { index -> onSemesterChange(semesters[index]) },
-            onDismiss = { expanded = false }
-        )
-    }
 }
 
 @Composable
