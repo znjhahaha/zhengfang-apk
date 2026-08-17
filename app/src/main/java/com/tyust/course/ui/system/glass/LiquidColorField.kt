@@ -49,6 +49,7 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
+import com.tyust.course.ui.system.rememberGlassDarkTheme
 import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
@@ -84,7 +85,7 @@ fun LiquidColorField(
     fieldHeight: Dp = 150.dp
 ) {
     val density = LocalDensity.current
-    val isLight = !isSystemInDarkTheme()
+    val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val glassBackdrop = LocalControlBackdrop.current?.takeIf { isBackdropSupported() }
     val animationScope = rememberCoroutineScope()

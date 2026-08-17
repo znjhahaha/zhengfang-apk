@@ -23,6 +23,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.tyust.course.ui.system.rememberGlassDarkTheme
 import com.tyust.course.ui.system.GlassMaterialRole
 import com.tyust.course.ui.system.GlassMaterials
 import com.tyust.course.ui.system.GlassRecipe
@@ -61,7 +62,7 @@ fun Modifier.liquidChip(
     elevation: Dp = 0.dp,
     interactive: Boolean = true
 ): Modifier {
-    val isLight = !isSystemInDarkTheme()
+    val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val hasRealLens = isRuntimeShaderTrulySupported()
     val allowInteraction = interactive && enabled && !accessibility.reduceMotion
@@ -183,7 +184,7 @@ fun Modifier.glassChip(
     dimmed: Boolean = false,
     pressProgress: () -> Float = { 0f }
 ): Modifier {
-    val isLight = !isSystemInDarkTheme()
+    val isLight = !rememberGlassDarkTheme()
     val strength = if (dimmed) GlassRecipe.ChipDisabledSurfaceScale else 1f
     val rim = rimIntensity * if (dimmed) GlassRecipe.ChipDisabledRimScale else 1f
     // 浅色主题彻底不投影。参考图那枚返回键是没有阴影的，

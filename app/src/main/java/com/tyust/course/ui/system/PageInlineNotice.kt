@@ -140,7 +140,7 @@ private val DismissThreshold = 72.dp
 /** 警示强调色：琥珀，仅用于图标点缀，表面保持中性玻璃。 */
 @Composable
 private fun noticeAccentColor(): Color =
-    if (!isSystemInDarkTheme()) Color(0xFFC26A00) else Color(0xFFFFB340)
+    if (!rememberGlassDarkTheme()) Color(0xFFC26A00) else Color(0xFFFFB340)
 
 /**
  * 悬浮玻璃通知：单个元素在胶囊与药丸之间连续形变，右边缘始终贴右缘对齐，
@@ -220,7 +220,7 @@ fun FloatingNoticeHost(
             label = "noticePillAlpha"
         )
 
-        val isLightTheme = !isSystemInDarkTheme()
+        val isLightTheme = !rememberGlassDarkTheme()
         // 与底栏选中滑块同一档材质：Interactive 的 blurDp 为 0，靠折射与色散成形，
         // 而不是 Modal 那种磨砂。表面必须够薄，否则会把折射盖掉。
         val material = remember(accessibility) {

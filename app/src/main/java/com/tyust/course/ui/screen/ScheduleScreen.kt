@@ -82,12 +82,14 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.TextUnit
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.tyust.course.ui.system.glass.rememberAdaptiveContentColor
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
@@ -252,7 +254,11 @@ fun ScheduleScreen(
                     isNextSemester = isNextSemester,
                     onToggleSemester = onToggleSemester,
                     collapseFraction = headerCollapse,
-                    sampleBackdrop = headerSampleBackdrop
+                    sampleBackdrop = headerSampleBackdrop,
+                    luminanceSources = buildList {
+                        (wallpaperBackdrop as? LayerBackdrop)?.let(::add)
+                        contentBackdrop?.let(::add)
+                    }
                 )
             }
         }
@@ -317,12 +323,19 @@ fun WeekHeaderCompact(
     /** 0=未滚动（大标题直接浮在课表上）、1=已上划（收拢成一条悬浮玻璃）。 */
     collapseFraction: Float = 0f,
     /** 「壁纸 + 课表内容」的合成采样源。为空则退回无玻璃顶栏。 */
-    sampleBackdrop: Backdrop? = null
+    sampleBackdrop: Backdrop? = null,
+    /** 标题颜色的动态亮度采样源（壁纸层 + 课表内容层）。 */
+    luminanceSources: List<LayerBackdrop> = emptyList()
 ) {
     val calendar = Calendar.getInstance()
     val currentDayOfWeek = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
     val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // 大标题压在壁纸/课表上：3Hz 采样顶栏带亮度，深色内容滚入时标题转浅字
+    val titleColor = rememberAdaptiveContentColor(
+        sources = luminanceSources,
+        active = !rememberGlassAccessibilityMode().reduceMotion
+    )
 
     // 折叠全程跟手；高刚度临界阻尼弹簧只负责抹平快滚时的跳变（同 SystemTopBar）
     val collapse by animateFloatAsState(
@@ -427,7 +440,7 @@ fun WeekHeaderCompact(
                                 text = "第 $currentWeek 周",
                                 fontSize = lerpSp(26f, 17f, collapse),
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = titleColor,
                                 letterSpacing = (-0.5).sp,
                                 maxLines = 1
                             )

@@ -66,7 +66,7 @@ fun GlassToastHost(modifier: Modifier = Modifier) {
     var lastMessage by remember { mutableStateOf("") }
     if (data != null) lastMessage = data.message
 
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val capsuleColor = if (isLightTheme) {
         Color(0xFF26292F).copy(alpha = 0.86f)
     } else {

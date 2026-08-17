@@ -100,7 +100,7 @@ internal fun StatusBarFrost(
     collapse: Float,
     backdrop: Backdrop
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val tint = if (isLightTheme) {
         Color.White.copy(alpha = 0.46f * collapse)
     } else {
@@ -151,7 +151,7 @@ internal fun HeaderGlassSlab(
     cornerRadius: Dp,
     modifier: Modifier = Modifier
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val material = remember(accessibility) {
         GlassMaterials.resolve(GlassMaterialRole.Navigation, accessibility)

@@ -132,7 +132,7 @@ fun LiquidSegmentedControl(
     val useGlass = glassBackdrop != null
     // 真 lens（API33+）折射色散；API31/32 固定 blur 毛玻璃
     val hasRealLens = isRuntimeShaderTrulySupported()
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)
     // 隐藏内容层与环境层合成为选中透镜的采样源：折射要看得见，

@@ -20,6 +20,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import com.tyust.course.ui.system.GlassRecipe
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.tanh
@@ -41,15 +42,22 @@ class InteractiveOptics(
 ) {
     private val pressAnimation = Animatable(0f, 0.001f)
     /**
-     * 拖拽位移。按住期间在 pointer 事件里【同步】写入，不经过 Animatable。
+     * 拖拽位移【目标值】。按住期间在 pointer 事件里【同步】写入，不经过 Animatable。
      *
      * 这里踩过一个坑：原先每来一个 move 事件就 `launch { animatable.snapTo(...) }`。
      * 每次 launch 都要等一次协程调度，而 Animatable.snapTo 还要抢 mutatorMutex、
      * 顺带取消上一次未完成的调用——于是位移比手指慢一帧且时快时慢，
-     * 表现出来就是"卡顿"。松手回弹才需要动画，按住跟手不需要。
+     * 表现出来就是"卡顿"。所以目标值仍然直写；现在多了一层【渲染值】：
+     *
+     * [renderTravel] 用临界弹簧追目标（与底部 tab 滑块 liquidFollow 同参），
+     * 获得 2-3 帧"推着有质量的东西走"的滞后；松手时带动能初速回零，
+     * 甩一下和轻轻挪一下的回弹不再一样。[dragTravel] 读渲染值——玻璃层、
+     * 内容层、融合桥三处同源，自动继承这套物理。
      */
     private var offsetState by mutableStateOf(Offset.Zero)
-    private var offsetReleaseJob: Job? = null
+    private val renderTravel = Animatable(Offset.Zero, Offset.VectorConverter)
+    private var travelFollowJob: Job? = null
+    private var travelReleaseJob: Job? = null
     private var pointerState by mutableStateOf(Offset.Unspecified)
     private var velocityState by mutableFloatStateOf(0f)
     private var pressedState by mutableStateOf(false)
@@ -108,7 +116,7 @@ class InteractiveOptics(
      */
     fun dragTravel(maxTravelPx: Float): Offset {
         if (maxTravelPx <= 0f) return Offset.Zero
-        val raw = offset
+        val raw = renderTravel.value
         val distance = raw.getDistance()
         if (distance <= 0.01f) return Offset.Zero
         return raw * (maxTravelPx * tanh(distance / maxTravelPx) / distance)
@@ -139,7 +147,8 @@ class InteractiveOptics(
             var previousTime = down.uptimeMillis
 
             velocitySettleJob?.cancel()
-            offsetReleaseJob?.cancel()
+            travelReleaseJob?.cancel()
+            travelFollowJob?.cancel()
             pointerState = down.position
             velocityState = 0f
             pressedState = true
@@ -160,8 +169,13 @@ class InteractiveOptics(
 
                 pointerState = change.position
                 velocityState = velocityState * 0.56f + instantaneousVelocity * 0.44f
-                // 同步写入，事件到达的那一帧就生效
+                // 目标值同步写入；渲染值由 ChipFollowSpring 追——每次 move 重新设定
+                // 弹簧目标（与 tab 滑块 updateValue 同款 retarget），获得质量滞后
                 offsetState = change.position - startPosition
+                travelFollowJob?.cancel()
+                travelFollowJob = animationScope.launch {
+                    renderTravel.animateTo(offsetState, ChipFollowSpring)
+                }
                 previousPosition = change.position
                 previousTime = change.uptimeMillis
                 pointerId = change.id
@@ -173,14 +187,17 @@ class InteractiveOptics(
             animationScope.launch {
                 pressAnimation.animateTo(0f, ReleaseSpring)
             }
-            offsetReleaseJob = animationScope.launch {
-                Animatable(
-                    offsetState,
-                    Offset.VectorConverter,
-                    Offset.VisibilityThreshold
-                ).animateTo(Offset.Zero, ReleaseOffsetSpring) {
-                    offsetState = value
-                }
+            // 松手带动能初速：甩动时渲染值过冲一次（Q 弹），轻挪则几乎直接归位
+            travelFollowJob?.cancel()
+            travelReleaseJob = animationScope.launch {
+                val kick = (velocityState * 1000f * ChipReleaseVelocityKickScale)
+                    .coerceIn(-ChipReleaseMaxKickPxPerSec, ChipReleaseMaxKickPxPerSec)
+                renderTravel.animateTo(
+                    Offset.Zero,
+                    ChipReleaseTravelSpring,
+                    initialVelocity = Offset(kick, 0f)
+                )
+                offsetState = Offset.Zero
             }
             val releaseVelocity = velocityState
             velocitySettleJob = animationScope.launch {
@@ -209,11 +226,29 @@ class InteractiveOptics(
             visibilityThreshold = 0.001f
         )
 
-        val ReleaseOffsetSpring = spring(
-            dampingRatio = 0.5f,
-            stiffness = 300f,
+        /**
+         * 拖拽跟手弹簧：与底部 tab 滑块的 liquidFollow 同参——临界阻尼高刚度，
+         * 只有 2-3 帧的"质量滞后"。原先渲染值直读目标值（0 帧延迟），
+         * 响应最快但没有"推着东西走"的物理感。
+         */
+        private val ChipFollowSpring = spring(
+            dampingRatio = 1f,
+            stiffness = 1100f,
             visibilityThreshold = Offset.VisibilityThreshold
         )
+
+        /** 松手位移回零：低阻尼 + 动能初速，甩动时过冲一次。 */
+        private val ChipReleaseTravelSpring = spring(
+            dampingRatio = 0.42f,
+            stiffness = 340f,
+            visibilityThreshold = Offset.VisibilityThreshold
+        )
+
+        /** 初速换算：拖速(px/ms) → px/s 后按此比例打折作为弹簧初速。 */
+        private const val ChipReleaseVelocityKickScale = 0.05f
+
+        /** 初速上限：7px 量级的行程给 120px/s 已经是明显的甩动过冲。 */
+        private const val ChipReleaseMaxKickPxPerSec = 120f
     }
 }
 
@@ -262,8 +297,17 @@ fun GraphicsLayerScope.applyChipGlassDeformation(
 
     val swell = 1f + optics.pressProgress * swellPx / size.height
     val (sx, sy) = anisotropy(travel, travelPx, stretch)
-    scaleX = swell * (1f + sx)
-    scaleY = swell * (1f + sy)
+    // 速度驱动的等体积拉伸：快拖沿运动方向明显拉长、垂直方向等量收窄——
+    // 没有它，快拖慢拖看起来一样，玻璃没有"重物在动"的视觉质量
+    val velocityStretch = GlassRecipe.ChipVelocityStretch *
+        optics.motionIntensity(GlassRecipe.ChipVelocityFullEffectMsPx)
+    val (vx, vy) = if (abs(travel.x) >= abs(travel.y)) {
+        velocityStretch to -velocityStretch
+    } else {
+        -velocityStretch to velocityStretch
+    }
+    scaleX = swell * (1f + sx + vx)
+    scaleY = swell * (1f + sy + vy)
 }
 
 /**

@@ -14,13 +14,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -39,12 +43,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
+import com.tyust.course.ui.system.rememberGlassDarkTheme
 import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
@@ -93,7 +99,7 @@ fun LiquidActionGroup(
     backdrop: Backdrop? = LocalControlBackdrop.current,
     content: @Composable LiquidActionGroupScope.() -> Unit
 ) {
-    val isLight = !isSystemInDarkTheme()
+    val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     // 几何与可用性分开存：bounds 由 onPlaced 上报，而 enabled 变化时
     // 几何往往没变、onPlaced 不会重跑。塞在同一个结构里会让 enabled 过期，
@@ -391,6 +397,16 @@ internal fun chipPresenceScaleY(presence: Float): Float =
 internal fun chipPresenceAlpha(presence: Float): Float =
     (presence * 2.4f).coerceIn(0f, 1f)
 
+/**
+ * 滑行果冻拉伸因子（x 拉长量，y 等体积收窄量）。速度取绝对值——芯片只在
+ * 横轴上被父级推动，方向不影响"沿运动方向拉长"的读法。
+ */
+internal fun glideStretchFactors(velocityPxMs: Float): Pair<Float, Float> {
+    val s = (abs(velocityPxMs) / GlassRecipe.ChipGlideFullVelocityPxMs).coerceIn(0f, 1f)
+    val k = GlassRecipe.ChipGlideStretch * s
+    return (1f + k) to (1f - k * 0.75f)
+}
+
 interface LiquidActionGroupScope {
     /**
      * 图标操作。绝大多数调用点用这个。
@@ -460,45 +476,85 @@ private fun LiquidActionItem(
     // 收拢途中就不再接受点击：presence 很小时可点区域已经不足一指宽，
     // 命中它只会让人以为点错了。
     val reachable = enabled && appearance > 0.6f
+
+    // 组收拢/展开时，芯片的位移来自父级重排——推力不在自己身上，速度只有
+    // onPlaced 的根坐标差分能观察到。EMA 抑制单帧抖动；帧循环负责把速度
+    // 衰减回零：布局停稳后 onPlaced 不再触发，没有衰减速度会冻结在最后
+    // 一个采样值上，拉伸就永远回不去。
+    val glideVelocity = remember { mutableFloatStateOf(0f) }
+    var glideSampleX by remember { mutableFloatStateOf(Float.NaN) }
+    var glideSampleT by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            withFrameNanos { }
+            val v = glideVelocity.floatValue
+            if (v != 0f) {
+                val decayed = v * 0.78f
+                glideVelocity.floatValue = if (abs(decayed) < 0.006f) 0f else decayed
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
-            .size(buttonSize)
             .then(
                 if (appearance >= 1f) {
-                    // 自己完整在场：只剩"邻居被吃掉时鼓一下"这一层形变。
-                    // graphicsLayer 的 block 是绘制期 lambda，读 mergePulse 只触发重绘。
-                    Modifier.graphicsLayer {
-                        if (!animateContent) return@graphicsLayer
-                        val pulse = mergePulse().coerceIn(0f, 1f)
-                        if (pulse < 0.01f) return@graphicsLayer
-                        // 朝被吸收的方向被拽长、纵向同时被挤——近似体积守恒，
-                        // 幅度必须小：大了就从"吞咽"变成"按钮在抖"。
-                        scaleX = 1f + 0.07f * pulse
-                        scaleY = 1f - 0.03f * pulse
-                    }
-                } else {
                     Modifier
-                        // 子级仍按满尺寸测量（图标不会被挤扁），只把【上报给父级的宽度】
-                        // 按进度收窄，于是邻居连续滑过来、整组宽度跟着收。
+                } else {
+                    // 宽度收窄的 layout 必须在 size【外面】：size 是强制尺寸，
+                    // 挂在链首会把内层上报的收窄宽度重新顶回满宽——那版收拢
+                    // 只剩绘制层缩放，邻居永远滑不过来，组中央一直留着满宽
+                    // 空槽（课程页"已选"态刷新芯片停在原地铁证）。
+                    Modifier
                         .layout { measurable, constraints ->
                             val placeable = measurable.measure(constraints)
                             val width = (placeable.width * appearance).roundToInt()
                             layout(width, placeable.height) { placeable.place(0, 0) }
                         }
-                        .graphicsLayer {
-                            // 横向线性、纵向更快、透明度最后走：这三条一起才是"被吸收"，
-                            // 曲线与桥的几何共用（见 chipPresenceScaleY 的注释）。
-                            alpha = chipPresenceAlpha(appearance)
-                            scaleX = appearance
-                            scaleY = chipPresenceScaleY(appearance)
-                            // 必须锚左缘：上面上报的宽度是 width * presence，绘制也就跟着
-                            // 从左缘收，两者右缘始终重合。锚右缘的话绘制会留在原处，
-                            // 而邻居已经滑过来了——收拢途中两枚芯片会叠在一起。
-                            transformOrigin = TransformOrigin(0f, 0.5f)
-                        }
                 }
             )
+            .size(buttonSize)
+            .graphicsLayer {
+                // 滑行拉伸对两种状态都成立：完整的那枚被推着走、退场的那枚
+                // 被拽着走，都是横轴上的液体位移。
+                val glideX: Float
+                val glideY: Float
+                if (animateContent) {
+                    val glide = glideStretchFactors(glideVelocity.floatValue)
+                    glideX = glide.first
+                    glideY = glide.second
+                } else {
+                    glideX = 1f
+                    glideY = 1f
+                }
+                if (appearance >= 1f) {
+                    val pulse = if (animateContent) mergePulse().coerceIn(0f, 1f) else 0f
+                    // 朝被吸收的方向被拽长、纵向同时被挤——近似体积守恒，
+                    // 幅度必须小：大了就从"吞咽"变成"按钮在抖"。
+                    scaleX = (1f + 0.07f * pulse) * glideX
+                    scaleY = (1f - 0.03f * pulse) * glideY
+                } else {
+                    // 横向线性、纵向更快、透明度最后走：这三条一起才是"被吸收"，
+                    // 曲线与桥的几何共用（见 chipPresenceScaleY 的注释）。
+                    alpha = chipPresenceAlpha(appearance)
+                    scaleX = appearance * glideX
+                    scaleY = chipPresenceScaleY(appearance) * glideY
+                    // 必须锚左缘：上面上报的宽度是 width * presence，绘制也就跟着
+                    // 从左缘收，两者右缘始终重合。锚右缘的话绘制会留在原处，
+                    // 而邻居已经滑过来了——收拢途中两枚芯片会叠在一起。
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
+            }
             .onPlaced { coordinates ->
+                val rootX = coordinates.positionInRoot().x
+                val now = System.nanoTime() / 1_000_000L
+                if (animateContent && !glideSampleX.isNaN()) {
+                    val dt = (now - glideSampleT).coerceIn(1L, 64L)
+                    val v = (rootX - glideSampleX) / dt
+                    glideVelocity.floatValue = glideVelocity.floatValue * 0.55f + v * 0.45f
+                }
+                glideSampleX = rootX
+                glideSampleT = now
                 val position = coordinates.positionInParent()
                 onBoundsChange(
                     Rect(

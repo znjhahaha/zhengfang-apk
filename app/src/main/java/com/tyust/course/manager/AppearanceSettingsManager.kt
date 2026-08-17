@@ -177,6 +177,13 @@ object AppearanceSettingsManager {
     private const val KEY_IMAGE_BLUR = "wallpaper_image_blur"
     private const val KEY_IMAGE_COLOR = "wallpaper_image_color"
 
+    /**
+     * 壁纸图片存储管道版本。v2 = soft 层由 72px 裸缩略图换为 540px 3-pass box blur（≈高斯）。
+     * 发现旧版本存量时后台重生成一次。
+     */
+    private const val KEY_STORE_VERSION = "wallpaper_store_version"
+    private const val STORE_VERSION = 2
+
     private const val TAG = "AppearanceSettings"
 
     private var prefs: SharedPreferences? = null
@@ -256,6 +263,15 @@ object AppearanceSettingsManager {
         mode = resolveMode()
         recomputeStyle()
         if (mode == WallpaperMode.Image) loadImageAsync()
+        // 存量升级：旧版模糊层是 72px 裸缩略图（上采样像压缩画质），按高斯管道重生成一次
+        if (hasImageWallpaper && (prefs?.getInt(KEY_STORE_VERSION, 1) ?: 1) < STORE_VERSION) {
+            ioScope.launch {
+                if (WallpaperImageStore.regenerateSoft(app)) {
+                    prefs?.edit()?.putInt(KEY_STORE_VERSION, STORE_VERSION)?.apply()
+                    if (mode == WallpaperMode.Image) loadImageAsync()
+                }
+            }
+        }
     }
 
     /** 模式落盘的是新键，旧键顺手同步，降级安装回旧版本时不会突然变回预设。 */
@@ -336,6 +352,7 @@ object AppearanceSettingsManager {
                 prefs?.edit()
                     ?.putString(KEY_MODE, WallpaperMode.Image.name)
                     ?.putInt(KEY_IMAGE_COLOR, dominant)
+                    ?.putInt(KEY_STORE_VERSION, STORE_VERSION)
                     ?.apply()
                 recomputeStyle()
                 onResult(true)
@@ -422,5 +439,14 @@ object AppearanceSettingsManager {
                 ?: wallpaper.toStyle()
             WallpaperMode.Preset -> wallpaper.toStyle()
         }
+        wallpaperWantsDark = mode == WallpaperMode.Image && style.isDark
     }
+
+    /**
+     * 图片壁纸是否深到需要整套界面转深色（Material 主题/玻璃白雾/状态栏图标共用此信号）。
+     * 复用 [WallpaperStyle.isDark] 的既有语义：主色亮度 < 0.42 或蒙版拉过一半。
+     * 预设/纯色模式恒 false——那两种背景本身就是按浅色主题设计的渐变。
+     */
+    var wallpaperWantsDark by mutableStateOf(false)
+        private set
 }

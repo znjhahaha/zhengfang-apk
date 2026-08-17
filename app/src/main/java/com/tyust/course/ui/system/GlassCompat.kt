@@ -1,12 +1,15 @@
 package com.tyust.course.ui.system
 
 import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CornerBasedShape
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
+import com.tyust.course.manager.AppearanceSettingsManager
 
 enum class GlassCapability {
     Material,
@@ -75,6 +78,18 @@ fun canUseLiquidLens(
         minDimensionPx > 0f &&
         refractionHeightPx <= minCornerRadiusPx &&
         refractionAmountPx <= minDimensionPx
+
+/**
+ * 玻璃材质的暗色信号 = 系统暗色 **或** 壁纸深色（图片壁纸的字体颜色自适应）。
+ *
+ * 全 App 的玻璃白雾/描边/阴影明暗分支必须读它而不是 `isSystemInDarkTheme()`：
+ * 深色壁纸下 Material 主题翻成深色（文字变浅），玻璃若仍按系统信号出白雾，
+ * 就是"白雾玻璃上漂白字"。与 [com.tyust.course.ui.theme.CourseSelectorTheme]
+ * 的 resolvedDarkTheme 是同一信号。
+ */
+@Composable
+fun rememberGlassDarkTheme(): Boolean =
+    isSystemInDarkTheme() || AppearanceSettingsManager.wallpaperWantsDark
 
 /**
  * 根 Backdrop 由页面入口注入；为空时组件使用非玻璃实现。

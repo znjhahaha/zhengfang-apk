@@ -88,6 +88,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.tyust.course.ui.system.glass.rememberAdaptiveContentColor
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -179,10 +181,18 @@ fun SystemTopBar(
     collapseFraction: Float = 0f,
     navigationIcon: @Composable (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
-    backdrop: Backdrop? = LocalAppBackdrop.current
+    backdrop: Backdrop? = LocalAppBackdrop.current,
+    luminanceSources: List<LayerBackdrop> = emptyList()
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
-    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
+
+    // 标题颜色的逐位置自适应：3Hz 采样顶栏区域（壁纸+滚过的内容），
+    // 滞回翻转——滚动时标题底下变暗文字就变浅。详见 rememberAdaptiveContentColor。
+    val titleColor = rememberAdaptiveContentColor(
+        sources = luminanceSources,
+        active = !rememberGlassAccessibilityMode().reduceMotion
+    )
 
     // iOS 26 分离式头部：展开态大标题直接浮在内容上（无背景），
     // 滚动折叠时标题缩小、浮出细玻璃条。折叠进度由滚动偏移连续驱动、
@@ -274,7 +284,7 @@ fun SystemTopBar(
                         fontSize = lerpSp(28f, 17f, collapse),
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.5).sp,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = titleColor,
                         maxLines = 1
                     )
                     if (!subtitle.isNullOrBlank()) {
@@ -411,7 +421,7 @@ fun SystemCard(
 
     // 调用方普遍显式传 colorScheme.surface；把"默认白面"语义映射为半透玻璃面
     // （纯 alpha 混合零采样开销，多彩壁纸自然透出），特殊色卡保持原色。
-    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val translucent = backgroundColor == MaterialTheme.colorScheme.surface
     val effectiveColor = when {
         !translucent -> backgroundColor
@@ -684,7 +694,7 @@ fun SystemPrimaryButton(
         modifier = modifier.height(52.dp),
         enabled = enabled,
         style = LiquidButtonStyle.SolidTinted,
-        tint = if (!isSystemInDarkTheme()) IOSBlueLight else IOSBlueDark,
+        tint = if (!rememberGlassDarkTheme()) IOSBlueLight else IOSBlueDark,
         shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
@@ -735,7 +745,7 @@ fun SystemDestructiveButton(
         modifier = modifier.height(52.dp),
         enabled = enabled,
         style = LiquidButtonStyle.SolidTinted,
-        tint = if (!isSystemInDarkTheme()) IOSRedLight else IOSRedDark,
+        tint = if (!rememberGlassDarkTheme()) IOSRedLight else IOSRedDark,
         shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
@@ -754,7 +764,7 @@ fun SystemEmptyState(
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null
 ) {
-    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -857,7 +867,7 @@ fun SystemActionButton(
         modifier = modifier,
         enabled = enabled,
         style = if (primary) LiquidButtonStyle.SolidTinted else LiquidButtonStyle.SolidSurface,
-        tint = if (!isSystemInDarkTheme()) IOSBlueLight else IOSBlueDark,
+        tint = if (!rememberGlassDarkTheme()) IOSBlueLight else IOSBlueDark,
         contentColor = contentColor,
         shape = Capsule(),
         minHeight = 36.dp,
@@ -1067,7 +1077,7 @@ private fun SystemDialogContent(
         accessibility = accessibility
     )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
-    val isLightTheme = !androidx.compose.foundation.isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     // 模态卡片是玻璃而不是实色板：只保留一层弱中性表面，让身后画面经 blur/lens 透出。
     val dialogSurfaceColor = if (isLightTheme) {
         Color(0xFFF4F5F7).copy(alpha = 0.30f)

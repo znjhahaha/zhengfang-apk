@@ -28,17 +28,24 @@ import kotlin.math.roundToInt
  *
  * ## 为什么要存两张
  *
- * [SOFT_NAME] 是长边约 [SoftLongEdge]px 的缩略图。绘制时把它拉满整屏就是天然的模糊，
- * 于是"模糊"滑块不需要 RenderEffect（31+）也不需要 RenderScript（已废弃），
- * API 24 上一样连续可调。见 `WallpaperRenderer.drawWallpaperPattern`。
+ * [SOFT_NAME] 是长边 [SoftLongEdge]px 并做过 **3-pass box blur（≈高斯）** 的模糊层。
+ * 绘制时与原图做 alpha 交叉淡化，于是"模糊"滑块不需要 RenderEffect（31+）也不需要
+ * RenderScript（已废弃），API 24 上一样连续可调。见 `WallpaperRenderer.drawWallpaperPattern`。
+ * 曾用 72px 裸缩略图上采样冒充模糊——那是低分辨率放大，看起来像压缩画质而不是高斯。
  */
 object WallpaperImageStore {
     private const val TAG = "WallpaperImageStore"
     private const val SHARP_NAME = "wallpaper_custom.jpg"
     private const val SOFT_NAME = "wallpaper_custom_soft.jpg"
 
-    /** 模糊层缩略图的长边。再小会出现明显的色块台阶，再大就糊不动了。 */
-    private const val SoftLongEdge = 72
+    /**
+     * 模糊层的长边。540px 经上采样到屏幕仍有轻微软化（正好是低模糊档需要的），
+     * 而满档模糊由导入时的 box blur 负责，不再有色块/压缩感。
+     */
+    internal const val SoftLongEdge = 540
+
+    /** box blur 半径相对 soft 长边的比例：540px 时半径 22px，3-pass 后 ≈ σ11 的高斯。 */
+    internal const val SoftBlurRadiusRatio = 1f / 24f
 
     private fun sharpFile(context: Context) = File(context.filesDir, SHARP_NAME)
 
@@ -97,14 +104,7 @@ object WallpaperImageStore {
 
             if (!writeJpeg(scaled, sharpFile(context), quality = 90)) return null
 
-            val softLongEdge = max(scaled.width, scaled.height)
-            val softScale = SoftLongEdge.toFloat() / softLongEdge.toFloat()
-            soft = Bitmap.createScaledBitmap(
-                scaled,
-                (scaled.width * softScale).roundToInt().coerceAtLeast(1),
-                (scaled.height * softScale).roundToInt().coerceAtLeast(1),
-                true
-            )
+            soft = buildSoftLayer(scaled)
             if (!writeJpeg(soft, softFile(context), quality = 80)) return null
 
             dominantColor(soft)
@@ -124,6 +124,52 @@ object WallpaperImageStore {
     fun loadSharp(context: Context): Bitmap? = decodeFile(sharpFile(context))
 
     fun loadSoft(context: Context): Bitmap? = decodeFile(softFile(context))
+
+    /**
+     * 旧版本（72px 裸缩略图）的存量壁纸升级：从 sharp 文件按当前管道重生成模糊层。
+     * @return 成功与否（失败时调用方下次启动再试）。
+     */
+    fun regenerateSoft(context: Context): Boolean {
+        val sharp = decodeFile(sharpFile(context)) ?: return false
+        return try {
+            val soft = buildSoftLayer(sharp)
+            val ok = writeJpeg(soft, softFile(context), quality = 80)
+            if (!ok) runCatching { softFile(context).delete() }
+            ok
+        } catch (t: Throwable) {
+            Log.w(TAG, "重生成壁纸模糊层失败", t)
+            false
+        } finally {
+            listOf(sharp).forEach { if (!it.isRecycled) it.recycle() }
+        }
+    }
+
+    /** 模糊层 = 缩到 [SoftLongEdge] + 3-pass box blur（≈高斯）。总是产出新位图，不动入参。 */
+    private fun buildSoftLayer(source: Bitmap): Bitmap {
+        val longEdge = max(source.width, source.height)
+        val scale = SoftLongEdge.toFloat() / longEdge.toFloat()
+        val scaled = Bitmap.createScaledBitmap(
+            source,
+            (source.width * scale).roundToInt().coerceAtLeast(1),
+            (source.height * scale).roundToInt().coerceAtLeast(1),
+            true
+        )
+        val blurred = applyBoxBlur(scaled)
+        if (scaled !== source && !scaled.isRecycled) scaled.recycle()
+        return blurred
+    }
+
+    private fun applyBoxBlur(source: Bitmap): Bitmap {
+        val w = source.width
+        val h = source.height
+        val pixels = IntArray(w * h)
+        source.getPixels(pixels, 0, w, 0, 0, w, h)
+        val radius = (max(w, h) * SoftBlurRadiusRatio).roundToInt().coerceAtLeast(1)
+        val blurred = boxBlurPixels(pixels, w, h, radius)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(blurred, 0, w, 0, 0, w, h)
+        return out
+    }
 
     fun clear(context: Context) {
         runCatching { sharpFile(context).delete() }
@@ -202,4 +248,74 @@ object WallpaperImageStore {
         if (single != soft) single.recycle()
         return color
     }
+}
+
+/**
+ * 3-pass box blur（水平/垂直交替三次），数学上等效于同 σ 的高斯模糊
+ * （每 pass 的 box 宽 2r+1，三次叠卷积逼近高斯核；"Fast Gaussian Blur" 经典结论）。
+ *
+ * 边缘用钳位复制处理——均色输入不变、输出值域不越界 [min, max]。
+ * 纯 IntArray 实现不依赖 Bitmap，JVM 单测可直测。返回新数组，不改入参。
+ */
+internal fun boxBlurPixels(pixels: IntArray, width: Int, height: Int, radius: Int): IntArray {
+    if (width <= 0 || height <= 0 || pixels.size != width * height) return pixels.copyOf()
+    if (radius <= 0) return pixels.copyOf()
+    var src = pixels.copyOf()
+    var dst = IntArray(src.size)
+    repeat(BOX_BLUR_PASSES) {
+        boxBlurPass(src, dst, width, height, radius, horizontal = true)
+        boxBlurPass(dst, src, width, height, radius, horizontal = false)
+    }
+    return src
+}
+
+private const val BOX_BLUR_PASSES = 3
+
+private fun boxBlurPass(
+    src: IntArray,
+    dst: IntArray,
+    width: Int,
+    height: Int,
+    radius: Int,
+    horizontal: Boolean
+) {
+    val outer = if (horizontal) height else width
+    val inner = if (horizontal) width else height
+    val window = 2 * radius + 1
+    val halfWindow = window / 2
+    for (o in 0 until outer) {
+        val stride = if (horizontal) o * width else o
+        var sumR = 0
+        var sumG = 0
+        var sumB = 0
+        fun px(i: Int): Int = src[stride + i * (if (horizontal) 1 else width)]
+        for (i in -radius..radius) {
+            val p = px(i.coerceIn(0, inner - 1))
+            sumR += (p shr 16) and 0xFF
+            sumG += (p shr 8) and 0xFF
+            sumB += p and 0xFF
+        }
+        for (i in 0 until inner) {
+            dst[stride + i * (if (horizontal) 1 else width)] =
+                (0xFF shl 24) or
+                    (((sumR + halfWindow) / window and 0xFF) shl 16) or
+                    (((sumG + halfWindow) / window and 0xFF) shl 8) or
+                    ((sumB + halfWindow) / window and 0xFF)
+            val add = (i + radius + 1).coerceIn(0, inner - 1)
+            val sub = (i - radius).coerceIn(0, inner - 1)
+            val pAdd = px(add)
+            val pSub = px(sub)
+            sumR += ((pAdd shr 16) and 0xFF) - ((pSub shr 16) and 0xFF)
+            sumG += ((pAdd shr 8) and 0xFF) - ((pSub shr 8) and 0xFF)
+            sumB += (pAdd and 0xFF) - (pSub and 0xFF)
+        }
+    }
+}
+
+/** Rec.709 相对亮度（0..1）。用于壁纸明暗判定与文字颜色自适应。 */
+internal fun rec709Luminance(argb: Int): Float {
+    val r = ((argb shr 16) and 0xFF) / 255f
+    val g = ((argb shr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b
 }

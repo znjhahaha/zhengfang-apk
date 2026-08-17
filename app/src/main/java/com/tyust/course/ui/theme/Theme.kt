@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.tyust.course.ui.system.GlassPressIndication
+import com.tyust.course.manager.AppearanceSettingsManager
 
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -86,7 +87,10 @@ fun CourseSelectorTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val resolvedDarkTheme = false && darkTheme && isSystemInDarkTheme()
+    // 系统暗色 OR 图片壁纸深色（字体颜色自适应）：整套配色、状态栏/导航栏图标
+    // 外观随这一信号翻转。曾被 `false &&` 写死浅色——深色壁纸下深色文字不可读。
+    val resolvedDarkTheme = darkTheme || isSystemInDarkTheme() ||
+        AppearanceSettingsManager.wallpaperWantsDark
     val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current

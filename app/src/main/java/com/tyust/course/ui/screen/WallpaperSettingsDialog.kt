@@ -53,6 +53,7 @@ import com.tyust.course.manager.WallpaperMode
 import com.tyust.course.manager.WallpaperPreset
 import com.tyust.course.manager.customWallpaperStyle
 import com.tyust.course.ui.system.GlassGradientSlider
+import com.tyust.course.ui.system.LiquidSlider
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
@@ -232,15 +233,14 @@ fun WallpaperSettingsDialog(onDismiss: () -> Unit) {
                     )
 
                     ColorSliderRow(label = "色相") {
-                        GlassGradientSlider(
-                            value = hue / 360f,
+                        LiquidSlider(
+                            value = { hue },
                             onValueChange = {
-                                hue = it * 360f
+                                hue = it
                                 applyCustom(persist = false)
                             },
-                            onValueChangeFinished = { applyCustom(persist = true) },
-                            brush = Brush.horizontalGradient(HueStops),
-                            thumbColor = Color.hsv(hue, 1f, 1f)
+                            valueRange = 0f..360f,
+                            trackBrush = Brush.horizontalGradient(HueStops)
                         )
                     }
 
@@ -303,36 +303,30 @@ fun WallpaperSettingsDialog(onDismiss: () -> Unit) {
                         }
 
                         ColorSliderRow(label = "蒙版") {
-                            GlassGradientSlider(
-                                value = manager.imageDim,
-                                onValueChange = {
-                                    manager.updateImageAdjust(dim = it, persist = false)
-                                },
-                                onValueChangeFinished = { manager.persistImageAdjust() },
-                                brush = Brush.horizontalGradient(
+                            LiquidSlider(
+                                value = { manager.imageDim },
+                                onValueChange = { manager.updateImageAdjust(dim = it, persist = false) },
+                                valueRange = 0f..1f,
+                                trackBrush = Brush.horizontalGradient(
                                     listOf(Color.White, Color.Black)
-                                ),
-                                thumbColor = Color(0xFF8E8E93)
+                                )
                             )
                         }
 
                         ColorSliderRow(label = "模糊") {
-                            GlassGradientSlider(
-                                value = manager.imageBlur,
-                                onValueChange = {
-                                    manager.updateImageAdjust(blur = it, persist = false)
-                                },
-                                onValueChangeFinished = { manager.persistImageAdjust() },
-                                brush = Brush.horizontalGradient(
+                            LiquidSlider(
+                                value = { manager.imageBlur },
+                                onValueChange = { manager.updateImageAdjust(blur = it, persist = false) },
+                                valueRange = 0f..1f,
+                                trackBrush = Brush.horizontalGradient(
                                     listOf(Color(0xFF48484A), Color(0xFFE5E5EA))
-                                ),
-                                thumbColor = Color(0xFF8E8E93)
+                                )
                             )
                         }
 
                         Text(
-                            text = "适当模糊能让前景的玻璃控件折射得更自然；蒙版用来压暗照片，" +
-                                "保证界面文字清晰可读。",
+                            text = "模糊为高斯模糊，适当模糊能让前景的玻璃控件折射得更自然；" +
+                                "深色照片会自动切换界面深色外观，也可用蒙版手动微调。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                         )

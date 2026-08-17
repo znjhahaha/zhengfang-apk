@@ -387,6 +387,18 @@ object GlassRecipe {
      * 按钮会显得在橡皮化，完全不跟又会在横拖时明显脱节。
      */
     val ChipContentDeformDamping = 0.5f
+    /** 拖拽速度驱动的等体积拉伸幅度：快拖沿运动方向拉长、垂直方向等量收窄。 */
+    val ChipVelocityStretch = 0.12f
+    /** 速度拉伸的满档拖速（px/ms，约等于快速甩动）。 */
+    val ChipVelocityFullEffectMsPx = 4f
+    /**
+     * 组收拢/展开时芯片被布局推着滑行的果冻拉伸幅度：沿运动方向拉长、纵向
+     * 等体积收窄。位移由父级重排驱动（自己身上没有手势），速度只能从
+     * onPlaced 的根坐标差分里来——这是"位置在变"唯一可读的物理线索。
+     */
+    val ChipGlideStretch = 0.14f
+    /** 滑行拉伸的满档速度（px/ms，约等于收拢弹簧的中段速度）。 */
+    val ChipGlideFullVelocityPxMs = 0.5f
 
     // ── 按压邻近液滴融合 ─────────────────────────────────────────────
     /** 邻居间距超过芯片直径的这个倍数就不再连接，避免隔着一个按钮"远程拉丝"。 */

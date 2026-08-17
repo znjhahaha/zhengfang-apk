@@ -114,7 +114,7 @@ fun LiquidButton(
 ) {
     val isSolid = style == LiquidButtonStyle.SolidSurface || style == LiquidButtonStyle.SolidTinted
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() && !isSolid }
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val activeTint = if (tint.isSpecified) tint else MaterialTheme.colorScheme.primary
     val activeContentColor = when {
         contentColor.isSpecified -> contentColor
@@ -298,7 +298,7 @@ fun LiquidSwitch(
     backdrop: Backdrop? = LocalControlBackdrop.current,
     checkedColor: Color = Color.Unspecified
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val activeCheckedColor = when {
         checkedColor.isSpecified -> checkedColor
         isLightTheme -> Color(0xFF34C759)

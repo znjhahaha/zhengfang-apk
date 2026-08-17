@@ -95,7 +95,7 @@ fun GlassGradientSlider(
     trackHeight: Dp = 26.dp
 ) {
     val density = LocalDensity.current
-    val isLight = !isSystemInDarkTheme()
+    val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val glassBackdrop = LocalControlBackdrop.current?.takeIf { isBackdropSupported() }
     var widthPx by remember { mutableIntStateOf(0) }

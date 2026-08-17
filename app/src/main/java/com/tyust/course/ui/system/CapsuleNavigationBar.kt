@@ -156,7 +156,7 @@ private fun MinimizedNavCapsule(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val accentColor = if (isLightTheme) NavSelectedAccentLight else NavSelectedAccentDark
     val containerColor = if (isLightTheme) {
         Color.White.copy(alpha = 0.28f)
@@ -220,7 +220,7 @@ private fun GlassNavigationBar(
     val trackHeight = if (hasRealLens) 72.dp else 64.dp
     val indicatorHeight = if (hasRealLens) 56.dp else 56.dp
     val barPadding = if (hasRealLens) 6.dp else 4.dp
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     // API32：cba2a09 半透轨；API33+：半透主题底
     val containerColor = if (hasRealLens) {
         // 提浊：降低穿透内容对比度，深色文字经过栏后不再形成清晰污块
@@ -683,7 +683,7 @@ private fun FallbackNavigationBar(
     onTabSelect: (Int) -> Unit
 ) {
     val capsuleShape = RoundedCornerShape(28.dp)
-    val accentColor = if (!isSystemInDarkTheme()) {
+    val accentColor = if (!rememberGlassDarkTheme()) {
         NavSelectedAccentLight
     } else {
         NavSelectedAccentDark

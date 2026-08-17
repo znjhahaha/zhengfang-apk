@@ -49,6 +49,7 @@ import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
 import com.tyust.course.model.CourseFilter
 import com.tyust.course.model.FilterOption
+import com.tyust.course.ui.system.rememberGlassDarkTheme
 import com.tyust.course.ui.system.GlassLoadingState
 import com.tyust.course.ui.system.GlassMaterialRole
 import com.tyust.course.ui.system.GlassMaterials
@@ -96,7 +97,7 @@ fun CourseFilterPanel(
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val panelShape = RoundedRectangle(
         cornerRadius = 24.dp,

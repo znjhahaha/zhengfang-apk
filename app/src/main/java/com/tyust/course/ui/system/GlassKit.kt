@@ -70,7 +70,7 @@ private val GlassRowShape = RoundedCornerShape(16.dp)
 
 @Composable
 private fun glassSurfaceColor(): Color {
-    return if (!isSystemInDarkTheme()) {
+    return if (!rememberGlassDarkTheme()) {
         Color.White.copy(alpha = 0.62f)
     } else {
         Color(0xFF1C1C1E).copy(alpha = 0.55f)
@@ -79,7 +79,7 @@ private fun glassSurfaceColor(): Color {
 
 @Composable
 private fun glassBorderColor(): Color {
-    return if (!isSystemInDarkTheme()) {
+    return if (!rememberGlassDarkTheme()) {
         Color.White.copy(alpha = 0.55f)
     } else {
         Color.White.copy(alpha = 0.12f)
@@ -283,7 +283,7 @@ fun GlassProgressBar(
             .height(height)
             .clip(RoundedCornerShape(percent = 50))
             .background(
-                if (!isSystemInDarkTheme()) Color.White.copy(alpha = 0.45f)
+                if (!rememberGlassDarkTheme()) Color.White.copy(alpha = 0.45f)
                 else Color.White.copy(alpha = 0.14f)
             )
     ) {
@@ -347,7 +347,7 @@ fun GlassTextField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     val borderAlpha by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0f,
         animationSpec = MotionSpring.liquidTap(),
@@ -437,7 +437,7 @@ fun GlassLoadingIndicator(
         ),
         label = "glassLoadingRotation"
     )
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !rememberGlassDarkTheme()
     Box(
         modifier = modifier
             .size(size)
