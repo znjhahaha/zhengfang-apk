@@ -442,11 +442,22 @@ private fun GlassNavigationBar(
                                         .toInt()
                                         .fastCoerceIn(0, tabsCount - 1)
                                 }
-                                currentIndex = targetIndex
-                                onTabSelect(targetIndex)
-                                dampedDragAnimation.animateToValue(targetIndex.toFloat())
-                                animationScope.launch {
-                                    offsetAnimation.animateTo(0f, MotionSpring.liquidJellyRebound())
+                                if (!dragging && targetIndex == currentIndex) {
+                                    // 重复点击仍走原来的按压/松开视觉反馈，但不重复启动
+                                    // 位移、速度和页面状态更新动画。
+                                    dampedDragAnimation.release()
+                                } else {
+                                    currentIndex = targetIndex
+                                    onTabSelect(targetIndex)
+                                    dampedDragAnimation.animateToValue(targetIndex.toFloat())
+                                }
+                                if (offsetAnimation.value != 0f) {
+                                    animationScope.launch {
+                                        offsetAnimation.animateTo(
+                                            0f,
+                                            MotionSpring.liquidJellyRebound()
+                                        )
+                                    }
                                 }
                             }
                         }

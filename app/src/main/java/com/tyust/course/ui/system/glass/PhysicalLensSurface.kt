@@ -5,7 +5,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.tyust.course.ui.system.GlassMaterialSpec
 import com.tyust.course.ui.system.canUseLiquidLens
-import com.tyust.course.ui.system.isRuntimeShaderTrulySupported
+import com.tyust.course.ui.system.isRuntimeLensEnabled
 import kotlin.math.abs
 
 /**
@@ -52,7 +52,7 @@ fun resolvePhysicalLens(
     }
 
     // 真 RuntimeShader/lens 仅 API 33+；API31/32 保留 blur + RGB 分离色散近似
-    if (!isRuntimeShaderTrulySupported()) {
+    if (!isRuntimeLensEnabled()) {
         val fringeDp = if (allowChromaticAberration && material.chromaticAberration) {
             val restFringe = if (chromaticAberrationAtRest) 0.55f else 0f
             (restFringe + progress * 1.8f + motion * 1.2f).coerceIn(0f, 2.2f)

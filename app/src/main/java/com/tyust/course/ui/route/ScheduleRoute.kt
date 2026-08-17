@@ -63,18 +63,62 @@ import java.io.IOException
 import java.util.Calendar
 import com.tyust.course.utils.ICalExporter
 
+private const val ScheduleRouteSnapshotMaxAgeMs = 5 * 60 * 1000L
+
+/** 保留课表数据状态，但页面 Composition 与玻璃图层仍在切走时立即释放。 */
+private data class ScheduleRouteSnapshot(
+    val savedAtMs: Long,
+    val currentWeek: Int,
+    val courses: List<ScheduleCourseUi>,
+    val periodTimes: List<PeriodTimeUi>,
+    val periodCount: Int,
+    val isNextSemester: Boolean
+)
+
+private object ScheduleRouteMemoryCache {
+    private val snapshots = mutableMapOf<String, ScheduleRouteSnapshot>()
+
+    fun get(accountKey: String): ScheduleRouteSnapshot? = snapshots[accountKey]?.takeIf {
+        System.currentTimeMillis() - it.savedAtMs <= ScheduleRouteSnapshotMaxAgeMs
+    }
+
+    fun put(accountKey: String, snapshot: ScheduleRouteSnapshot) {
+        snapshots[accountKey] = snapshot
+    }
+}
+
 @Composable
 fun ScheduleRoute() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
+    val restoredSnapshot = remember(routeAccountKey) {
+        ScheduleRouteMemoryCache.get(routeAccountKey)
+    }
+    var hasInitializedRoute by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot != null)
+    }
+    var skipFirstSemesterLoad by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot != null)
+    }
     
     // State
-    var currentWeek by remember { mutableIntStateOf(1) }
-    var courses by remember { mutableStateOf<List<ScheduleCourseUi>>(emptyList()) }
+    var currentWeek by remember(routeAccountKey) {
+        mutableIntStateOf(restoredSnapshot?.currentWeek ?: 1)
+    }
+    var courses by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.courses ?: emptyList())
+    }
     var isLoading by remember { mutableStateOf(false) }
-    var periodTimes by remember { mutableStateOf<List<PeriodTimeUi>>(emptyList()) }
-    var periodCount by remember { mutableIntStateOf(12) }
-    var isNextSemester by remember { mutableStateOf(false) }
+    var periodTimes by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.periodTimes ?: emptyList())
+    }
+    var periodCount by remember(routeAccountKey) {
+        mutableIntStateOf(restoredSnapshot?.periodCount ?: 12)
+    }
+    var isNextSemester by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.isNextSemester ?: false)
+    }
     
     // Dialog State
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -82,6 +126,24 @@ fun ScheduleRoute() {
     
     // Managers
     val settingsManager = remember { ScheduleSettingsManager.getInstance().apply { init(context) } }
+
+    val snapshotForCache = ScheduleRouteSnapshot(
+        savedAtMs = System.currentTimeMillis(),
+        currentWeek = currentWeek,
+        courses = courses,
+        periodTimes = periodTimes,
+        periodCount = periodCount,
+        isNextSemester = isNextSemester
+    )
+    val latestSnapshotForCache by rememberUpdatedState(snapshotForCache)
+    val canCacheSnapshot by rememberUpdatedState(hasInitializedRoute && !isLoading)
+    DisposableEffect(routeAccountKey) {
+        onDispose {
+            if (canCacheSnapshot) {
+                ScheduleRouteMemoryCache.put(routeAccountKey, latestSnapshotForCache)
+            }
+        }
+    }
     
     // Colors
     val courseColors = remember {
@@ -250,15 +312,24 @@ fun ScheduleRoute() {
     }
 
     // Init Effect
-    LaunchedEffect(Unit) {
-        periodCount = settingsManager.periodCount
-        periodTimes = settingsManager.getPeriodTimes().map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
-        val calcWeek = settingsManager.calculateCurrentWeek()
-        if (calcWeek > 0) currentWeek = calcWeek
+    LaunchedEffect(routeAccountKey) {
+        if (restoredSnapshot == null) {
+            periodCount = settingsManager.periodCount
+            periodTimes = settingsManager.getPeriodTimes().map {
+                PeriodTimeUi(it.period, it.startTime, it.endTime)
+            }
+            val calcWeek = settingsManager.calculateCurrentWeek()
+            if (calcWeek > 0) currentWeek = calcWeek
+        }
     }
     
     // 监听学期切换并重新加载
     LaunchedEffect(isNextSemester) {
+        if (skipFirstSemesterLoad) {
+            skipFirstSemesterLoad = false
+            return@LaunchedEffect
+        }
+        hasInitializedRoute = true
         loadSchedule(false)
     }
 

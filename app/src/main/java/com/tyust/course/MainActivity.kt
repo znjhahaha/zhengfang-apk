@@ -3,18 +3,11 @@ package com.tyust.course
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Paint
+import android.graphics.Picture
 import android.os.Bundle
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -55,22 +48,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.tyust.course.activation.ActivationManager
@@ -96,7 +93,6 @@ import com.tyust.course.ui.system.LocalControlBackdrop
 import com.tyust.course.ui.system.FloatingNotice
 import com.tyust.course.ui.system.FloatingNoticeHost
 import com.tyust.course.ui.system.PagePadding
-import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberDialogHostState
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
@@ -114,6 +110,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class MainActivity : FragmentActivity() {
@@ -151,23 +148,15 @@ class MainActivity : FragmentActivity() {
         setContent {
             CourseSelectorTheme {
                 var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
-                var activationState by remember { mutableIntStateOf(0) }
+                // 开源版授权检查不会拒绝设备，先呈现真实内容，再完成兼容检查。
+                var activationState by remember { mutableIntStateOf(2) }
 
                 LaunchedEffect(Unit) {
                     val activated = ActivationManager.checkActivation(this@MainActivity)
-                    activationState = if (activated) 2 else 1
+                    if (!activated) activationState = 1
                 }
 
                 when {
-                    activationState == 0 -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            SystemLoadingState(text = "正在检查设备授权…")
-                        }
-                    }
-
                     activationState == 1 -> {
                         ActivationScreen(onActivated = { activationState = 2 })
                     }
@@ -202,11 +191,6 @@ sealed class BottomNavItem(
     object Settings : BottomNavItem("settings", Icons.Default.Settings, "设置")
 }
 
-private data class MainPageTarget(
-    val accountStorageKey: String,
-    val tabIndex: Int
-)
-
 @Composable
 fun MainScreen(fragmentActivity: FragmentActivity) {
     val context = LocalContext.current
@@ -214,11 +198,24 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     
     val hasStarred = prefs.getBoolean("has_starred", false)
     val dismissCount = prefs.getInt("star_dismiss_count", 0)
-    var showStarDialog by remember { mutableStateOf(!hasStarred && dismissCount < 3) }
+    val shouldShowStarDialog = !hasStarred && dismissCount < 3
+    var showStarDialog by rememberSaveable { mutableStateOf(false) }
+    var startupOverlaysReady by remember { mutableStateOf(false) }
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var currentAccountStorageKey by remember { mutableStateOf(UserManager.getInstance().currentAccountStorageKey) }
     val accessibility = rememberGlassAccessibilityMode()
+    var hasDisplayedInitialTab by remember { mutableStateOf(false) }
+    var tabEnterDirection by remember { mutableIntStateOf(1) }
+    val animateCurrentTab = remember(selectedTab) {
+        hasDisplayedInitialTab && !accessibility.reduceMotion
+    }
+    val tabEnterProgress = remember(selectedTab) {
+        Animatable(if (animateCurrentTab) 0f else 1f)
+    }
+    var tabEnterLayerActive by remember(selectedTab) {
+        mutableStateOf(animateCurrentTab)
+    }
     val items = listOf(
         BottomNavItem.Courses,
         BottomNavItem.Schedule,
@@ -246,10 +243,38 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
         }
     }
-    LaunchedEffect(selectedTab) { navBarMinimized = false }
+    LaunchedEffect(selectedTab) {
+        navBarMinimized = false
+        if (!hasDisplayedInitialTab) {
+            hasDisplayedInitialTab = true
+            return@LaunchedEffect
+        }
+        if (!animateCurrentTab) {
+            tabEnterLayerActive = false
+            return@LaunchedEffect
+        }
+        tabEnterProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = 160,
+                easing = MotionEasing.FastOutSlowIn
+            )
+        )
+        // 动画结束后移除整页 RenderNode，稳态不保留额外全屏图层。
+        tabEnterLayerActive = false
+    }
 
     LaunchedEffect(Unit) {
+        withFrameNanos { }
+        delay(1_000)
         updateState.checkForUpdate()
+    }
+
+    LaunchedEffect(shouldShowStarDialog) {
+        withFrameNanos { }
+        delay(1_600)
+        startupOverlaysReady = true
+        if (shouldShowStarDialog) showStarDialog = true
     }
 
     DisposableEffect(fragmentActivity) {
@@ -304,7 +329,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     val updateInfo = updateState.updateInfo()
     SchoolAdaptationCompletionReminder(
-        enabled = !showStarDialog && !updateState.showDialog(),
+        enabled = startupOverlaysReady && !showStarDialog && !updateState.showDialog(),
         accountScopeKey = currentAccountStorageKey
     )
     if (updateState.showDialog() && updateInfo != null) {
@@ -378,16 +403,19 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     modifier = Modifier
                         .fillMaxSize()
                         .layerBackdrop(wallpaperBackdrop)
+                        .debugPiracyWatermark(showPiracyTiles)
                 ) {
                     // 在绘制 lambda 内部再读一次 state：图片壁纸的位图是异步解码的，
                     // 只读外面那份快照的话，位图到位时这一层不会重绘。
                     drawWallpaperPattern(AppearanceSettingsManager.style)
-                    if (showPiracyTiles) drawPiracyWatermarkTiles()
                 }
             } else {
-                Canvas(modifier = Modifier.fillMaxSize()) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .debugPiracyWatermark(showPiracyTiles)
+                ) {
                     drawRect(AppearanceSettingsManager.style.baseColor)
-                    if (showPiracyTiles) drawPiracyWatermarkTiles()
                 }
             }
 
@@ -397,83 +425,31 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                             .weight(1f)
                             .nestedScroll(navBarScrollConnection)
                     ) {
-                        val pageTarget = MainPageTarget(
-                            accountStorageKey = currentAccountStorageKey,
-                            tabIndex = selectedTab
-                        )
-                        AnimatedContent(
-                            targetState = pageTarget,
-                            modifier = Modifier.fillMaxSize(),
-                            transitionSpec = {
-                                val accountChanged =
-                                    targetState.accountStorageKey != initialState.accountStorageKey
-                                if (accessibility.reduceMotion || accountChanged) {
-                                    fadeIn(
-                                        animationSpec = tween(
-                                            durationMillis = if (accessibility.reduceMotion) 90 else 160,
-                                            easing = MotionEasing.FastOutSlowIn
-                                        )
-                                    ).togetherWith(
-                                        fadeOut(
-                                            animationSpec = tween(
-                                                durationMillis = if (accessibility.reduceMotion) 70 else 120,
-                                                easing = MotionEasing.Accelerate
-                                            )
-                                        )
-                                    )
-                                } else {
-                                    val direction = if (
-                                        targetState.tabIndex >= initialState.tabIndex
-                                    ) {
-                                        1
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (tabEnterLayerActive) {
+                                        Modifier.graphicsLayer {
+                                            val remaining = 1f - tabEnterProgress.value
+                                            translationX =
+                                                tabEnterDirection * 14.dp.toPx() * remaining
+                                            val scale = 1f - (0.004f * remaining)
+                                            scaleX = scale
+                                            scaleY = scale
+                                            alpha = 1f - (0.035f * remaining)
+                                            transformOrigin = TransformOrigin.Center
+                                            // 避免淡入触发整页离屏缓冲，只调制绘制指令透明度。
+                                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                                        }
                                     } else {
-                                        -1
+                                        Modifier
                                     }
-                                    // 轻位移 + 微缩放 + 交叉淡化：弱化横移的生硬感
-                                    (
-                                        slideInHorizontally(
-                                            animationSpec = tween(
-                                                durationMillis = 260,
-                                                easing = MotionEasing.FastOutSlowIn
-                                            )
-                                        ) { fullWidth ->
-                                            direction * (fullWidth * 0.08f).roundToInt()
-                                        } + scaleIn(
-                                            initialScale = 0.985f,
-                                            animationSpec = tween(
-                                                durationMillis = 260,
-                                                easing = MotionEasing.FastOutSlowIn
-                                            )
-                                        ) + fadeIn(
-                                            animationSpec = tween(
-                                                durationMillis = 220,
-                                                easing = MotionEasing.FastOutSlowIn
-                                            )
-                                        )
-                                    ).togetherWith(
-                                        slideOutHorizontally(
-                                            animationSpec = tween(
-                                                durationMillis = 200,
-                                                easing = MotionEasing.Accelerate
-                                            )
-                                        ) { fullWidth ->
-                                            -direction * (fullWidth * 0.05f).roundToInt()
-                                        } + fadeOut(
-                                            animationSpec = tween(
-                                                durationMillis = 150,
-                                                easing = MotionEasing.Accelerate
-                                            )
-                                        )
-                                    )
-                                }
-                            },
-                            contentKey = { target ->
-                                "${target.accountStorageKey}:${target.tabIndex}"
-                            },
-                            label = "mainPageTransition"
-                        ) { target ->
-                            key(target.accountStorageKey, target.tabIndex) {
-                                when (target.tabIndex) {
+                                )
+                        ) {
+                            // 旧页立即释放，只让新页做轻量入场；底栏液态动画完全独立。
+                            key(currentAccountStorageKey, selectedTab) {
+                                when (selectedTab) {
                                     0 -> com.tyust.course.ui.route.CourseListRoute()
                                     1 -> com.tyust.course.ui.route.ScheduleRoute()
                                     2 -> com.tyust.course.ui.route.GrabProRoute()
@@ -498,7 +474,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             CapsuleNavigationBar(
                 items = items,
                 selectedTab = selectedTab,
-                onTabSelect = { selectedTab = it },
+                onTabSelect = { targetTab ->
+                    if (targetTab != selectedTab) {
+                        tabEnterDirection = if (targetTab > selectedTab) 1 else -1
+                        selectedTab = targetTab
+                    }
+                },
                 minimized = navBarMinimized,
                 onExpandRequest = { navBarMinimized = false },
                 backdrop = navBarBackdrop,
@@ -520,7 +501,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             // 悬浮玻璃通知：叠加在正文之上，落点由顶栏上报的底边决定，不压顶栏操作
             FloatingNoticeHost(modifier = Modifier.fillMaxSize())
 
-            if (showStarDialog) {
+            if (showStarDialog && !updateState.showDialog()) {
                 val dialogTitle = when (dismissCount) {
                     0 -> "在 GitHub 上支持这个项目"
                     1 -> "一个 Star，就是最好的反馈"
@@ -597,7 +578,7 @@ private fun BoxScope.AppBuildWatermarks() {
         fontWeight = FontWeight.Medium
     )
     // debug 的平铺水印不在这里画。它必须落在壁纸捕获层内才能被玻璃芯片折射，
-    // 所以由 drawPiracyWatermarkTiles 在壁纸 Canvas 里绘制。画在这一层会盖在
+    // 所以由 debugPiracyWatermark 在壁纸 Canvas 的绘制链里输出。画在这一层会盖在
     // 所有内容之上，穿过按钮时笔画完全不弯——那正是之前看不出折射的原因之一。
 }
 
@@ -605,33 +586,46 @@ private fun BoxScope.AppBuildWatermarks() {
 private val PiracyWatermarkBottomInset = 88.dp
 
 /**
- * debug 防倒卖水印的平铺绘制。
+ * debug 防倒卖水印缓存为 Picture；每次壁纸重绘只回放一次绘制记录。
  *
  * 调用点在壁纸 Canvas 内（见 [layerBackdrop] 那一层），因此它进入
  * LocalControlBackdrop 的采样范围，顶栏芯片会折射这些斜线。
  * release 构建不调用。
  */
-private fun DrawScope.drawPiracyWatermarkTiles() {
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 54f
-        setColor(android.graphics.Color.argb(64, 199, 58, 47))
-        textAlign = android.graphics.Paint.Align.CENTER
-    }
-    val centerX = size.width / 2f
-    val centerY = (size.height - PiracyWatermarkBottomInset.toPx()) / 2f
-    val nativeCanvas = drawContext.canvas.nativeCanvas
-    nativeCanvas.save()
-    nativeCanvas.rotate(-28f, centerX, centerY)
-    for (i in -2..2) {
-        for (j in -3..3) {
-            nativeCanvas.drawText(
-                "开源版 / 严禁倒卖",
-                centerX + (i * 560f),
-                centerY + (j * 620f),
-                paint
-            )
+private fun Modifier.debugPiracyWatermark(enabled: Boolean): Modifier {
+    if (!enabled) return this
+    return drawWithCache {
+        val picture = Picture()
+        val recordingCanvas = picture.beginRecording(
+            size.width.roundToInt().coerceAtLeast(1),
+            size.height.roundToInt().coerceAtLeast(1)
+        )
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 54f
+            color = android.graphics.Color.argb(64, 199, 58, 47)
+            textAlign = Paint.Align.CENTER
+        }
+        val centerX = size.width / 2f
+        val centerY = (size.height - PiracyWatermarkBottomInset.toPx()) / 2f
+        recordingCanvas.save()
+        recordingCanvas.rotate(-28f, centerX, centerY)
+        for (i in -2..2) {
+            for (j in -3..3) {
+                recordingCanvas.drawText(
+                    "开源版 / 严禁倒卖",
+                    centerX + (i * 560f),
+                    centerY + (j * 620f),
+                    paint
+                )
+            }
+        }
+        recordingCanvas.restore()
+        picture.endRecording()
+
+        onDrawWithContent {
+            drawContent()
+            drawContext.canvas.nativeCanvas.drawPicture(picture)
         }
     }
-    nativeCanvas.restore()
 }
 

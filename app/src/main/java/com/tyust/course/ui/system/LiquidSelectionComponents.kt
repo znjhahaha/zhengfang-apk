@@ -131,7 +131,7 @@ fun LiquidSegmentedControl(
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
     val useGlass = glassBackdrop != null
     // 真 lens（API33+）折射色散；API31/32 固定 blur 毛玻璃
-    val hasRealLens = isRuntimeShaderTrulySupported()
+    val hasRealLens = isRuntimeLensEnabled()
     val isLightTheme = !rememberGlassDarkTheme()
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)

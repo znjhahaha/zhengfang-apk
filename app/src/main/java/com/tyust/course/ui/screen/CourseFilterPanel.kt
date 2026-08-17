@@ -66,7 +66,7 @@ import com.tyust.course.ui.system.glass.glassChip
 import com.tyust.course.ui.system.glass.glassRim
 import com.tyust.course.ui.system.glass.rememberInteractiveOptics
 import com.tyust.course.ui.system.isBackdropSupported
-import com.tyust.course.ui.system.isRuntimeShaderTrulySupported
+import com.tyust.course.ui.system.isRuntimeLensEnabled
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.utils.CourseParser
@@ -145,7 +145,7 @@ fun CourseFilterPanel(
                         shape = { panelShape },
                         effects = {
                             vibrancy()
-                            if (isRuntimeShaderTrulySupported()) {
+                            if (isRuntimeLensEnabled()) {
                                 blur(GlassRecipe.DialogBlurDp.dp.toPx())
                                 lens(
                                     refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx(),

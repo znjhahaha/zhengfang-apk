@@ -334,9 +334,6 @@ object GlassRecipe {
     val DialogShadowAlpha = modal.shadowAlpha
     val DialogShadowElevationDp = 8f
 
-    val LuminanceSampleSize = 5
-    val LuminanceSampleHz = 3
-
     // ── 交互液体芯片（顶栏图标钮、圆钮）────────────────────────────────
     // 表面必须够淡：芯片尺寸只有 38dp，白雾一重折射就被盖死，成了白贴纸。
     // 存在感交给 Fresnel 边缘，颜色交给背景折射。

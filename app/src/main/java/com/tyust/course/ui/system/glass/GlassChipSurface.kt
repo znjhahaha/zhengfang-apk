@@ -28,7 +28,7 @@ import com.tyust.course.ui.system.GlassMaterialRole
 import com.tyust.course.ui.system.GlassMaterials
 import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.isBackdropSupported
-import com.tyust.course.ui.system.isRuntimeShaderTrulySupported
+import com.tyust.course.ui.system.isRuntimeLensEnabled
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import kotlin.math.abs
 
@@ -64,7 +64,7 @@ fun Modifier.liquidChip(
 ): Modifier {
     val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
-    val hasRealLens = isRuntimeShaderTrulySupported()
+    val hasRealLens = isRuntimeLensEnabled()
     val allowInteraction = interactive && enabled && !accessibility.reduceMotion
 
     val baseSurfaceAlpha = if (isLight) {

@@ -95,11 +95,11 @@ object GlassRuntimeGuard {
         synchronized(this) {
             if (sessionMarked) return
             val context = appContext ?: return
-            sessionMarked = context
-                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            sessionMarked = true
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_SESSION_USED_GLASS, true)
-                .commit()
+                .apply()
         }
     }
 

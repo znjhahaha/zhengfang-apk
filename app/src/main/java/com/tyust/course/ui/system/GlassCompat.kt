@@ -48,6 +48,10 @@ fun isLensSupported(): Boolean = currentGlassCapability() == GlassCapability.Dyn
 fun isRuntimeShaderTrulySupported(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
+/** 当前设备与性能档位是否都允许真正的 RuntimeShader 透镜。 */
+fun isRuntimeLensEnabled(): Boolean =
+    isLensSupported() && isRuntimeShaderTrulySupported()
+
 private const val roundedRectangularShapeInterface =
     "com.kyant.shapes.RoundedRectangularShape"
 
@@ -63,9 +67,8 @@ fun canUseLiquidLens(
     minCornerRadiusPx: Float,
     minDimensionPx: Float
 ): Boolean =
-    isBackdropSupported() &&
+    isRuntimeLensEnabled() &&
         // 真折射依赖 RuntimeShader；不以 DynamicLens 实验档冒充 API31/32 有 lens
-        isRuntimeShaderTrulySupported() &&
         (shape is CornerBasedShape ||
             shape.javaClass.implementsInterface(roundedRectangularShapeInterface)) &&
         refractionHeightPx.isFinite() &&

@@ -69,6 +69,41 @@ private data class CourseTabParam(
     val zyhId: String
 )
 
+private const val CourseRouteSnapshotMaxAgeMs = 5 * 60 * 1000L
+
+/** 只缓存页面数据和交互状态，不保留任何页面 Composition 或 Backdrop 图层。 */
+private data class CourseListRouteSnapshot(
+    val savedAtMs: Long,
+    val courses: List<Course>,
+    val allCourses: List<Course>,
+    val showSelectedCourses: Boolean,
+    val isSearchActive: Boolean,
+    val searchQuery: String,
+    val isMultiSelectMode: Boolean,
+    val selectedClassIds: Set<String>,
+    val preloadedGroupIds: Set<String>,
+    val hasPreloadedOnce: Boolean,
+    val courseParams: Map<String, String>?,
+    val displayParams: Map<String, String>,
+    val courseTabs: List<CourseTabParam>,
+    val activeFilter: com.tyust.course.model.CourseFilter?,
+    val draftFilter: com.tyust.course.model.CourseFilter,
+    val filterOptionsMessage: String,
+    val filterCategories: List<CourseParser.FilterCategory>
+)
+
+private object CourseListRouteMemoryCache {
+    private val snapshots = mutableMapOf<String, CourseListRouteSnapshot>()
+
+    fun get(accountKey: String): CourseListRouteSnapshot? = snapshots[accountKey]?.takeIf {
+        System.currentTimeMillis() - it.savedAtMs <= CourseRouteSnapshotMaxAgeMs
+    }
+
+    fun put(accountKey: String, snapshot: CourseListRouteSnapshot) {
+        snapshots[accountKey] = snapshot
+    }
+}
+
 private fun parseCourseTabParamsFromIndexHtml(html: String, indexParams: Map<String, String>): List<CourseTabParam> {
     val tabs = mutableListOf<CourseTabParam>()
     val queryCoursePattern = """queryCourse\s*\(\s*this\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*\)""".toRegex()
@@ -189,41 +224,117 @@ private fun loadFilterCategoriesFromRuntimeSource(
 fun CourseListRoute() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
+    val restoredSnapshot = remember(routeAccountKey) {
+        CourseListRouteMemoryCache.get(routeAccountKey)
+    }
+    var hasInitializedRoute by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot != null)
+    }
+    var skipFirstSelectedCoursesReload by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot != null)
+    }
     
     // Data State
-    var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
-    var allCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
+    var courses by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.courses ?: emptyList())
+    }
+    var allCourses by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.allCourses ?: emptyList())
+    }
     var isLoading by remember { mutableStateOf(false) }
     var isBatchSelecting by remember { mutableStateOf(false) }
     
     // UI State
-    var showSelectedCourses by remember { mutableStateOf(false) }
-    var isSearchActive by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var showSelectedCourses by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.showSelectedCourses ?: false)
+    }
+    var isSearchActive by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.isSearchActive ?: false)
+    }
+    var searchQuery by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.searchQuery.orEmpty())
+    }
     
     // Multi-Select State
-    var isMultiSelectMode by remember { mutableStateOf(false) }
-    var selectedClassIds by remember { mutableStateOf(setOf<String>()) }
+    var isMultiSelectMode by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.isMultiSelectMode ?: false)
+    }
+    var selectedClassIds by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.selectedClassIds ?: emptySet())
+    }
     
     // Preload State
     var isPreloading by remember { mutableStateOf(false) }
     var preloadProgress by remember { mutableStateOf(0f) }
-    var preloadedGroupIds by remember { mutableStateOf(setOf<String>()) }
-    var hasPreloadedOnce by remember { mutableStateOf(false) }
+    var preloadedGroupIds by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.preloadedGroupIds ?: emptySet())
+    }
+    var hasPreloadedOnce by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.hasPreloadedOnce ?: false)
+    }
     
     // Logic State
-    var courseParams by remember { mutableStateOf<Map<String, String>?>(null) }
-    var displayParams by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // 🔧 新增：Display 页面参数
-    var courseTabs by remember { mutableStateOf<List<CourseTabParam>>(emptyList()) }
+    var courseParams by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.courseParams)
+    }
+    var displayParams by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.displayParams ?: emptyMap())
+    } // 🔧 新增：Display 页面参数
+    var courseTabs by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.courseTabs ?: emptyList())
+    }
     
     // Filter State
     var showFilterPanel by remember { mutableStateOf(false) }
-    var activeFilter by remember { mutableStateOf<com.tyust.course.model.CourseFilter?>(null) }
-    var draftFilter by remember { mutableStateOf(com.tyust.course.model.CourseFilter()) }
+    var activeFilter by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.activeFilter)
+    }
+    var draftFilter by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.draftFilter ?: com.tyust.course.model.CourseFilter())
+    }
     var isFilterLoading by remember { mutableStateOf(false) }
     var isFilterOptionsLoading by remember { mutableStateOf(false) }
-    var filterOptionsMessage by remember { mutableStateOf("筛选条件加载失败，请下拉刷新重试") }
-    var filterCategories by remember { mutableStateOf<List<CourseParser.FilterCategory>>(emptyList()) }
+    var filterOptionsMessage by remember(routeAccountKey) {
+        mutableStateOf(
+            restoredSnapshot?.filterOptionsMessage
+                ?: "筛选条件加载失败，请下拉刷新重试"
+        )
+    }
+    var filterCategories by remember(routeAccountKey) {
+        mutableStateOf(restoredSnapshot?.filterCategories ?: emptyList())
+    }
+
+    val snapshotForCache = CourseListRouteSnapshot(
+        savedAtMs = System.currentTimeMillis(),
+        courses = courses,
+        allCourses = allCourses,
+        showSelectedCourses = showSelectedCourses,
+        isSearchActive = isSearchActive,
+        searchQuery = searchQuery,
+        isMultiSelectMode = isMultiSelectMode,
+        selectedClassIds = selectedClassIds,
+        preloadedGroupIds = preloadedGroupIds,
+        hasPreloadedOnce = hasPreloadedOnce,
+        courseParams = courseParams,
+        displayParams = displayParams,
+        courseTabs = courseTabs,
+        activeFilter = activeFilter,
+        draftFilter = draftFilter,
+        filterOptionsMessage = filterOptionsMessage,
+        filterCategories = filterCategories
+    )
+    val latestSnapshotForCache by rememberUpdatedState(snapshotForCache)
+    val canCacheSnapshot by rememberUpdatedState(
+        hasInitializedRoute && !isLoading && !isFilterLoading && !isFilterOptionsLoading
+    )
+    DisposableEffect(routeAccountKey) {
+        onDispose {
+            if (canCacheSnapshot) {
+                CourseListRouteMemoryCache.put(routeAccountKey, latestSnapshotForCache)
+            }
+        }
+    }
     
     // 🔧 交互锁：只有不在加载中 且 displayParams 包含关键参数时才允许展开详情
     val isDetailsReady = !isLoading && displayParams.containsKey("bklx_id")
@@ -265,7 +376,9 @@ fun CourseListRoute() {
     }
 
     // Load initial params
-    LaunchedEffect(Unit) {
+    LaunchedEffect(routeAccountKey) {
+        if (restoredSnapshot != null) return@LaunchedEffect
+        hasInitializedRoute = true
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
@@ -630,12 +743,18 @@ fun CourseListRoute() {
 
 
     // Initial load (使用缓存)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(routeAccountKey) {
+        if (restoredSnapshot != null) return@LaunchedEffect
+        hasInitializedRoute = true
         loadCoursesInternal(forceRefresh = false)
     }
 
     // 从"已选"切回"可选"时，仅从缓存重载（退课状态由退课回调同步）
     LaunchedEffect(showSelectedCourses) {
+        if (skipFirstSelectedCoursesReload) {
+            skipFirstSelectedCoursesReload = false
+            return@LaunchedEffect
+        }
         if (!showSelectedCourses && allCourses.isNotEmpty()) {
             loadCoursesInternal(forceRefresh = false)
         }
@@ -2224,4 +2343,3 @@ private class CourseSelectionLogic(
         return sb.toString()
     }
 }
-

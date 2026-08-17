@@ -88,8 +88,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.tyust.course.ui.system.glass.rememberAdaptiveContentColor
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -181,18 +179,12 @@ fun SystemTopBar(
     collapseFraction: Float = 0f,
     navigationIcon: @Composable (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
-    backdrop: Backdrop? = LocalAppBackdrop.current,
-    luminanceSources: List<LayerBackdrop> = emptyList()
+    backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
     val isLightTheme = !rememberGlassDarkTheme()
-
-    // 标题颜色的逐位置自适应：3Hz 采样顶栏区域（壁纸+滚过的内容），
-    // 滞回翻转——滚动时标题底下变暗文字就变浅。详见 rememberAdaptiveContentColor。
-    val titleColor = rememberAdaptiveContentColor(
-        sources = luminanceSources,
-        active = !rememberGlassAccessibilityMode().reduceMotion
-    )
+    // 主题已合并系统模式与壁纸明暗信号，直接取主题色，避免 GPU -> CPU 像素回读。
+    val titleColor = MaterialTheme.colorScheme.onSurface
 
     // iOS 26 分离式头部：展开态大标题直接浮在内容上（无背景），
     // 滚动折叠时标题缩小、浮出细玻璃条。折叠进度由滚动偏移连续驱动、
@@ -1109,7 +1101,7 @@ private fun SystemDialogContent(
                         // 参数取 Modal 材质档，不再走 resolvePhysicalLens 自定义组合。
                         effects = {
                             vibrancy()
-                            if (isRuntimeShaderTrulySupported()) {
+                            if (isRuntimeLensEnabled()) {
                                 blur(GlassRecipe.DialogBlurDp.dp.toPx())
                                 lens(
                                     refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx(),
