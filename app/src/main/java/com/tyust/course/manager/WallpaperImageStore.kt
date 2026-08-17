@@ -59,10 +59,20 @@ object WallpaperImageStore {
         var scaled: Bitmap? = null
         var soft: Bitmap? = null
         return try {
+            // 量尺寸：decodeStream 在 inJustDecodeBounds 下【按契约返回 null】、
+            // 只把尺寸写进 bounds——它的返回值不能进 elvis，否则任何图都判定失败
+            // （曾因 `openInputStream(...)?.use { decodeStream(...) } ?: return null`
+            // 一路静默返回 null，任何图片都提示读取失败）。
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: return null
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val boundsStream = resolver.openInputStream(uri) ?: run {
+                Log.w(TAG, "打开图片流失败: $uri")
+                return null
+            }
+            boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                Log.w(TAG, "图片尺寸解析失败(${bounds.outWidth}x${bounds.outHeight}): $uri")
+                return null
+            }
 
             val target = maxDimenPx.coerceIn(320, 4096)
             val longEdge = max(bounds.outWidth, bounds.outHeight)
@@ -76,7 +86,10 @@ object WallpaperImageStore {
             }
             decoded = resolver.openInputStream(uri)
                 ?.use { BitmapFactory.decodeStream(it, null, options) }
-                ?: return null
+            if (decoded == null) {
+                Log.w(TAG, "图片解码失败: $uri")
+                return null
+            }
 
             val rotation = resolver.openInputStream(uri)?.use { readOrientation(it) } ?: NoTransform
             oriented = applyOrientation(decoded, rotation)
