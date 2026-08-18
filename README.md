@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="pic/微信图片_20260602000724_491_31.jpg" width="180"/>
-  <img src="pic/微信图片_20260602000725_492_31.jpg" width="180"/>
-  <img src="pic/微信图片_20260602000727_493_31.jpg" width="180"/>
-  <img src="pic/微信图片_20260602000727_494_31.jpg" width="180"/>
+  <img src="pic/v1.0.68/01-courses.jpg" width="170"/>
+  <img src="pic/v1.0.68/03-timetable.jpg" width="170"/>
+  <img src="pic/v1.0.68/05-grades.jpg" width="170"/>
+  <img src="pic/v1.0.68/06-wallpaper-image.jpg" width="170"/>
 </p>
 
 <h1 align="center">正方教务助手</h1>
 
 <p align="center">
   <strong>开源 · 免费 · 安全</strong><br/>
-  一个跑在 Android 上的正方教务系统选课客户端<br/>
-  这版把 UI 重写了，用的 iOS 26 液体玻璃
+  一个跑在 Android 上的正方教务系统客户端<br/>
+  选课、抢课、课表、成绩，UI 是一整套液态玻璃
 </p>
 
 <p align="center">
@@ -22,35 +22,63 @@
 
 ---
 
-## 关于这次重写
+## 这版有什么
 
-这版把整个客户端 UI 从 Material 默认风格换成了 iOS 26 那套 Liquid Glass，底用的 Jetpack Compose + Kyant Backdrop 2.0 做真实折射渲染。
+界面全套换成了液态玻璃。折射、色散、高光都是实时算的，按下去会形变，松手弹回来，不是贴一层半透明白糊上去。
 
-- **液体玻璃**：`blur + lens + vibrancy` 三件套，折射和色散都是算出来的
-- **动态壁纸**：蓝/紫/青三个渐变模糊球做底图，玻璃组件实时折射出光斑
-- **双层 Backdrop**：底栏和卡片各自独立渲染，互相不搭界，大屏也跑得动
-- **压感高光**：按下玻璃表面会有跟随手指的高光，手感接近 iOS 控制中心
-- **胶囊底栏**：玻璃胶囊包着 5 个 Tab，选中态镜片凸起 + 弹簧缩放
-- **状态栏透明**：内容直接透到壁纸层
-- **Lottie 启动动画**：登录页用 Lottie JSON 渲染
-- **动效统一**：spring/tween 曲线全收在 `MotionTokens` 里，转场逻辑统一
+- **背景可以自己换**：预设渐变、纯色、或者直接用相册里的图
+- **图片背景能调**：模糊和蒙版两根滑条，自己拧到舒服为止
+- **配色跟着背景走**：浅色底自动配深字，深色底配浅字，不用手动切
+- **顶栏随滚动收起**：往下翻的时候一屏能多看一节多的内容
+- **筛选改成浮层**：收起来之后列表不会跳回顶部
+- **小屏不再被挡**：16:9 这类短屏幕上，弹窗按钮和列表末项以前会被导航栏压住
 
-老设备跑不动硬件 backdrop 的话，会自动回退到软阴影。
+老设备跑不动实时模糊会自动回退到透镜采样，不会直接卡死。
 
 ---
 
 ## 功能
 
-- 课程浏览：按关键词搜、按类别筛，显示余量和教师
-- 抢课三种模式：立即抢课（手快有）、定时抢课（设好时间到点发包）、捡漏（盯着满员课等退课）
-- 课表：周视图，课程自动配色，可导出 `.ics` 同步到系统日历
-- 成绩：按学期查，GPA 自动算
-- 多校适配：内置一些学校配置，不在列表里的可以自己加
-- 应用内更新：启动检测新版，进度条下载完直接装
-- 公告 / 反馈：公告有时间线，反馈直接发到作者邮箱
-- 设备激活：按设备管配额，防止被当脚本工具刷
+选课抢课：
 
-App 不收你密码，登录用 Cookie 临时凭证，过期了 App 会提醒重新拉一次。
+- 按关键词搜、按类别筛，余量和教师都显示
+- 即时执行 — 有空位，拼手速
+- 定时任务 — 设好开抢时间，到点自动发包
+- 捡漏 — 盯着满员的课，有人退立刻顶上
+
+抢课跑在前台服务里，配 AlarmManager 保活，关屏也能继续。
+
+课表成绩：
+
+- 课表周视图，课程自动配色，可导出 `.ics` 到系统日历
+- 成绩按学期查，GPA 自动算，另外还有总体成绩和考试安排
+
+杂项：
+
+- 应用内更新，启动检测新版，下载完直接装
+- 公告带时间线，反馈直接发作者邮箱
+- 设备激活按设备管配额，防止被当成刷课脚本
+
+---
+
+## 支持哪些学校
+
+| 学校 | 登录 |
+|------|------|
+| 太原科技大学 | 统一身份认证（账号密码） |
+| 浙江工业大学 | 统一身份认证（账号密码，会要验证码） |
+
+其他学校的正方协议差得挺多，得一个个适配。App 里「设置 → 统一登录适配」可以提交申请，也能看当前进度。
+
+---
+
+## 密码存哪了
+
+现在是账号密码登录，不用再手动折腾 Cookie 了。
+
+密码走 Android KeyStore 的 AES/GCM 加密，只落在你自己手机上，不传服务器。会话过期 App 会自己续期，不用反复重登。加密或读取失败的话一律当成「没存凭据」处理，不会崩，也不会明文写盘。
+
+不信可以自己翻 `CredentialStore.kt` 和 `SessionRenewer.kt`。
 
 ---
 
@@ -58,22 +86,20 @@ App 不收你密码，登录用 Cookie 临时凭证，过期了 App 会提醒重
 
 <table>
   <tr>
-    <td align="center"><img src="pic/微信图片_20260602000724_491_31.jpg" width="180"/><br/><sub>玻璃胶囊底栏</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000725_492_31.jpg" width="180"/><br/><sub>课程列表</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000727_493_31.jpg" width="180"/><br/><sub>周视图课表</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000727_494_31.jpg" width="180"/><br/><sub>已选课程</sub></td>
+    <td align="center"><img src="pic/v1.0.68/01-courses.jpg" width="170"/><br/><sub>课程列表</sub></td>
+    <td align="center"><img src="pic/v1.0.68/02-navbar-morph.jpg" width="170"/><br/><sub>底栏切换途中</sub></td>
+    <td align="center"><img src="pic/v1.0.68/03-timetable.jpg" width="170"/><br/><sub>周视图课表</sub></td>
+    <td align="center"><img src="pic/v1.0.68/04-grab-scheduled.jpg" width="170"/><br/><sub>抢课工作台</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="pic/微信图片_20260602000728_495_31.jpg" width="180"/><br/><sub>立即抢课</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000729_496_31.jpg" width="180"/><br/><sub>抢课队列</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000730_497_31.jpg" width="180"/><br/><sub>成绩与 GPA</sub></td>
-    <td align="center"><img src="pic/微信图片_20260602000920_498_31.jpg" width="180"/><br/><sub>设置中心</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="pic/微信图片_20260602000921_499_31.jpg" width="180"/><br/><sub>获取 Cookie 教程</sub></td>
-    <td align="center" colspan="2"><img src="pic/微信图片_20260602000938_500_31.jpg" width="180"/><br/><sub>添加自定义学校</sub></td>
+    <td align="center"><img src="pic/v1.0.68/05-grades.jpg" width="170"/><br/><sub>成绩与考试</sub></td>
+    <td align="center"><img src="pic/v1.0.68/06-wallpaper-image.jpg" width="170"/><br/><sub>图片背景</sub></td>
+    <td align="center"><img src="pic/v1.0.68/07-wallpaper-color.jpg" width="170"/><br/><sub>纯色取色</sub></td>
+    <td align="center"><img src="pic/v1.0.68/08-wallpaper-preset.jpg" width="170"/><br/><sub>预设背景</sub></td>
   </tr>
 </table>
+
+第二张是切 Tab 切到一半截的，图标在路上会被拉长然后并到一块，动起来比截图好看。
 
 ---
 
@@ -81,7 +107,7 @@ App 不收你密码，登录用 Cookie 临时凭证，过期了 App 会提醒重
 
 ### 直接下载（推荐）
 
-去 [Releases 页面](https://github.com/znjhahaha/zhengfang-apk/releases/latest) 下载最新 APK，装上就能用。Android 7.0+，建议 Android 12 以上。
+去 [Releases 页面](https://github.com/znjhahaha/zhengfang-apk/releases/latest) 下载最新 APK，装上就能用。Android 7.0+，建议 12 以上，玻璃效果最全。
 
 ### 从源码构建
 
@@ -91,55 +117,44 @@ cd zhengfang-apk
 ./gradlew assembleDebug
 ```
 
-环境要求：Android Studio Hedgehog+、JDK 17、Android SDK 34（`compileSdk 37`）。
+环境要求：Android Studio Hedgehog+、JDK 17、`compileSdk 37` / `targetSdk 34` / `minSdk 24`。
 
 ---
 
 ## 新手教程
 
-### 第一步：登录拿 Cookie
+### 第一步：登录
 
-App 内置了浏览器，不需要你手动复制 Cookie：
+选学校，填教务系统的账号密码。浙江工业大学有时候会要验证码，跟着提示走。
 
-1. 打开 App，选好学校后进入内置浏览器
-2. 浏览器会打开教务系统，正常登录
-3. 登录成功后，点底部的「获取 Cookie」按钮
-4. Cookie 自动提取并填充，回到主界面就能用了
+### 第二步：换背景（可选）
 
-Cookie 是学校服务器发的临时凭证，过期了 App 会提醒重新走一次。
+设置 → 背景。预设、颜色、图片三个来源，选图片之后能调模糊和蒙版。
 
 <p align="center">
-  <img src="pic/微信图片_20260602000921_499_31.jpg" width="280"/>
-</p>
-
-### 第二步：选学校
-
-内置列表里有就直接选，没有的话进「添加学校」填教务系统的域名。
-
-<p align="center">
-  <img src="pic/微信图片_20260602000938_500_31.jpg" width="280"/>
+  <img src="pic/v1.0.68/06-wallpaper-image.jpg" width="240"/>
+  <img src="pic/v1.0.68/08-wallpaper-preset.jpg" width="240"/>
 </p>
 
 ### 第三步：抢课
 
 | 模式 | 啥时候用 | 怎么操作 |
 |------|----------|----------|
-| 立即抢课 | 有空位，手速要快 | 进课程详情 → 点立即抢课 |
-| 定时抢课 | 知道开抢时间 | 设定时间 + 课程 → 到点自动发包 |
-| 捡漏模式 | 想抢热门课 | 选好课 → 开捡漏 → 有人退自动顶 |
+| 即时执行 | 现在就有空位 | 课程详情 → 立即抢课 |
+| 定时任务 | 知道几点开抢 | 先把课加进队列 → 设启动时间 → 到点自动跑 |
+| 捡漏 | 想抢已经满了的热门课 | 选好课 → 开捡漏 → 有人退自动顶 |
 
-抢课走 OkHttp + Coroutines，毫秒级发包，失败自动重试。后台靠 Foreground Service + AlarmManager 保活，关屏也能跑。
+定时任务得先往队列里加课，队列空着创建不了，会提示你。
 
 ### 第四步：看课表 / 查成绩
 
-- 课表：底栏第二个 Tab，周视图，右上角可导出 `.ics` 到系统日历
-- 成绩：底栏第四个 Tab，按学期查看，GPA 自动算好
+课表在底栏第二个 Tab，周视图，右上角能导出 `.ics`。成绩在第四个，按学期切，GPA 自动算好。
 
 ---
 
 ## 技术栈
 
-Kotlin + Jetpack Compose（Material 3）。液体玻璃用 Kyant Backdrop 2.0，动效 Compose Animation + Lottie，网络 OkHttp + Coroutines，HTML 解析 Jsoup，最低 Android 7.0。打包和发布走 GitHub Actions。
+Kotlin + Jetpack Compose（Material 3）。玻璃渲染用 Kyant Backdrop 2.0，`blur + lens + vibrancy` 三层，按设备能力分档，低端机降级到透镜采样。动效走 Compose Animation，spring/tween 曲线全收在 `MotionTokens` 里。网络 OkHttp + Coroutines，HTML 用 Jsoup 解析。屏幕适配靠 `ScreenMetrics` 的两个连续紧凑度系数插值几何，没有尺寸分档。打包发布走 GitHub Actions。
 
 ---
 
@@ -158,6 +173,8 @@ Kotlin + Jetpack Compose（Material 3）。液体玻璃用 Kyant Backdrop 2.0，
 
 UI 类改动记得附真机截图，审起来省事。
 
+更新日志写在 `release-notes/vX.Y.Z.md`，CI 从那儿读，扇到 GitHub Release 和 App 内的更新提示，别到处各写一份。
+
 ---
 
 ## 免责声明
@@ -169,4 +186,3 @@ UI 类改动记得附真机截图，审起来省事。
 ## 许可证
 
 [GPL-3.0](LICENSE)
-https://vsllm.com
