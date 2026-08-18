@@ -6,20 +6,29 @@ internal object LiquidPickerLayerPolicy {
         val headerLensAlpha: Float,
         val mergedBodyLensAlpha: Float,
         val separatedBodyLensAlpha: Float,
+        val bridgeOverlayAlpha: Float,
         val perimeterInteractionProgress: Float
     ) {
-        HeaderOnly(1f, 0f, 0f, 0f),
-        Merging(1f, 1f, 0f, 0f),
-        Separated(1f, 0f, 1f, 0f)
+        HeaderOnly(1f, 0f, 0f, 0f, 0f),
+        Merging(1f, 1f, 0f, 1f, 0f),
+        Separated(1f, 0f, 1f, 0f, 0f)
     }
 
     fun resolve(
         bodyActive: Boolean,
+        bodyExtendsBeyondHeader: Boolean,
         bodySeparated: Boolean,
         bodyAlpha: Float,
         @Suppress("UNUSED_PARAMETER") interactionProgress: Float
     ): Layers {
-        if (!bodyActive || bodyAlpha <= 0f) return Layers.HeaderOnly
+        if (!bodyActive || !bodyExtendsBeyondHeader || bodyAlpha <= 0f) return Layers.HeaderOnly
         return if (bodySeparated) Layers.Separated else Layers.Merging
     }
+
+    fun bodyExtendsBeyondHeader(
+        bodyActive: Boolean,
+        actualBodyBottom: Float,
+        headerBottom: Float,
+        threshold: Float
+    ): Boolean = bodyActive && actualBodyBottom > headerBottom + threshold
 }

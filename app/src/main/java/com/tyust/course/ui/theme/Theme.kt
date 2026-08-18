@@ -20,7 +20,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.tyust.course.ui.system.GlassPressIndication
+import com.tyust.course.ui.system.LocalWallpaperAppearanceColors
+import com.tyust.course.ui.system.rememberWallpaperRegionAppearance
 import com.tyust.course.manager.AppearanceSettingsManager
+import com.tyust.course.manager.WallpaperRegion
 
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -87,10 +90,8 @@ fun CourseSelectorTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    // 系统暗色 OR 图片壁纸深色（字体颜色自适应）：整套配色、状态栏/导航栏图标
-    // 外观随这一信号翻转。曾被 `false &&` 写死浅色——深色壁纸下深色文字不可读。
-    val resolvedDarkTheme = darkTheme || isSystemInDarkTheme() ||
-        AppearanceSettingsManager.wallpaperWantsDark
+    // 自定义壁纸只影响局部玻璃与内容颜色，不能反向切换整套 Material 主题。
+    val resolvedDarkTheme = darkTheme || isSystemInDarkTheme()
     val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
@@ -103,6 +104,26 @@ fun CourseSelectorTheme(
     val colorScheme = baseColorScheme
 
     val view = LocalView.current
+    val rootWallpaperColors = rememberWallpaperRegionAppearance()
+    val metrics = view.resources.displayMetrics
+    val viewportWidth = view.width.takeIf { it > 0 } ?: metrics.widthPixels
+    val viewportHeight = view.height.takeIf { it > 0 } ?: metrics.heightPixels
+    val toneMap = AppearanceSettingsManager.toneMap
+    val wallpaperStyle = AppearanceSettingsManager.style
+    val statusBarUsesDarkIcons = toneMap.resolve(
+        viewportWidth,
+        viewportHeight,
+        WallpaperRegion(0, 0, viewportWidth, (viewportHeight * 0.10f).toInt()),
+        wallpaperStyle.imageBlur,
+        wallpaperStyle.imageDim
+    ).usesDarkForeground
+    val navigationBarUsesDarkIcons = toneMap.resolve(
+        viewportWidth,
+        viewportHeight,
+        WallpaperRegion(0, (viewportHeight * 0.90f).toInt(), viewportWidth, viewportHeight),
+        wallpaperStyle.imageBlur,
+        wallpaperStyle.imageDim
+    ).usesDarkForeground
     if (!view.isInEditMode) {
         SideEffect {
             val activity = view.context as? Activity ?: return@SideEffect
@@ -112,13 +133,16 @@ fun CourseSelectorTheme(
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !resolvedDarkTheme
-                isAppearanceLightNavigationBars = !resolvedDarkTheme
+                isAppearanceLightStatusBars = statusBarUsesDarkIcons
+                isAppearanceLightNavigationBars = navigationBarUsesDarkIcons
             }
         }
     }
 
-    CompositionLocalProvider(LocalIndication provides GlassPressIndication) {
+    CompositionLocalProvider(
+        LocalIndication provides GlassPressIndication,
+        LocalWallpaperAppearanceColors provides rootWallpaperColors
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

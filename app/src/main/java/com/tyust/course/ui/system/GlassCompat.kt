@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
-import com.tyust.course.manager.AppearanceSettingsManager
 
 enum class GlassCapability {
     Material,
@@ -82,17 +81,10 @@ fun canUseLiquidLens(
         refractionHeightPx <= minCornerRadiusPx &&
         refractionAmountPx <= minDimensionPx
 
-/**
- * 玻璃材质的暗色信号 = 系统暗色 **或** 壁纸深色（图片壁纸的字体颜色自适应）。
- *
- * 全 App 的玻璃白雾/描边/阴影明暗分支必须读它而不是 `isSystemInDarkTheme()`：
- * 深色壁纸下 Material 主题翻成深色（文字变浅），玻璃若仍按系统信号出白雾，
- * 就是"白雾玻璃上漂白字"。与 [com.tyust.course.ui.theme.CourseSelectorTheme]
- * 的 resolvedDarkTheme 是同一信号。
- */
+/** 全局材质明暗只跟随系统；自定义壁纸的颜色由局部外观解析器处理。 */
 @Composable
 fun rememberGlassDarkTheme(): Boolean =
-    isSystemInDarkTheme() || AppearanceSettingsManager.wallpaperWantsDark
+    isSystemInDarkTheme()
 
 /**
  * 根 Backdrop 由页面入口注入；为空时组件使用非玻璃实现。

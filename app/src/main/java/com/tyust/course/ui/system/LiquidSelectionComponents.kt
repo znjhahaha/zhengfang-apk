@@ -860,6 +860,8 @@ fun LiquidPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var highlightedRow by remember { mutableStateOf<Int?>(null) }
+    val regionState = rememberWallpaperRegionState()
+    val appearance = rememberWallpaperRegionAppearance(regionState)
     val validSelectedIndex = selectedIndex?.takeIf { it in options.indices }
     val selectedLabel = validSelectedIndex?.let { options[it].label }
     val hasAction = !actionLabel.isNullOrBlank() && onAction != null
@@ -868,7 +870,7 @@ fun LiquidPicker(
     val canOpen = enabled && (hasAvailableOption || hasAction)
     val accessibility = rememberGlassAccessibilityMode()
     val reduceMotion = accessibility.reduceMotion
-    val isLightTheme = !rememberGlassDarkTheme()
+    val isLightTheme = appearance.usesDarkForeground
     // Keep the backdrop contract but avoid animated backdrop sampling. Both settled surfaces use
     // the cheap captured-content glass recipe, and the transient bridge is a single cached path.
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
@@ -922,16 +924,24 @@ fun LiquidPicker(
     val bodyOffset = PickerHeaderHeight - bodyOverlap +
         (bodyOverlap + PickerExpandedGap) * bodyTravelProgress
     val visualBodyHeight = bodyHeight * heightProgress
+    val actualBodyBottom = bodyOffset + visualBodyHeight
     val layoutHeight = maxOf(
         PickerHeaderHeight,
-        bodyOffset + visualBodyHeight
+        actualBodyBottom
     )
     // The surface itself never fades. It begins fully inside the header, grows out as one mass,
     // develops an SDF neck, then separates. Only the final sub-pixel body is hidden.
     val bodyAlpha = if (bodyActive && visualBodyHeight >= 1.dp) 1f else 0f
-    val bodySeparated = bodyOffset >= PickerHeaderHeight + 0.5.dp
+    val bodyExtendsBeyondHeader = LiquidPickerLayerPolicy.bodyExtendsBeyondHeader(
+        bodyActive = bodyActive,
+        actualBodyBottom = actualBodyBottom.value,
+        headerBottom = PickerHeaderHeight.value,
+        threshold = 0.5f
+    )
+    val bodySeparated = bodyExtendsBeyondHeader && bodyOffset >= PickerHeaderHeight + 0.5.dp
     val layerPolicy = LiquidPickerLayerPolicy.resolve(
         bodyActive = bodyActive,
+        bodyExtendsBeyondHeader = bodyExtendsBeyondHeader,
         bodySeparated = bodySeparated,
         bodyAlpha = bodyAlpha,
         interactionProgress = if (headerPressed && canOpen) 1f else 0f
@@ -951,14 +961,14 @@ fun LiquidPicker(
     val descriptorPresent = leadingIcon != null || !label.isNullOrBlank()
     val contentEnabled = enabled && (hasAvailableOption || hasAction)
     val primaryContentColor = if (contentEnabled) {
-        MaterialTheme.colorScheme.onSurface
+        appearance.onSurface
     } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        appearance.onSurface.copy(alpha = 0.38f)
     }
     val secondaryContentColor = if (contentEnabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        appearance.onSurfaceVariant
     } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.30f)
+        appearance.onSurface.copy(alpha = 0.30f)
     }
     val highlightColor = if (isLightTheme) {
         Color.White.copy(alpha = if (backdropToneAvailable) 0.42f else 0.34f)
@@ -1036,13 +1046,16 @@ fun LiquidPicker(
         (PickerHeaderHeight.value / resolvedLayoutHeight.value).coerceIn(0f, 1f)
     val bodyTopFraction =
         (bodyOffset.value / resolvedLayoutHeight.value).coerceIn(0f, 1f)
+    val bodyBottomFraction =
+        (actualBodyBottom.value / resolvedLayoutHeight.value).coerceIn(0f, 1f)
     val bodyCornerToHeaderRatio = PickerCornerRadius.value / PickerHeaderHeight.value
     val mergeSmoothnessToHeaderRatio = mergeSmoothnessDp / PickerHeaderHeight.value
     val surfaceShape = remember(
         headerHeightFraction,
         bodyTopFraction,
+        bodyBottomFraction,
         bodyCornerToHeaderRatio,
-        bodyActive,
+        bodyExtendsBeyondHeader,
         mergeSmoothnessToHeaderRatio
     ) {
         GenericShape { size, _ ->
@@ -1050,8 +1063,10 @@ fun LiquidPicker(
                 .coerceIn(0f, size.height)
             val bodyTopPx = (size.height * bodyTopFraction)
                 .coerceIn(0f, size.height)
+            val bodyBottomPx = (size.height * bodyBottomFraction)
+                .coerceIn(0f, size.height)
             val bodyCornerPx = headerHeightPx * bodyCornerToHeaderRatio
-            val bodyVisible = bodyActive && size.height > bodyTopPx + 0.5f
+            val bodyVisible = bodyExtendsBeyondHeader && bodyBottomPx > headerHeightPx + 0.5f
             val implicitContour = if (bodyVisible) {
                 RoundedRectMergeGeometry.mergedVerticalOutline(
                     header = RoundedRectMergeGeometry.RoundedBox(
@@ -1065,7 +1080,7 @@ fun LiquidPicker(
                         left = 0f,
                         top = bodyTopPx,
                         right = size.width,
-                        bottom = size.height,
+                        bottom = bodyBottomPx,
                         radius = bodyCornerPx
                     ),
                     smoothness = headerHeightPx * mergeSmoothnessToHeaderRatio,
@@ -1090,7 +1105,7 @@ fun LiquidPicker(
                         left = 0f,
                         top = bodyTopPx,
                         right = size.width,
-                        bottom = size.height,
+                        bottom = bodyBottomPx,
                         radius = bodyCornerPx
                     )
                 }
@@ -1100,36 +1115,41 @@ fun LiquidPicker(
     val surfaceModifier = if (accessibility.highContrast) {
         Modifier
             .clip(surfaceShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline, surfaceShape)
+            .background(appearance.solidSurface)
+            .border(1.dp, appearance.border, surfaceShape)
     } else if (glassBackdrop != null) {
-        // Keep the SDF bridge almost clear. The two rounded children below carry the actual
-        // wallpaper refraction; this contour only supplies one continuous low-alpha surface/rim.
+        if (layerPolicy.bridgeOverlayAlpha > 0f) {
+            // Restore the full SDF neck while the two masses are connected. The layer is absent
+            // at both settled endpoints, so its perimeter cannot return as a final thin ring.
+            Modifier
+                .clip(surfaceShape)
+                .background(
+                    appearance.surface.copy(
+                        alpha = (if (isLightTheme) 0.055f else 0.035f) *
+                            layerPolicy.bridgeOverlayAlpha
+                    )
+                )
+                .glassRim(
+                    shape = surfaceShape,
+                    intensity = if (contentEnabled) 1.14f else 0.62f,
+                    isLightTheme = isLightTheme,
+                    pressProgress = { layerPolicy.perimeterInteractionProgress }
+                )
+        } else {
+            Modifier
+        }
+    } else {
         Modifier
             .clip(surfaceShape)
-            .background(
-                Color.White.copy(alpha = if (isLightTheme) 0.055f else 0.035f)
-            )
-            .glassRim(
-                shape = surfaceShape,
-                intensity = if (contentEnabled) 1.14f else 0.62f,
-                isLightTheme = isLightTheme,
-                pressProgress = { layerPolicy.perimeterInteractionProgress }
-            )
-    } else {
-        Modifier.glassChip(
-            shape = surfaceShape,
-            elevation = if (bodyActive) 3.dp else 1.dp,
-            rimIntensity = if (backdropToneAvailable) 1f else 1.06f,
-            dimmed = !contentEnabled,
-            pressProgress = { layerPolicy.perimeterInteractionProgress }
-        )
+            .background(appearance.solidSurface)
+            .border(0.75.dp, appearance.border, surfaceShape)
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(resolvedLayoutHeight)
+            .wallpaperRegion(regionState)
     ) {
         // Rounded children use the real lens path (the backdrop library requires a rounded-
         // rectangular shape). While the body is still connected, one generic-outline backdrop
@@ -1200,8 +1220,8 @@ fun LiquidPicker(
             }
         }
 
-        // One low-alpha contour owns the complete silhouette. During the collision it is one
-        // implicit surface; once detached the same Shape contains two independent contours.
+        // The contour exists only during the connected phase. At both settled endpoints it draws
+        // nothing, so the persistent rounded lenses cannot acquire a second perimeter.
         Box(
             modifier = Modifier
                 .fillMaxSize()

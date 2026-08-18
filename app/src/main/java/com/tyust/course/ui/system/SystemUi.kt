@@ -182,9 +182,10 @@ fun SystemTopBar(
     backdrop: Backdrop? = LocalAppBackdrop.current
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
-    val isLightTheme = !rememberGlassDarkTheme()
-    // 主题已合并系统模式与壁纸明暗信号，直接取主题色，避免 GPU -> CPU 像素回读。
-    val titleColor = MaterialTheme.colorScheme.onSurface
+    val regionState = rememberWallpaperRegionState()
+    val appearance = rememberWallpaperRegionAppearance(regionState)
+    val isLightTheme = appearance.usesDarkForeground
+    val titleColor = appearance.onSurface
 
     // iOS 26 分离式头部：展开态大标题直接浮在内容上（无背景），
     // 滚动折叠时标题缩小、浮出细玻璃条。折叠进度由滚动偏移连续驱动、
@@ -194,13 +195,17 @@ fun SystemTopBar(
         animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
         label = "headerCollapse"
     )
-    val surfaceTint = if (isLightTheme) {
-        Color.White.copy(alpha = 0.62f)
-    } else {
-        Color.Black.copy(alpha = 0.46f)
-    }
+    val surfaceTint = appearance.surface.copy(
+        alpha = maxOf(appearance.surface.alpha, if (isLightTheme) 0.46f else 0.34f)
+    )
 
-    Column(modifier = Modifier.fillMaxWidth().reportNoticeAnchor()) {
+    ProvideWallpaperAppearance(appearance) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .wallpaperRegion(regionState)
+            .reportNoticeAnchor()
+    ) {
         val showShell = collapse > 0.01f
         val shellModifier = when {
             useGlass && backdrop != null && showShell -> Modifier
@@ -228,8 +233,8 @@ fun SystemTopBar(
                 )
             !useGlass && showShell -> Modifier.background(
                 Brush.verticalGradient(
-                    0f to MaterialTheme.colorScheme.surface.copy(alpha = collapse),
-                    0.86f to MaterialTheme.colorScheme.surface.copy(alpha = collapse),
+                    0f to appearance.solidSurface.copy(alpha = collapse),
+                    0.86f to appearance.solidSurface.copy(alpha = collapse),
                     1f to Color.Transparent
                 )
             )
@@ -301,7 +306,7 @@ fun SystemTopBar(
                                     text = subtitle,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
+                                    color = appearance.onSurfaceVariant.copy(alpha = 0.80f),
                                     maxLines = 1
                                 )
                             }
@@ -315,6 +320,7 @@ fun SystemTopBar(
                 )
             }
         }
+    }
     }
 }
 
@@ -330,7 +336,7 @@ fun GlassCircleButton(
     contentDescription: String? = null,
     enabled: Boolean = true,
     size: Dp = 40.dp,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
+    tint: Color = LocalWallpaperAppearanceColors.current.onSurface,
     backdrop: Backdrop? = LocalControlBackdrop.current
 ) {
     val accessibility = rememberGlassAccessibilityMode()
@@ -706,13 +712,14 @@ fun SystemSecondaryButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
+    val appearance = LocalWallpaperAppearanceColors.current
     // iOS gray-fill：不透明浅灰胶囊，文字用 onSurface 实色，保证任何底色上都清晰。
     LiquidButton(
         onClick = onClick,
         modifier = modifier.height(52.dp),
         enabled = enabled,
         style = LiquidButtonStyle.SolidSurface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentColor = appearance.onSurface,
         shape = Capsule()
     ) {
         if (leadingIcon != null) leadingIcon()
@@ -1069,16 +1076,14 @@ private fun SystemDialogContent(
         accessibility = accessibility
     )
     val glassBackdrop = backdrop?.takeIf { useVisualEffects && isBackdropSupported() }
-    val isLightTheme = !rememberGlassDarkTheme()
+    val regionState = rememberWallpaperRegionState()
+    val appearance = rememberWallpaperRegionAppearance(regionState)
+    val isLightTheme = appearance.usesDarkForeground
     // 模态卡片是玻璃而不是实色板：只保留一层弱中性表面，让身后画面经 blur/lens 透出。
-    val dialogSurfaceColor = if (isLightTheme) {
-        Color(0xFFF4F5F7).copy(alpha = 0.30f)
-    } else {
-        Color(0xFF1E2024).copy(alpha = 0.34f)
-    }
-    val dialogBorderColor = Color.White.copy(
-        alpha = if (isLightTheme) 0.64f else 0.16f
+    val dialogSurfaceColor = appearance.surface.copy(
+        alpha = maxOf(appearance.surface.alpha, 0.30f)
     )
+    val dialogBorderColor = appearance.border
     val dialogShadowColor = Color.Black.copy(alpha = dialogMaterial.shadowAlpha)
 
     val dialogLayerBackdrop = rememberLayerBackdrop()
@@ -1088,7 +1093,7 @@ private fun SystemDialogContent(
         null
     }
 
-    Box(modifier = Modifier.width(320.dp)) {
+    Box(modifier = Modifier.width(320.dp).wallpaperRegion(regionState)) {
         if (glassBackdrop != null) {
             Box(
                 modifier = Modifier
@@ -1133,12 +1138,13 @@ private fun SystemDialogContent(
                         spotColor = dialogShadowColor
                     )
                     .clip(dialogShape)
-                    .background(if (isLightTheme) Color(0xFFE0E2E6) else Color(0xFF25272B))
+                    .background(appearance.solidSurface)
                     .border(0.75.dp, dialogBorderColor, dialogShape)
             )
         }
 
         CompositionLocalProvider(LocalControlBackdrop provides nestedControlBackdrop) {
+        ProvideWallpaperAppearance(appearance) {
             Column(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1149,7 +1155,7 @@ private fun SystemDialogContent(
             }
             if (title != null) {
                 CompositionLocalProvider(
-                    androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
+                    androidx.compose.material3.LocalContentColor provides appearance.onSurface
                 ) {
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -1191,6 +1197,7 @@ private fun SystemDialogContent(
             }
         }
     }
+}
 }
 }
 

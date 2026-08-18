@@ -12,6 +12,13 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+internal data class WallpaperImportResult(
+    val dominantColor: Int,
+    val width: Int,
+    val height: Int,
+    val toneMap: WallpaperToneMap
+)
+
 /**
  * 自定义图片壁纸的本地仓库。
  *
@@ -57,9 +64,9 @@ object WallpaperImageStore {
      * 导入一张图片并归一化落盘。
      *
      * @param maxDimenPx 归一化后的长边上限，传屏幕长边即可。
-     * @return 图片主色（ARGB）；任何一步失败都返回 null，且不留下半张残图。
+     * @return 图片主色、归一化尺寸与色调图；任何一步失败都返回 null，且不留下半张残图。
      */
-    fun import(context: Context, uri: Uri, maxDimenPx: Int): Int? {
+    internal fun import(context: Context, uri: Uri, maxDimenPx: Int): WallpaperImportResult? {
         val resolver = context.contentResolver
         var decoded: Bitmap? = null
         var oriented: Bitmap? = null
@@ -107,7 +114,12 @@ object WallpaperImageStore {
             soft = buildSoftLayer(scaled)
             if (!writeJpeg(soft, softFile(context), quality = 80)) return null
 
-            dominantColor(soft)
+            WallpaperImportResult(
+                dominantColor = dominantColor(soft),
+                width = scaled.width,
+                height = scaled.height,
+                toneMap = buildToneMap(scaled, soft)
+            )
         } catch (t: Throwable) {
             // OutOfMemoryError 也在内：一张超大图不该把 App 带走
             Log.w(TAG, "导入壁纸图片失败", t)
@@ -124,6 +136,22 @@ object WallpaperImageStore {
     fun loadSharp(context: Context): Bitmap? = decodeFile(sharpFile(context))
 
     fun loadSoft(context: Context): Bitmap? = decodeFile(softFile(context))
+
+    /** 为旧版存量图片补生成色调图。只在 IO 线程调用。 */
+    internal fun analyze(context: Context): WallpaperToneMap? {
+        val sharp = loadSharp(context) ?: return null
+        val soft = loadSoft(context) ?: sharp
+        return try {
+            buildToneMap(sharp, soft)
+        } catch (t: Throwable) {
+            Log.w(TAG, "分析壁纸色调失败", t)
+            null
+        } finally {
+            listOf(sharp, soft).distinct().forEach { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+        }
+    }
 
     /**
      * 旧版本（72px 裸缩略图）的存量壁纸升级：从 sharp 文件按当前管道重生成模糊层。
@@ -169,6 +197,36 @@ object WallpaperImageStore {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         out.setPixels(blurred, 0, w, 0, 0, w, h)
         return out
+    }
+
+    private fun buildToneMap(sharp: Bitmap, soft: Bitmap): WallpaperToneMap {
+        fun grid(bitmap: Bitmap): IntArray {
+            val analysis = Bitmap.createScaledBitmap(
+                bitmap,
+                minOf(bitmap.width, WallpaperToneGridWidth * 4),
+                minOf(bitmap.height, WallpaperToneGridHeight * 4),
+                true
+            )
+            return try {
+                val pixels = IntArray(analysis.width * analysis.height)
+                analysis.getPixels(pixels, 0, analysis.width, 0, 0, analysis.width, analysis.height)
+                buildWallpaperToneGrid(
+                    pixels = pixels,
+                    sourceWidth = analysis.width,
+                    sourceHeight = analysis.height
+                )
+            } finally {
+                if (analysis !== bitmap && !analysis.isRecycled) analysis.recycle()
+            }
+        }
+        return WallpaperToneMap(
+            sourceWidth = sharp.width,
+            sourceHeight = sharp.height,
+            gridWidth = WallpaperToneGridWidth,
+            gridHeight = WallpaperToneGridHeight,
+            sharpArgb = grid(sharp),
+            softArgb = grid(soft)
+        )
     }
 
     fun clear(context: Context) {

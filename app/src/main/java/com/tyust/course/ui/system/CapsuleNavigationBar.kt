@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -89,12 +90,16 @@ fun CapsuleNavigationBar(
     modifier: Modifier = Modifier
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
+    val regionState = rememberWallpaperRegionState()
+    val appearance = rememberWallpaperRegionAppearance(regionState)
 
+    ProvideWallpaperAppearance(appearance) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .wallpaperRegion(regionState),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -146,6 +151,7 @@ fun CapsuleNavigationBar(
             )
         }
     }
+    }
 }
 
 /** 最小化形态：仅显示当前 tab 的小玻璃胶囊，点按展开。 */
@@ -156,7 +162,7 @@ private fun MinimizedNavCapsule(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isLightTheme = !rememberGlassDarkTheme()
+    val isLightTheme = LocalWallpaperAppearanceColors.current.usesDarkForeground
     val accentColor = if (isLightTheme) NavSelectedAccentLight else NavSelectedAccentDark
     val containerColor = if (isLightTheme) {
         Color.White.copy(alpha = 0.28f)
@@ -195,7 +201,7 @@ private fun MinimizedNavCapsule(
         )
         Text(
             text = item.label,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = LocalWallpaperAppearanceColors.current.onSurface,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             maxLines = 1
@@ -220,7 +226,7 @@ private fun GlassNavigationBar(
     val trackHeight = if (hasRealLens) 72.dp else 64.dp
     val indicatorHeight = if (hasRealLens) 56.dp else 56.dp
     val barPadding = if (hasRealLens) 6.dp else 4.dp
-    val isLightTheme = !rememberGlassDarkTheme()
+    val isLightTheme = LocalWallpaperAppearanceColors.current.usesDarkForeground
     // API32：cba2a09 半透轨；API33+：半透主题底
     val containerColor = if (hasRealLens) {
         // 提浊：降低穿透内容对比度，深色文字经过栏后不再形成清晰污块
@@ -694,7 +700,8 @@ private fun FallbackNavigationBar(
     onTabSelect: (Int) -> Unit
 ) {
     val capsuleShape = RoundedCornerShape(28.dp)
-    val accentColor = if (!rememberGlassDarkTheme()) {
+    val appearance = LocalWallpaperAppearanceColors.current
+    val accentColor = if (appearance.usesDarkForeground) {
         NavSelectedAccentLight
     } else {
         NavSelectedAccentDark
@@ -704,7 +711,7 @@ private fun FallbackNavigationBar(
             .fillMaxWidth()
             .height(60.dp),
         shape = capsuleShape,
-        color = MaterialTheme.colorScheme.surface,
+        color = appearance.solidSurface,
         shadowElevation = 4.dp
     ) {
         Row(
@@ -739,7 +746,7 @@ private fun RowScope.NavTab(
             accent
         } else {
             androidx.compose.ui.graphics.lerp(
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                LocalWallpaperAppearanceColors.current.onSurfaceVariant.copy(alpha = 0.5f),
                 accent,
                 weight
             )
@@ -751,8 +758,8 @@ private fun RowScope.NavTab(
             accent
         } else {
             androidx.compose.ui.graphics.lerp(
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                MaterialTheme.colorScheme.onSurface,
+                LocalWallpaperAppearanceColors.current.onSurfaceVariant.copy(alpha = 0.5f),
+                LocalWallpaperAppearanceColors.current.onSurface,
                 weight
             )
         },

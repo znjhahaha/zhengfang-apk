@@ -176,6 +176,9 @@ object AppearanceSettingsManager {
     private const val KEY_IMAGE_DIM = "wallpaper_image_dim"
     private const val KEY_IMAGE_BLUR = "wallpaper_image_blur"
     private const val KEY_IMAGE_COLOR = "wallpaper_image_color"
+    private const val KEY_TONE_MAP = "wallpaper_tone_map"
+    private const val KEY_TONE_MAP_VERSION = "wallpaper_tone_map_version"
+    private const val TONE_MAP_VERSION = 1
 
     /**
      * 壁纸图片存储管道版本。v2 = soft 层由 72px 裸缩略图换为 540px 3-pass box blur（≈高斯）。
@@ -221,12 +224,19 @@ object AppearanceSettingsManager {
     private var imageColor by mutableStateOf(Color(0xFFF2F2F7))
     private var imageSharp by mutableStateOf<ImageBitmap?>(null)
     private var imageSoft by mutableStateOf<ImageBitmap?>(null)
+    private var imageToneMap by mutableStateOf<WallpaperToneMap?>(null)
 
     /**
      * 当前生效的壁纸外观。**缓存成 state 而不是每次 get 重算**——绘制路径每帧都会读它，
      * 自定义模式下重算要做一次 HSV 转换加四个光斑对象。
      */
     var style by mutableStateOf(WallpaperPreset.Aurora.toStyle())
+        private set
+
+    /** 导入时生成的低分辨率色调图；预设与纯色模式使用统一色调图。 */
+    internal var toneMap by mutableStateOf(
+        WallpaperToneMap.uniform(WallpaperPreset.Aurora.baseColor.toArgb())
+    )
         private set
 
     /** 兼容旧调用点：它们问的是"是不是自定义颜色"。 */
@@ -259,6 +269,10 @@ object AppearanceSettingsManager {
         prefs?.takeIf { it.contains(KEY_IMAGE_COLOR) }
             ?.getInt(KEY_IMAGE_COLOR, 0)
             ?.let { imageColor = Color(it) }
+        imageToneMap = prefs
+            ?.takeIf { it.getInt(KEY_TONE_MAP_VERSION, 0) == TONE_MAP_VERSION }
+            ?.getString(KEY_TONE_MAP, null)
+            ?.let(WallpaperToneMap::decode)
         hasImageWallpaper = WallpaperImageStore.exists(app)
         mode = resolveMode()
         recomputeStyle()
@@ -268,7 +282,14 @@ object AppearanceSettingsManager {
             ioScope.launch {
                 if (WallpaperImageStore.regenerateSoft(app)) {
                     prefs?.edit()?.putInt(KEY_STORE_VERSION, STORE_VERSION)?.apply()
-                    if (mode == WallpaperMode.Image) loadImageAsync()
+                    val migratedToneMap = WallpaperImageStore.analyze(app)
+                    withContext(Dispatchers.Main) {
+                        if (migratedToneMap != null) {
+                            imageToneMap = migratedToneMap
+                            persistToneMap(migratedToneMap)
+                        }
+                        if (mode == WallpaperMode.Image) loadImageAsync()
+                    }
                 }
             }
         }
@@ -335,25 +356,27 @@ object AppearanceSettingsManager {
         val metrics = context.resources.displayMetrics
         val target = max(metrics.widthPixels, metrics.heightPixels)
         ioScope.launch {
-            val dominant = WallpaperImageStore.import(app, uri, target)
-            val sharp = dominant?.let { WallpaperImageStore.loadSharp(app)?.asImageBitmap() }
-            val soft = dominant?.let { WallpaperImageStore.loadSoft(app)?.asImageBitmap() }
+            val imported = WallpaperImageStore.import(app, uri, target)
+            val sharp = imported?.let { WallpaperImageStore.loadSharp(app)?.asImageBitmap() }
+            val soft = imported?.let { WallpaperImageStore.loadSoft(app)?.asImageBitmap() }
             withContext(Dispatchers.Main) {
-                if (dominant == null || sharp == null) {
+                if (imported == null || sharp == null) {
                     Log.w(TAG, "图片壁纸导入失败")
                     onResult(false)
                     return@withContext
                 }
-                imageColor = Color(dominant)
+                imageColor = Color(imported.dominantColor)
                 imageSharp = sharp
                 imageSoft = soft
+                imageToneMap = imported.toneMap
                 hasImageWallpaper = true
                 mode = WallpaperMode.Image
                 prefs?.edit()
                     ?.putString(KEY_MODE, WallpaperMode.Image.name)
-                    ?.putInt(KEY_IMAGE_COLOR, dominant)
+                    ?.putInt(KEY_IMAGE_COLOR, imported.dominantColor)
                     ?.putInt(KEY_STORE_VERSION, STORE_VERSION)
                     ?.apply()
+                persistToneMap(imported.toneMap)
                 recomputeStyle()
                 onResult(true)
             }
@@ -373,11 +396,14 @@ object AppearanceSettingsManager {
         val app = appContext
         imageSharp = null
         imageSoft = null
+        imageToneMap = null
         hasImageWallpaper = false
         mode = if (customColor != null) WallpaperMode.Color else WallpaperMode.Preset
         prefs?.edit()
             ?.putString(KEY_MODE, mode.name)
             ?.putBoolean(KEY_USE_CUSTOM, mode == WallpaperMode.Color)
+            ?.remove(KEY_TONE_MAP)
+            ?.remove(KEY_TONE_MAP_VERSION)
             ?.apply()
         recomputeStyle()
         if (app != null) ioScope.launch { WallpaperImageStore.clear(app) }
@@ -407,12 +433,18 @@ object AppearanceSettingsManager {
 
     private fun loadImageAsync() {
         val app = appContext ?: return
+        val cachedToneMap = imageToneMap
         ioScope.launch {
             val sharp = WallpaperImageStore.loadSharp(app)?.asImageBitmap()
             val soft = WallpaperImageStore.loadSoft(app)?.asImageBitmap()
+            val analyzedToneMap = cachedToneMap ?: WallpaperImageStore.analyze(app)
             withContext(Dispatchers.Main) {
                 imageSharp = sharp
                 imageSoft = soft
+                if (analyzedToneMap != null) {
+                    imageToneMap = analyzedToneMap
+                    if (cachedToneMap == null) persistToneMap(analyzedToneMap)
+                }
                 if (sharp == null) {
                     // 文件被清了/解不出来：别把用户留在一张空背景上
                     hasImageWallpaper = false
@@ -439,14 +471,17 @@ object AppearanceSettingsManager {
                 ?: wallpaper.toStyle()
             WallpaperMode.Preset -> wallpaper.toStyle()
         }
-        wallpaperWantsDark = mode == WallpaperMode.Image && style.isDark
+        toneMap = when (mode) {
+            WallpaperMode.Image -> imageToneMap ?: WallpaperToneMap.uniform(imageColor.toArgb())
+            WallpaperMode.Color -> WallpaperToneMap.uniform(style.baseColor.toArgb())
+            WallpaperMode.Preset -> WallpaperToneMap.uniform(style.baseColor.toArgb())
+        }
     }
 
-    /**
-     * 图片壁纸是否深到需要整套界面转深色（Material 主题/玻璃白雾/状态栏图标共用此信号）。
-     * 复用 [WallpaperStyle.isDark] 的既有语义：主色亮度 < 0.42 或蒙版拉过一半。
-     * 预设/纯色模式恒 false——那两种背景本身就是按浅色主题设计的渐变。
-     */
-    var wallpaperWantsDark by mutableStateOf(false)
-        private set
+    private fun persistToneMap(value: WallpaperToneMap) {
+        prefs?.edit()
+            ?.putString(KEY_TONE_MAP, value.encode())
+            ?.putInt(KEY_TONE_MAP_VERSION, TONE_MAP_VERSION)
+            ?.apply()
+    }
 }

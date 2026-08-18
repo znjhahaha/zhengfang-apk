@@ -115,19 +115,20 @@ fun LiquidButton(
     val isSolid = style == LiquidButtonStyle.SolidSurface || style == LiquidButtonStyle.SolidTinted
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() && !isSolid }
     val isLightTheme = !rememberGlassDarkTheme()
+    val wallpaperColors = LocalWallpaperAppearanceColors.current
     val activeTint = if (tint.isSpecified) tint else MaterialTheme.colorScheme.primary
     val activeContentColor = when {
         contentColor.isSpecified -> contentColor
         style == LiquidButtonStyle.Tinted || style == LiquidButtonStyle.SolidTinted -> Color.White
-        style == LiquidButtonStyle.SolidSurface -> MaterialTheme.colorScheme.onSurface
+        style == LiquidButtonStyle.SolidSurface -> wallpaperColors.onSurface
         else -> LocalContentColor.current
     }
     val resolvedContentColor = if (enabled) {
         activeContentColor
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+        wallpaperColors.onSurfaceVariant.copy(alpha = 0.62f)
     }
-    val disabledSurfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+    val disabledSurfaceColor = wallpaperColors.surface.copy(
         alpha = GlassRecipe.ActionDisabledSurfaceAlpha
     )
     val interactionSource = remember { MutableInteractionSource() }
@@ -239,13 +240,7 @@ fun LiquidButton(
                         // 在壁纸上形成一条随位置游走的伪高光。这里直接实色覆盖。
                         style == LiquidButtonStyle.Tinted ->
                             drawRect(activeTint.copy(alpha = GlassRecipe.ActionTintAlpha))
-                        style == LiquidButtonStyle.Surface -> drawRect(
-                            if (isLightTheme) {
-                                Color.White.copy(alpha = 0.36f)
-                            } else {
-                                Color.White.copy(alpha = 0.12f)
-                            }
-                        )
+                        style == LiquidButtonStyle.Surface -> drawRect(wallpaperColors.surface)
                         else -> Unit
                     }
                 }
@@ -257,9 +252,9 @@ fun LiquidButton(
         val fallbackColor = when {
             !enabled -> if (isLightTheme) IOSDisabledFillLight else IOSDisabledFillDark
             style == LiquidButtonStyle.SolidTinted -> activeTint
-            style == LiquidButtonStyle.SolidSurface -> if (isLightTheme) IOSFillLight else IOSFillDark
+            style == LiquidButtonStyle.SolidSurface -> wallpaperColors.solidSurface
             style == LiquidButtonStyle.Tinted -> activeTint.copy(alpha = GlassRecipe.ActionTintAlpha)
-            style == LiquidButtonStyle.Surface -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+            style == LiquidButtonStyle.Surface -> wallpaperColors.solidSurface.copy(alpha = 0.94f)
             else -> Color.Transparent
         }
         val fallbackModifier = modifier
@@ -277,7 +272,7 @@ fun LiquidButton(
                 } else {
                     Modifier.border(
                         width = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
+                        color = wallpaperColors.border.copy(alpha = 0.46f),
                         shape = shape
                     )
                 }
