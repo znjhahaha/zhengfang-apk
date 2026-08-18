@@ -151,8 +151,16 @@ jobs:
           # 版本号由 version.properties 静态控制（构建时不再自增），
           # 所以它必须与 tag 对得上，否则会发出一个版本号与 tag 不符的包，
           # 而应用侧比较的是 versionCode，用户会收到一个永远"更新不掉"的提示。
-          VC=$(grep 'VERSION_CODE' app/version.properties | cut -d'=' -f2 | tr -d ' ')
-          VN=$(grep 'VERSION_NAME' app/version.properties | cut -d'=' -f2 | tr -d ' ')
+          # 用 ^KEY= 锚定而不是子串匹配：注释行里出现 VERSION_NAME 就会被一起
+          # 匹配到，而 cut 对不含 '=' 的行会吐回整行，于是变量里混进注释文本。
+          # （这一步自己的说明注释就曾把它打挂过。）
+          VC=$(sed -n 's/^VERSION_CODE=[[:space:]]*//p' app/version.properties | tr -d '[:space:]')
+          VN=$(sed -n 's/^VERSION_NAME=[[:space:]]*//p' app/version.properties | tr -d '[:space:]')
+
+          if [ -z "$VC" ] || [ -z "$VN" ]; then
+            echo "ERROR: 无法从 app/version.properties 解析出版本号（VC='${VC}' VN='${VN}'）"
+            exit 1
+          fi
 
           if [ "v${VN}" != "${TAG}" ]; then
             echo "ERROR: version.properties 的 VERSION_NAME=${VN}（即 v${VN}）与发布 tag ${TAG} 不一致。"
@@ -259,9 +267,16 @@ jobs:
             exit 1
           fi
 
-          # 从构建产物 version.properties 读取真实版本号
-          VERSION_CODE=$(grep 'VERSION_CODE' ./version/version.properties | cut -d'=' -f2 | tr -d ' ')
-          VERSION_NAME=$(grep 'VERSION_NAME' ./version/version.properties | cut -d'=' -f2 | tr -d ' ')
+          # 从构建产物 version.properties 读取真实版本号。
+          # 与 build job 用同一种锚定写法：文件里有注释行，子串 grep 会把注释
+          # 一起收进来，而 cut 对不含 '=' 的行会吐回整行。
+          VERSION_CODE=$(sed -n 's/^VERSION_CODE=[[:space:]]*//p' ./version/version.properties | tr -d '[:space:]')
+          VERSION_NAME=$(sed -n 's/^VERSION_NAME=[[:space:]]*//p' ./version/version.properties | tr -d '[:space:]')
+
+          if [ -z "$VERSION_CODE" ] || [ -z "$VERSION_NAME" ]; then
+            echo "ERROR: 无法从产物解析版本号（VC='${VERSION_CODE}' VN='${VERSION_NAME}'）"
+            exit 1
+          fi
 
           echo "=== Syncing to Gitee ==="
           echo "TAG: $TAG"
