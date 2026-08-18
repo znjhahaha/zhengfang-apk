@@ -32,20 +32,27 @@
         android:theme="@style/Theme.CourseSelector"
         tools:targetApi="31">
         
+        <!-- 竖屏锁定：整套几何是按竖屏手机调的，横屏可用高只剩约 360dp，
+             顶栏加底栏会吃掉六成，那是一套从未验过的布局 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
-        <activity android:name=".LoginActivity" android:exported="false" />
-        <activity 
-            android:name=".CookieWebViewActivity" 
+
+        <activity
+            android:name=".LoginActivity"
             android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".CookieWebViewActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".CourseDetailActivity" android:exported="false" />
         

@@ -1189,6 +1189,15 @@ fun CourseListRoute() {
     val activeFilterCount = remember(activeFilter, filterCategories) {
         activeFilter?.toDynamicDisplayTags(filterCategories)?.size ?: 0
     }
+    // 顶栏几何按屏幕余量收：宽屏与 20:9 上算出来就是原来的 64dp / 52dp / 200dp。
+    val screen = com.tyust.course.ui.system.rememberScreenMetrics()
+    val topBarHeight = screen.tall(64.dp, 56.dp)
+    val topBarSegmentHeight = screen.tall(52.dp, 44.dp)
+    // 右侧芯片组占掉约 118dp（三枚 34dp 芯片 + 两道 4dp 间距 + 8dp 右边距），
+    // M3 的居中逻辑只能把标题往左推：360dp 宽的屏幕上 200dp 的分段栏会被挤到
+    // 只剩 26dp 左边距。窄屏收窄它，左右留白才回到一个能读的比例
+    //（真正的居中要求控件 ≤ 108dp，那就太小了）。
+    val topBarSegmentWidth = screen.wide(200.dp, 152.dp)
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -1248,7 +1257,7 @@ fun CourseListRoute() {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .statusBarsPadding()
-                                    .height(64.dp)
+                                    .height(topBarHeight)
                                     .padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1299,14 +1308,16 @@ fun CourseListRoute() {
                         else -> {
                             // 🏠 标准模式：液态玻璃分段选择器
                             CenterAlignedTopAppBar(
+                                expandedHeight = topBarHeight,
                                 title = {
-                                    // 尺寸不变（仍是 200dp），只在右侧留出按压外扩的余量
+                                    // 宽度先扣掉右侧芯片组的硬占用，只在右侧留出按压外扩的余量
                                     Box(modifier = Modifier.padding(end = SegmentedPressSlack)) {
                                         com.tyust.course.ui.system.SystemSegmentedControl(
                                             options = listOf("可选", "已选"),
                                             selectedIndex = if (showSelectedCourses) 1 else 0,
                                             onSelect = { index -> showSelectedCourses = index == 1 },
-                                            modifier = Modifier.width(200.dp)
+                                            modifier = Modifier.width(topBarSegmentWidth),
+                                            height = topBarSegmentHeight
                                         )
                                     }
                                 },

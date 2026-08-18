@@ -94,6 +94,7 @@ import com.tyust.course.ui.system.GlassMaterialRole
 import com.tyust.course.ui.system.HeaderGlassSlab
 import com.tyust.course.ui.system.StatusBarFrost
 import com.tyust.course.ui.system.lerpDp
+import com.tyust.course.ui.system.rememberScreenMetrics
 import com.tyust.course.ui.system.lerpSp
 import com.tyust.course.ui.system.GlassMaterials
 import com.tyust.course.ui.system.GlassRecipe
@@ -118,13 +119,17 @@ import kotlinx.coroutines.launch
 private val ScheduleTimeColumnWidth = 36.dp
 private val SchedulePeriodHeight = 84.dp
 
+/** 窄屏收窄的时间列与网格左右留白，把省下的宽度全给七个日列。 */
+private val ScheduleTimeColumnWidthTight = 28.dp
+private val SchedulePeriodHeightTight = 68.dp
+private val ScheduleGridPaddingTight = 10.dp
+
 // ── 顶栏折叠几何 ────────────────────────────────────────────────
-// 展开态与折叠态的高度【差】必须等于折叠行程（HeaderCollapseTravel）：
+// 展开态与折叠态的高度【差】必须等于折叠行程（travel）：
 // 手指走 60dp -> 内容上移 60dp -> 顶栏下缘也上移 60dp，两者间距恒定。
-// 行程和高度差一旦脱钩，网格顶端就会与收缩中的顶栏彼此追赶。
-private val HeaderExpandedHeight = 122.dp   // 状态栏以下：10 + 76 + 28 + 8
+// 行程和高度差一旦脱钩，网格顶端就会与收缩中的顶栏彼此追赶——所以 travel
+// 定义成差值而不是另一个常量（与成绩页的 GradesHeaderMetrics 同一套写法）。
 private val HeaderCollapsedHeight = 68.dp   // 状态栏以下：6 + 36 + 22 + 4
-private val HeaderCollapseTravel = 54.dp    // == 两者之差
 
 private val HeaderTopPadExpanded = 10.dp
 private val HeaderTopPadCollapsed = 6.dp
@@ -139,6 +144,40 @@ private val HeaderWeekRowCollapsed = 22.dp
 private val HeaderBottomPadExpanded = 8.dp
 private val HeaderBottomPadCollapsed = 4.dp
 
+/**
+ * 顶栏两态高度。**短屏只压展开态的空白**——折叠态、分段控件高度与玻璃条几何
+ * 一律不动，那几个值同时是胶囊圆角与折射行程的依据。
+ */
+private class ScheduleHeaderMetrics(
+    val expanded: Dp,
+    val collapsed: Dp,
+    val topPadExpanded: Dp,
+    val titleGap: Dp,
+    val weekRowExpanded: Dp
+) {
+    /** 折叠行程。定义成差值，于是不可能与两态高度脱钩。 */
+    val travel: Dp get() = expanded - collapsed
+}
+
+@Composable
+private fun rememberScheduleHeaderMetrics(): ScheduleHeaderMetrics {
+    val screen = rememberScreenMetrics()
+    return remember(screen) {
+        val topPad = screen.tall(HeaderTopPadExpanded, 6.dp)
+        val titleGap = screen.tall(HeaderTitleGap, 4.dp)
+        val weekRow = screen.tall(HeaderWeekRowExpanded, 24.dp)
+        val bottomPad = screen.tall(HeaderBottomPadExpanded, 4.dp)
+        ScheduleHeaderMetrics(
+            // 展开态：上留白 + 标题行 + 标题间距 + 周次行 + 下留白
+            expanded = topPad + HeaderActionRowExpanded + titleGap + weekRow + bottomPad,
+            collapsed = HeaderCollapsedHeight,
+            topPadExpanded = topPad,
+            titleGap = titleGap,
+            weekRowExpanded = weekRow
+        )
+    }
+}
+
 /** 悬浮玻璃条相对屏幕边缘的内缩。前景内容不在条里，所以这个值不影响任何对齐。 */
 private val HeaderSlabInset = 12.dp
 /** 与状态栏磨砂之间留一道透明缝：网格清晰穿过，条的上缘才看得出折射。 */
@@ -149,6 +188,24 @@ private val HeaderSlabBottomGap = 4.dp
  * 不用 percent=50：那样半可见的中途会是一枚很大的软药片，观感突兀。
  */
 private val HeaderSlabCorner = 29.dp
+
+/**
+ * 网格的横向几何。**星期条与网格必须调用同一对函数**——星期标签靠
+ * 「相同的左右留白 + 相同宽度的时间列占位」才和日期列对齐（见 `WeekHeaderCompact`
+ * 里那条注释），两边取不同的值就会整体错位。
+ */
+@Composable
+private fun scheduleGridPadding(): Dp =
+    rememberScreenMetrics().wide(PagePadding, ScheduleGridPaddingTight)
+
+@Composable
+private fun scheduleTimeColumnWidth(): Dp =
+    rememberScreenMetrics().wide(ScheduleTimeColumnWidth, ScheduleTimeColumnWidthTight)
+
+/** 单节课的行高。短屏收到 68dp，一屏能多看一节多。 */
+@Composable
+private fun schedulePeriodHeight(): Dp =
+    rememberScreenMetrics().tall(SchedulePeriodHeight, SchedulePeriodHeightTight)
 
 data class ScheduleCourseUi(
     val name: String,
@@ -205,8 +262,9 @@ fun ScheduleScreen(
     // 而且左右切周时纵向位置不该跳回顶部。
     val gridScrollState = rememberScrollState()
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerMetrics = rememberScheduleHeaderMetrics()
     // 折叠行程 = 顶栏高度差，于是收缩与滚动 1:1 对消，全程跟手。
-    val travelPx = with(LocalDensity.current) { HeaderCollapseTravel.toPx() }
+    val travelPx = with(LocalDensity.current) { headerMetrics.travel.toPx() }
     val headerCollapse by remember(travelPx) {
         derivedStateOf { (gridScrollState.value / travelPx).coerceIn(0f, 1f) }
     }
@@ -296,7 +354,7 @@ fun ScheduleScreen(
                         // 【常量】而不是 paddingValues.calculateTopPadding()：后者随顶栏
                         // 一起收缩，而它施加在 verticalScroll 内部，于是顶栏每缩 1dp
                         // 内容就被额外上提 1dp——手指走 60dp、内容走 120dp。
-                        topInset = statusBarHeight + HeaderExpandedHeight
+                        topInset = statusBarHeight + headerMetrics.expanded
                     )
                 }
             }
@@ -340,6 +398,8 @@ fun WeekHeaderCompact(
     } else {
         null
     }
+    // 与 ScheduleScreen 里那份是同一个纯函数结果，不会算出两套几何
+    val headerMetrics = rememberScheduleHeaderMetrics()
 
     Box(
         modifier = Modifier
@@ -347,7 +407,7 @@ fun WeekHeaderCompact(
             // 定高：这是"收起"的来源，也让悬浮条的几何是确定的
             .height(
                 statusBarHeight +
-                    lerpDp(HeaderExpandedHeight, HeaderCollapsedHeight, collapse)
+                    lerpDp(headerMetrics.expanded, headerMetrics.collapsed, collapse)
             )
     ) {
         // 玻璃层：【必须是前景内容的兄弟节点，不能是它的父节点】。
@@ -395,7 +455,7 @@ fun WeekHeaderCompact(
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .padding(
-                        top = lerpDp(HeaderTopPadExpanded, HeaderTopPadCollapsed, collapse)
+                        top = lerpDp(headerMetrics.topPadExpanded, HeaderTopPadCollapsed, collapse)
                     )
             ) {
                 Row(
@@ -412,7 +472,7 @@ fun WeekHeaderCompact(
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(
-                            lerpDp(HeaderTitleGap, 0.dp, collapse)
+                            lerpDp(headerMetrics.titleGap, 0.dp, collapse)
                         )
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -496,11 +556,17 @@ fun WeekHeaderCompact(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(lerpDp(HeaderWeekRowExpanded, HeaderWeekRowCollapsed, collapse))
-                        .padding(horizontal = PagePadding),
+                        .height(
+                            lerpDp(
+                                headerMetrics.weekRowExpanded,
+                                HeaderWeekRowCollapsed,
+                                collapse
+                            )
+                        )
+                        .padding(horizontal = scheduleGridPadding()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(modifier = Modifier.width(ScheduleTimeColumnWidth))
+                    Spacer(modifier = Modifier.width(scheduleTimeColumnWidth()))
                     weekLabels.forEachIndexed { index, day ->
                         val isToday = index + 1 == currentDayOfWeek
                         CompactWeekdayLabel(
@@ -640,15 +706,18 @@ fun ScheduleGrid(
     val weeklyCourses = remember(courses, currentWeek) {
         courses.filter { isInWeek(it.weeks, currentWeek) }
     }
-    val totalHeight = SchedulePeriodHeight * periodCount
+    val periodHeight = schedulePeriodHeight()
+    val timeColumnWidth = scheduleTimeColumnWidth()
+    val gridPadding = scheduleGridPadding()
+    val totalHeight = periodHeight * periodCount
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
             .padding(
-                start = PagePadding,
-                end = PagePadding,
+                start = gridPadding,
+                end = gridPadding,
                 top = topInset + 8.dp,
                 bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current + 24.dp
             ),
@@ -675,7 +744,7 @@ fun ScheduleGrid(
             ) {
                 Column(
                     modifier = Modifier
-                        .width(ScheduleTimeColumnWidth)
+                        .width(timeColumnWidth)
                         .fillMaxHeight()
                         .background(Color.White.copy(alpha = 0.28f)),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -684,7 +753,7 @@ fun ScheduleGrid(
                         val periodTime = periodTimes.find { it.period == i }
                         Box(
                             modifier = Modifier
-                                .height(SchedulePeriodHeight)
+                                .height(periodHeight)
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.TopCenter
                         ) {
@@ -742,12 +811,12 @@ fun ScheduleGrid(
                 ) {
                     TimetableBackground(
                         periodCount = periodCount,
-                        periodHeight = SchedulePeriodHeight
+                        periodHeight = periodHeight
                     )
                     TimetableLayout(
                         courses = weeklyCourses,
                         periodCount = periodCount,
-                        periodHeight = SchedulePeriodHeight,
+                        periodHeight = periodHeight,
                         onCourseClick = onCourseClick
                     )
 

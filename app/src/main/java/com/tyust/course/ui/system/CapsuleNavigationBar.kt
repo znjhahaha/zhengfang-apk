@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,6 +54,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
@@ -79,6 +83,51 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
+/**
+ * 底栏块的几何。**轨道高与内容留白必须来自同一处。**
+ *
+ * 之前不是这样：底栏自己是 `8 + 72 + 8 + navigationBars`，而各页的内容留白读
+ * `LocalAppOverlayBottomInset`，那里写死 96dp——那是照着手势条（24dp）量出来的。
+ * 换到三键导航（48dp）底栏实际 136dp 高，列表末项就有 16dp 藏在栏后面。
+ */
+object NavBarMetrics {
+    /** 轨道高。API33+ 有真折射时给得开，短屏统一收一档。 */
+    @Composable
+    fun trackHeight(): Dp {
+        val metrics = rememberScreenMetrics()
+        return if (isRuntimeShaderTrulySupported()) {
+            metrics.tall(72.dp, 62.dp)
+        } else {
+            metrics.tall(64.dp, 58.dp)
+        }
+    }
+
+    /** 轨道到屏幕边缘的纵向留白。 */
+    @Composable
+    fun blockPadding(): Dp = rememberScreenMetrics().tall(8.dp, 6.dp)
+
+    /** 轨道到屏幕边缘的横向留白。窄屏收一点，每个 tab 才多分到几 dp。 */
+    @Composable
+    fun horizontalPadding(): Dp = rememberScreenMetrics().wide(16.dp, 10.dp)
+
+    /**
+     * 内容要避开的高度。
+     *
+     * 调用方（各页的 `contentPadding`）还会各自再加 24dp，两者合起来正好在底栏上缘
+     * 留 8dp 的缝——所以这里要把那 24dp 抵掉一部分，减 16dp。
+     *
+     * 代入 20:9 手势条（6+72+24）算出来正好是原先写死的那个 **96dp**，
+     * 于是 20:9 的留白一个 dp 都不变；换到三键导航（48dp）它自己长到 120dp，
+     * 末项才不会再被底栏压住。
+     */
+    @Composable
+    fun contentInset(): Dp {
+        val navigationBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        return (blockPadding() * 2 + trackHeight() + navigationBar - 16.dp)
+            .coerceAtLeast(0.dp)
+    }
+}
+
 @Composable
 fun CapsuleNavigationBar(
     items: List<BottomNavItem>,
@@ -97,7 +146,10 @@ fun CapsuleNavigationBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(
+                horizontal = NavBarMetrics.horizontalPadding(),
+                vertical = NavBarMetrics.blockPadding()
+            )
             .navigationBarsPadding()
             .wallpaperRegion(regionState),
         contentAlignment = Alignment.Center
@@ -223,8 +275,10 @@ private fun GlassNavigationBar(
     // 平台是否真出折射/色散（API 33+）
     val hasRealLens = isRuntimeShaderTrulySupported()
     // API33+ 加大尺寸可溢出；API32 回归 cba2a09：64/56/4 + pressedScale 78/56
-    val trackHeight = if (hasRealLens) 72.dp else 64.dp
-    val indicatorHeight = if (hasRealLens) 56.dp else 56.dp
+    // 高度统一从 NavBarMetrics 取——内容留白读的是同一个函数，两者不可能再脱钩。
+    val trackHeight = NavBarMetrics.trackHeight()
+    // 两态原本都是 56dp；短屏跟着轨道一起收，否则 58dp 的轨道装不下它。
+    val indicatorHeight = rememberScreenMetrics().tall(56.dp, 48.dp)
     val barPadding = if (hasRealLens) 6.dp else 4.dp
     val isLightTheme = LocalWallpaperAppearanceColors.current.usesDarkForeground
     // API32：cba2a09 半透轨；API33+：半透主题底

@@ -101,6 +101,7 @@ import com.tyust.course.ui.system.SystemDivider
 import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.lerpDp
+import com.tyust.course.ui.system.rememberScreenMetrics
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
 import com.tyust.course.ui.system.reportNoticeAnchor
 import com.tyust.course.ui.theme.MotionSpring
@@ -208,7 +209,12 @@ private class GradesHeaderMetrics(
     val titleLine: Dp,
     val titleBlock: Dp,
     val expanded: Dp,
-    val collapsed: Dp
+    val collapsed: Dp,
+    // 展开态的三个空白与选择栏高度是【短屏会收的量】，所以存进来而不是回读常量，
+    // 否则 segmentHeight()/topPad()/titleGap() 插值的起点会和 expanded 的算法脱钩。
+    private val topPadExpanded: Dp,
+    private val titleGapExpanded: Dp,
+    private val segmentExpanded: Dp
 ) {
     /** 折叠行程。定义成差值，于是不可能与两态高度脱钩。 */
     val travel: Dp get() = expanded - collapsed
@@ -217,10 +223,12 @@ private class GradesHeaderMetrics(
     val slabCorner: Dp get() = (collapsed - GradesSlabTopGap - GradesSlabBottomGap) / 2
 
     fun topPad(collapse: Float): Dp =
-        lerpDp(GradesHeaderTopPadExpanded, GradesHeaderTopPadCollapsed, collapse)
+        lerpDp(topPadExpanded, GradesHeaderTopPadCollapsed, collapse)
+
+    fun titleGap(collapse: Float): Dp = lerpDp(titleGapExpanded, 0.dp, collapse)
 
     fun segmentHeight(collapse: Float): Dp =
-        lerpDp(GradesSegmentHeightExpanded, GradesSegmentHeightCollapsed, collapse)
+        lerpDp(segmentExpanded, GradesSegmentHeightCollapsed, collapse)
 
     fun chipSize(collapse: Float): Dp =
         lerpDp(GradesChipSizeExpanded, GradesChipSizeCollapsed, collapse)
@@ -235,20 +243,31 @@ private class GradesHeaderMetrics(
 @Composable
 private fun rememberGradesHeaderMetrics(): GradesHeaderMetrics {
     val density = LocalDensity.current
-    return remember(density.density, density.fontScale) {
+    val screen = rememberScreenMetrics()
+    return remember(density.density, density.fontScale, screen) {
         with(density) {
             // sp.toDp() 自带 fontScale：系统字体调大一档，标题块跟着长高
             val titleLine = GradesTitleLineHeight.toDp()
             val titleBlock = titleLine +
                 GradesTitleSubtitleGap +
                 GradesSubtitleLineHeight.toDp()
+            // 短屏只收展开态的空白与选择栏；标题/副标题的 sp 行高不动——那是字号，
+            // 压它就是拿可读性换空间。折叠态整套也不动。
+            val topPad = screen.tall(GradesHeaderTopPadExpanded, 6.dp)
+            val titleGap = screen.tall(GradesTitleGap, 4.dp)
+            val bottomPad = screen.tall(GradesHeaderBottomPadExpanded, 6.dp)
+            // 46dp 仍远离 LiquidSegmentedControl 的 compact 阈值（height <= 36.dp），
+            // 全程不会中途翻档
+            val segmentExpanded = screen.tall(GradesSegmentHeightExpanded, 46.dp)
             GradesHeaderMetrics(
                 titleLine = titleLine,
                 titleBlock = titleBlock,
-                expanded = GradesHeaderTopPadExpanded + titleBlock + GradesTitleGap +
-                    GradesSegmentHeightExpanded + GradesHeaderBottomPadExpanded,
+                expanded = topPad + titleBlock + titleGap + segmentExpanded + bottomPad,
                 collapsed = GradesHeaderTopPadCollapsed + GradesSegmentHeightCollapsed +
-                    GradesHeaderBottomPadCollapsed
+                    GradesHeaderBottomPadCollapsed,
+                topPadExpanded = topPad,
+                titleGapExpanded = titleGap,
+                segmentExpanded = segmentExpanded
             )
         }
     }
@@ -570,7 +589,7 @@ private fun GradesHeader(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(lerpDp(GradesTitleGap, 0.dp, collapse)))
+                Spacer(modifier = Modifier.height(metrics.titleGap(collapse)))
 
                 Row(
                     modifier = Modifier

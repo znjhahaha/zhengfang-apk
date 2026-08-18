@@ -187,7 +187,7 @@ sealed class BottomNavItem(
     object Courses : BottomNavItem("courses", Icons.AutoMirrored.Filled.List, "课程")
     object Schedule : BottomNavItem("schedule", Icons.Default.DateRange, "课表")
     object Grab : BottomNavItem("grab", Icons.Default.PlayArrow, "抢课")
-    object Grades : BottomNavItem("grades", Icons.Default.Star, "成绩/考试")
+    object Grades : BottomNavItem("grades", Icons.Default.Star, "成绩")
     object Settings : BottomNavItem("settings", Icons.Default.Settings, "设置")
 }
 
@@ -375,11 +375,14 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val dialogHostState = rememberDialogHostState()
         // 顶栏把底边写进这里，通知覆盖层据此落位，避免压住顶栏按钮
         val noticeAnchorState = remember { NoticeAnchorState() }
+        // 内容要避开的底栏高度【由底栏自己算】。原先这里写死 96dp，是照手势条量的；
+        // 三键导航下底栏实际 136dp 高，各页列表的末项就有一截藏在栏后面。
+        val navBarContentInset = com.tyust.course.ui.system.NavBarMetrics.contentInset()
         CompositionLocalProvider(
             LocalAppBackdrop provides wallpaperBackdrop,
             LocalControlBackdrop provides wallpaperBackdrop,
             LocalModalBackdrop provides navBarBackdrop,
-            LocalAppOverlayBottomInset provides 96.dp,
+            LocalAppOverlayBottomInset provides navBarContentInset,
             LocalDialogHost provides dialogHostState,
             LocalFloatingNotice provides tokenExpiredNotice,
             LocalNoticeAnchor provides noticeAnchorState
@@ -490,7 +493,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             GlassToastHost(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 108.dp)
+                    .padding(bottom = navBarContentInset + 12.dp)
             )
 
             DialogHost(

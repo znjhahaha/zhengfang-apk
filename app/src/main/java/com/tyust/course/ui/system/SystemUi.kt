@@ -617,7 +617,13 @@ fun SystemSegmentedControl(
     onSelect: (Int) -> Unit,
     backdrop: Backdrop? = LocalControlBackdrop.current,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    /**
+     * 轨道高度。默认值就是原来的写死值，所以现有调用点全部不受影响。
+     * 别传 36dp 及以下：`LiquidSegmentedControl` 在 `height <= 36.dp` 会翻到
+     * compact 排版档，中途换档观感很突兀。
+     */
+    height: Dp = 52.dp
 ) {
     LiquidSegmentedControl(
         options = options,
@@ -625,7 +631,8 @@ fun SystemSegmentedControl(
         onSelect = onSelect,
         modifier = modifier,
         enabled = enabled,
-        backdrop = backdrop
+        backdrop = backdrop,
+        height = height
     )
 }
 
@@ -1093,7 +1100,16 @@ private fun SystemDialogContent(
         null
     }
 
-    Box(modifier = Modifier.width(320.dp).wallpaperRegion(regionState)) {
+    // 320dp 是设计宽度；窄屏上按屏宽收，两侧至少留 20dp，不顶满边缘。
+    val screen = rememberScreenMetrics()
+    val dialogWidth = minOf(320.dp, screen.widthDp - 40.dp)
+    // 短屏把卡片内边距与两处间距一起收，合计给正文多让出约 30dp。
+    val dialogHorizontalPadding = screen.tall(24.dp, 20.dp)
+    val dialogVerticalPadding = screen.tall(24.dp, 18.dp)
+    val dialogHeaderGap = screen.tall(16.dp, 12.dp)
+    val dialogButtonGap = screen.tall(24.dp, 16.dp)
+
+    Box(modifier = Modifier.width(dialogWidth).wallpaperRegion(regionState)) {
         if (glassBackdrop != null) {
             Box(
                 modifier = Modifier
@@ -1146,12 +1162,15 @@ private fun SystemDialogContent(
         CompositionLocalProvider(LocalControlBackdrop provides nestedControlBackdrop) {
         ProvideWallpaperAppearance(appearance) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(
+                    horizontal = dialogHorizontalPadding,
+                    vertical = dialogVerticalPadding
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
             if (icon != null) {
                 icon()
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(dialogHeaderGap))
             }
             if (title != null) {
                 CompositionLocalProvider(
@@ -1164,7 +1183,7 @@ private fun SystemDialogContent(
                         title()
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(dialogHeaderGap))
             }
             Box(
                 modifier = Modifier
@@ -1177,7 +1196,7 @@ private fun SystemDialogContent(
                 )
             }
             if (confirmButton != null || dismissButton != null) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(dialogButtonGap))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),

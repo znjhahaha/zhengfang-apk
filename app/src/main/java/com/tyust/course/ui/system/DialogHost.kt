@@ -13,7 +13,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -25,6 +29,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 private const val EXIT_ANIM_DURATION_MS = 190L
@@ -142,11 +147,21 @@ fun DialogHost(
                 exit = exitTransition
             ) {
                 Box(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    )
+                    modifier = Modifier
+                        // 安全区必须在这一层：卡片没有任何限高，内容一长（几个弹窗的
+                        // 正文是 heightIn(max = 420.dp)）整张卡就有 580dp 以上，
+                        // 640dp 的屏幕上"完成"按钮会落到系统导航栏底下。
+                        // 从外面把可用高钳住，正文自带的 verticalScroll 会接管溢出。
+                        //
+                        // 用 systemBars 而不是 safeDrawing：Manifest 是 adjustResize，
+                        // 窗口本身已经被键盘缩过一次，再叠一次 IME inset 会压两遍。
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .padding(vertical = 12.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        )
                 ) {
                     dialogContent()
                 }
