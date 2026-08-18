@@ -6,8 +6,12 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      tag:
+        description: '要发布的版本号，如 v1.0.67。留空则沿用当前 ref（从 tag 页面手动触发时可留空）'
+        required: false
+        default: ''
       release_notes:
-        description: '更新日志（每行一条）'
+        description: '更新日志（每行一条）。留空则读 release-notes/<tag>.md'
         required: false
         default: ''
 
@@ -20,10 +24,100 @@ jobs:
     outputs:
       version_code: ${{ steps.version.outputs.version_code }}
       version_name: ${{ steps.version.outputs.version_name }}
+      release_notes: ${{ steps.notes.outputs.release_notes }}
+      release_tag: ${{ steps.target.outputs.tag }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          # 需要完整历史与 tag 列表，后面要判断目标 tag 是否已存在。
+          fetch-depth: 0
+
+      # 发布目标 tag 是一个显式概念，不再从 github.ref 隐式推断。
+      #
+      # 三种触发方式统一到同一个 tag 上：
+      #   1. push tag            → github.ref_name 就是 tag
+      #   2. 从 tag 页面手动触发  → 同上，inputs.tag 可留空
+      #   3. 从分支手动触发      → 必须给 inputs.tag，随后由本工作流建 tag
+      #
+      # 没有 tag 就不能发布：Gitee 的下载地址是按 tag 拼的，缺 tag 会产出死链。
+      - name: Resolve Release Target
+        id: target
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            echo "Trigger: ref is a tag -> $TAG"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            TAG="${INPUT_TAG}"
+            echo "Trigger: manual dispatch from ${GITHUB_REF_NAME} -> $TAG"
+          else
+            echo "ERROR: 从分支手动触发时必须填写 tag 输入（如 v1.0.67）。"
+            echo "       Gitee 下载地址按 tag 拼接，缺 tag 只会产出死链。"
+            exit 1
+          fi
+
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "ERROR: tag 形如 vX.Y.Z，收到: $TAG"; exit 1 ;;
+          esac
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      # 更新日志的唯一数据源是 release-notes/<tag>.md 的 "## notes" 区块。
+      # 手动触发（workflow_dispatch）时 inputs.release_notes 优先，用于补发或临时改文案。
+      #
+      # 这一步同时替掉了原先的死锁：release_notes 只在 workflow_dispatch 有值，
+      # 而写 Gitee 的 job 又要求 ref 是 tag，两条路径互斥，于是文案永远写不进去。
+      - name: Resolve Release Notes
+        id: notes
+        env:
+          # 经 env 传入而不是把 ${{ }} 直接插值进脚本：后者会让输入里的引号
+          # 或换行改变脚本本身的结构。
+          MANUAL_NOTES: ${{ github.event.inputs.release_notes }}
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          NOTES_FILE="release-notes/${TAG}.md"
+
+          if [ -n "${MANUAL_NOTES:-}" ]; then
+            echo "Source: workflow_dispatch input"
+            NOTES="$MANUAL_NOTES"
+          elif [ -f "$NOTES_FILE" ]; then
+            echo "Source: $NOTES_FILE"
+            # 取 "## notes" 与下一个 "## " 之间的内容，去掉 HTML 注释与空行。
+            NOTES=$(awk '
+              /^## notes[[:space:]]*$/ { inside = 1; next }
+              /^## / { inside = 0 }
+              inside { print }
+            ' "$NOTES_FILE" | sed '/^<!--/,/-->$/d' | sed '/^[[:space:]]*$/d')
+          else
+            # 这里不再回落到套话。缺日志就是发布准备没做完，
+            # 与其静默发一版"自动构建发布"给所有用户，不如让流水线停下。
+            echo "ERROR: 找不到 $NOTES_FILE，且没有手动输入。"
+            echo "       请先补 release-notes/${TAG}.md 的 '## notes' 区块，或在手动触发时填写更新日志。"
+            exit 1
+          fi
+
+          if [ -z "$NOTES" ]; then
+            echo "ERROR: 解析出的更新日志为空（检查 '## notes' 区块是否有内容）"
+            exit 1
+          fi
+
+          echo "--- resolved release notes ---"
+          echo "$NOTES"
+
+          # 多行值必须走 heredoc 形式的 GITHUB_OUTPUT，单行 echo 会在第一个换行处截断。
+          {
+            echo 'release_notes<<RELEASE_NOTES_EOF'
+            echo "$NOTES"
+            echo 'RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -49,13 +143,26 @@ jobs:
 
       - name: Extract Version Info
         id: version
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
         run: |
-          # 构建时 version.properties 已自动递增，读取最终值
+          set -euo pipefail
+
+          # 版本号由 version.properties 静态控制（构建时不再自增），
+          # 所以它必须与 tag 对得上，否则会发出一个版本号与 tag 不符的包，
+          # 而应用侧比较的是 versionCode，用户会收到一个永远"更新不掉"的提示。
           VC=$(grep 'VERSION_CODE' app/version.properties | cut -d'=' -f2 | tr -d ' ')
           VN=$(grep 'VERSION_NAME' app/version.properties | cut -d'=' -f2 | tr -d ' ')
-          echo "version_code=${VC}" >> $GITHUB_OUTPUT
-          echo "version_name=${VN}" >> $GITHUB_OUTPUT
-          echo "Final version: code=${VC}, name=${VN}"
+
+          if [ "v${VN}" != "${TAG}" ]; then
+            echo "ERROR: version.properties 的 VERSION_NAME=${VN}（即 v${VN}）与发布 tag ${TAG} 不一致。"
+            echo "       请先把 app/version.properties 改成 ${TAG#v} 并提交。"
+            exit 1
+          fi
+
+          echo "version_code=${VC}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VN}" >> "$GITHUB_OUTPUT"
+          echo "Final version: code=${VC}, name=${VN} (tag ${TAG})"
 
       - name: Upload version.properties
         uses: actions/upload-artifact@v4
@@ -64,22 +171,42 @@ jobs:
           path: app/version.properties
           retention-days: 3
 
+      # 从分支手动触发时 tag 还不存在，而 Gitee 的下载地址按 tag 拼接，
+      # 所以必须在发布前把 tag 建出来，否则产出的是死链。
+      # 已存在则跳过：重跑同一版本是常见操作（补发、上次 Gitee 上传失败），不该因此报错。
+      - name: Ensure Tag Exists
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} 已存在于仓库，跳过创建"
+            exit 0
+          fi
+
+          echo "Tag ${TAG} 不存在，基于 ${GITHUB_SHA} 创建"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${TAG}"
+          echo "Tag ${TAG} 已推送"
+
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          # 显式给 tag：手动触发时 github.ref 是分支，不指定会把 Release 挂错位置。
+          tag_name: ${{ steps.target.outputs.tag }}
           files: app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
-          name: Release ${{ github.ref_name }}
+          name: Release ${{ steps.target.outputs.tag }}
           body: |
             感谢使用正方教务助手！
 
             **更新日志：**
-            - 自动 Release 构建版本
-            - 正式签名指纹校验同步已更新
-            - 开源防滥用机制保护
+            ${{ steps.notes.outputs.release_notes }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -93,8 +220,8 @@ jobs:
   sync-to-gitee:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-
+    # 不再按 github.ref 判断。上游已保证 tag 存在，无论触发方式如何都要同步，
+    # 否则手动触发只编译不发布，用户侧永远收不到更新。
     steps:
       - name: Checkout Code (for version.properties)
         uses: actions/checkout@v4
@@ -114,15 +241,21 @@ jobs:
       - name: Sync to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes || '' }}
+          # 从 build job 承接，与 GitHub Release 用的是同一份文案和同一个 tag。
+          RELEASE_NOTES: ${{ needs.build.outputs.release_notes }}
+          TAG: ${{ needs.build.outputs.release_tag }}
         run: |
           set -e
 
-          TAG="${GITHUB_REF_NAME}"
           APK_FILE=$(find ./apk -name "*.apk" | head -1)
 
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: APK file not found in artifact"
+            exit 1
+          fi
+
+          if [ -z "${RELEASE_NOTES:-}" ]; then
+            echo "ERROR: 上游未传出更新日志，中止同步（不写空文案覆盖线上 version.json）"
             exit 1
           fi
 
@@ -155,7 +288,7 @@ jobs:
               -F "tag_name=${TAG}" \
               -F "name=Release ${TAG}" \
               -F "target_commitish=main" \
-              -F "body=${RELEASE_NOTES:-自动构建发布 ${TAG}}" \
+              -F "body=${RELEASE_NOTES}" \
               -F "prerelease=false")
             RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id // empty')
             if [ -z "$RELEASE_ID" ]; then
@@ -204,7 +337,7 @@ jobs:
           VERSION_JSON=$(jq -n \
             --argjson vc "$VERSION_CODE" \
             --arg vn "$VERSION_NAME" \
-            --arg rn "${RELEASE_NOTES:-自动构建发布 ${TAG}}" \
+            --arg rn "${RELEASE_NOTES}" \
             --arg du "$DOWNLOAD_URL" \
             '{
               versionCode: ($vc | tonumber),
