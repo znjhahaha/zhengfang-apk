@@ -16,12 +16,20 @@ enum class GlassMaterialRole {
     Interactive
 }
 
+/**
+ * 角色级光学能力。
+ *
+ * 这里曾经还有 `spectralRimAlpha` / `specularAlpha` / `innerGlowAlpha` 三个字段，
+ * 唯一的读取方是 `glass/SpectralRim.kt` 的 `Modifier.spectralRim`——那个函数**零调用点**，
+ * 而且第一行就 `if (isLensSupported()) return this`，在所有开着玻璃的 API 31+ 设备上
+ * 直接返回。也就是说调那三个数字等于改注释。它们已随文件一起删除。
+ *
+ * 真正在画边缘光学的是 backdrop 库的 `Highlight` / `InnerShadow` / `Shadow`，
+ * 加上 App 自己的 `glassRim` / `drawGlassWall`——都在各组件的调用点上直接给值。
+ */
 @Immutable
 data class GlassOpticsSpec(
     val chromaticAberration: Boolean = false,
-    val spectralRimAlpha: Float = 0f,
-    val specularAlpha: Float = 0f,
-    val innerGlowAlpha: Float = 0f,
     val velocityForFullEffect: Float = 2200f
 )
 
@@ -85,9 +93,6 @@ object GlassMaterials {
         optics = GlassOpticsSpec(
             // 轨道默认不色散
             chromaticAberration = false,
-            spectralRimAlpha = 0f,
-            specularAlpha = 0.14f,
-            innerGlowAlpha = 0.08f,
             velocityForFullEffect = 1400f
         )
     )
@@ -101,9 +106,6 @@ object GlassMaterials {
         shadowAlpha = 0.08f,
         optics = GlassOpticsSpec(
             chromaticAberration = true,
-            spectralRimAlpha = 0f,
-            specularAlpha = 0.16f,
-            innerGlowAlpha = 0.08f,
             velocityForFullEffect = 1400f
         )
     )
@@ -114,11 +116,7 @@ object GlassMaterials {
         refractionAmountDp = 14f,
         surfaceAlpha = 0.62f,
         borderAlpha = 0.30f,
-        shadowAlpha = 0.24f,
-        optics = GlassOpticsSpec(
-            specularAlpha = 0.18f,
-            innerGlowAlpha = 0.10f
-        )
+        shadowAlpha = 0.24f
     )
 
     private val interactive = GlassMaterialSpec(
@@ -131,10 +129,6 @@ object GlassMaterials {
         shadowAlpha = 0.12f,
         optics = GlassOpticsSpec(
             chromaticAberration = true,
-            // 彩色只允许来自 lens 背景采样，不再使用模板 rim
-            spectralRimAlpha = 0f,
-            specularAlpha = 0.22f,
-            innerGlowAlpha = 0.12f,
             velocityForFullEffect = 900f
         )
     )
@@ -182,18 +176,7 @@ object GlassMaterials {
             optics = base.optics.copy(
                 // 角色级能力开关；具体是否开启由 resolvePhysicalLens 按 press/motion 判定
                 chromaticAberration = base.optics.chromaticAberration &&
-                    !accessibility.reduceMotion,
-                spectralRimAlpha = 0f,
-                specularAlpha = if (accessibility.highContrast) {
-                    (base.optics.specularAlpha * 0.72f).coerceAtMost(0.20f)
-                } else {
-                    base.optics.specularAlpha
-                },
-                innerGlowAlpha = if (accessibility.reduceMotion) {
-                    base.optics.innerGlowAlpha * 0.45f
-                } else {
-                    base.optics.innerGlowAlpha
-                }
+                    !accessibility.reduceMotion
             )
         )
     }

@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
+import com.kyant.shapes.RoundedRectangularShape
+import com.tyust.course.manager.AppearanceSettingsManager
 
 enum class GlassCapability {
     Material,
@@ -19,6 +21,10 @@ enum class GlassCapability {
 
 fun currentGlassCapability(): GlassCapability = when {
     Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> GlassCapability.StaticGlass
+    // 用户在设置里显式关掉：直接落到 Material，走各组件已有的不透明回退分支
+    // （低于 API 31 的设备一直走那条路径，不需要新写任何渲染分支）。
+    // 读的是 Compose state，而 isBackdropSupported() 都在组合期被调用，拨动即时重绘。
+    !AppearanceSettingsManager.glassEffectEnabled -> GlassCapability.Material
     !GlassRuntimeGuard.isBackdropEnabled() -> GlassCapability.Material
     // 实验期：Android 12（API 31/32）也进入 lens 尝试路径，不预先按版本屏蔽。
     // 库内部 isRuntimeShaderSupported() 仍会在 <33 时 no-op，属于平台能力上限。
@@ -51,14 +57,41 @@ fun isRuntimeShaderTrulySupported(): Boolean =
 fun isRuntimeLensEnabled(): Boolean =
     isLensSupported() && isRuntimeShaderTrulySupported()
 
-private const val roundedRectangularShapeInterface =
-    "com.kyant.shapes.RoundedRectangularShape"
+/**
+ * 库的 lens 支持哪些形状。
+ *
+ * **这不是画质判据，是崩溃判据。** `com.kyant.backdrop.effects.lens()` 会从
+ * `BackdropEffectScope.shape` 推 `cornerRadii`，只认这三类：
+ * `RoundedRectangularShape`（kyant 的连续曲率形状）、`AbsoluteRoundedCornerShape`、
+ * `CornerBasedShape`；**其它形状一律 `throwUnsupportedSDFException()` 直接抛
+ * `UnsupportedOperationException`，而它发生在 draw 阶段，整个 App 立刻闪退。**
+ * （`AbsoluteRoundedCornerShape` 是 `CornerBasedShape` 的子类，所以两条判定就够。）
+ *
+ * App 里确实有形状进不了这道门：`LiquidPicker` 的液滴融合体用的是 Path 拼出来的
+ * 隐式曲面（generic outline），它靠 `forceBlurFallback` 走纯模糊路径。但
+ * `forceBlurFallback` 只改 `enableBlur`，**拦不住 lens**——拦它的就是这里。
+ *
+ * 写成 `is` 而不是按类名反射：反射版本在混淆/裁剪下可能静默失效，而且 R8 只有看见
+ * 真正的 `instanceof` 才会把这个接口关系当成"被用作类型检查"而完整保留。
+ */
+fun isLensShapeSupported(shape: Shape): Boolean =
+    shape is RoundedRectangularShape || shape is CornerBasedShape
 
-private fun Class<*>.implementsInterface(interfaceName: String): Boolean =
-    interfaces.any { candidate ->
-        candidate.name == interfaceName || candidate.implementsInterface(interfaceName)
-    } || superclass?.implementsInterface(interfaceName) == true
-
+/**
+ * 能不能开真透镜。
+ *
+ * 形状那一项**必须**在（见 [isLensShapeSupported]）：它不是画质优化，是防闪退。
+ * 我曾把它当成"多余的防御"删掉，结果 `LiquidPicker` 的液滴融合体一上屏就抛
+ * `UnsupportedOperationException`，打开即闪退。
+ *
+ * 顺带记下另一件已被证伪的判断：我曾认为 R8 full mode 裁掉了
+ * `Capsule → RoundedRectangularShape` 的实现关系，导致 release 包全 App 无折射。
+ * **不成立**：R8 mapping 里该接口原名保留未混淆，`dexdump` release APK 也能看到
+ * `Lcom/kyant/shapes/Capsule;` 仍然声明 `Interfaces #0: RoundedRectangularShape`。
+ * release 包看起来没有折射的真实原因在 `MainActivity.debugPiracyWatermark` 的注释里。
+ *
+ * 其余判据都是纯算术，与构建类型无关。**别再往这里加按类名反射的判据。**
+ */
 fun canUseLiquidLens(
     shape: Shape,
     refractionHeightPx: Float,
@@ -67,9 +100,7 @@ fun canUseLiquidLens(
     minDimensionPx: Float
 ): Boolean =
     isRuntimeLensEnabled() &&
-        // 真折射依赖 RuntimeShader；不以 DynamicLens 实验档冒充 API31/32 有 lens
-        (shape is CornerBasedShape ||
-            shape.javaClass.implementsInterface(roundedRectangularShapeInterface)) &&
+        isLensShapeSupported(shape) &&
         refractionHeightPx.isFinite() &&
         refractionAmountPx.isFinite() &&
         minCornerRadiusPx.isFinite() &&

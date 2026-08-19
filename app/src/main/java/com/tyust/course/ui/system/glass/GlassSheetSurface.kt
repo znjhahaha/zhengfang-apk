@@ -50,9 +50,8 @@ fun Modifier.glassSheet(
         shape = { shape },
         effects = {
             val params = resolvePhysicalLens(
-                density = this,
+                scope = this,
                 material = material,
-                shape = shape,
                 minCornerRadiusPx = cornerRadius.toPx(),
                 minDimensionPx = size.minDimension,
                 interactionProgress = 0f,

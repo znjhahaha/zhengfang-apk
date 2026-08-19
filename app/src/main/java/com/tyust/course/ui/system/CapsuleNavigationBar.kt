@@ -392,9 +392,8 @@ private fun GlassNavigationBar(
                         vibrancy()
                         if (hasRealLens) {
                             val params = resolvePhysicalLens(
-                                density = this,
+                                scope = this,
                                 material = barMaterial,
-                                shape = Capsule(),
                                 minCornerRadiusPx = size.minDimension / 2f,
                                 minDimensionPx = size.minDimension,
                                 interactionProgress = 0f,
@@ -555,9 +554,8 @@ private fun GlassNavigationBar(
                         vibrancy()
                         if (hasRealLens) {
                             val params = resolvePhysicalLens(
-                                density = this,
+                                scope = this,
                                 material = barMaterial,
-                                shape = Capsule(),
                                 minCornerRadiusPx = size.minDimension / 2f,
                                 minDimensionPx = size.minDimension,
                                 interactionProgress = progress,
@@ -626,9 +624,8 @@ private fun GlassNavigationBar(
                                 fullEffectVelocity = indicatorMaterial.optics.velocityForFullEffect
                             )
                             val params = resolvePhysicalLens(
-                                density = this,
+                                scope = this,
                                 material = indicatorMaterial,
-                                shape = Capsule(),
                                 minCornerRadiusPx = size.minDimension / 2f,
                                 minDimensionPx = size.minDimension,
                                 interactionProgress = press,

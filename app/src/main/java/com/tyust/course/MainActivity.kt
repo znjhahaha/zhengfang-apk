@@ -345,6 +345,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         val useGlass = isBackdropSupported()
+        // debug 平铺水印的开关。**它绝不能进任何 backdrop 捕获层**，见文件末尾
+        // debugPiracyWatermark 的注释——落在采样层里会让 debug 包的折射永远看起来正常。
+        val showPiracyTiles = (
+            LocalContext.current.applicationInfo.flags and
+                ApplicationInfo.FLAG_DEBUGGABLE
+            ) != 0
         val tokenExpiredNotice = if (isTokenExpired) {
             FloatingNotice(
                 message = "登录状态已失效",
@@ -393,32 +399,26 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     else Modifier
                 )
             ) {
-            // debug 水印画进壁纸捕获层，而不是盖在内容最上层。只有进入
-            // LocalControlBackdrop 的采样范围，顶栏玻璃芯片才可能折射它——
-            // 高对比斜线是验收折射管道最好的标靶：笔画在芯片边缘有没有弯，
-            // 一眼就能判定。release 构建只保留右下角角标。
-            val showPiracyTiles = (
-                LocalContext.current.applicationInfo.flags and
-                    ApplicationInfo.FLAG_DEBUGGABLE
-                ) != 0
             if (useGlass && wallpaperBackdrop != null) {
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
                         .layerBackdrop(wallpaperBackdrop)
-                        .debugPiracyWatermark(showPiracyTiles)
                 ) {
                     // 在绘制 lambda 内部再读一次 state：图片壁纸的位图是异步解码的，
                     // 只读外面那份快照的话，位图到位时这一层不会重绘。
                     drawWallpaperPattern(AppearanceSettingsManager.style)
                 }
             } else {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .debugPiracyWatermark(showPiracyTiles)
-                ) {
-                    drawRect(AppearanceSettingsManager.style.baseColor)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    // 无玻璃分支也画完整壁纸。这里原先只填 baseColor，于是关掉液态玻璃
+                    // （或在 API 31 以下）用户自己传的图片壁纸会整张消失，只剩一块纯色。
+                    // drawWallpaperPattern 是纯 Canvas 绘制，不依赖 backdrop。
+                    // 微纹理关掉：它唯一的作用是给折射提供可弯曲的高频内容，这条路径没有折射。
+                    drawWallpaperPattern(
+                        AppearanceSettingsManager.style,
+                        microTexture = false
+                    )
                 }
             }
 
@@ -504,6 +504,16 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             // 悬浮玻璃通知：叠加在正文之上，落点由顶栏上报的底边决定，不压顶栏操作
             FloatingNoticeHost(modifier = Modifier.fillMaxSize())
 
+            // debug 平铺水印：必须是这一层——所有 backdrop 捕获层之外、所有内容之上。
+            // 盖在最上层对防倒卖只有好处（更难去掉），同时保证它不会被任何玻璃采样到。
+            if (showPiracyTiles) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .debugPiracyWatermark(true)
+                )
+            }
+
             if (showStarDialog && !updateState.showDialog()) {
                 val dialogTitle = when (dismissCount) {
                     0 -> "在 GitHub 上支持这个项目"
@@ -580,20 +590,30 @@ private fun BoxScope.AppBuildWatermarks() {
         fontSize = 10.sp,
         fontWeight = FontWeight.Medium
     )
-    // debug 的平铺水印不在这里画。它必须落在壁纸捕获层内才能被玻璃芯片折射，
-    // 所以由 debugPiracyWatermark 在壁纸 Canvas 的绘制链里输出。画在这一层会盖在
-    // 所有内容之上，穿过按钮时笔画完全不弯——那正是之前看不出折射的原因之一。
+    // debug 的平铺水印不在这里画：这一层仍然在 navBarBackdrop 捕获层内部，
+    // 底栏与弹窗会把它采样进去。它画在外层 Box 的最后一个孩子里，见那处注释。
 }
 
 /** 平铺水印避开底栏区域的底部内缩。原先由外层 Box 的 bottom padding 承担。 */
 private val PiracyWatermarkBottomInset = 88.dp
 
 /**
- * debug 防倒卖水印缓存为 Picture；每次壁纸重绘只回放一次绘制记录。
+ * debug 防倒卖水印缓存为 Picture；每次重绘只回放一次绘制记录。
  *
- * 调用点在壁纸 Canvas 内（见 [layerBackdrop] 那一层），因此它进入
- * LocalControlBackdrop 的采样范围，顶栏芯片会折射这些斜线。
- * release 构建不调用。
+ * ## 它为什么绝对不能进 backdrop 捕获层
+ *
+ * 这 35 段 −28° 的红色斜排文字是一张**高对比标靶**。它曾经挂在壁纸 Canvas 的
+ * `.layerBackdrop(wallpaperBackdrop)` 之后，于是落在被采样的图层里面：
+ * 玻璃一折射它，笔画立刻弯得清清楚楚——**debug 包因此永远显得折射正常**。
+ * 而 release 不画它，玻璃只能去折射「底色 + 几个大半径径向渐变」那种极低频的壁纸，
+ * 位移一片均匀颜色采回来还是同一个颜色，于是全 App 看起来只剩一层扁平磨砂。
+ *
+ * 「debug 正常 / release 不正常」这个现象的全部来源就是这一层，两个包的玻璃管线完全一致。
+ * 现在它画在所有捕获层之外、所有内容之上，debug 与 release 的观感因此等价——
+ * 在 debug 包上看到的就是用户装 release 会看到的。
+ *
+ * 折射的验收标靶改由壁纸自己的微纹理承担（见 `WallpaperRenderer.drawWallpaperMicroTexture`），
+ * 那一层两个构建都有。
  */
 private fun Modifier.debugPiracyWatermark(enabled: Boolean): Modifier {
     if (!enabled) return this

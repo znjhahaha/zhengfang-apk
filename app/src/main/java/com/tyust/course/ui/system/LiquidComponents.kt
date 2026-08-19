@@ -177,9 +177,8 @@ fun LiquidButton(
                         interactionProgress = optics.opticalProgress
                     )
                     val params = resolvePhysicalLens(
-                        density = this,
+                        scope = this,
                         material = material,
-                        shape = shape,
                         minCornerRadiusPx = size.minDimension / 2f,
                         minDimensionPx = size.minDimension,
                         interactionProgress = optics.opticalProgress,

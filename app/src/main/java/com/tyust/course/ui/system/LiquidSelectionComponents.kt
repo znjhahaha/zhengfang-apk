@@ -305,9 +305,8 @@ private fun PickerLensLayer(
                     size.minDimension / 2f
                 ).coerceAtLeast(0.5f)
                 val params = resolvePhysicalLens(
-                    density = this,
+                    scope = this,
                     material = material,
-                    shape = shape,
                     minCornerRadiusPx = effectiveCornerRadius,
                     minDimensionPx = size.minDimension.coerceAtLeast(1f),
                     interactionProgress = pressProgress,
@@ -597,9 +596,8 @@ fun LiquidSegmentedControl(
                                 vibrancy()
                                 if (hasRealLens) {
                                     val params = resolvePhysicalLens(
-                                        density = this,
+                                        scope = this,
                                         material = trackMaterial,
-                                        shape = Capsule(),
                                         minCornerRadiusPx = size.minDimension / 2f,
                                         minDimensionPx = size.minDimension,
                                         interactionProgress = 0f,
@@ -715,9 +713,8 @@ fun LiquidSegmentedControl(
                                 fullEffectVelocity = indicatorMaterial.optics.velocityForFullEffect
                             )
                             val params = resolvePhysicalLens(
-                                density = this,
+                                scope = this,
                                 material = indicatorMaterial,
-                                shape = Capsule(),
                                 minCornerRadiusPx = size.minDimension / 2f,
                                 minDimensionPx = size.minDimension,
                                 interactionProgress = press,

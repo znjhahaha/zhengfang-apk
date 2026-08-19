@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AssignmentInd
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentPasteSearch
 import androidx.compose.material.icons.outlined.Cookie
 import androidx.compose.material.icons.outlined.Delete
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyust.course.ui.system.InsetGroupedRow
 import com.tyust.course.ui.system.InsetGroupedSection
+import com.tyust.course.ui.system.LiquidSwitch
 import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.SectionSpacing
 import com.tyust.course.ui.system.SystemCard
@@ -77,6 +79,8 @@ fun SettingsScreen(
     onSchoolAdaptation: () -> Unit = {},
     onWallpaperSelect: () -> Unit = {},
     wallpaperName: String = "",
+    glassEffectEnabled: Boolean = true,
+    onGlassEffectChange: (Boolean) -> Unit = {},
     isSuper: Boolean = false,
     quotaInfo: String = "",
     canRefreshCookie: Boolean = false,
@@ -164,8 +168,24 @@ fun SettingsScreen(
                     iconTint = Color(0xFFBF5AF2),
                     title = "背景",
                     subtitle = wallpaperName.ifBlank { "选择背景色或图片" },
-                    onClick = onWallpaperSelect,
-                    showDivider = false
+                    onClick = onWallpaperSelect
+                )
+                InsetGroupedRow(
+                    icon = Icons.Outlined.AutoAwesome,
+                    iconTint = Color(0xFF5AC8FA),
+                    title = "液态玻璃",
+                    subtitle = if (glassEffectEnabled) {
+                        "折射、色散与跟手形变"
+                    } else {
+                        "已关闭，改用不透明材质，更省电也更清晰"
+                    },
+                    showDivider = false,
+                    trailing = {
+                        LiquidSwitch(
+                            checked = glassEffectEnabled,
+                            onCheckedChange = onGlassEffectChange
+                        )
+                    }
                 )
             }
 

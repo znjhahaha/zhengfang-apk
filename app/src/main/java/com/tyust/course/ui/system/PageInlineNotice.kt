@@ -262,9 +262,8 @@ fun FloatingNoticeHost(
                             shape = { shape },
                             effects = {
                                 val params = resolvePhysicalLens(
-                                    density = this,
+                                    scope = this,
                                     material = material,
-                                    shape = shape,
                                     minCornerRadiusPx = size.minDimension / 2f,
                                     minDimensionPx = size.minDimension,
                                     // 曾经写死 0f，于是 pressScalesRefraction 形同虚设，

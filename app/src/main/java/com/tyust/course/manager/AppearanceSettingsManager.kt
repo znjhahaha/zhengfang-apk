@@ -187,6 +187,8 @@ object AppearanceSettingsManager {
     private const val KEY_STORE_VERSION = "wallpaper_store_version"
     private const val STORE_VERSION = 2
 
+    private const val KEY_GLASS_EFFECT = "glass_effect_enabled"
+
     private const val TAG = "AppearanceSettings"
 
     private var prefs: SharedPreferences? = null
@@ -202,6 +204,16 @@ object AppearanceSettingsManager {
 
     /** 最近一次选中的预设。自定义模式下它仍然保留，切回"预设"时不用重新挑。 */
     var wallpaper by mutableStateOf(WallpaperPreset.Aurora)
+        private set
+
+    /**
+     * 用户是否要液态玻璃。
+     *
+     * 关掉之后 `currentGlassCapability()` 直接落到 `Material` 档，全 App 走各组件
+     * **已有的**不透明回退分支（低于 API 31 的设备一直走那条路径），因此这个开关
+     * 不需要任何新的渲染代码。
+     */
+    var glassEffectEnabled by mutableStateOf(true)
         private set
 
     /** 用户自定义底色，从未设置过则为 null。 */
@@ -260,6 +272,7 @@ object AppearanceSettingsManager {
         wallpaper = stored
             ?.let { name -> runCatching { WallpaperPreset.valueOf(name) }.getOrNull() }
             ?: WallpaperPreset.Aurora
+        glassEffectEnabled = prefs?.getBoolean(KEY_GLASS_EFFECT, true) ?: true
         customColor = prefs
             ?.takeIf { it.contains(KEY_CUSTOM_COLOR) }
             ?.getInt(KEY_CUSTOM_COLOR, 0)
@@ -322,6 +335,13 @@ object AppearanceSettingsManager {
             ?.putBoolean(KEY_USE_CUSTOM, false)
             ?.apply()
         recomputeStyle()
+    }
+
+    /** 液态玻璃总开关。落盘即生效——各页读的是 state，拨动当帧重绘。 */
+    fun updateGlassEffect(enabled: Boolean) {
+        if (glassEffectEnabled == enabled) return
+        glassEffectEnabled = enabled
+        prefs?.edit()?.putBoolean(KEY_GLASS_EFFECT, enabled)?.apply()
     }
 
     /**

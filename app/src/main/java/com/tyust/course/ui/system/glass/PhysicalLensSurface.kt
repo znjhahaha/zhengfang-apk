@@ -1,8 +1,7 @@
 package com.tyust.course.ui.system.glass
 
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.BackdropEffectScope
 import com.tyust.course.ui.system.GlassMaterialSpec
 import com.tyust.course.ui.system.canUseLiquidLens
 import com.tyust.course.ui.system.isRuntimeLensEnabled
@@ -23,10 +22,22 @@ data class PhysicalLensParams(
     val fringePx: Float = 0f
 )
 
+/**
+ * 解析物理透镜参数。
+ *
+ * ## 为什么第一个参数是 `BackdropEffectScope` 而不是 `Density`
+ *
+ * `useLens` 的判定必须包含形状：库的 `lens()` 对不支持的形状会**直接抛异常闪退**
+ * （见 [canUseLiquidLens]）。而形状必须与 `lens()` 自己读的那一个**是同一个对象**——
+ * 曾经的做法是让调用点额外传一个 `shape` 实参，那是一份可以和
+ * `drawBackdrop(shape = { … })` 悄悄不一致的副本。改成从 scope 上读之后，
+ * 判据用的就是库将要用的那个形状，两者不可能再脱钩。
+ *
+ * `BackdropEffectScope : Density`，所以 `with(scope)` 里的 dp 换算照旧。
+ */
 fun resolvePhysicalLens(
-    density: Density,
+    scope: BackdropEffectScope,
     material: GlassMaterialSpec,
-    shape: Shape,
     minCornerRadiusPx: Float,
     minDimensionPx: Float,
     interactionProgress: Float = 0f,
@@ -42,7 +53,7 @@ fun resolvePhysicalLens(
     pressScalesRefraction: Boolean = false,
     /** pressScalesRefraction=true 时的静止折射下限，避免静止像灰片。 */
     refractionFloor: Float = 0.55f
-): PhysicalLensParams = with(density) {
+): PhysicalLensParams = with(scope) {
     val progress = interactionProgress.coerceIn(0f, 1f)
     val motion = motionIntensity.coerceIn(0f, 1f)
     val blurPx = if (enableBlur && material.blurDp > 0f) {

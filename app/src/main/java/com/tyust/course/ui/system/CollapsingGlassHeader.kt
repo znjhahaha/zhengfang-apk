@@ -181,9 +181,8 @@ internal fun HeaderGlassSlab(
                     if (strength > 0.01f) {
                         vibrancy()
                         val params = resolvePhysicalLens(
-                            density = this,
+                            scope = this,
                             material = material,
-                            shape = slabShape,
                             minCornerRadiusPx = cornerRadius.toPx(),
                             minDimensionPx = size.minDimension,
                             interactionProgress = 0f,

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.tyust.course.LoginActivity
 import com.tyust.course.login.PasswordLoginCallback
 import com.tyust.course.login.PasswordLoginGatewayFactory
+import com.tyust.course.manager.AppearanceSettingsManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.SettingsScreen
@@ -382,6 +383,8 @@ fun SettingsRoute(
         onSchoolAdaptation = { showSchoolAdaptation = true },
         onWallpaperSelect = { showWallpaperDialog = true },
         wallpaperName = currentWallpaperName,
+        glassEffectEnabled = AppearanceSettingsManager.glassEffectEnabled,
+        onGlassEffectChange = { AppearanceSettingsManager.updateGlassEffect(it) },
         isSuper = isSuper,
         quotaInfo = quotaInfo,
         canRefreshCookie = canRefreshCookie,
