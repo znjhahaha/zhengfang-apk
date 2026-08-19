@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
@@ -236,21 +237,9 @@ class LoginActivity : ComponentActivity() {
     }
 
     private fun handleDemoMode() {
-        val userManager = UserManager.getInstance()
-        
-        // 设置演示模式标识和假数据
-        userManager.isLoggedIn = true
-        userManager.isDemoMode = true
-        userManager.studentName = "演示用户"
-        userManager.studentId = "2024000001"
-        
-        // 如果没有选择学校，使用第一个
-        if (userManager.currentSchool == null && userManager.supportedSchools.isNotEmpty()) {
-            userManager.currentSchool = userManager.supportedSchools[0]
-        }
-        
-        Toast.makeText(this, "已进入演示模式", Toast.LENGTH_SHORT).show()
-        
+        DemoData.resetSession()
+        UserManager.getInstance().startDemoSession(DemoData.school())
+        Toast.makeText(this, "已进入本地演示模式，不会连接教务系统", Toast.LENGTH_SHORT).show()
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }

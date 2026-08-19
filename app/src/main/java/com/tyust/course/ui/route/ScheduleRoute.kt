@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.fragment.app.FragmentActivity
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.ScheduleSettingsManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.network.CourseApiClient
@@ -91,6 +92,7 @@ private object ScheduleRouteMemoryCache {
 fun ScheduleRoute() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
     val restoredSnapshot = remember(routeAccountKey) {
         ScheduleRouteMemoryCache.get(routeAccountKey)
@@ -239,6 +241,11 @@ fun ScheduleRoute() {
     // Load Schedule Function
     val loadSchedule = remember(isNextSemester) {
         fun(forceRefresh: Boolean) {
+            if (isDemoMode) {
+                courses = DemoData.scheduleCourses()
+                isLoading = false
+                return
+            }
             val school = UserManager.getInstance().currentSchool
             if (school == null) return
             

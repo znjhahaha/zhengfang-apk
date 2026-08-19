@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
@@ -28,6 +29,7 @@ import java.util.regex.Pattern
 fun GradesRoute() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     
     // State
     var currentTab by remember { mutableIntStateOf(0) }
@@ -47,14 +49,19 @@ fun GradesRoute() {
 
     // Init semesters
     LaunchedEffect(Unit) {
-        val calendar = Calendar.getInstance()
-        val year = calendar.get(Calendar.YEAR)
-        val month = calendar.get(Calendar.MONTH)
-        val startYear = if (month >= 7) year else year - 1
-        val list = mutableListOf<String>()
-        for (y in startYear downTo startYear - 3) {
-            list.add("$y-${y + 1}-1")
-            list.add("$y-${y + 1}-2")
+        val list = if (isDemoMode) {
+            listOf("2025-2026-2", "2025-2026-1", "2024-2025-2", "2024-2025-1")
+        } else {
+            val calendar = Calendar.getInstance()
+            val year = calendar.get(Calendar.YEAR)
+            val month = calendar.get(Calendar.MONTH)
+            val startYear = if (month >= 7) year else year - 1
+            buildList {
+                for (y in startYear downTo startYear - 3) {
+                    add("$y-${y + 1}-1")
+                    add("$y-${y + 1}-2")
+                }
+            }
         }
         semesters = list
         if (list.isNotEmpty()) currentSemester = list[0]
@@ -116,7 +123,12 @@ fun GradesRoute() {
 
     // Logic for Semester Grades
     var loadSemesterGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
-    loadSemesterGrades = {
+    loadSemesterGrades = loadSemesterGrades@{
+        if (isDemoMode) {
+            semesterGrades = DemoData.semesterGrades()
+            semesterIsLoading = false
+            return@loadSemesterGrades
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
@@ -187,7 +199,13 @@ fun GradesRoute() {
 
     // Logic for Overall Grades
     var loadOverallGrades by remember { mutableStateOf<(() -> Unit)?>(null) }
-    loadOverallGrades = {
+    loadOverallGrades = loadOverallGrades@{
+        if (isDemoMode) {
+            overallGrades = DemoData.overallGrades()
+            overallStats = DemoData.overallStats
+            overallIsLoading = false
+            return@loadOverallGrades
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
@@ -250,7 +268,12 @@ fun GradesRoute() {
 
     // Logic for Exam Schedule
     var loadExamSchedule by remember { mutableStateOf<(() -> Unit)?>(null) }
-    loadExamSchedule = {
+    loadExamSchedule = loadExamSchedule@{
+        if (isDemoMode) {
+            examList = DemoData.exams()
+            examIsLoading = false
+            return@loadExamSchedule
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey

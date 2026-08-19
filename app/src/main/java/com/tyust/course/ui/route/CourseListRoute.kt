@@ -1,6 +1,9 @@
 package com.tyust.course.ui.route
 
 import com.tyust.course.ui.system.GlassToaster
+import com.tyust.course.ui.system.SystemDialog
+import com.tyust.course.ui.system.SystemPrimaryButton
+import com.tyust.course.ui.system.SystemSecondaryButton
 import com.tyust.course.ui.system.reportNoticeAnchor
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.CourseCacheManager
 import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
@@ -43,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.tyust.course.ui.theme.*
@@ -224,6 +229,7 @@ private fun loadFilterCategoriesFromRuntimeSource(
 fun CourseListRoute() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
     val restoredSnapshot = remember(routeAccountKey) {
         CourseListRouteMemoryCache.get(routeAccountKey)
@@ -254,6 +260,9 @@ fun CourseListRoute() {
     }
     var searchQuery by remember(routeAccountKey) {
         mutableStateOf(restoredSnapshot?.searchQuery.orEmpty())
+    }
+    var selectedCourseForDetails by remember(routeAccountKey) {
+        mutableStateOf<Course?>(null)
     }
     
     // Multi-Select State
@@ -337,7 +346,7 @@ fun CourseListRoute() {
     }
     
     // 🔧 交互锁：只有不在加载中 且 displayParams 包含关键参数时才允许展开详情
-    val isDetailsReady = !isLoading && displayParams.containsKey("bklx_id")
+    val isDetailsReady = isDemoMode || (!isLoading && displayParams.containsKey("bklx_id"))
 
     // Helpers
     fun exitMultiSelectMode() {
@@ -379,6 +388,14 @@ fun CourseListRoute() {
     LaunchedEffect(routeAccountKey) {
         if (restoredSnapshot != null) return@LaunchedEffect
         hasInitializedRoute = true
+        if (isDemoMode) {
+            courseParams = mapOf("bklx_id" to "demo", "xkxnm" to "2025", "xkxqm" to "12")
+            displayParams = courseParams.orEmpty()
+            filterCategories = DemoData.filterCategories()
+            isFilterOptionsLoading = false
+            filterOptionsMessage = ""
+            return@LaunchedEffect
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
@@ -415,6 +432,20 @@ fun CourseListRoute() {
 
     // 🔧 课程缓存机制：加载课程（支持缓存和强制刷新）
     fun loadCoursesInternal(forceRefresh: Boolean) {
+        if (isDemoMode) {
+            val demoCourses = DemoData.availableCourses()
+            allCourses = demoCourses
+            courses = demoCourses
+            courseParams = mapOf("bklx_id" to "demo", "xkxnm" to "2025", "xkxqm" to "12")
+            displayParams = courseParams.orEmpty()
+            filterCategories = DemoData.filterCategories()
+            isLoading = false
+            isFilterLoading = false
+            isFilterOptionsLoading = false
+            filterOptionsMessage = ""
+            if (forceRefresh) GlassToaster.show("演示课程已重置")
+            return
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool ?: return
         val requestAccountKey = userManager.currentAccountStorageKey
@@ -582,6 +613,10 @@ fun CourseListRoute() {
         if (filter.isEmpty()) {
             courses = allCourses
             activeFilter = null
+        } else if (isDemoMode) {
+            courses = DemoData.filterCourses(allCourses, filter)
+            isFilterLoading = false
+            GlassToaster.show("筛选完成：${courses.size} 门课程")
         } else {
             isFilterLoading = true
             val userManager = UserManager.getInstance()
@@ -1030,7 +1065,9 @@ fun CourseListRoute() {
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         val requestAccountKey = userManager.currentAccountStorageKey
-        if (school == null) {
+        if (isDemoMode) {
+            onComplete(classesList.isNotEmpty())
+        } else if (school == null) {
             GlassToaster.show("未登录，无法获取详情")
             onComplete(false)
         } else {
@@ -1114,6 +1151,13 @@ fun CourseListRoute() {
     // Selection Logic
     val performSelection = remember {
         fun(course: Course) {
+            if (isDemoMode) {
+                course.isSelected = true
+                courses = courses.toList()
+                allCourses = allCourses.toList()
+                GlassToaster.show("演示抢课成功：${course.name}")
+                return
+            }
             val userManager = UserManager.getInstance()
             val school = userManager.currentSchool ?: return
             val requestAccountKey = userManager.currentAccountStorageKey
@@ -1146,6 +1190,13 @@ fun CourseListRoute() {
     // Batch Selection Logic
     val performBatchSelection = remember {
         fun(selectedCourses: List<Course>) {
+            if (isDemoMode) {
+                selectedCourses.forEach { it.isSelected = true }
+                courses = courses.toList()
+                allCourses = allCourses.toList()
+                GlassToaster.show("演示批量抢课完成：成功 ${selectedCourses.size} 门")
+                return
+            }
             val userManager = UserManager.getInstance()
             val school = userManager.currentSchool ?: return
             val requestAccountKey = userManager.currentAccountStorageKey
@@ -1415,6 +1466,8 @@ fun CourseListRoute() {
                         onCourseSelect = { course ->
                             if (course.isSelected) {
                                 GlassToaster.show("课程已选：${course.name}")
+                            } else if (isDemoMode) {
+                                selectedCourseForDetails = course
                             } else {
                                 scope.launch { performSelection(course) }
                             }
@@ -1431,8 +1484,12 @@ fun CourseListRoute() {
                         preloadProgress = preloadProgress,
                         preloadedGroupIds = preloadedGroupIds,
                         onAddToQueue = { course ->
-                            val success = SmartSelector.getInstance().addToQueue(course)
-                            if (success) {
+                            if (isDemoMode) {
+                                val added = DemoData.addToGrabQueue(course)
+                                GlassToaster.show(if (added) "已加入演示抢课队列：${course.name}" else "已经在演示队列中：${course.name}")
+                            } else {
+                                val success = SmartSelector.getInstance().addToQueue(course)
+                                if (success) {
                                 // 🔧 重置该课程在 UI 中的状态，防止显示之前的抢课结果
                                 try {
                                     val prefs = context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE)
@@ -1459,14 +1516,23 @@ fun CourseListRoute() {
                             } else {
                                 GlassToaster.show("已经在队列中：${course.name}")
                             }
+                            }
                         },
                         onSetTargetCourse = { course ->
-                            SmartSelector.getInstance().setTargetCourse(course)
-                            GlassToaster.show("已设为目标课程：${course.name}")
+                            if (isDemoMode) {
+                                GlassToaster.show("演示目标课程：${course.name}")
+                            } else {
+                                SmartSelector.getInstance().setTargetCourse(course)
+                                GlassToaster.show("已设为目标课程：${course.name}")
+                            }
                         },
                         // 🔧 模糊匹配目标设置
                         onSetFuzzyMatchTarget = { courseId, courseName, xkkzId, kklxdm ->
-                            SmartSelector.getInstance().setFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
+                            if (isDemoMode) {
+                                GlassToaster.show("演示捡漏目标：$courseName")
+                            } else {
+                                SmartSelector.getInstance().setFuzzyMatchTarget(courseId, courseName, xkkzId, kklxdm)
+                            }
                         },
                         isMultiSelectMode = isMultiSelectMode,
                         selectedClassIds = selectedClassIds,
@@ -1494,6 +1560,51 @@ fun CourseListRoute() {
                         filterOptionsMessage = filterOptionsMessage,
                         filterCategories = filterCategories
                     )
+                }
+            }
+
+            selectedCourseForDetails?.let { course ->
+                SystemDialog(
+                    onDismissRequest = { selectedCourseForDetails = null },
+                    title = {
+                        Text(
+                            text = course.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    confirmButton = {
+                        SystemPrimaryButton(
+                            text = "立即抢课",
+                            onClick = {
+                                selectedCourseForDetails = null
+                                scope.launch { performSelection(course) }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    dismissButton = {
+                        SystemSecondaryButton(
+                            text = "加入队列",
+                            onClick = {
+                                selectedCourseForDetails = null
+                                val added = if (isDemoMode) {
+                                    DemoData.addToGrabQueue(course)
+                                } else {
+                                    SmartSelector.getInstance().addToQueue(course)
+                                }
+                                GlassToaster.show(if (added) "已加入抢课队列：${course.name}" else "已经在队列中：${course.name}")
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("教师：${course.teacher}", style = MaterialTheme.typography.bodyLarge)
+                        Text("时间：${course.time}", style = MaterialTheme.typography.bodyLarge)
+                        Text("地点：${course.location}", style = MaterialTheme.typography.bodyLarge)
+                        Text("余量：${course.available} / ${course.capacity}", style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
             }
 

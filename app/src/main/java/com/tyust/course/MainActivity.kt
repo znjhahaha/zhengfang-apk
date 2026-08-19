@@ -147,13 +147,15 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             CourseSelectorTheme {
-                var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding) }
+                var showOnboarding by remember { mutableStateOf(!hasSeenOnboarding && !userManager.isDemoMode) }
                 // 开源版授权检查不会拒绝设备，先呈现真实内容，再完成兼容检查。
                 var activationState by remember { mutableIntStateOf(2) }
 
                 LaunchedEffect(Unit) {
-                    val activated = ActivationManager.checkActivation(this@MainActivity)
-                    if (!activated) activationState = 1
+                    if (!userManager.isDemoMode) {
+                        val activated = ActivationManager.checkActivation(this@MainActivity)
+                        if (!activated) activationState = 1
+                    }
                 }
 
                 when {
@@ -194,11 +196,12 @@ sealed class BottomNavItem(
 @Composable
 fun MainScreen(fragmentActivity: FragmentActivity) {
     val context = LocalContext.current
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
     
     val hasStarred = prefs.getBoolean("has_starred", false)
     val dismissCount = prefs.getInt("star_dismiss_count", 0)
-    val shouldShowStarDialog = !hasStarred && dismissCount < 3
+    val shouldShowStarDialog = !isDemoMode && !hasStarred && dismissCount < 3
     var showStarDialog by rememberSaveable { mutableStateOf(false) }
     var startupOverlaysReady by remember { mutableStateOf(false) }
 
@@ -265,9 +268,11 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
 
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        delay(1_000)
-        updateState.checkForUpdate()
+        if (!isDemoMode) {
+            withFrameNanos { }
+            delay(1_000)
+            updateState.checkForUpdate()
+        }
     }
 
     LaunchedEffect(shouldShowStarDialog) {
@@ -318,7 +323,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         )
         // 启动全局 Cookie 定期检查
         val school = com.tyust.course.manager.UserManager.getInstance().currentSchool
-        if (school != null && com.tyust.course.manager.UserManager.getInstance().isLoggedIn) {
+        if (!isDemoMode && school != null && com.tyust.course.manager.UserManager.getInstance().isLoggedIn) {
             com.tyust.course.utils.CookieWatchdog.start(fragmentActivity)
         }
         onDispose {
@@ -329,7 +334,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     val updateInfo = updateState.updateInfo()
     SchoolAdaptationCompletionReminder(
-        enabled = startupOverlaysReady && !showStarDialog && !updateState.showDialog(),
+        enabled = !isDemoMode && startupOverlaysReady && !showStarDialog && !updateState.showDialog(),
         accountScopeKey = currentAccountStorageKey
     )
     if (updateState.showDialog() && updateInfo != null) {

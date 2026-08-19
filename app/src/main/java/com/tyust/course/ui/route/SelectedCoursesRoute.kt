@@ -3,6 +3,7 @@ package com.tyust.course.ui.route
 import com.tyust.course.ui.system.GlassToaster
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.CourseCacheManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.Course
@@ -30,7 +31,14 @@ fun SelectedCoursesRoute() {
         return UserManager.getInstance().currentAccountStorageKey == accountKey
     }
 
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
+
     fun loadSelectedCourses() {
+        if (isDemoMode) {
+            courses = DemoData.selectedCourses()
+            isLoading = false
+            return
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool ?: return
         val requestAccountKey = userManager.currentAccountStorageKey

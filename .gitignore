@@ -107,6 +107,8 @@ backdrop_docs_summary.md
 .gitignore
 backdrop_library_guide.md
 demo
+!app/src/main/java/com/tyust/course/demo/
+!app/src/main/java/com/tyust/course/demo/**
 AndroidLiquidGlass
 .gomodcache/
 .kotlin
@@ -147,3 +149,4 @@ promo_hyperframes
 正方教务助手宣传片
 姝ｆ柟鏁欏姟鍔╂墜瀹ｄ紶鐗嘰hf
 .npm-cache
+promo-video

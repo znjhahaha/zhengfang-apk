@@ -374,7 +374,7 @@ fun GrabQueueItem(
 }
 
 /**
- * 队列行内的玻璃图标钮：边缘光玻璃（glassChip）而非 backdrop 折射——
+ * 队列行内的无轮廓玻璃图标钮：保留轻微表面层，不绘制外轮廓——
  * 它们待在 SystemCard 半透面板【里面】，逐枚采样等于玻璃叠玻璃
  * （同 CourseFilterPanel 的 GlassFilterChip：玻璃感由面板承担）。
  * 交互能力与 adaptiveGlassChip 回退分支等价：按压挤压 + optics 手势。
@@ -402,6 +402,7 @@ private fun GlassQueueIconButton(
             }
             .glassChip(
                 shape = RoundedCornerShape(10.dp),
+                rimIntensity = 0f,
                 dimmed = !enabled,
                 pressProgress = { optics.pressProgress }
             )

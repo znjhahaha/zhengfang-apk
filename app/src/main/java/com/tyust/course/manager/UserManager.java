@@ -95,7 +95,9 @@ public class UserManager {
     public void init(Context context) {
         this.appContext = context.getApplicationContext();
         loadCustomSchools();
-        loadLoginState(); // 加载保存的登录状态
+        if (!isDemoMode) {
+            loadLoginState(); // 演示会话只存活在当前进程，不允许持久化状态覆盖它
+        }
     }
 
     public void setCurrentSchool(SchoolConfig school) {
@@ -221,7 +223,7 @@ public class UserManager {
 
     // 保存登录状态到 SharedPreferences
     public void saveLoginState() {
-        if (appContext == null)
+        if (appContext == null || isDemoMode)
             return;
 
         try {
@@ -724,13 +726,21 @@ public class UserManager {
      * 走「设置 → 账号管理」里的删除动作（{@link #deletePassword} / {@link #deleteAccount}）。
      */
     public void clearLoginState() {
+        boolean wasDemoMode = isDemoMode;
         String accountStorageKeyToClear = getCurrentAccountStorageKey();
         isLoggedIn = false;
+        isDemoMode = false;
         studentName = "";
         studentId = "";
         savedCookie = "";
         sessionPassword = "";
         currentAccountKey = "";
+        if (wasDemoMode) {
+            currentSchool = null;
+            selectedCourses = new ArrayList<>();
+            Log.d(TAG, "演示登录状态已清除");
+            return;
+        }
 
         if (appContext != null) {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -771,6 +781,18 @@ public class UserManager {
 
     public boolean isLoggedIn() {
         return isLoggedIn;
+    }
+
+    public void startDemoSession(SchoolConfig school) {
+        currentSchool = school;
+        studentName = "演示用户";
+        studentId = "2024000001";
+        savedCookie = "";
+        sessionPassword = "";
+        currentAccountKey = "demo::preview";
+        selectedCourses = new ArrayList<>();
+        isDemoMode = true;
+        isLoggedIn = true;
     }
 
     public void setDemoMode(boolean demoMode) {

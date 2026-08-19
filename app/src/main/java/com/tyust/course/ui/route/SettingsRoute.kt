@@ -88,6 +88,7 @@ fun SettingsRoute(
     onAccountChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     
     var studentName by remember { mutableStateOf("") }
     var deviceId by remember { mutableStateOf("") }
@@ -135,6 +136,23 @@ fun SettingsRoute(
         val userManager = UserManager.getInstance()
         val name = userManager.studentName
         val school = userManager.currentSchool
+
+        if (isDemoMode) {
+            studentName = name ?: "演示用户"
+            deviceId = "LOCAL-DEMO"
+            schoolName = school?.name ?: "正方演示大学（演示数据）"
+            isSuper = true
+            quotaUsedCount = 0
+            quotaMaxCount = 0
+            quotaBoundNames = emptyList()
+            quotaAccounts = emptyList()
+            allAccounts = emptyList()
+            accountsWithPassword = emptySet()
+            currentAccountKey = userManager.currentAccountKey
+            canRefreshCookie = false
+            quotaInfo = "本地演示"
+            return
+        }
 
         studentName = name ?: "同学"
         deviceId = ActivationManager.getSavedDeviceId(context)
@@ -213,6 +231,10 @@ fun SettingsRoute(
     }
     
     fun checkForUpdate() {
+        if (isDemoMode) {
+            GlassToaster.show("本地演示模式不执行更新检查")
+            return
+        }
         isCheckingUpdate = true
         GlassToaster.show("正在检查更新…")
         
@@ -228,6 +250,7 @@ fun SettingsRoute(
     }
     
     fun startDownload() {
+        if (isDemoMode) return
         val info = updateInfo ?: return
         isDownloading = true
         downloadProgress = 0
@@ -250,6 +273,10 @@ fun SettingsRoute(
     }
 
     fun refreshCookieManually() {
+        if (isDemoMode) {
+            GlassToaster.show("本地演示模式没有远程 Cookie")
+            return
+        }
         val userManager = UserManager.getInstance()
         val school = userManager.currentSchool
         if (isRefreshingCookie) return
@@ -368,9 +395,13 @@ fun SettingsRoute(
         studentId = deviceId,
         schoolName = schoolName,
         currentVersion = currentVersion,
-        onSchoolSelect = { showSchoolDialog = true },
+        onSchoolSelect = {
+            if (isDemoMode) GlassToaster.show("演示学校固定为本地数据源") else showSchoolDialog = true
+        },
         onCookieConfig = { performLogout() },
-        onAccountManage = { showAccountManagerDialog = true },
+        onAccountManage = {
+            if (isDemoMode) GlassToaster.show("本地演示模式不读取真实账号") else showAccountManagerDialog = true
+        },
         savedAccountCount = allAccounts.size,
         onClearCache = { showClearCacheDialog = true },
         onCheckUpdate = { checkForUpdate() },
@@ -380,7 +411,9 @@ fun SettingsRoute(
         onQuotaClick = { showQuotaDialog = true },
         onRefreshCookieClick = { refreshCookieManually() },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
-        onSchoolAdaptation = { showSchoolAdaptation = true },
+        onSchoolAdaptation = {
+            if (isDemoMode) GlassToaster.show("本地演示模式不连接学校适配服务") else showSchoolAdaptation = true
+        },
         onWallpaperSelect = { showWallpaperDialog = true },
         wallpaperName = currentWallpaperName,
         glassEffectEnabled = AppearanceSettingsManager.glassEffectEnabled,

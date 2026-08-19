@@ -15,6 +15,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -79,9 +81,9 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyust.course.model.Course
@@ -95,6 +97,7 @@ import com.tyust.course.ui.system.SystemEmptyState
 import com.tyust.course.ui.system.SystemLoadingState
 import com.tyust.course.ui.system.SystemStatusBadge
 import com.tyust.course.ui.system.SystemTone
+import com.tyust.course.ui.system.rememberGlassDarkTheme
 import com.tyust.course.ui.theme.NeuPrimary
 import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.ui.theme.MotionSpecs
@@ -433,7 +436,6 @@ fun CourseGroupItem(
     onSetTargetCourse: (Course) -> Unit = {},
     onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null
 ) {
-    val context = LocalContext.current
     val firstCourse = classes.firstOrNull()
     val credits = firstCourse?.credit ?: "0.0"
     val hasSelected = classes.any { it.isSelected }
@@ -560,12 +562,34 @@ fun CourseGroupItem(
 
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(animationSpec = MotionSpecs.emphasized()) + fadeIn(animationSpec = MotionSpecs.emphasized()),
-                exit = shrinkVertically(animationSpec = MotionSpecs.emphasized()) + fadeOut(animationSpec = MotionSpecs.emphasized())
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = spring(
+                        dampingRatio = 0.86f,
+                        stiffness = 420f,
+                        visibilityThreshold = IntSize.VisibilityThreshold
+                    )
+                ) + fadeIn(animationSpec = tween(170)) + scaleIn(
+                    initialScale = 0.97f,
+                    transformOrigin = TransformOrigin(0.5f, 0f),
+                    animationSpec = MotionSpring.liquidSettle()
+                ),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = spring(
+                        dampingRatio = 1f,
+                        stiffness = 460f,
+                        visibilityThreshold = IntSize.VisibilityThreshold
+                    )
+                ) + fadeOut(animationSpec = tween(120)) + scaleOut(
+                    targetScale = 0.98f,
+                    transformOrigin = TransformOrigin(0.5f, 0f),
+                    animationSpec = tween(150, easing = MotionEasing.Accelerate)
+                )
             ) {
-                Column {
-                    SystemDivider()
-
+                Column(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                ) {
                     classes.forEachIndexed { index, course ->
                         TeachingClassRow(
                             course = course,
@@ -579,9 +603,7 @@ fun CourseGroupItem(
                             onSetTargetCourse = { onSetTargetCourse(course) }
                         )
                         if (index < classes.size - 1) {
-                            SystemDivider(
-                                modifier = Modifier.padding(start = 16.dp)
-                            )
+                            Spacer(modifier = Modifier.height(6.dp))
                         }
                     }
                 }
@@ -608,26 +630,40 @@ fun TeachingClassRow(
     val location = course.location.ifEmpty { "未提供地点" }
     val displayName = course.jxbmc.ifEmpty { course.teacher.ifEmpty { "未命名教学班" } }
     val isSelectedRow = course.isSelected
+    val isLightTheme = !rememberGlassDarkTheme()
+    val rowShape = RoundedCornerShape(18.dp)
     val rowBackgroundColor = when {
         isSelectedRow -> SemanticSuccess
-        isChecked -> MaterialTheme.colorScheme.secondaryContainer
-        else -> com.tyust.course.ui.theme.NeuSurface
+        isChecked -> NeuPrimary
+        isLightTheme -> Color.White
+        else -> Color(0xFF202228)
     }
     val backgroundAlpha by animateFloatAsState(
         targetValue = when {
             isSelectedRow -> 0.12f
-            isChecked -> 0.64f
-            else -> 1f
+            isChecked -> 0.14f
+            isLightTheme -> 0.24f
+            else -> 0.18f
         },
         animationSpec = MotionSpecs.standard(),
         label = "classRowBackgroundAlpha"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isSelectedRow -> SemanticSuccess.copy(alpha = 0.30f)
+            isChecked -> NeuPrimary.copy(alpha = 0.32f)
+            isLightTheme -> Color.White.copy(alpha = 0.50f)
+            else -> Color.White.copy(alpha = 0.12f)
+        },
+        animationSpec = MotionSpecs.standard(),
+        label = "classRowBorder"
     )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, if (isSelectedRow) SemanticSuccess.copy(alpha = 0.25f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.3f), RoundedCornerShape(12.dp))
-            .clip(RoundedCornerShape(12.dp))
+            .border(0.5.dp, borderColor, rowShape)
+            .clip(rowShape)
             .background(
                 if (isSelectedRow && backgroundAlpha > 0f) {
                     Brush.horizontalGradient(

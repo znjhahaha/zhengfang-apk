@@ -28,12 +28,14 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
+import com.tyust.course.demo.DemoData
 import com.tyust.course.manager.SmartSelector
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.receiver.GrabAlarmReceiver
 import com.tyust.course.service.GrabService
 import com.tyust.course.ui.screen.GrabProScreen
+import com.tyust.course.ui.screen.GrabQueueItemStatus
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.system.SystemPrimaryButton
@@ -43,12 +45,15 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
 @Composable
 fun GrabProRoute() {
     val context = LocalContext.current
+    val isDemoMode = remember { UserManager.getInstance().isDemoMode }
+    val demoScope = rememberCoroutineScope()
     
     // Settings State (Persisted in SharedPreferences)
     val prefs = remember { context.getSharedPreferences("grab_pro_prefs", Context.MODE_PRIVATE) }
@@ -62,31 +67,58 @@ fun GrabProRoute() {
     
     // UI State - 从持久化存储加载
     var isRunning by remember { mutableStateOf(false) }
+    var demoRunJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var demoQueueIndex by remember { mutableIntStateOf(-1) }
     var successCount by remember { mutableIntStateOf(0) }
     var failCount by remember { mutableIntStateOf(0) }
     var retryCount by remember { mutableIntStateOf(0) }
     var targetCourseName by remember { mutableStateOf<String?>(null) }
     var targetCourseTeacher by remember { mutableStateOf<String?>(null) }
-    var logText by remember { mutableStateOf(prefs.getString(scopedPrefKey("log_text"), "") ?: "") }  // 持久化日志
+    var logText by remember {
+        mutableStateOf(if (isDemoMode) "" else prefs.getString(scopedPrefKey("log_text"), "").orEmpty())
+    }
     
-    var interval by remember { mutableStateOf(prefs.getString(scopedPrefKey("interval"), "1500") ?: "1500") }
-    var maxRetry by remember { mutableStateOf(prefs.getString(scopedPrefKey("max_retry"), "100") ?: "100") }
-    var courseKeywords by remember { mutableStateOf(prefs.getString(scopedPrefKey("course_keywords"), "") ?: "") }
-    var scheduledDateTime by remember { mutableStateOf(prefs.getString(scopedPrefKey("scheduled_datetime"), "") ?: "") }
-    var isScheduledMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("scheduled_mode"), false)) }
-    var hasScheduledTask by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("has_scheduled_task"), false)) }
-    var scheduledTaskInfo by remember { mutableStateOf(prefs.getString(scopedPrefKey("scheduled_task_info"), "") ?: "") }
+    var interval by remember {
+        mutableStateOf(if (isDemoMode) "800" else prefs.getString(scopedPrefKey("interval"), "1500") ?: "1500")
+    }
+    var maxRetry by remember {
+        mutableStateOf(if (isDemoMode) "20" else prefs.getString(scopedPrefKey("max_retry"), "100") ?: "100")
+    }
+    var courseKeywords by remember {
+        mutableStateOf(if (isDemoMode) "" else prefs.getString(scopedPrefKey("course_keywords"), "").orEmpty())
+    }
+    var scheduledDateTime by remember {
+        mutableStateOf(if (isDemoMode) "" else prefs.getString(scopedPrefKey("scheduled_datetime"), "").orEmpty())
+    }
+    var isScheduledMode by remember {
+        mutableStateOf(if (isDemoMode) false else prefs.getBoolean(scopedPrefKey("scheduled_mode"), false))
+    }
+    var hasScheduledTask by remember {
+        mutableStateOf(if (isDemoMode) false else prefs.getBoolean(scopedPrefKey("has_scheduled_task"), false))
+    }
+    var scheduledTaskInfo by remember {
+        mutableStateOf(if (isDemoMode) "" else prefs.getString(scopedPrefKey("scheduled_task_info"), "").orEmpty())
+    }
     var showGlassDateTimePicker by remember { mutableStateOf(false) }
     
-    // 队列相关状态
-    var queue by remember { mutableStateOf(SmartSelector.getInstance().queue.toList()) }
-    var queueVersion by remember { mutableIntStateOf(0) }  // 🔧 强制刷新计数器
-    var isParallelMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("parallel_mode"), false)) }
-    var isExactModeGlobal by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("exact_mode_global"), true)) } // 🔧 全局模式状态持久化
+    // 演示队列只存在于当前页面内存中，不复用真实账号的 SmartSelector 状态。
+    var queue by remember {
+        mutableStateOf(if (isDemoMode) DemoData.grabQueue() else SmartSelector.getInstance().queue.toList())
+    }
+    var queueVersion by remember { mutableIntStateOf(0) }
+    var isParallelMode by remember {
+        mutableStateOf(if (isDemoMode) false else prefs.getBoolean(scopedPrefKey("parallel_mode"), false))
+    }
+    var isExactModeGlobal by remember {
+        mutableStateOf(if (isDemoMode) true else prefs.getBoolean(scopedPrefKey("exact_mode_global"), true))
+    }
     
-    // 🔧 模糊匹配捡漏模式
-    var isFuzzyMatchMode by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("fuzzy_match_mode"), false)) }
-    var fuzzyMatchTarget by remember { mutableStateOf<String?>(SmartSelector.getInstance().fuzzyMatchCourseName) }
+    var isFuzzyMatchMode by remember {
+        mutableStateOf(if (isDemoMode) false else prefs.getBoolean(scopedPrefKey("fuzzy_match_mode"), false))
+    }
+    var fuzzyMatchTarget by remember {
+        mutableStateOf<String?>(if (isDemoMode) queue.firstOrNull()?.name else SmartSelector.getInstance().fuzzyMatchCourseName)
+    }
 
     // 🔧 辅助函数：添加日志并限制在 100 条以内，防止变卡
     fun appendLog(message: String) {
@@ -97,27 +129,33 @@ fun GrabProRoute() {
     }
     
     // 使用课程ID作为key的状态Map，支持持久化
-    var queueItemStatuses by remember { 
-        val savedStatuses = prefs.getString(scopedPrefKey("queue_item_statuses"), null)
-        val loaded = if (savedStatuses != null) {
-            try {
-                val map = mutableMapOf<String, com.tyust.course.ui.screen.GrabQueueItemStatus>()
-                savedStatuses.split(";").forEach { pair ->
-                    val parts = pair.split("=")
-                    if (parts.size == 2) {
-                        val status = when(parts[1]) {
-                            "SUCCESS" -> com.tyust.course.ui.screen.GrabQueueItemStatus.SUCCESS
-                            "FAILED" -> com.tyust.course.ui.screen.GrabQueueItemStatus.FAILED
-                            "GRABBING" -> com.tyust.course.ui.screen.GrabQueueItemStatus.GRABBING
-                            else -> com.tyust.course.ui.screen.GrabQueueItemStatus.WAITING
+    var queueItemStatuses by remember {
+        val loaded = if (isDemoMode) {
+            queue.associate { course ->
+                "${course.name}_${course.teacher}_${course.time}" to GrabQueueItemStatus.WAITING
+            }
+        } else {
+            val savedStatuses = prefs.getString(scopedPrefKey("queue_item_statuses"), null)
+            if (savedStatuses != null) {
+                try {
+                    val map = mutableMapOf<String, GrabQueueItemStatus>()
+                    savedStatuses.split(";").forEach { pair ->
+                        val parts = pair.split("=")
+                        if (parts.size == 2) {
+                            val status = when(parts[1]) {
+                                "SUCCESS" -> GrabQueueItemStatus.SUCCESS
+                                "FAILED" -> GrabQueueItemStatus.FAILED
+                                "GRABBING" -> GrabQueueItemStatus.GRABBING
+                                else -> GrabQueueItemStatus.WAITING
+                            }
+                            map[parts[0]] = status
                         }
-                        map[parts[0]] = status
                     }
-                }
-                map.toMap()
-            } catch (e: Exception) { emptyMap() }
-        } else emptyMap()
-        mutableStateOf<Map<String, com.tyust.course.ui.screen.GrabQueueItemStatus>>(loaded)
+                    map.toMap()
+                } catch (e: Exception) { emptyMap() }
+            } else emptyMap()
+        }
+        mutableStateOf<Map<String, GrabQueueItemStatus>>(loaded)
     }
     var showAddCourseDialog by remember { mutableStateOf(false) }
     var manualCourseInput by remember { mutableStateOf("") }
@@ -128,18 +166,21 @@ fun GrabProRoute() {
     var selectedPeriod by remember { mutableStateOf("") }
     
     // 警告对话框控制
-    var showScheduleWarning by remember { mutableStateOf(prefs.getBoolean(scopedPrefKey("show_schedule_warning"), true)) }
+    var showScheduleWarning by remember {
+        mutableStateOf(if (isDemoMode) false else prefs.getBoolean(scopedPrefKey("show_schedule_warning"), true))
+    }
     
     // 保存队列状态的辅助函数
     fun saveQueueStatuses() {
+        if (isDemoMode) return
         val statusString = queueItemStatuses.entries
-            .filter { it.value != com.tyust.course.ui.screen.GrabQueueItemStatus.WAITING }
+            .filter { it.value != GrabQueueItemStatus.WAITING }
             .joinToString(";") { "${it.key}=${it.value.name}" }
         prefs.edit().putString(scopedPrefKey("queue_item_statuses"), statusString).apply()
     }
     
-    // Save state helper - 保存所有状态包括日志
     fun saveState() {
+        if (isDemoMode) return
         saveQueueStatuses()
         prefs.edit()
             .putString(scopedPrefKey("interval"), interval)
@@ -155,28 +196,44 @@ fun GrabProRoute() {
             .apply()
     }
     
-    // 刷新队列的辅助函数 - 🔧 深拷贝确保 Compose 检测到变化
     fun refreshQueue() {
-        // 使用 copy() 方法深拷贝每个 Course 对象，确保 Compose 能检测到属性变化
-        queue = SmartSelector.getInstance().queue.map { it.copy() }.toMutableList()
-        queueVersion++  // 递增版本号强制重组
+        if (isDemoMode) {
+            queue = queue.map { it.copy() }
+        } else {
+            queue = SmartSelector.getInstance().queue.map { it.copy() }.toMutableList()
+        }
+        queueVersion++
     }
     
-    // Update target course and queue on launch
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isDemoMode) {
+        if (isDemoMode) {
+            queue = DemoData.grabQueue()
+            queueItemStatuses = queue.associate { course ->
+                "${course.name}_${course.teacher}_${course.time}" to GrabQueueItemStatus.WAITING
+            }
+            logText = ""
+            appendLog("演示队列已就绪，共 ${queue.size} 门课程")
+            return@LaunchedEffect
+        }
+
         SmartSelector.getInstance().init(context)
-        SmartSelector.getInstance().restoreFuzzyMatchSettings() // 🔧 恢复模糊匹配设置
+        SmartSelector.getInstance().restoreFuzzyMatchSettings()
         val course = SmartSelector.getInstance().targetCourse
         targetCourseName = course?.name
         targetCourseTeacher = course?.teacher
         isRunning = SmartSelector.getInstance().isRunning
-        fuzzyMatchTarget = SmartSelector.getInstance().fuzzyMatchCourseName // 🔧 恢复监控目标
+        fuzzyMatchTarget = SmartSelector.getInstance().fuzzyMatchCourseName
         refreshQueue()
     }
 
-    // Broadcast Receiver
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
+    DisposableEffect(context, isDemoMode) {
+        if (isDemoMode) {
+            onDispose {
+                demoRunJob?.cancel()
+                isRunning = false
+            }
+        } else {
+            val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == GrabService.BROADCAST_UPDATE) {
                     val eventAccountStorageKey = intent.getStringExtra(GrabService.EXTRA_ACCOUNT_STORAGE_KEY).orEmpty()
@@ -255,14 +312,73 @@ fun GrabProRoute() {
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
         
-        onDispose {
-            try { context.unregisterReceiver(receiver) } catch (e: Exception) {}
-            saveState()
+            onDispose {
+                try { context.unregisterReceiver(receiver) } catch (e: Exception) {}
+                saveState()
+            }
         }
     }
     
     // Logic Actions
     fun startGrabbing() {
+        if (isDemoMode) {
+            if (queue.isEmpty()) {
+                GlassToaster.show("请先在队列中添加课程")
+                return
+            }
+
+            demoRunJob?.cancel()
+            successCount = 0
+            failCount = 0
+            retryCount = 0
+            demoQueueIndex = -1
+            queueItemStatuses = queue.associate { course ->
+                "${course.name}_${course.teacher}_${course.time}" to GrabQueueItemStatus.WAITING
+            }
+            isRunning = true
+            appendLog("开始演示抢课：${queue.size} 门课程（仅本地模拟）")
+            GlassToaster.show("演示抢课已启动")
+
+            demoRunJob = demoScope.launch {
+                queue.forEachIndexed { index, course ->
+                    val courseKey = "${course.name}_${course.teacher}_${course.time}"
+                    demoQueueIndex = index
+                    queueItemStatuses = queueItemStatuses + (courseKey to GrabQueueItemStatus.GRABBING)
+                    appendLog("正在提交：${course.name} · ${course.teacher}")
+
+                    repeat(if (index == 0) 2 else 1) {
+                        delay((interval.toLongOrNull() ?: 800L).coerceIn(450L, 1500L))
+                        retryCount++
+                        if (index == 1 || index == 3) {
+                            failCount++
+                            appendLog("${course.name} 暂无余量，继续监控")
+                        } else {
+                            appendLog("${course.name} 请求已响应")
+                        }
+                    }
+
+                    val status = when (index) {
+                        0, 2 -> GrabQueueItemStatus.SUCCESS
+                        1 -> GrabQueueItemStatus.FAILED
+                        else -> GrabQueueItemStatus.WAITING
+                    }
+                    queueItemStatuses = queueItemStatuses + (courseKey to status)
+                    when (status) {
+                        GrabQueueItemStatus.SUCCESS -> {
+                            successCount++
+                            appendLog("抢课成功：${course.name}")
+                        }
+                        GrabQueueItemStatus.FAILED -> appendLog("本轮未成功：${course.name}")
+                        else -> Unit
+                    }
+                }
+                demoQueueIndex = -1
+                isRunning = false
+                appendLog("演示轮询已完成：成功 $successCount 门，可再次开始演示")
+            }
+            return
+        }
+
         val school = UserManager.getInstance().currentSchool
         if (school == null) {
             GlassToaster.show("请先登录")
@@ -337,8 +453,14 @@ fun GrabProRoute() {
         }
     }
     
-    // 🔧 启动模糊匹配捡漏模式
     fun startFuzzyMatchGrabbing() {
+        if (isDemoMode) {
+            fuzzyMatchTarget = queue.firstOrNull()?.name
+            appendLog("启动演示捡漏监控：${fuzzyMatchTarget ?: "暂无目标"}")
+            startGrabbing()
+            return
+        }
+
         val school = UserManager.getInstance().currentSchool
         if (school == null) {
             GlassToaster.show("请先登录")
@@ -376,6 +498,19 @@ fun GrabProRoute() {
     }
     
     fun stopGrabbing() {
+        if (isDemoMode) {
+            demoRunJob?.cancel()
+            demoRunJob = null
+            demoQueueIndex = -1
+            isRunning = false
+            queueItemStatuses = queueItemStatuses.mapValues { (_, status) ->
+                if (status == GrabQueueItemStatus.GRABBING) GrabQueueItemStatus.WAITING else status
+            }
+            appendLog("已停止演示抢课")
+            GlassToaster.show("演示抢课已停止")
+            return
+        }
+
         val serviceIntent = Intent(context, GrabService::class.java).apply {
             action = GrabService.ACTION_STOP
             putGrabAccountExtras()
@@ -402,6 +537,7 @@ fun GrabProRoute() {
     
     // Helper: 取消已设置的闹钟
     fun cancelScheduledAlarm(ctx: Context, requestCode: Int) {
+        if (isDemoMode) return
         val alarmManager = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(ctx, GrabAlarmReceiver::class.java).apply {
             action = GrabAlarmReceiver.ACTION_SCHEDULED_GRAB
@@ -428,6 +564,14 @@ fun GrabProRoute() {
         val now = Date()
         val delayMs = targetTime.time - now.time
         if (delayMs <= 0) { GlassToaster.show("开始时间必须在当前时间之后"); return }
+
+        if (isDemoMode) {
+            hasScheduledTask = true
+            scheduledTaskInfo = "演示队列: ${queue.size}门\n开始时间: $scheduledDateTime"
+            appendLog("演示定时任务已创建：$scheduledDateTime，队列 ${queue.size} 门课程")
+            GlassToaster.show("演示定时任务已创建（仅当前页面有效）")
+            return
+        }
         
         val userManager = UserManager.getInstance()
         val scheduledAccountKey = userManager.currentAccountKey
@@ -544,7 +688,7 @@ fun GrabProRoute() {
         onStop = { stopGrabbing() },
         onClearLog = { logText = "" },
         onClearTargetCourse = {
-            SmartSelector.getInstance().clearTargetCourse()
+            if (!isDemoMode) SmartSelector.getInstance().clearTargetCourse()
             targetCourseName = null
             targetCourseTeacher = null
             GlassToaster.show("已清除目标课程")
@@ -553,12 +697,14 @@ fun GrabProRoute() {
         isFuzzyMatchMode = isFuzzyMatchMode,
         onFuzzyMatchModeChange = { mode ->
             isFuzzyMatchMode = mode
-            prefs.edit().putBoolean(scopedPrefKey("fuzzy_match_mode"), mode).apply()
+            if (!isDemoMode) {
+                prefs.edit().putBoolean(scopedPrefKey("fuzzy_match_mode"), mode).apply()
+            }
         },
         fuzzyMatchTarget = fuzzyMatchTarget,
         onStartFuzzyMatch = { startFuzzyMatchGrabbing() },
         onClearFuzzyMatchTarget = {
-            SmartSelector.getInstance().clearFuzzyMatchTarget()
+            if (!isDemoMode) SmartSelector.getInstance().clearFuzzyMatchTarget()
             fuzzyMatchTarget = null
             GlassToaster.show("已清除监控目标")
         },
@@ -570,52 +716,95 @@ fun GrabProRoute() {
         onScheduledStart = { createScheduledTask() },
         hasScheduledTask = hasScheduledTask,
         scheduledTaskInfo = scheduledTaskInfo,
-        onCancelScheduledTask = { 
-            val currentStorageKey = UserManager.getInstance().currentAccountStorageKey
-            cancelScheduledAlarm(context, alarmRequestCodeFor(currentStorageKey))
-            cancelScheduledAlarm(context, ALARM_REQUEST_CODE)
-            scheduledJob?.cancel()
+        onCancelScheduledTask = {
+            if (!isDemoMode) {
+                val currentStorageKey = UserManager.getInstance().currentAccountStorageKey
+                cancelScheduledAlarm(context, alarmRequestCodeFor(currentStorageKey))
+                cancelScheduledAlarm(context, ALARM_REQUEST_CODE)
+                scheduledJob?.cancel()
+            }
             hasScheduledTask = false
             scheduledTaskInfo = ""
+            appendLog(if (isDemoMode) "已取消演示定时任务" else "已取消定时任务")
             saveState()
         },
         onPickDateTime = { showGlassDateTimePicker = true },
         // Queue data
         queue = queue,
         queueVersion = queueVersion,
-        currentQueueIndex = SmartSelector.getInstance().currentQueueIndex,
+        currentQueueIndex = if (isDemoMode) demoQueueIndex else SmartSelector.getInstance().currentQueueIndex,
         queueItemStatuses = queueItemStatuses,
         isParallelMode = isParallelMode,
-        onParallelModeChange = { 
-            isParallelMode = it 
+        onParallelModeChange = {
+            isParallelMode = it
             saveState()
         },
         onQueueMoveItem = { from, to ->
-            SmartSelector.getInstance().moveInQueue(from, to)
-            refreshQueue()
-        },
-        onQueueRemoveItem = { index ->
-            if (index < queue.size) {
-                SmartSelector.getInstance().removeFromQueue(queue[index])
+            if (isDemoMode) {
+                if (from in queue.indices && to in queue.indices) {
+                    val updated = queue.toMutableList()
+                    val item = updated.removeAt(from)
+                    updated.add(to, item)
+                    queue = updated
+                    queueVersion++
+                }
+            } else {
+                SmartSelector.getInstance().moveInQueue(from, to)
                 refreshQueue()
             }
         },
-        onQueueToggleMode = { index ->
-            SmartSelector.getInstance().toggleExactMatchMode(index)
-            refreshQueue()
+        onQueueRemoveItem = { index ->
+            if (index in queue.indices) {
+                if (isDemoMode) {
+                    val removed = queue[index]
+                    val key = "${removed.name}_${removed.teacher}_${removed.time}"
+                    queue = queue.toMutableList().also { it.removeAt(index) }
+                    queueItemStatuses = queueItemStatuses - key
+                    queueVersion++
+                } else {
+                    SmartSelector.getInstance().removeFromQueue(queue[index])
+                    refreshQueue()
+                }
+            }
         },
-        onQueueToggleAllMode = if (isScheduledMode) { // 🔧 只在定时模式下显示开关
-            { exact ->
-                isExactModeGlobal = exact // 🔧 同步更新UI状态
-                SmartSelector.getInstance().setAllExactMatchMode(exact)
-                saveState() // 🔧 持久化
+        onQueueToggleMode = { index ->
+            if (isDemoMode) {
+                if (index in queue.indices) {
+                    queue = queue.mapIndexed { itemIndex, course ->
+                        course.copy().apply {
+                            if (itemIndex == index) useExactMatch = !course.useExactMatch
+                        }
+                    }
+                    queueVersion++
+                }
+            } else {
+                SmartSelector.getInstance().toggleExactMatchMode(index)
                 refreshQueue()
-            } 
+            }
+        },
+        onQueueToggleAllMode = if (isScheduledMode) {
+            { exact ->
+                isExactModeGlobal = exact
+                if (isDemoMode) {
+                    queue = queue.map { course -> course.copy().apply { useExactMatch = exact } }
+                    queueVersion++
+                } else {
+                    SmartSelector.getInstance().setAllExactMatchMode(exact)
+                    saveState()
+                    refreshQueue()
+                }
+            }
         } else null,
-        isExactModeGlobal = isExactModeGlobal, // 🔧 传递全局模式状态
+        isExactModeGlobal = isExactModeGlobal,
         onQueueClear = {
-            SmartSelector.getInstance().clearQueue()
-            refreshQueue()
+            if (isDemoMode) {
+                queue = emptyList()
+                queueItemStatuses = emptyMap()
+                queueVersion++
+            } else {
+                SmartSelector.getInstance().clearQueue()
+                refreshQueue()
+            }
         },
         onAddCourse = {
             showAddCourseDialog = true
@@ -623,7 +812,9 @@ fun GrabProRoute() {
         showScheduleWarning = showScheduleWarning,
         onDismissWarningForever = {
             showScheduleWarning = false
-            prefs.edit().putBoolean(scopedPrefKey("show_schedule_warning"), false).apply()
+            if (!isDemoMode) {
+                prefs.edit().putBoolean(scopedPrefKey("show_schedule_warning"), false).apply()
+            }
         }
     )
 
@@ -726,7 +917,16 @@ fun GrabProRoute() {
                                 courseId = "manual_${System.currentTimeMillis()}"
                                 useExactMatch = false // 手动输入强制使用智能模式
                             }
-                            val added = SmartSelector.getInstance().addToQueue(tempCourse)
+                            val added = if (isDemoMode) {
+                                if (queue.any { it == tempCourse }) {
+                                    false
+                                } else {
+                                    queue = queue + tempCourse
+                                    true
+                                }
+                            } else {
+                                SmartSelector.getInstance().addToQueue(tempCourse)
+                            }
                             if (added) {
                                 // 🔧 添加时重置该课程的状态，防止显示之前的“失败”状态
                                 val courseKey = "${tempCourse.name ?: ""}_${tempCourse.teacher ?: ""}_${tempCourse.time ?: ""}"
