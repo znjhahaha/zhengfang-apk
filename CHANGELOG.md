@@ -4,6 +4,27 @@
 > 自 1.0.68 起，每个版本的更新日志以 `release-notes/vX.Y.Z.md` 为唯一数据源，由 CI 扇出到本文件、GitHub Release 与应用内更新提示。
 > 1.0.67 未发布：该 tag 的流水线在版本号校验步骤失败，未产出任何 Release，内容顺延至 1.0.68。
 
+## [1.0.69] - 2026-08-19
+
+### 玻璃与壁纸
+
+- **平滑背景上的折射**：折射是位移采样——弯曲一片均匀颜色，采回来还是同一个颜色。壁纸原本只有底色加几个大半径径向渐变，空间频率过低，因此任何折射强度都无法显形。现在壁纸叠一层均值中性的微纹理（等宽等透明度的白线与黑线错开半个周期，平均明度不变，读起来是布纹而非灰雾），缓存为 12px 平铺 ImageShader，每帧只有一次 `drawRect`。
+- **debug 与 release 观感对齐**：`debugPiracyWatermark` 原先画在被采样的壁纸图层**内部**，且只在 `FLAG_DEBUGGABLE` 下存在，等于给折射准备了一张高对比标靶——测试包因此永远显得正常，而正式包暴露真实情况。它是全应用唯一一处按构建类型分叉的渲染路径，现已移到所有捕获层之外的最上层，测试包从此可以用来判断这类问题。
+- **微纹理只对不模糊的玻璃层有效**：底栏轨道是 `blur(10dp)` 之后才 `lens()`，30px 模糊会先把 12px 纹理抹平。收益集中在 `blurDp = 0` 的层——底栏选中胶囊、顶栏芯片、开关滑块、分段滑块。两端都已注明，不靠猜。
+- **液态玻璃总开关**：设置 → 外观新增开关。关闭后落到 `GlassCapability.Material`，走各组件**已有的** API 31 以下回退路径，因此不需要任何新的渲染代码。
+- **修复图片壁纸消失**：无玻璃分支原先只填 `baseColor`，于是关掉玻璃或在 API 31 以下时，导入的图片壁纸会整张不见、只剩一块纯色。
+
+### 稳定性
+
+- **透镜形状闸门改为真实类型判定**：`lens()` 对不支持的形状会在**绘制阶段**抛 `UnsupportedOperationException`，而 `LiquidPicker` 的液滴融合轮廓正是 `GenericShape`，依赖这道闸门。判定从按类名反射改为 `is RoundedRectangularShape || is CornerBasedShape`，并改为从 `BackdropEffectScope` 读形状——闸门与 `lens()` 实际使用的形状因此不可能再脱钩。
+- **清理误导性死代码**：删除 `SpectralRim.kt` 与 `GlassOpticsSpec` 的 `spectralRimAlpha` / `specularAlpha` / `innerGlowAlpha`。`Modifier.spectralRim` 没有任何调用点，且在所有开启玻璃的 API 31+ 设备上第一行就返回，那三个数字只是看着像旋钮。
+
+### 发布流程
+
+- **版本号从 tag 推导**：`app/version.properties` 不再是权威，CI 从 tag 反写，「版本与 tag 不一致」这类失败在结构上不再可能。versionCode 仍取 patch 位，与既有编号连续，并新增单调递增校验。
+- **前置校验提前**：tag 格式、更新日志、版本号三项校验全部移到 `assembleRelease` 之前，失败从 5 分钟缩短到 30 秒。
+- **一条命令发版**：新增 `scripts/release.sh X.Y.Z`，一次完成版本号写入、更新日志骨架与校验（与 CI 同一条解析管线）、CHANGELOG 归档、提交与打 tag。
+
 ## [1.0.68] - 2026-08-18
 
 ### 界面与交互
