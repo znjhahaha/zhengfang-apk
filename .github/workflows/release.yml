@@ -91,11 +91,19 @@ jobs:
           elif [ -f "$NOTES_FILE" ]; then
             echo "Source: $NOTES_FILE"
             # 取 "## notes" 与下一个 "## " 之间的内容，去掉 HTML 注释与空行。
+            #
+            # 注释剥离分两步。只写 /^<!--/,/-->$/d 会把单行注释 <!-- x --> 当成
+            # 区间开头，而 sed 的区间结束模式只从下一行开始找，于是一路删到文件
+            # 末尾。notes 区块里目前没有注释所以没炸过，但 scripts/release.sh 用
+            # 同一条管线取 '## changelog'，那一段正好以单行注释开头，整段会消失。
+            # 两边必须是同一份写法，否则本地过了 CI 还会挂。
             NOTES=$(awk '
               /^## notes[[:space:]]*$/ { inside = 1; next }
               /^## / { inside = 0 }
               inside { print }
-            ' "$NOTES_FILE" | sed '/^<!--/,/-->$/d' | sed '/^[[:space:]]*$/d')
+            ' "$NOTES_FILE" \
+              | sed -e '/^[[:space:]]*<!--.*-->[[:space:]]*$/d' -e '/^[[:space:]]*<!--/,/-->/d' \
+              | sed '/^[[:space:]]*$/d')
           else
             # 这里不再回落到套话。缺日志就是发布准备没做完，
             # 与其静默发一版"自动构建发布"给所有用户，不如让流水线停下。
@@ -119,6 +127,76 @@ jobs:
             echo 'RELEASE_NOTES_EOF'
           } >> "$GITHUB_OUTPUT"
 
+      # 版本号的唯一权威是 tag，不是 app/version.properties。
+      #
+      # 这里原先是反过来的：文件是权威，CI 只做一致性校验，而那个校验还排在
+      # assembleRelease 之后。于是"打了 tag 但忘了改文件"每次都要等编译完一整轮
+      # 才报错，而这个仓库的规矩是已推送的 tag 不移动（见 CHANGELOG 里 1.0.67
+      # 那条），一次手滑就得跳一个版本号。
+      #
+      # 改成从 tag 反写之后，"版本与 tag 不一致"在结构上不可能发生——tag 是用户
+      # 下载的东西，也就是唯一有意义的权威。校验没了，只剩推导。
+      # scripts/release.sh 负责让仓库里的文件与 tag 同步；这一步是兜底，
+      # 保证手动打 tag 也发不出版本号与 tag 不符的包。
+      - name: Resolve Version From Tag
+        id: version
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          VN="${TAG#v}"
+          REST="${VN#*.}"
+          PATCH="${REST#*.}"
+
+          # versionCode = patch 位。1.0.x 这 68 个版本一直这么编，沿用它对用户端无感。
+          VC="$PATCH"
+
+          case "$VC" in
+            ''|*[!0-9]*) echo "ERROR: 从 ${TAG} 解析出的 patch 位不是数字: '${VC}'"; exit 1 ;;
+          esac
+
+          # 应用内比较的是 versionCode。它一旦不增，用户就会收到一个永远
+          # "更新不掉"的提示。拿除自己以外最高的那个 tag 做基准，这样重跑
+          # 同一版本（补发、上次 Gitee 上传失败）不会被自己挡住。
+          PREV=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+            | grep -vFx "$TAG" \
+            | sed 's/^v//' \
+            | sort -t. -k1,1n -k2,2n -k3,3n \
+            | tail -1 || true)
+
+          if [ -n "${PREV:-}" ]; then
+            PREV_CODE="${PREV##*.}"
+            if [ "$VC" -le "$PREV_CODE" ]; then
+              echo "ERROR: versionCode 不增：${TAG} 算出 ${VC}，上一个 tag v${PREV} 是 ${PREV_CODE}。"
+              echo "       versionCode = patch 位这个方案在这里失效了（跨 minor/major 时 patch 归零）。"
+              echo "       改成 major*10000+minor*100+patch，并同步修改 scripts/release.sh。"
+              exit 1
+            fi
+            echo "上一个版本 v${PREV}（code ${PREV_CODE}）-> ${TAG}（code ${VC}）"
+          fi
+
+          # 仓库里的文件与 tag 不一致不再是错误，只是信息：手动打 tag 时它会落后，
+          # 而构建用的是下面写进去的这份。
+          REPO_VN=$(sed -n 's/^VERSION_NAME=[[:space:]]*//p' app/version.properties | tr -d '[:space:]' || true)
+          if [ "${REPO_VN:-}" != "$VN" ]; then
+            echo "NOTE: 仓库里的 version.properties 是 ${REPO_VN:-<空>}，按 tag 覆盖为 ${VN}。"
+            echo "      下次用 scripts/release.sh ${VN} 发版可以让文件一起对齐。"
+          fi
+
+          cat > app/version.properties <<PROPS
+          #Release version. 唯一权威是 git tag：本文件由 CI 从 tag 反写
+          #（.github/workflows/release.yml 的 Resolve Version From Tag）。
+          #不要手改：跑 scripts/release.sh X.Y.Z，它会连更新日志和 tag 一起对齐。
+          VERSION_NAME=${VN}
+          VERSION_CODE=${VC}
+          PROPS
+
+          cat app/version.properties
+
+          echo "version_code=${VC}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VN}" >> "$GITHUB_OUTPUT"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -141,36 +219,6 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Extract Version Info
-        id: version
-        env:
-          TAG: ${{ steps.target.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          # 版本号由 version.properties 静态控制（构建时不再自增），
-          # 所以它必须与 tag 对得上，否则会发出一个版本号与 tag 不符的包，
-          # 而应用侧比较的是 versionCode，用户会收到一个永远"更新不掉"的提示。
-          # 用 ^KEY= 锚定而不是子串匹配：注释行里出现 VERSION_NAME 就会被一起
-          # 匹配到，而 cut 对不含 '=' 的行会吐回整行，于是变量里混进注释文本。
-          # （这一步自己的说明注释就曾把它打挂过。）
-          VC=$(sed -n 's/^VERSION_CODE=[[:space:]]*//p' app/version.properties | tr -d '[:space:]')
-          VN=$(sed -n 's/^VERSION_NAME=[[:space:]]*//p' app/version.properties | tr -d '[:space:]')
-
-          if [ -z "$VC" ] || [ -z "$VN" ]; then
-            echo "ERROR: 无法从 app/version.properties 解析出版本号（VC='${VC}' VN='${VN}'）"
-            exit 1
-          fi
-
-          if [ "v${VN}" != "${TAG}" ]; then
-            echo "ERROR: version.properties 的 VERSION_NAME=${VN}（即 v${VN}）与发布 tag ${TAG} 不一致。"
-            echo "       请先把 app/version.properties 改成 ${TAG#v} 并提交。"
-            exit 1
-          fi
-
-          echo "version_code=${VC}" >> "$GITHUB_OUTPUT"
-          echo "version_name=${VN}" >> "$GITHUB_OUTPUT"
-          echo "Final version: code=${VC}, name=${VN} (tag ${TAG})"
 
       - name: Upload version.properties
         uses: actions/upload-artifact@v4
