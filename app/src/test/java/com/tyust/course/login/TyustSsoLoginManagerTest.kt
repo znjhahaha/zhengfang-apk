@@ -64,13 +64,15 @@ class TyustSsoLoginManagerTest {
                 "_eventId",
                 "geolocation",
                 "execution",
-                "captcha_code"
+                "captcha_code",
+                "captcha_payload"
             ),
             fields.keys
         )
         assertEquals("student-001", fields["username"])
-        assertEquals("RpEpIH9dSgIJYLKpHvn7aQ==", fields["password"])
-        assertEquals("MTIzNDU2Nzg=", fields["croypto"])
+        assertEquals("P697UH6hDBNHWmqOLa2FZA==", fields["password"])
+        assertEquals("MTIzNDU2Nzg5MDEyMzQ1Ng==", fields["croypto"])
+        assertEquals("EH234SPWsbAVCbva63T5XQ==", fields["captcha_payload"])
         assertEquals("UsernamePassword", fields["type"])
         assertEquals("submit", fields["_eventId"])
         assertEquals("flow-123", fields["execution"])
@@ -187,6 +189,28 @@ class TyustSsoLoginManagerTest {
     }
 
     @Test
+    fun mapsUnauthorizedLoginPageToInvalidCredentials() {
+        // The 2026-08 SSO returns 401 with a fresh login page (no error text)
+        // when the submitted credentials are rejected.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(loginPageHtml()))
+        server.enqueue(
+            MockResponse().setResponseCode(401)
+                .setBody(loginPageHtml(execution = "flow-rejected"))
+        )
+        val callback = RecordingCallback()
+
+        TyustSsoLoginManager(testEndpoints()).login(
+            tyustSchool(), "student-001", "wrong-password", callback
+        )
+
+        assertTrue(callback.await())
+        assertTrue(callback.invalidCredentials)
+        assertNull(callback.error)
+        assertNull(callback.cookie)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
     fun fetchesCaptchaWhenPostResponseIntroducesChallenge() {
         server.enqueue(MockResponse().setResponseCode(200).setBody(loginPageHtml()))
         server.enqueue(
@@ -292,7 +316,7 @@ class TyustSsoLoginManagerTest {
         <html><body>
           <form method="post" action="">
             <input id="login-page-flowkey" value="$execution" />
-            <input id="login-croypto" value="MTIzNDU2Nzg=" />
+            <input id="login-croypto" value="MTIzNDU2Nzg5MDEyMzQ1Ng==" />
             <input id="recaptcha-invisible" value="$captchaInvisible" />
             <input id="captcha-url" value="/captcha" />
           </form>

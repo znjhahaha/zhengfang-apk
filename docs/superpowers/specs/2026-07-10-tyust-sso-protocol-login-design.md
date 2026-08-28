@@ -135,3 +135,16 @@ After automated tests and a debug build pass, perform one explicitly authorized 
 - Persisting the university SSO session.
 - Replacing password login for non-TYUST schools.
 - Refactoring unrelated course-selection, schedule, or grade code.
+
+## Protocol Change: 2026-08 (AES-128 + captcha_payload)
+
+The university upgraded the Ruijie SSO frontend in August 2026. Verified against the live systems with an authorized account:
+
+- The login page `login-croypto` element now carries a **16-byte AES-128 key** (previously an 8-byte DES key).
+- `password` is now `AES-128/ECB/PKCS7(key, password)` Base64-encoded (previously DES/ECB/PKCS7). The plaintext is the password alone; no timestamp is appended on the classic form path.
+- The form posts one new required field: `captcha_payload` = `AES-128/ECB/PKCS7(key, "{}")` — the encrypted empty JSON object the Angular frontend submits by default.
+- Everything else is unchanged: the form field names (`username`, `type=UsernamePassword`, `_eventId=submit`, `geolocation`, `execution`, `captcha_code`, `croypto`), the POST target, the CAS service-ticket redirect chain, and the final Zhengfang cookie extraction.
+
+The client now selects the cipher by key length: 16-byte keys use AES, 8-byte keys keep DES for backward compatibility. The redirect chain and cookie handling required no changes.
+
+Error mapping also changed server-side: rejected credentials now return **401 with a fresh login page that carries no error text** (`login-error-code`/`login-error-msg` are empty and the body contains no "用户名或密码不正确" marker). The manager therefore treats `401 + parseable login page` as invalid credentials (after the captcha-required branch, so a captcha challenge on the 401 page still wins).

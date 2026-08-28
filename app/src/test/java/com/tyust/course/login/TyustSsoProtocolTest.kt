@@ -66,13 +66,42 @@ class TyustSsoProtocolTest {
     }
 
     @Test
-    fun encryptPassword_matchesBrowserDesEcbPkcs7() {
+    fun encryptPassword_matchesBrowserAesEcbPkcs7() {
+        assertEquals(
+            "P697UH6hDBNHWmqOLa2FZA==",
+            TyustSsoProtocol.encryptPassword(
+                plaintext = "protocol-test",
+                base64Key = "MTIzNDU2Nzg5MDEyMzQ1Ng=="
+            )
+        )
+    }
+
+    @Test
+    fun encryptPassword_keepsLegacyDesSupportForEightByteKeys() {
         assertEquals(
             "RpEpIH9dSgIJYLKpHvn7aQ==",
             TyustSsoProtocol.encryptPassword(
                 plaintext = "protocol-test",
                 base64Key = "MTIzNDU2Nzg="
             )
+        )
+    }
+
+    @Test
+    fun encryptPassword_rejectsUnsupportedKeyLengths() {
+        assertThrows(TyustSsoProtocol.ProtocolException::class.java) {
+            TyustSsoProtocol.encryptPassword(
+                plaintext = "protocol-test",
+                base64Key = "MTIzNDU2Nzg5MA=="
+            )
+        }
+    }
+
+    @Test
+    fun encryptCaptchaPayload_encryptsEmptyJsonObject() {
+        assertEquals(
+            "EH234SPWsbAVCbva63T5XQ==",
+            TyustSsoProtocol.encryptCaptchaPayload(base64Key = "MTIzNDU2Nzg5MDEyMzQ1Ng==")
         )
     }
 }

@@ -192,6 +192,12 @@ class TyustSsoLoginManager internal constructor(
             fail(attempt, "统一认证密码加密失败")
             return
         }
+        val encryptedCaptchaPayload = try {
+            TyustSsoProtocol.encryptCaptchaPayload(form.cryptoKey)
+        } catch (_: TyustSsoProtocol.ProtocolException) {
+            fail(attempt, "统一认证密码加密失败")
+            return
+        }
         val body = FormBody.Builder()
             .add("username", attempt.username)
             .add("type", "UsernamePassword")
@@ -201,6 +207,7 @@ class TyustSsoLoginManager internal constructor(
             .add("captcha_code", captchaCode)
             .add("croypto", form.cryptoKey)
             .add("password", encryptedPassword)
+            .add("captcha_payload", encryptedCaptchaPayload)
             .build()
         val request = Request.Builder()
             .url(postUrl)
@@ -319,6 +326,11 @@ class TyustSsoLoginManager internal constructor(
                         attempt.submissionInFlight.set(false)
                         fetchCaptcha(attempt, captchaUrl)
                     }
+                } else if (it.code == 401 && updatedForm != null) {
+                    // The 2026-08 SSO rejects bad credentials with 401 plus a fresh
+                    // login page that carries no error text; treat it as invalid
+                    // credentials rather than a generic failure.
+                    invalidCredentials(attempt)
                 } else if (
                     it.code == 200 &&
                     updatedForm != null &&
