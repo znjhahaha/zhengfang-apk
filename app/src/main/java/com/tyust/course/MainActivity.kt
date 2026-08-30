@@ -96,6 +96,9 @@ import com.tyust.course.ui.system.PagePadding
 import com.tyust.course.ui.system.isBackdropSupported
 import com.tyust.course.ui.system.rememberDialogHostState
 import com.tyust.course.ui.system.rememberGlassAccessibilityMode
+import com.tyust.course.ui.system.glass.glassLensAnchor
+import com.tyust.course.ui.system.glass.drawBackdropSource
+import androidx.compose.ui.platform.LocalDensity
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import com.tyust.course.ui.theme.MotionEasing
 import com.tyust.course.update.UpdateDialog
@@ -112,6 +115,8 @@ import com.tyust.course.ui.system.SystemPrimaryButton
 import com.tyust.course.ui.system.SystemSecondaryButton
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import com.tyust.course.ui.system.GlassRecipe
+import com.tyust.course.ui.system.glass.drawBlurred
 
 class MainActivity : FragmentActivity() {
 
@@ -232,6 +237,18 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     // 底栏滚动最小化：捕获页面内任意滚动的方向（nested scroll 冒泡，页面零改动）
     var navBarMinimized by remember { mutableStateOf(false) }
+    // API31/32 折射底图的新鲜度。页面内容随滚动移动，底图必须跟着重拍，
+    // 否则折射里是启动那一刻的画面。见 GlassLensFreshness 的注释。
+    //
+    // 其它 API 上是 null：onScroll() 会写一个 mutableIntState，写在滚动的热路径上。
+    // 33+ 没有底图要重拍，那份写入没有任何消费者，白烧。
+    val lensFreshness = remember {
+        if (com.tyust.course.ui.system.glass.isGlassLensApplicable()) {
+            com.tyust.course.ui.system.glass.GlassLensFreshness()
+        } else {
+            null
+        }
+    }
     val navBarScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -241,6 +258,10 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                     } else if (available.y > 8f) {
                         navBarMinimized = false
                     }
+                }
+                // 惯性滑行（source == SideEffect）也要算：手指离开后页面还在动
+                if (available.y != 0f) {
+                    lensFreshness?.onScroll()
                 }
                 return Offset.Zero
             }
@@ -389,6 +410,61 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         // 内容要避开的底栏高度【由底栏自己算】。原先这里写死 96dp，是照手势条量的；
         // 三键导航下底栏实际 136dp 高，各页列表的末项就有一截藏在栏后面。
         val navBarContentInset = com.tyust.course.ui.system.NavBarMetrics.contentInset()
+
+        // ## API 31/32 的全局折射区域
+        //
+        // 绝大多数控件（按钮、圆钮、开关、选择器）采样的是 `LocalControlBackdrop`，
+        // 而它在这里就是 `wallpaperBackdrop` —— **一层静态壁纸**。所以整个 App
+        // 只需要一张底图，一次快照，之后除了换壁纸/换主题都不必重拍。
+        //
+        // 为什么是全屏一张、而不是每个控件一张：折射会把边缘附近的背景**位移**进来，
+        // 采样点会落到控件轮廓之外。底图只有控件那么大时，那些采样点会被 CLAMP 成
+        // 边缘像素，屏幕上是一圈拉长的涂抹而不是真实背景。区域必须比控件大。
+        //
+        // 页面若用自己的 backdrop 覆盖了 LocalControlBackdrop（例如成绩页顶栏的
+        // `combined(壁纸, 顶栏玻璃层)`），那一处就必须自己再建一个区域 ——
+        // 底图要复现的是**那个控件实际采样的东西**，不是这一层。
+        val appLensDensity = LocalDensity.current
+        val appLensAnchor = if (wallpaperBackdrop != null) {
+            com.tyust.course.ui.system.glass.rememberGlassLensRegion(
+                tag = "app",
+                AppearanceSettingsManager.style,
+                drawSource = { coords ->
+                    drawBackdropSource(wallpaperBackdrop, appLensDensity, coords)
+                }
+            )
+        } else {
+            null
+        }
+
+        // ## 第二张底图：模糊过的
+        //
+        // 上面那张是**锐利**的，因为按钮/圆钮/选择器在 33+ 上都是 `enableBlur = false`
+        // —— 它们的 lens 采的就是没模糊过的背景。
+        //
+        // 模态面板（弹窗、下拉菜单）不一样，33+ 的管线是 vibrancy → blur → lens，
+        // lens 采的是**已经模糊过的**像素。而模糊必须先烤进底图：屏幕上那层 blur
+        // 是加在 drawBackdrop 的图层上的，折射已经在它上游画完了，那层 blur 拿不到
+        // 任何输入。所以这里单独存一张 6dp 模糊版。
+        //
+        // 半径取 Modal 档的 6dp。弹窗与下拉菜单读的是同一个 `modal.blurDp`，
+        // 所以一张就够；将来若有别的档位要 blur→lens，它得自己再建一张 ——
+        // 差一档模糊，折射里的内容就和屏幕上的对不上。
+        val modalLensBlurPx = with(appLensDensity) { GlassRecipe.DialogBlurDp.dp.toPx() }
+        val modalLensAnchor = if (wallpaperBackdrop != null) {
+            com.tyust.course.ui.system.glass.rememberGlassLensRegion(
+                tag = "app-modal",
+                AppearanceSettingsManager.style,
+                drawSource = { coords ->
+                    drawBlurred(modalLensBlurPx) {
+                        drawBackdropSource(wallpaperBackdrop, appLensDensity, coords)
+                    }
+                }
+            )
+        } else {
+            null
+        }
+
         CompositionLocalProvider(
             LocalAppBackdrop provides wallpaperBackdrop,
             LocalControlBackdrop provides wallpaperBackdrop,
@@ -396,12 +472,26 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             LocalAppOverlayBottomInset provides navBarContentInset,
             LocalDialogHost provides dialogHostState,
             LocalFloatingNotice provides tokenExpiredNotice,
-            LocalNoticeAnchor provides noticeAnchorState
+            LocalNoticeAnchor provides noticeAnchorState,
+            com.tyust.course.ui.system.glass.LocalGlassLensAnchor provides appLensAnchor,
+            com.tyust.course.ui.system.glass.LocalGlassLensModalAnchor provides modalLensAnchor
         ) {
             Box(
                 modifier = Modifier.fillMaxSize().then(
                     if (useGlass && navBarBackdrop != null) Modifier.layerBackdrop(navBarBackdrop)
                     else Modifier
+                ).then(
+                    // 全局折射区域的取景框：全屏。控件的采样点会跑到自己轮廓之外，
+                    // 底图必须比控件大，否则边缘会被 CLAMP 成一圈涂抹。
+                    //
+                    // **两张底图都要挂**。只挂一张时，另一张的 coordinates 永远是
+                    // null，`ensureSource()` 直接返回 null，折射一个像素都不画；
+                    // 而调用方的 `onDrawBackdrop` 已经因为"锚点非 null"把正常的背景
+                    // 绘制让掉了 —— 屏幕上是**整块面板消失**，只剩文字和按钮浮在
+                    // 页面上。弹窗上实拍过一次，就是这个原因。
+                    Modifier
+                        .glassLensAnchor(appLensAnchor)
+                        .glassLensAnchor(modalLensAnchor)
                 )
             ) {
             if (useGlass && wallpaperBackdrop != null) {
@@ -491,6 +581,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                 minimized = navBarMinimized,
                 onExpandRequest = { navBarMinimized = false },
                 backdrop = navBarBackdrop,
+                lensFreshness = lensFreshness,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
 

@@ -52,6 +52,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -108,13 +109,20 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedCornerStyle
 import com.kyant.shapes.RoundedRectangle
+import com.tyust.course.ui.system.glass.GlassLensTransform
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.GlassLensAnchor
+import com.tyust.course.ui.system.glass.LocalGlassLensAnchor
 import com.tyust.course.ui.system.glass.LiquidPickerLayerPolicy
 import com.tyust.course.ui.system.glass.LiquidPickerMotionPhysics
 import com.tyust.course.ui.system.glass.RoundedRectMergeGeometry
 import com.tyust.course.ui.system.glass.chromaticFringe
 import com.tyust.course.ui.system.glass.glassChip
+import com.tyust.course.ui.system.glass.glassLens
+import com.tyust.course.ui.system.glass.glassLensAnchor
+import com.tyust.course.ui.system.glass.glassLensOpticsFrom
 import com.tyust.course.ui.system.glass.glassRim
+import com.tyust.course.ui.system.glass.rememberGlassLensAnchor
 import com.tyust.course.ui.system.glass.motionIntensityFromVelocity
 import com.tyust.course.ui.system.glass.resolvePhysicalLens
 import com.tyust.course.ui.theme.MotionEasing
@@ -279,15 +287,27 @@ private fun PickerLensLayer(
     val accessibility = rememberGlassAccessibilityMode()
     val isLightTheme = !rememberGlassDarkTheme()
     val hasRealLens = isRuntimeLensEnabled() && !forceBlurFallback
+    // API 31/32：自家 ES 2.0 折射。用 App 全局区域 —— 头部/主体采样的
+    // `glassBackdrop` 就是 `LocalControlBackdrop`，在 App 根上等于那层壁纸，
+    // 与全局底图同源。全屏且静态，展开动画改高度也不会触发重拍。
+    //
+    // `forceBlurFallback` 那一层要排除：它是 GenericShape 的合并轮廓，
+    // 33+ 上也不折射（走 blur），而且自家着色器只有圆角矩形 SDF。
+    val lensAnchor = if (forceBlurFallback) null else LocalGlassLensAnchor.current
+    val hasLensLook = hasRealLens || lensAnchor != null
+    val lensDensity = LocalDensity.current
     val resolvedMaterial = GlassMaterials.resolve(
         role = GlassMaterialRole.Interactive,
         accessibility = accessibility,
         interactionProgress = pressProgress
     )
-    val material = if (hasRealLens) {
+    val material = if (hasLensLook) {
         resolvedMaterial
     } else {
-        // API 31/32 cannot refract with AGSL, so retain a restrained blur fallback.
+        // 真的没有折射时（API ≤ 30）才用受控的 blur 顶替。
+        // 判据是 hasLensLook：31/32 现在有折射了，再补 blur 就是把它糊掉，
+        // 而且底图是无 blur 的原 backdrop，屏幕上多出来的模糊会让折射内容
+        // 与周围对不上。
         resolvedMaterial.copy(blurDp = GlassRecipe.PickerBlurDp)
     }
     val motionIntensity = (abs(motionVelocity) / 9f).coerceIn(0f, 1f)
@@ -296,7 +316,29 @@ private fun PickerLensLayer(
         if (isLightTheme) 1f else 0.72f
 
     Box(
-        modifier = modifier.drawBackdrop(
+        modifier = modifier
+            // 必须在 drawBackdrop **上游**：它下面那层会把背景原样再画一遍。
+            .glassLens(
+                lensAnchor,
+                optics = { w, h ->
+                    glassLensOpticsFrom(
+                        material = material,
+                        density = lensDensity,
+                        // 与下面 resolvePhysicalLens 的 minCornerRadiusPx 同一条算式
+                        cornerRadiusPx = with(lensDensity) {
+                            minOf(cornerRadius.toPx(), minOf(w, h) / 2f)
+                                .coerceAtLeast(0.5f)
+                        },
+                        minDimensionPx = minOf(w, h).coerceAtLeast(1f),
+                        interactionProgress = pressProgress,
+                        motionIntensity = motionIntensity,
+                        // 与下面同值：静止就是透明玻璃，按压/速度只是加强
+                        pressScalesRefraction = false,
+                        chromaticAberrationAtRest = false
+                    )
+                }
+            )
+            .drawBackdrop(
             backdrop = backdrop,
             shape = { shape },
             effects = {
@@ -311,7 +353,7 @@ private fun PickerLensLayer(
                     minDimensionPx = size.minDimension.coerceAtLeast(1f),
                     interactionProgress = pressProgress,
                     motionIntensity = motionIntensity,
-                    enableBlur = !hasRealLens,
+                    enableBlur = !hasLensLook,
                     allowChromaticAberration = !accessibility.reduceMotion,
                     chromaticAberrationAtRest = false,
                     // The selector is transparent glass even at rest; press/motion only intensify it.
@@ -325,9 +367,15 @@ private fun PickerLensLayer(
                         refractionAmount = params.refractionAmountPx,
                         chromaticAberration = params.chromaticAberration
                     )
-                } else if (params.fringePx > 0f) {
+                } else if (params.fringePx > 0f && lensAnchor == null) {
+                    // 只有真的没有折射时才用假色散近似（API ≤ 30）。
+                    // 31/32 上折射与七波长色散已由上面的 glassLens 画完。
                     chromaticFringe(params.fringePx)
                 }
+            },
+            onDrawBackdrop = { drawBackdrop ->
+                // 31/32 上背景已由 glassLens 以折射方式画过，不能再画一遍
+                if (lensAnchor == null) drawBackdrop()
             },
             onDrawSurface = {
                 drawRect(Color.White.copy(alpha = surfaceAlpha))
@@ -380,6 +428,11 @@ fun LiquidSegmentedControl(
     val latestSelectedIndex by rememberUpdatedState(clampedSelectedIndex)
     val latestOnSelect by rememberUpdatedState(onSelect)
 
+    // 折射锚点在 BoxWithConstraints 内部创建（要用到 constraints 算出的尺寸），
+    // 但必须挂在这一层 —— 所以用一个 State 把它带出来，下一帧生效。
+    // 差一帧无所谓：底图本来就是"上一帧的结果"（见 GlassLens.kt 的说明）。
+    var segLensAnchor by remember { mutableStateOf<GlassLensAnchor?>(null) }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -387,6 +440,7 @@ fun LiquidSegmentedControl(
             .graphicsLayer {
                 clip = false
             }
+            .glassLensAnchor(segLensAnchor)
     ) {
         val density = LocalDensity.current
         val compact = height <= 36.dp
@@ -466,6 +520,39 @@ fun LiquidSegmentedControl(
             rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)
         } else {
             null
+        }
+
+        // API 31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 GlassLens.kt）。
+        // 结构与 CapsuleNavigationBar 一致：锚点挂在**不随滑块移动**的外层，
+        // 底图上传一次，滑块滑动时只改采样窗口。
+        //
+        // 底图必须复现**原来 indicatorBackdrop 是什么**，一层不多一层不少：
+        //   `rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)`
+        // = 环境背景（**不模糊**）+ 染成主色的锐利文字。
+        //
+        // 这里曾经照抄底栏的做法，加了 blur(8dp) 和一层轨道底色。结果滑块整体
+        // 发灰发褐，和粉色轨道明显割裂 —— 因为那两层是**底栏**滑块压着的东西，
+        // 不是这个控件的。底栏的可见轨道本来就带 8dp 模糊、滑块压在模糊层上；
+        // 这个控件的滑块压的是未模糊的环境背景（轨道的模糊只作用于轨道自己那层，
+        // 滑块采样的 indicatorBackdrop 里没有它）。
+        // 教训：折射底图要照着**这个元素原本采样的 backdrop** 重建，不能照抄别处。
+        val lensDensity = LocalDensity.current
+        val lensAnchor = if (glassBackdrop != null) {
+            // 标签带上选项文字：屏幕上同时有多个分段控件，且尺寸可能相同
+            // （登录页的「密码登录/Cookie登录」与课程页的「可选/已选」都是 381x126），
+            // 只按尺寸命名会互相覆盖。
+            rememberGlassLensAnchor(tag = "seg-" + options.joinToString("_")) { coords ->
+                with(glassBackdrop) { drawBackdrop(lensDensity, coords, null) }
+                with(segmentsBackdrop) { drawBackdrop(lensDensity, coords, null) }
+            }
+        } else {
+            null
+        }
+        // 把锚点交给外层的 glassLensAnchor（它需要外层那块不动的坐标）
+        SideEffect { segLensAnchor = lensAnchor }
+        // 选中项变化会改写隐藏文字层的内容，底图要重拍
+        LaunchedEffect(lensAnchor, clampedSelectedIndex, isLightTheme) {
+            lensAnchor?.invalidate()
         }
 
         // 可见标签层：作为轨道 Box 的内容绘制，随轨道 layerBlock 一起放大，
@@ -701,7 +788,40 @@ fun LiquidSegmentedControl(
             }
 
             Box(
-                modifier = indicatorBaseModifier.drawBackdrop(
+                modifier = indicatorBaseModifier
+                    // API31/32 真折射：画在 drawBackdrop 之前，所以它提供背景，
+                    // 库那层的 surface / highlight / shadow 仍叠在上面。
+                    .glassLens(
+                        anchor = lensAnchor,
+                        // lambda 而非现成值：pressProgress / velocity 是 snapshot
+                        // state，组合期读会让整个控件按压时每帧重组。
+                        // w/h 是**实测**尺寸，由 glassLens 在 draw 里给。
+                        optics = { w, h ->
+                            val minDim = minOf(w, h)
+                            glassLensOpticsFrom(
+                                material = indicatorMaterial,
+                                density = density,
+                                cornerRadiusPx = minDim / 2f,
+                                minDimensionPx = minDim,
+                                interactionProgress = dragAnimation.pressProgress,
+                                motionIntensity = motionIntensityFromVelocity(
+                                    velocityX = dragAnimation.velocity * segmentWidthPx,
+                                    fullEffectVelocity =
+                                        indicatorMaterial.optics.velocityForFullEffect
+                                ),
+                                pressScalesRefraction = true,
+                                // 与 API33+ 同值（见下面 resolvePhysicalLens 的调用）：
+                                // 这个控件静止态**保留**折射，与底栏指示器不同。
+                                refractionFloor = if (compact) 0.30f else 0.42f,
+                                chromaticAberrationAtRest = true
+                            )
+                        },
+                        // 与下面 layerBlock **同一份**形变。不传的话按下时库的
+                        // highlight 环按放大后的轮廓画，而折射还是原尺寸，
+                        // 屏幕上是一圈白环浮在玻璃外面。
+                        scale = { _, _ -> segIndicatorScale(dragAnimation) }
+                    )
+                    .drawBackdrop(
                     backdrop = indicatorBackdrop,
                     shape = { Capsule() },
                     effects = {
@@ -732,7 +852,8 @@ fun LiquidSegmentedControl(
                                     chromaticAberration = params.chromaticAberration
                                 )
                             }
-                        } else {
+                        } else if (lensAnchor == null) {
+                            // 既无 AGSL 也无离屏折射（API ≤ 30）：只剩 RGB 分离近似。
                             lens(
                                 refractionHeight = 10.dp.toPx() * (0.42f + press * 0.58f),
                                 refractionAmount = 14.dp.toPx() * (0.42f + press * 0.58f),
@@ -747,13 +868,19 @@ fun LiquidSegmentedControl(
                                     .coerceIn(0f, 2.2f).dp.toPx()
                             )
                         }
+                        // lensAnchor != null（API31/32）：折射与七波长色散都已由
+                        // glassLens 在这之前画完。这里**不能**再叠 chromaticFringe ——
+                        // 那是两套不同的边缘着色互相污染，屏幕上就是那圈蓝紫边。
                     },
                     highlight = {
                         val progress = dragAnimation.pressProgress
                         val scaleComp = (
                             (dragAnimation.scaleX + dragAnimation.scaleY) / 2f
                             ).coerceAtLeast(1f)
-                        if (hasRealLens) {
+                        // 有真折射时用同一份轮廓光配方（含 blurRadius 补偿）：
+                        // 参照图里滑块边缘有一圈明显的亮边，离屏折射这条路原本走的是
+                        // 下面那条没有 blurRadius 的老路，边缘偏硬。
+                        if (hasRealLens || lensAnchor != null) {
                             Highlight.Default.copy(
                                 width = Highlight.Default.width / scaleComp,
                                 blurRadius = Highlight.Default.blurRadius / scaleComp,
@@ -783,19 +910,28 @@ fun LiquidSegmentedControl(
                         )
                     },
                     layerBlock = {
-                        scaleX = dragAnimation.scaleX
-                        scaleY = dragAnimation.scaleY
-                        val velocity = dragAnimation.velocity / 10f
-                        val maxStretch = GlassRecipe.SegIndicatorMaxVelocityStretch
-                        scaleX /= 1f - (velocity * 0.45f)
-                            .coerceIn(-maxStretch, maxStretch)
-                        scaleY *= 1f - (velocity * 0.15f)
-                            .coerceIn(-maxStretch, maxStretch)
+                        // 与上面 glassLens 的 scale 读同一个函数，两者不可能再脱钩
+                        val segT = segIndicatorScale(dragAnimation)
+                        val sx = segT.scaleX
+                        val sy = segT.scaleY
+                        scaleX = sx
+                        scaleY = sy
                     },
-                    onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
+                    onDrawBackdrop = { drawBackdrop ->
+                        // API31/32 上背景已由 glassLens 以折射方式画过，不能再画一遍
+                        if (lensAnchor == null) drawBackdrop()
+                    },
                     onDrawSurface = {
                         val press = dragAnimation.pressProgress
-                        if (hasRealLens) {
+                        // 有真折射（AGSL 或离屏 GL）就走同一份**提亮**填充。
+                        //
+                        // 下面那条 `Black×0.1` 的老路是"没有折射时靠压暗制造选中感"
+                        // 留下的。现在 31/32 也有真折射了，继续叠黑的后果是：折射把
+                        // 锐利壁纸带进来、再被这层黑压一遍，滑块整体发灰发褐，与粉色
+                        // 轨道明显割裂（已在设备上截图确认）。
+                        // 已在 API 35 上截库同一个控件对照：它是白色 0.18 的提亮，
+                        // 滑块比轨道更亮更粉，而不是更暗。
+                        if (hasRealLens || lensAnchor != null) {
                             val solidColor = if (isLightTheme) {
                                 Color(GlassRecipe.NavSelectedSolidColorLight)
                             } else {
@@ -831,6 +967,25 @@ fun LiquidSegmentedControl(
         }
 
     }
+}
+
+/**
+ * 分段控件滑块的按压 + 速度形变。
+ *
+ * 单独抽出来是因为它有**两个**消费者：库那层 `drawBackdrop(layerBlock)`，
+ * 以及 API31/32 的 `glassLens(scale)`。两边必须逐帧一致 —— 不一致时按下会看到
+ * 一圈白环（库画的 highlight）浮在玻璃（自家折射）外面。
+ */
+private fun segIndicatorScale(anim: DampedDragAnimation): GlassLensTransform {
+    var sx = anim.scaleX
+    var sy = anim.scaleY
+    val velocity = anim.velocity / 10f
+    val maxStretch = GlassRecipe.SegIndicatorMaxVelocityStretch
+    sx /= 1f - (velocity * 0.45f).coerceIn(-maxStretch, maxStretch)
+    sy *= 1f - (velocity * 0.15f).coerceIn(-maxStretch, maxStretch)
+    // 平移为 0：滑块的 translationX 在**外层** graphicsLayer 上，
+    // glassLens 在它内部，已经跟着走了。见 GlassLensTransform。
+    return GlassLensTransform(scaleX = sx, scaleY = sy)
 }
 
 /**

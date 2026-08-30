@@ -291,11 +291,33 @@ fun GraphicsLayerScope.applyChipGlassDeformation(
     swellPx: Float,
     stretch: Float
 ) {
-    val travel = optics.dragTravel(travelPx)
-    translationX = travel.x
-    translationY = travel.y
+    val t = chipGlassTransform(optics, travelPx, swellPx, stretch, size.height)
+    translationX = t.translationX
+    translationY = t.translationY
+    scaleX = t.scaleX
+    scaleY = t.scaleY
+}
 
-    val swell = 1f + optics.pressProgress * swellPx / size.height
+/**
+ * 玻璃层形变的**唯一算式**。
+ *
+ * 两个消费者：[applyChipGlassDeformation]（库那层 `drawBackdrop.layerBlock`）
+ * 和 API31/32 离屏折射的 `glassLens(scale = …)`。两边必须逐帧一致 ——
+ * 不一致时按下会看到库画的 rim 环浮在自家折射的玻璃外面。
+ *
+ * 抽成函数而不是让两边各写一遍，是因为"各写一遍"已经在底栏指示器上出过一次
+ * 同样的错。高度显式传入（而不是从 GraphicsLayerScope 读 `size`），
+ * 折射那边只有实测 w/h、没有 layer scope。
+ */
+fun chipGlassTransform(
+    optics: InteractiveOptics,
+    travelPx: Float,
+    swellPx: Float,
+    stretch: Float,
+    heightPx: Float
+): GlassLensTransform {
+    val travel = optics.dragTravel(travelPx)
+    val swell = if (heightPx > 0f) 1f + optics.pressProgress * swellPx / heightPx else 1f
     val (sx, sy) = anisotropy(travel, travelPx, stretch)
     // 速度驱动的等体积拉伸：快拖沿运动方向明显拉长、垂直方向等量收窄——
     // 没有它，快拖慢拖看起来一样，玻璃没有"重物在动"的视觉质量
@@ -306,8 +328,12 @@ fun GraphicsLayerScope.applyChipGlassDeformation(
     } else {
         -velocityStretch to velocityStretch
     }
-    scaleX = swell * (1f + sx + vx)
-    scaleY = swell * (1f + sy + vy)
+    return GlassLensTransform(
+        scaleX = swell * (1f + sx + vx),
+        scaleY = swell * (1f + sy + vy),
+        translationX = travel.x,
+        translationY = travel.y
+    )
 }
 
 /**

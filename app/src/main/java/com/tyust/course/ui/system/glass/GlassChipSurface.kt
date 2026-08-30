@@ -48,6 +48,15 @@ import kotlin.math.abs
  */
 
 /**
+ * 芯片的静止折射下限。
+ *
+ * **两条路读这一个值**：API33+ 的 `resolvePhysicalLens` 与 API31/32 的
+ * `glassLensOpticsFrom`。底栏指示器上曾经两处各写一个字面量（0.42 / 0），
+ * 于是同一枚控件在两种平台上静止态根本不是一回事，描边亮度差两倍。
+ */
+private const val ChipRefractionFloor = 0.62f
+
+/**
  * 带真实背景折射的液体芯片。
  *
  * @param optics 交互状态源。折射高度、色散、边缘光位置、形变全部由它驱动，
@@ -65,7 +74,19 @@ fun Modifier.liquidChip(
     val isLight = !rememberGlassDarkTheme()
     val accessibility = rememberGlassAccessibilityMode()
     val hasRealLens = isRuntimeLensEnabled()
+    // API31/32 的离屏折射锚点，由某个**不动的祖先**通过 CompositionLocal 下发
+    // （见 GlassLensRegion.kt）。没有祖先提供时为 null，此时保留原来的假色散回退。
+    val lensAnchor = LocalGlassLensAnchor.current
+    // 这枚芯片最终有没有折射外观。下面所有"因为没有折射所以补一下"的分支
+    // 都必须按这个判据关掉，而不是按 hasRealLens ——
+    // 底栏与分段控件都在这一点上栽过：折射叠在补偿上，颜色立刻不对。
+    val hasLensLook = hasRealLens || lensAnchor != null
     val allowInteraction = interactive && enabled && !accessibility.reduceMotion
+    val chipDensity = androidx.compose.ui.platform.LocalDensity.current
+    val chipMaterial = GlassMaterials.resolve(
+        role = GlassMaterialRole.Interactive,
+        accessibility = accessibility
+    )
 
     val baseSurfaceAlpha = if (isLight) {
         GlassRecipe.ChipSurfaceAlphaLight
@@ -91,6 +112,46 @@ fun Modifier.liquidChip(
                 Modifier
             }
         )
+        // API31/32 真折射：画在 drawBackdrop **之前**，所以它提供背景，
+        // 库那层的 surface / rim 仍叠在上面。33+ 与 ≤30 上是 no-op。
+        .glassLens(
+            anchor = lensAnchor,
+            optics = { w, h ->
+                glassLensOpticsFrom(
+                    material = chipMaterial,
+                    density = chipDensity,
+                    // 形状交给 lensCornerRadiusPx 解析：圆钮是 CircleShape，
+                    // 顶栏钮可能是 RoundedCornerShape。别写死 min/2。
+                    cornerRadiusPx = lensCornerRadiusPx(shape, w, h, chipDensity),
+                    minDimensionPx = minOf(w, h),
+                    interactionProgress = optics.opticalProgress,
+                    motionIntensity = optics.motionIntensity(
+                        chipMaterial.optics.velocityForFullEffect
+                    ),
+                    pressScalesRefraction = true,
+                    // 与下面 33+ 的 resolvePhysicalLens 读同一个常量
+                    refractionFloor = ChipRefractionFloor,
+                    chromaticAberrationAtRest = false
+                )
+            },
+            // 与下面 layerBlock 读**同一个** chipGlassTransform：不一致时按下会
+            // 看到库画的 rim 环浮在自家折射的玻璃外面（底栏上已经踩过并修过）。
+            scale = if (allowInteraction) {
+                { _, h ->
+                    with(chipDensity) {
+                        chipGlassTransform(
+                            optics = optics,
+                            travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx(),
+                            swellPx = GlassRecipe.ChipPressSwellDp.dp.toPx(),
+                            stretch = GlassRecipe.ChipDragStretch,
+                            heightPx = h
+                        )
+                    }
+                }
+            } else {
+                null
+            }
+        )
         .drawBackdrop(
             backdrop = backdrop,
             shape = { shape },
@@ -110,14 +171,16 @@ fun Modifier.liquidChip(
                     motionIntensity = optics.motionIntensity(
                         material.optics.velocityForFullEffect
                     ),
-                    // 小芯片上重 blur 会把折射糊成一片灰，只在无真 lens 时靠它撑质感
-                    enableBlur = !hasRealLens,
+                    // 小芯片上重 blur 会把折射糊成一片灰，只在**没有折射**时靠它撑质感。
+                    // 判据是 hasLensLook 而不是 hasRealLens：31/32 现在有折射了，
+                    // 还加 blur 就是把自己的折射糊掉。
+                    enableBlur = !hasLensLook,
                     allowChromaticAberration = allowInteraction,
                     // 静止不色散：静止态该像一枚干净玻璃，彩边是交互时才出现的动态特征
                     chromaticAberrationAtRest = false,
                     // 静止保留 floor 折射，按压抬到满额
                     pressScalesRefraction = true,
-                    refractionFloor = 0.62f
+                    refractionFloor = ChipRefractionFloor
                 )
                 if (params.blurPx > 0f) blur(params.blurPx)
                 if (params.useLens) {
@@ -126,9 +189,16 @@ fun Modifier.liquidChip(
                         params.refractionAmountPx,
                         params.chromaticAberration
                     )
-                } else if (params.fringePx > 0f) {
+                } else if (params.fringePx > 0f && lensAnchor == null) {
+                    // 只有真的没有折射时才用假色散近似（API ≤ 30）。
+                    // 31/32 上折射与七波长色散已由上面的 glassLens 画完，
+                    // 再叠一层就是两套边缘着色互相污染。
                     chromaticFringe(params.fringePx)
                 }
+            },
+            onDrawBackdrop = { drawBackdrop ->
+                // 31/32 上背景已由 glassLens 以折射方式画过，不能再画一遍
+                if (lensAnchor == null) drawBackdrop()
             },
             layerBlock = if (allowInteraction) {
                 {

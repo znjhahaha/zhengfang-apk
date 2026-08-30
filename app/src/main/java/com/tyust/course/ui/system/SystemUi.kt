@@ -136,6 +136,15 @@ import com.tyust.course.ui.theme.SurfaceWhite
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.tyust.course.ui.system.glass.LocalGlassLensAnchor
+import com.tyust.course.ui.system.glass.LocalGlassLensModalAnchor
+import com.tyust.course.ui.system.glass.rememberGlassLensRegion
+import com.tyust.course.ui.system.glass.drawBackdropSource
+import com.tyust.course.ui.system.glass.glassLensAnchor
+import com.tyust.course.ui.system.glass.glassLens
+import com.tyust.course.ui.system.glass.glassLensOpticsFrom
+import com.tyust.course.ui.system.glass.lensCornerRadiusPx
+import kotlinx.coroutines.delay
 
 val PagePadding = 20.dp
 val SectionSpacing = 20.dp
@@ -1100,6 +1109,25 @@ private fun SystemDialogContent(
         null
     }
 
+    // ## API 31/32
+    //
+    // 卡片本体折射身后的页面，用**模糊版**的 App 全局区域：33+ 这里的管线是
+    // vibrancy → blur → lens，lens 采的是已经模糊过的像素，而那层模糊只能烤进
+    // 底图（见 LocalGlassLensModalAnchor）。
+    //
+    // 卡片**里面**没有再建区域：弹窗内的按钮一律是 SolidSurface / SolidTinted
+    // （见 SystemPrimaryButton，实色是刻意的，"避免玻璃叠玻璃发糊"），
+    // 它们的 glassBackdrop 为 null，压根不折射；`glassChip` 也只有 alpha + 描边。
+    // 所以那份区域会是一张没人读的全屏快照（8MB + 每次开弹窗约 5ms）。
+    //
+    // 将来若真往弹窗里放会折射的控件：它采样的是 `combined(页面, 卡片自己)`，
+    // 得在这里建一份区域、底图重建那个组合、取景框挂在卡片这个 Box 上
+    // （卡片有 20~24dp 内边距，比控件大一圈，边缘位移采样不会跑出底图），
+    // 再用 `LocalGlassLensAnchor provides` 覆盖掉全局那份 —— 全局那份只有壁纸，
+    // 直接拿来会让控件折射出"卡片不存在"的画面。
+    val dialogDensity = LocalDensity.current
+    val panelLensAnchor = LocalGlassLensModalAnchor.current
+
     // 320dp 是设计宽度；窄屏上按屏宽收，两侧至少留 20dp，不顶满边缘。
     val screen = rememberScreenMetrics()
     val dialogWidth = minOf(320.dp, screen.widthDp - 40.dp)
@@ -1109,12 +1137,34 @@ private fun SystemDialogContent(
     val dialogHeaderGap = screen.tall(16.dp, 12.dp)
     val dialogButtonGap = screen.tall(24.dp, 16.dp)
 
-    Box(modifier = Modifier.width(dialogWidth).wallpaperRegion(regionState)) {
+    Box(
+        modifier = Modifier
+            .width(dialogWidth)
+            .wallpaperRegion(regionState)
+    ) {
         if (glassBackdrop != null) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .layerBackdrop(dialogLayerBackdrop)
+                    // 31/32：折射由自家着色器在这里完成，就着 App 全局区域的底图。
+                    // 必须在 drawBackdrop **上游**，它下面那层会把背景再画一遍。
+                    .glassLens(
+                        panelLensAnchor,
+                        optics = { w, h ->
+                            glassLensOpticsFrom(
+                                material = dialogMaterial,
+                                density = dialogDensity,
+                                cornerRadiusPx = lensCornerRadiusPx(
+                                    dialogShape, w, h, dialogDensity
+                                ),
+                                minDimensionPx = minOf(w, h),
+                                // 静态面板：不随按压变化，也不要静止色散
+                                pressScalesRefraction = false,
+                                chromaticAberrationAtRest = false
+                            )
+                        }
+                    )
                     .drawBackdrop(
                         backdrop = glassBackdrop,
                         shape = { dialogShape },
@@ -1128,9 +1178,21 @@ private fun SystemDialogContent(
                                     refractionHeight = GlassRecipe.DialogRefractionHeightDp.dp.toPx(),
                                     refractionAmount = GlassRecipe.DialogRefractionAmountDp.dp.toPx()
                                 )
+                            } else if (panelLensAnchor != null) {
+                                // 31/32：什么都不加。模糊已经烤进底图（见
+                                // LocalGlassLensModalAnchor），折射也已在上游画完，
+                                // 这里再 blur 是对着空图层做的，白付一次离屏。
+                                //
+                                // 原先这条分支是 2× 模糊 —— 那是"这台机器没有折射"
+                                // 时的补偿；现在有折射了，补偿要一起撤，否则是
+                                // 糊 + 折射叠着，比 33+ 糊一倍。
                             } else {
                                 blur((GlassRecipe.DialogBlurDp * 2f).dp.toPx())
                             }
+                        },
+                        onDrawBackdrop = { drawBackdrop ->
+                            // 31/32 上背景已由 glassLens 以折射方式画过
+                            if (panelLensAnchor == null) drawBackdrop()
                         },
                         // 仅保留模板需要的光学表面和阴影，不再叠加常驻边缘高光描边。
                         highlight = { null },

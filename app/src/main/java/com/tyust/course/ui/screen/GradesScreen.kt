@@ -57,6 +57,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyust.course.ui.system.GlassSegmentedBar
 import com.tyust.course.ui.system.PagePadding
+import com.tyust.course.ui.system.glass.LocalGlassLensAnchor
+import com.tyust.course.ui.system.glass.rememberGlassLensRegion
+import com.tyust.course.ui.system.glass.drawBackdropSource
+import com.tyust.course.ui.system.glass.glassLensAnchor
 import com.tyust.course.ui.system.glass.LiquidActionGroup
 import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemEmptyState
@@ -485,6 +489,32 @@ private fun GradesHeader(
         collapse
     )
 
+    // API31/32 的离屏折射区域。挂在顶栏整块上而不是芯片上：芯片会随折叠移动、
+    // 按压时还会平移，挂在它身上等于每帧重拍底图（实测约 5ms）。
+    //
+    // 底图必须复现芯片**实际采样的**东西，也就是 chipBackdrop 本身
+    // （壁纸/页面 + 顶栏玻璃层）。芯片在 33+ 上 `enableBlur = false`，
+    // 所以这里也不加 blur —— 加了折射里的内容就比屏幕上的糊一档。
+    // 抄邻居的底图配方是错的，分段控件那次就是抄了底栏的（blur 8dp + 轨道色），
+    // 滑块因此发灰发褐。
+    val chipLensDensity = LocalDensity.current
+    val chipLensAnchor = if (chipBackdrop != null) {
+        rememberGlassLensRegion(
+            tag = "grades-chips",
+            currentTab,
+            isRefreshing,
+            showShare,
+            // collapse 是每帧变化的动画值。原样放进 keys 就是"折叠期间每帧重拍"；
+            // 量化到 1/8 档，折叠全程最多重拍 8 次。
+            (collapse * 8f).toInt(),
+            drawSource = { coords ->
+                drawBackdropSource(chipBackdrop, chipLensDensity, coords)
+            }
+        )
+    } else {
+        null
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -492,6 +522,7 @@ private fun GradesHeader(
                 statusBarHeight +
                     lerpDp(metrics.expanded, metrics.collapsed, collapse)
             )
+            .glassLensAnchor(chipLensAnchor)
     ) {
         // 玻璃层【必须是前景内容的兄弟节点】：layerBackdrop 捕获整棵子树，
         // 挂在包含按钮的父节点上，按钮就会采样一个含有自己的图层 → native 崩。
@@ -525,7 +556,10 @@ private fun GradesHeader(
             }
         }
 
-        CompositionLocalProvider(LocalControlBackdrop provides chipBackdrop) {
+        CompositionLocalProvider(
+            LocalControlBackdrop provides chipBackdrop,
+            LocalGlassLensAnchor provides chipLensAnchor
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

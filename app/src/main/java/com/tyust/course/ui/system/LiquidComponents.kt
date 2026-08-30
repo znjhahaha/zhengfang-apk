@@ -72,6 +72,13 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import com.tyust.course.ui.system.glass.LocalGlassLensAnchor
+import com.tyust.course.ui.system.glass.glassLens
+import com.tyust.course.ui.system.glass.glassLensOpticsFrom
+import com.tyust.course.ui.system.glass.lensCornerRadiusPx
+import com.tyust.course.ui.system.glass.GlassLensTransform
+import com.tyust.course.ui.system.glass.InteractiveOptics
+import androidx.compose.ui.unit.Density
 import com.tyust.course.ui.system.glass.DampedDragAnimation
 import com.tyust.course.ui.system.glass.adaptiveGlassChip
 import com.tyust.course.ui.system.glass.applyChipContentDeformation
@@ -95,6 +102,45 @@ enum class LiquidButtonStyle {
     /** 实色填充（不透明），用于玻璃弹窗等容器之上，避免玻璃叠玻璃发糊。 */
     SolidSurface,
     SolidTinted
+}
+
+/**
+ * 按钮的静止折射下限。两条路（33+ 的 `resolvePhysicalLens` 与 31/32 的
+ * `glassLensOpticsFrom`）读**同一个**值，理由见 CapsuleNavigationBar 里同名常量的注释：
+ * 两处各写一个字面量就会漂移，而且漂移只在真机上看得出来。
+ */
+private const val ButtonRefractionFloor = 0.62f
+
+/**
+ * 按钮玻璃层的形变。**唯一算式**，两个消费者：
+ * 库那层 `drawBackdrop(layerBlock)` 与 API31/32 的 `glassLens(scale)`。
+ *
+ * 与芯片的 `chipGlassTransform` 同构但不同参（按钮的挤压只看 travel、
+ * 不含速度项），所以没有合并 —— 合并会让两者的手感被迫统一。
+ */
+private fun Density.buttonGlassTransform(
+    optics: InteractiveOptics,
+    heightPx: Float
+): GlassLensTransform {
+    val progress = optics.pressProgress
+    val swell = if (heightPx > 0f) {
+        lerp(1f, 1f + GlassRecipe.ChipPressSwellDp.dp.toPx() / heightPx, progress)
+    } else {
+        1f
+    }
+    // 有界跟手，理由同 liquidChip：拿 size.minDimension 当上限
+    // 会让玻璃层整体滑出按钮自己的插槽。
+    val travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx()
+    val travel = optics.dragTravel(travelPx)
+    // 等体积挤压，不是两轴同时放大
+    val stretch = GlassRecipe.ChipDragStretch * (abs(travel.x) / travelPx).coerceIn(0f, 1f)
+    val squash = GlassRecipe.ChipDragStretch * (abs(travel.y) / travelPx).coerceIn(0f, 1f)
+    return GlassLensTransform(
+        scaleX = swell * (1f + stretch - squash),
+        scaleY = swell * (1f + squash - stretch),
+        translationX = travel.x,
+        translationY = travel.y
+    )
 }
 
 @Composable
@@ -162,7 +208,46 @@ fun LiquidButton(
     }
 
     if (glassBackdrop != null) {
+        // API31/32 的离屏折射锚点，由不动的祖先下发（见 GlassLensRegion.kt）。
+        val lensAnchor = LocalGlassLensAnchor.current
+        val buttonDensity = LocalDensity.current
+        val buttonMaterial = GlassMaterials.resolve(
+            role = GlassMaterialRole.Interactive,
+            accessibility = accessibility
+        )
         val glassModifier = modifier
+            // 画在 drawBackdrop **之前**：折射结果是背景，库那层的 surface 叠在上面。
+            .glassLens(
+                anchor = lensAnchor,
+                optics = { w, h ->
+                    glassLensOpticsFrom(
+                        material = buttonMaterial,
+                        density = buttonDensity,
+                        cornerRadiusPx = lensCornerRadiusPx(shape, w, h, buttonDensity),
+                        minDimensionPx = minOf(w, h),
+                        interactionProgress = optics.opticalProgress,
+                        motionIntensity = optics.motionIntensity(
+                            buttonMaterial.optics.velocityForFullEffect
+                        ),
+                        pressScalesRefraction = true,
+                        // 与下面 resolvePhysicalLens 同值
+                        refractionFloor = ButtonRefractionFloor,
+                        chromaticAberrationAtRest = false
+                    )
+                },
+                // 与下面 layerBlock 同一份形变。这里的 layerBlock 自己写了一份
+                // 跟手/挤压算式（与芯片的 chipGlassTransform 同构但不同源），
+                // 所以这边照它复现；两处一起改。
+                scale = if (allowInteraction) {
+                    { _, h ->
+                        with(buttonDensity) {
+                            buttonGlassTransform(optics, h)
+                        }
+                    }
+                } else {
+                    null
+                }
+            )
             .drawBackdrop(
                 backdrop = glassBackdrop,
                 shape = { shape },
@@ -189,7 +274,7 @@ fun LiquidButton(
                         allowChromaticAberration = allowInteraction,
                         chromaticAberrationAtRest = false,
                         pressScalesRefraction = true,
-                        refractionFloor = 0.62f
+                        refractionFloor = ButtonRefractionFloor
                     )
                     // 顺序必须 blur → lens，两者在这里互斥所以不会踩到
                     if (params.useLens) {
@@ -198,36 +283,31 @@ fun LiquidButton(
                             params.refractionAmountPx,
                             params.chromaticAberration
                         )
-                    } else {
+                    } else if (lensAnchor == null) {
                         // Interactive 档在 API33+ 刻意不带 blur（靠折射与色散）；
-                        // 31/32 没有真 lens，按该档注释由调用侧补 blur 撑住质感。
+                        // **真的没有折射时**（API ≤ 30）才由调用侧补 blur 撑住质感。
+                        //
+                        // 31/32 现在有离屏折射了，这层 blur 必须撤：它会把自家折射
+                        // 糊掉，而且底图是无 blur 的原 backdrop，屏幕上这一层多出来
+                        // 的模糊会让折射内容与周围对不上。
                         blur(6.dp.toPx())
                         if (params.fringePx > 0f) chromaticFringe(params.fringePx)
                     }
                 },
+                onDrawBackdrop = { drawBackdrop ->
+                    // 31/32 上背景已由 glassLens 折射过，不能再画一遍
+                    if (lensAnchor == null) drawBackdrop()
+                },
                 layerBlock = if (allowInteraction) {
                     {
-                        val progress = optics.pressProgress
-                        val swell = lerp(
-                            1f,
-                            1f + GlassRecipe.ChipPressSwellDp.dp.toPx() / size.height,
-                            progress
-                        )
-
-                        // 有界跟手，理由同 liquidChip：拿 size.minDimension 当上限
-                        // 会让玻璃层整体滑出按钮自己的插槽。
-                        val travelPx = GlassRecipe.ChipDragTravelDp.dp.toPx()
-                        val travel = optics.dragTravel(travelPx)
-                        translationX = travel.x
-                        translationY = travel.y
-
-                        // 等体积挤压，不是两轴同时放大
-                        val stretch = GlassRecipe.ChipDragStretch *
-                            (abs(travel.x) / travelPx).coerceIn(0f, 1f)
-                        val squash = GlassRecipe.ChipDragStretch *
-                            (abs(travel.y) / travelPx).coerceIn(0f, 1f)
-                        scaleX = swell * (1f + stretch - squash)
-                        scaleY = swell * (1f + squash - stretch)
+                        // 与上面 glassLens(scale) 读**同一个** buttonGlassTransform。
+                        // 别在这里重写一份：底栏指示器上"两处各写一遍"已经出过一次
+                        // 按下时 rim 环与玻璃错开的问题。
+                        val t = buttonGlassTransform(optics, size.height)
+                        translationX = t.translationX
+                        translationY = t.translationY
+                        scaleX = t.scaleX
+                        scaleY = t.scaleY
                     }
                 } else {
                     null
