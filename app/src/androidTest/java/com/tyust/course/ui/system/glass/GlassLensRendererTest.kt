@@ -264,6 +264,107 @@ class GlassLensRendererTest {
     }
 
     @Test
+    fun restPathIsExactlyVibrancyOfSource() {
+        // 静止态（lensAmount = 0）着色器走短路：输出应当**逐点等于**
+        // setSaturation(vibrancy) 作用在底图同点上，位移与色散都不参与。
+        //
+        // 这一条是探针脚本 cmp.py 的核心断言，此前只在设备上手工跑过，而它的
+        // 「预测 vs 实测」曾报出约 6% 的亮度差（文档第 9 节）。把它钉成用例：
+        // 若差异真在着色器/采样/回读这一侧，这里会直接红；若这里绿，那 6% 就
+        // 只可能出在截图侧（合成的 tint/highlight）或对比用的底图不是同一帧。
+        //
+        // 采样点必须落在纹素中心才谈得上「逐点相等」：toSrc 给出
+        // (srcLeft + i + 0.5) / srcWidth，所以 left/top 取**整数**时正中纹素中心，
+        // GL_LINEAR 不混邻居。真实调用方传的是浮点窗口坐标（元素在动），那属于
+        // 另一回事，不在本用例范围内。
+        val srcW = 320
+        val srcH = 200
+        val ew = 128
+        val eh = 96
+        val left = 16
+        val top = 12
+        val sat = 1.28f
+        val renderer = RendererPair()
+        try {
+            // 彩色内容：纯灰的话 setSaturation 是恒等变换，测不出饱和度是否真的施加了
+            val src = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888)
+            for (y in 0 until srcH) {
+                for (x in 0 until srcW) {
+                    src.setPixel(
+                        x, y,
+                        Color.rgb((x * 7 + y * 3) % 256, (x * 3 + y * 11) % 256, (x * 13 + y * 5) % 256)
+                    )
+                }
+            }
+            renderer.uploadSource(src, version = 1)
+            renderer.submit(
+                GlassLensParams(
+                    widthPx = ew,
+                    heightPx = eh,
+                    srcLeftPx = left.toFloat(),
+                    srcTopPx = top.toFloat(),
+                    // 半径 0：整块都在形状内，sd < 0 处处成立
+                    cornerRadiusPx = 0f,
+                    thicknessPx = 30f,
+                    // 静止：位移为 0，走 applyVibrancy 短路
+                    lensAmountPx = 0f,
+                    dispersion = 1f,
+                    depthEffect = 0f,
+                    vibrancy = sat
+                )
+            )
+            val out = awaitFrame(renderer)
+            assertFalse("renderer failed", renderer.failed)
+            assertNotNull("no frame produced", out)
+            out!!
+
+            var worst = 0f
+            var worstAt = ""
+            var sumAbs = 0.0
+            var n = 0
+            for (j in 0 until eh) {
+                for (i in 0 until ew) {
+                    val s = src.getPixel(left + i, top + j)
+                    val o = out.getPixel(i, j)
+                    // 与着色器 applyVibrancy 同式：BT.709 luma 与原色之间 mix，末端 clamp
+                    val l = 0.213f * Color.red(s) + 0.715f * Color.green(s) + 0.072f * Color.blue(s)
+                    for (ch in 0..2) {
+                        val c = when (ch) {
+                            0 -> Color.red(s)
+                            1 -> Color.green(s)
+                            else -> Color.blue(s)
+                        }
+                        val expect = (l + (c - l) * sat).coerceIn(0f, 255f)
+                        val actual = when (ch) {
+                            0 -> Color.red(o)
+                            1 -> Color.green(o)
+                            else -> Color.blue(o)
+                        }
+                        val d = abs(actual - expect)
+                        sumAbs += d
+                        n++
+                        if (d > worst) {
+                            worst = d
+                            worstAt = "($i,$j) ch$ch expect=$expect actual=$actual"
+                        }
+                    }
+                    assertTrue("alpha must be opaque inside the shape at ($i,$j)", Color.alpha(o) == 255)
+                }
+            }
+            val mean = sumAbs / n
+            // 容差 2/255：留给 8 位量化与 GPU 浮点精度，堵不住 6% 级（约 15/255）的偏差
+            assertTrue(
+                "rest path deviates from setSaturation($sat): mean=$mean worst=$worst at $worstAt",
+                worst <= 2
+            )
+
+            src.recycle()
+        } finally {
+            renderer.release()
+        }
+    }
+
+    @Test
     fun multipleRenderersShareOneContextAndAllProduceFrames() {
         // 玻璃元素有十来处。每处一个 EGL 上下文是走不通的（建一个要 10–50ms，
         // 还各占一条线程），所以上下文与 program 是进程级共享的（GlassLensEngine）。

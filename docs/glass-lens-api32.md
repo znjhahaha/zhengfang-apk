@@ -78,9 +78,9 @@ if (!isRuntimeShaderSupported()) return   // Lens.kt:22
 行数是快照，改代码时容易忘了同步（已经飘过一次）。以 `wc -l` 为准，别照着这里的数字下结论。
 
 仪器测试在 `app/src/androidTest/.../glass/`：`GlassLensRendererTest` 验上线代码真的出
-折射（含区域共享语义，6 个用例）；另三个是探路阶段的证据，分别记录
-`Bitmap.createBitmap(Picture)` 可用、ES 2.0 离屏可跑复杂着色器、以及零回读通路
-**更慢所以放弃**。
+折射（含区域共享语义、同尺寸重传、静止态饱和度不变式，7 个用例）；另三个是探路
+阶段的证据，分别记录 `Bitmap.createBitmap(Picture)` 可用、ES 2.0 离屏可跑复杂
+着色器、以及零回读通路**更慢所以放弃**。
 
 这部分是本项目原创，因为库根本不需要它：AGSL 由平台喂输入、由平台合成输出，
 不存在「上下文」「底图」「重拍」这些概念。
@@ -237,8 +237,25 @@ GL/引擎级与底图捕获失败用 snapshot state 存（`failed` 触发重组�
 ## 9. 已知未完成
 
 - API 31 没有真机验证过（只有 32 和 35）。
-- 底栏指示器亮度比按算法预测值低约 6%（预测 222.7，实测 213）；
-  疑点在底图重建与库自己的 `vibrancy()` 之间，以及着色器里 `vibrancy = 1.28`。
+- 底栏指示器亮度比按算法预测值低约 6%（预测 222.7，实测 213）。**已排除着色器
+  这一侧**，别再去调光学参数：
+
+  | 假设 | 结论 | 依据 |
+  | --- | --- | --- |
+  | 库 `vibrancy()` 与着色器 1.28 叠了两遍 | 排除 | 31/32 上 `onDrawBackdrop` 不调 `drawBackdrop()`（`CapsuleNavigationBar.kt:929`），库那条 effects 链一个像素都没画，vibrancy 只有着色器这一份 |
+  | 着色器公式与预测脚本不同式 | 排除 | 短路分支就是 `applyVibrancy(texture2D(...), 1.28)`，与 `cmp.py` 的 `vib()` 逐项相同 |
+  | 元素浮点窗口坐标 → GL_LINEAR 混邻纹素 | 排除 | 拿真实底图 dump 算过：偏差 0.01%。底图是 blur 过的，局部近似线性，双线性≈精确 |
+  | 混色/预乘 alpha | 排除 | 从未 `glEnable(GL_BLEND)`；SDF 是硬截断，alpha 只有 0 或 1 |
+  | 表面 tint 压暗 | 方向不对 | 亮主题是白 @0.34（`NavSelectedSolidAlpha`），只会更亮 |
+
+  并且 `restPathIsExactlyVibrancyOfSource` 用例已在 API 32 真机上把这条不变式钉住：
+  静止态输出**逐通道**等于 `setSaturation(1.28)` 作用在底图同点，容差 2/255。
+  6% 约合 15/255，真在这一侧的话该用例会大幅报红。
+
+  所以剩下的疑点只在**测量侧**：对比用的底图 dump 是否与出图那一帧同源（这个坑
+  已经栽过一次，见下面「探针 dump 是首帧」那类问题），以及「实测 213」是否读的
+  是合成后的截图（tint + highlight + innerShadow 之后）而非着色器原始输出 ——
+  那本就是两个不同的量。要收口需要重新在设备上量一轮，不是再读一遍代码。
 - ~~开关滑块仍是内联 `lens()` + 硬编码 5dp/10dp，没走 `resolvePhysicalLens`。~~
   **已解决**（圆钮类控件的真折射，见上面 8 节的覆盖表）。这一条曾经把文件写成
   `LiquidSelectionComponents.kt` —— 那是错的，该文件三处 `lens()` 一直都走
