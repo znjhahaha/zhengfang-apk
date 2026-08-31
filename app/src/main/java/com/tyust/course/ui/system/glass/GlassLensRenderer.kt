@@ -106,10 +106,17 @@ internal class GlassLensSource {
                 }
                 ensureTexture()
                 GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
-                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                if (srcWidth == bitmap.width && srcHeight == bitmap.height) {
+                    // 尺寸未变的重传（滚动限频约 100ms 一次）：子区域更新复用既有
+                    // 分配，不再整张重分配 1080p 级纹理（约 10MB/次）。首次上传
+                    // （srcWidth 还是 0）与尺寸变化走下面的 texImage2D。
+                    GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, bitmap)
+                } else {
+                    GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                }
                 val e = GLES20.glGetError()
                 if (e != GLES20.GL_NO_ERROR) {
-                    fail("texImage2D", RuntimeException("glError=$e"))
+                    fail("uploadSource glError=$e", null)
                     return@post
                 }
                 srcWidth = bitmap.width
@@ -158,11 +165,22 @@ internal class GlassLensSource {
         )
     }
 
-    private fun fail(where: String, t: Throwable) {
+    private fun fail(where: String, t: Throwable?) {
         if (!ownFailed) {
             ownFailed = true
             android.util.Log.w("GlassLensSource", "disabled at $where", t)
         }
+    }
+
+    /**
+     * 底图捕获失败（锚点快照拿不到）：走 snapshot 失败传播。
+     *
+     * `rememberGlassLensAnchor` 读到 [failed] 后收回锚点，站点重组切回 blur
+     * 兜底 —— 与 GL 失败同一条路。曾经捕获失败只 latch 在锚点里的一个普通
+     * Boolean 上，组合期读不到，元素从此永久空白。
+     */
+    internal fun failCapture() {
+        fail("capture", null)
     }
 }
 

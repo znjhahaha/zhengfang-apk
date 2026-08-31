@@ -370,6 +370,26 @@ fun LiquidButton(
     }
 }
 
+/**
+ * 开关折射底图里轨道的横向缩放。与 33+ 按满那一档一致。
+ *
+ * 横向不需要留环境边：旋钮半宽 52.5px 本来就在缩后轨道半宽 63px 以内
+ * （@420dpi），两条路都没有横向带。
+ */
+private const val SWITCH_LENS_TRACK_SCALE_X = 0.75f
+
+/**
+ * 开关折射底图里轨道的**纵向**缩放。
+ *
+ * **不是** 33+ 按满那一档的 0.75，理由见 `switchLensAnchor` 处的长注释：烤 0.75
+ * 时旋钮只探出轨道 3.9px，而斜坡宽 13.1px，斜坡里几乎全是轨道绿 —— 按下去旋钮
+ * 整块消失（用户报过，API32/API35 逐像素对比确认）。
+ *
+ * 0.4 让旋钮上下各探出 16.8px（> 13.1px 斜坡），与 API35 目测的 16/18px 环境带
+ * 对得上。改这个数之前先按 `docs/glass-lens-api32.md` 的方法两台设备对拍。
+ */
+private const val SWITCH_LENS_TRACK_SCALE_Y = 0.4f
+
 @Composable
 fun LiquidSwitch(
     checked: Boolean,
@@ -494,9 +514,29 @@ fun LiquidSwitch(
     // DrawScope 里，默认绕自身中心。绕锚点中心缩会让旋钮在 checked 那一端探出
     // 轨道右缘 6dp。
     //
-    // 烤的是**按满**那一档（0.75），不是当前帧的值：静止态折射为 0、表面是不透明
-    // 实色，底图根本看不见；只有按满时它才可见。中途那一两百毫秒里折射强度与表面
-    // 透明度都在同步变化，差异被自己盖住。
+    // ## scaleY 烤 0.4，不是按满那一档的 0.75
+    //
+    // 33+ 的轨道缩放是**动画**：`scaleY = lerp(0f, 0.75f, progress)`（上面
+    // scaledTrackBackdrop）。底图只能烤一个固定值，而烤 0.75 实测是错的 ——
+    // 用户报「按下旋钮消失」，两台设备同页同控件（1080x2400 @420dpi，开关都在
+    // x817-984）逐像素对比：
+    //
+    //   API35（33+ 真 AGSL）按压中，旋钮上下各有一条**环境色**带：
+    //     y1750-1765(16px) 与 y1820-1837(18px)，值约 (149,128,181) 淡紫 = 壁纸
+    //   API32（本路径，曾烤 0.75）同一时刻：
+    //     旋钮内部**一条带都没有**，整块 (52,199,89) 纯轨道绿 —— 旋钮消失
+    //
+    // 几何算得通：斜坡宽 5dp = 13.1px，旋钮半高 31.5px。要让斜坡整条都采到轨道
+    // 外面，缩后轨道半高必须 ≤ 31.5 - 13.1 = 18.4px，即 scaleY ≤ 0.50。
+    // 烤 0.75 时缩后半高 27.6px，旋钮只探出 3.9px —— 斜坡里绝大部分仍是绿，
+    // 那 3.9px 被稀释掉，屏幕上就是纯绿。烤 0.4 时探出 16.8px，与 API35 目测的
+    // 16/18px 带宽对得上。
+    //
+    // 曾经这里的注释说「中途那一两百毫秒差异被自己盖住」—— 那句是错的，上面的
+    // 逐像素对比就是反例：用户看见的正是按压途中那一档。
+    //
+    // scaleX 仍是 0.75：横向旋钮半宽 52.5px 本来就在缩后轨道半宽 63px 以内，
+    // 两条路都没有横向环境带，这是设计如此（见 GlassLens 的中心轴注记）。
     // 显式命名：DrawScope 里的 `density` 是 Float 成员，写 `density` 靠的是重载
     // 解析恰好挑中外层这个 Density。改个名就不必依赖那个巧合。
     val switchLensDensity = density
@@ -517,8 +557,8 @@ fun LiquidSwitch(
             val thumbCenterX =
                 (if (checked) padding + dragWidth else padding) + 40.dp.toPx() / 2f
             scale(
-                scaleX = 0.75f,
-                scaleY = 0.75f,
+                scaleX = SWITCH_LENS_TRACK_SCALE_X,
+                scaleY = SWITCH_LENS_TRACK_SCALE_Y,
                 pivot = Offset(thumbCenterX, size.height / 2f)
             ) {
                 with(trackBackdrop) { drawBackdrop(switchLensDensity, coords, null) }

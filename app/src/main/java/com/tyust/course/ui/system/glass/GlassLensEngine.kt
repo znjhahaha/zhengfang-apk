@@ -182,9 +182,4 @@ internal object GlassLensEngine {
         uniformLocations.getOrPut(name) {
             GLES20.glGetUniformLocation(program, name)
         }
-
-    /** 仅供测试：让下一次 [ensureReady] 重新建上下文。 */
-    internal fun resetForTest() {
-        uniformLocations.clear()
-    }
 }
