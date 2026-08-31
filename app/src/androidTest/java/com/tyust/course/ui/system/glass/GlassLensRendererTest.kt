@@ -218,6 +218,52 @@ class GlassLensRendererTest {
     }
 
     @Test
+    fun reUploadSameSizeUpdatesOutput() {
+        // 同尺寸、版本号变化的重传走 texSubImage2D 子区域更新：滚动限频期间
+        // 每 100ms 一次都是这条路。若重传被短路、或子区域更新写错了位置/内容，
+        // 折射会永远停在第一张底图上（屏幕上是「滚了半天胶囊里还是老画面」）。
+        val renderer = RendererPair()
+        try {
+            val src = stripes(1002, 168)
+            renderer.uploadSource(src, version = 1)
+            renderer.submit(params(195, 156, left = 11f, top = 6f))
+            val first = awaitFrame(renderer)
+            assertNotNull("no first frame", first)
+            val firstCopy = first!!.copy(Bitmap.Config.ARGB_8888, false)
+
+            // 同尺寸、相位偏移 5px（20px 周期的 1/4）：每个采样点的内容都变
+            val src2 = Bitmap.createBitmap(1002, 168, Bitmap.Config.ARGB_8888)
+            for (y in 0 until 168) {
+                for (x in 0 until 1002) {
+                    val on = (((x + 5) / 10) % 2) == 0
+                    src2.setPixel(x, y, if (on) Color.rgb(30, 30, 30) else Color.rgb(225, 225, 225))
+                }
+            }
+            renderer.uploadSource(src2, version = 2)
+            renderer.submit(params(195, 156, left = 11f, top = 6f))
+
+            val deadline = System.currentTimeMillis() + 5000
+            var changed = false
+            while (System.currentTimeMillis() < deadline) {
+                val now = renderer.latest
+                if (now != null && !now.sameAs(firstCopy)) {
+                    changed = true
+                    break
+                }
+                Thread.sleep(16)
+            }
+            assertFalse("renderer failed", renderer.failed)
+            assertTrue("same-size re-upload did not change the output", changed)
+
+            firstCopy.recycle()
+            src.recycle()
+            src2.recycle()
+        } finally {
+            renderer.release()
+        }
+    }
+
+    @Test
     fun multipleRenderersShareOneContextAndAllProduceFrames() {
         // 玻璃元素有十来处。每处一个 EGL 上下文是走不通的（建一个要 10–50ms，
         // 还各占一条线程），所以上下文与 program 是进程级共享的（GlassLensEngine）。

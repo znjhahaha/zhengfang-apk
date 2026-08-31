@@ -67,17 +67,20 @@ if (!isRuntimeShaderSupported()) return   // Lens.kt:22
 
 | 文件 | 行数 | 做什么 |
 | --- | --- | --- |
-| `GlassLensEngine.kt` | 190 | 进程级共享 EGL 上下文 / GL 线程 / program 编译 / uniform location 缓存 / 失败一次即整体停用 |
-| `GlassLensRenderer.kt` | 433 | `GlassLensSource`（底图纹理，按区域共享）+ `GlassLensTarget`（FBO、回读缓冲、输出位图，按元素独占） |
-| `GlassLens.kt` | 671 | `GlassLensAnchor` 锚点、`Modifier.glassLens` / `Modifier.glassLensAnchor`、Backdrop→Picture→Bitmap 快照、上一帧结果的绘制与本帧提交 |
+| `GlassLensEngine.kt` | 185 | 进程级共享 EGL 上下文 / GL 线程 / program 编译 / uniform location 缓存 / 失败一次即整体停用 |
+| `GlassLensRenderer.kt` | 448 | `GlassLensSource`（底图纹理，按区域共享；尺寸未变的重传走 `texSubImage2D`）+ `GlassLensTarget`（FBO、回读缓冲、输出位图，按元素独占） |
+| `GlassLens.kt` | 879 | `GlassLensAnchor` 锚点、`Modifier.glassLens` / `Modifier.glassLensAnchor`、Backdrop→Picture→Bitmap 快照、上一帧结果的绘制与本帧提交、首帧/失败兜底 |
 | `GlassLensRegion.kt` | 108 | 「区域」抽象 + 两个 CompositionLocal（普通/模态预模糊） |
 | `GlassLensFreshness.kt` | 59 | 底图何时重拍：滚动限频 + 停下补拍 |
 | `GlassLensShader.kt` | 228 | 上面那段移植的着色器 + 为什么每一行是这样的说明 |
+| `PhysicalLensSurface.kt` 的 `glassLensOpticsFrom` | — | 把同一份 dp 配方换算成着色器要的像素量，与 33+ 共用 `lensScales` 曲线 |
+
+行数是快照，改代码时容易忘了同步（已经飘过一次）。以 `wc -l` 为准，别照着这里的数字下结论。
 
 仪器测试在 `app/src/androidTest/.../glass/`：`GlassLensRendererTest` 验上线代码真的出
-折射（含区域共享语义）；另三个是探路阶段的证据，分别记录 `Bitmap.createBitmap(Picture)`
-可用、ES 2.0 离屏可跑复杂着色器、以及零回读通路**更慢所以放弃**。
-| `PhysicalLensSurface.kt` 的 `glassLensOpticsFrom` | — | 把同一份 dp 配方换算成着色器要的像素量，与 33+ 共用 `lensScales` 曲线 |
+折射（含区域共享语义，6 个用例）；另三个是探路阶段的证据，分别记录
+`Bitmap.createBitmap(Picture)` 可用、ES 2.0 离屏可跑复杂着色器、以及零回读通路
+**更慢所以放弃**。
 
 这部分是本项目原创，因为库根本不需要它：AGSL 由平台喂输入、由平台合成输出，
 不存在「上下文」「底图」「重拍」这些概念。
@@ -118,6 +121,33 @@ Modifier.glassLens.draw()   画**上一帧**的结果，同时提交本帧
 `LocalGlassLensAnchor` 读，滑动时只改采样窗口 `u_srcOrigin`。
 另外底图必须**比元素大**，否则边缘采样会被 CLAMP 成一圈涂抹。
 
+**首帧与失败都有兜底，元素永远不会整块空白。** 调用方的 `onDrawBackdrop` 在
+锚点非 null 时把背景绘制让给了折射，而折射帧是异步渲的（提交 → GL 线程 →
+`onFrameReady` → 重绘）—— 中间那一两帧、以及各种失败路径上，元素靠什么显示：
+
+- **首帧间隙**：锚点保留 capture 产物作兜底底图（它本来上传完就弃，保留引用
+  零额外采集成本）。还没渲出帧的元素直接画底图上自己那块：同一个（已按实测
+  尺寸夹取的）圆角裁剪 + `ColorMatrix.setSaturation(vibrancy)` 复现着色器的
+  `applyVibrancy`，只是没有位移与色散。任一元素画出首帧后兜底位图即丢弃
+  （只置 null 不 recycle——区域内其他元素可能还在画它，recycle 会
+  use-after-recycle）。已知接受的残余：兜底丢弃后**新出现**的元素（如开弹窗）
+  仍有 1 帧空白，有入场淡入遮掩。
+- **底图捕获失败**：走 `source.failCapture()` → snapshot `failed` →
+  `rememberGlassLensAnchor` 收回锚点 → 重组切回 blur 兜底，与 GL 失败同一条路。
+  曾经只 latch 在锚点里的普通 Boolean 上，组合期读不到，元素永久空白。
+- **元素级渲染失败**（如 FBO 建不起来）：不提前 return 了——画 stale
+  `latest`（冻结在最后一帧）或兜底位图，只是不再提交新帧。曾经 failed 检查
+  放在画 latest **之前**的 return，失败后一个像素都不画，直到元素重组。
+
+**内存画像**（1080p 级）：GPU 常驻 ≈ 底栏条 + 全屏锐利底图 +（懒拍，首次
+开弹窗才有）全屏模糊底图 + 成绩页区域 ≈ 25MB 级；CPU 侧 capture 产物上传后
+即弃（GC 瞬态），兜底位图在正常路径上只存在于「首拍完成 → 首帧渲出」窗口内
+（约一张全屏 ARGB，一至三帧）。模态底图是懒的，不是预烤的。
+
+一个例外：**元素级失败且从未渲出过帧**时 `onFrameDrawn()` 永不触发，兜底位图
+会一直持有到锚点离开组合。这是有意的代价 —— 它是那个元素唯一还看得见东西的
+原因 —— 但「稳态零额外内存」在这条路径上不成立，量内存时别把它当异常。
+
 ## 5. 底图要复现「元素实际压着的东西」
 
 AGSL 的输入由平台自动提供；GL 这边必须**手工重建同一张图**。这是整个移植里最容易错的地方。
@@ -147,6 +177,10 @@ AGSL 的输入由平台自动提供；GL 这边必须**手工重建同一张图*
 - 滚动期间 → 限频 100ms 一次（≈5% 开销）。
 - 滚动停下 / 换页动画结束 → 补拍一次（用户真正盯着看的是静止态）。
 - 静止 → 零开销。
+
+重传本身也分两档：尺寸未变（绝大多数情况）走 `texSubImage2D` 子区域更新，
+复用既有纹理分配；只有尺寸变化才 `texImage2D` 整张重分配。滚动限频期间
+不再每 100ms 造一次 10MB 级的 GPU 重分配。
 
 试过并放弃：常驻 `HardwareRenderer` + `SurfaceTexture` 的零回读通路。
 中位 4.69ms、p90 15.99ms，比现在**更差** —— `HardwareRenderer` 按 vsync 节拍走，
@@ -193,16 +227,27 @@ fun isGlassLensApplicable(): Boolean   // 只在 31/32 为 true
 
 **一个雷**：走折射路径时调用方的 `onDrawBackdrop` 会**让掉**正常的背景绘制
 （背景由折射负责画）。所以折射一旦失效而组合期读不到这个变化，元素就永远没有背景 ——
-屏幕上是整块面板消失（弹窗上实拍到过）。因此 `failed` 用 snapshot state 存，
-失败会触发重组、连 blur 兜底一起切回去；锚点没挂到节点上时 `warnUnanchored()` 会报错。
+屏幕上是整块面板消失（弹窗上实拍到过）。因此三级失败全部要能被组合期或绘制期读到：
+GL/引擎级与底图捕获失败用 snapshot state 存（`failed` 触发重组、连 blur 兜底
+一起切回去）；元素级失败不在组合期能摸到的地方（target 在 Modifier.Node 里），
+就退化成「画 stale 最后一帧、不再提交」而不是空白。锚点没挂到节点上时
+`warnUnanchored()` 会报错（debug 构建升级为 `Log.wtf`，且 `rememberGlassLensAnchor`
+等两帧后组合期主动自检一次，不再依赖区域内恰好有元素在 draw）。
 
 ## 9. 已知未完成
 
 - API 31 没有真机验证过（只有 32 和 35）。
 - 底栏指示器亮度比按算法预测值低约 6%（预测 222.7，实测 213）；
   疑点在底图重建与库自己的 `vibrancy()` 之间，以及着色器里 `vibrancy = 1.28`。
-- 开关滑块（`LiquidSelectionComponents.kt`）仍是内联 `lens()` + 硬编码 5dp/10dp，
-  没走 `resolvePhysicalLens`。
+- ~~开关滑块仍是内联 `lens()` + 硬编码 5dp/10dp，没走 `resolvePhysicalLens`。~~
+  **已解决**（圆钮类控件的真折射，见上面 8 节的覆盖表）。这一条曾经把文件写成
+  `LiquidSelectionComponents.kt` —— 那是错的，该文件三处 `lens()` 一直都走
+  `resolvePhysicalLens`。真正硬编码的是 `LiquidComponents.kt`（开关旋钮）、
+  `LiquidColorField.kt`（色板摘钮）、`GlassGradientSlider.kt`（滑块 thumb），
+  而三处**都在 `if (switchLensAnchor == null)` 里**，即 API ≤ 30 的 legacy 兜底；
+  31/32 上折射已由 `glassLens` + `ThumbLens.kt` 的 `thumbLensOptics` 接管。
+  那几个 dp 数字照库 catalog 的 LiquidSlider 抄，是刻意保留的，见
+  `ThumbLens.kt` 的类注释。
 - 真机上的实际帧开销还没量（探针已随本版删除，量的时候要重新加回临时插桩）。
 
 ## 10. 参考

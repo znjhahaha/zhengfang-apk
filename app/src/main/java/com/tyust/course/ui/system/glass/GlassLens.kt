@@ -1,7 +1,10 @@
 package com.tyust.course.ui.system.glass
 
 import android.graphics.Bitmap
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Picture
 import android.os.Build
 import androidx.compose.runtime.Composable
@@ -14,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import com.tyust.course.BuildConfig
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.CanvasHolder
@@ -111,8 +116,25 @@ class GlassLensAnchor internal constructor(
     private var uploadedVersion = -1
     private var captureFailed = false
 
+    /**
+     * 「首拍完成 → 首帧渲出」之间的兜底底图（capture 产物本体，ARGB_8888）。
+     *
+     * 折射帧是异步渲的（提交 → GL 线程 → onFrameReady → 重绘），而调用方的
+     * `onDrawBackdrop` 在锚点非 null 时已经把背景绘制让给了折射 —— 中间这一两帧
+     * 元素会整块无背景。这张位图填那个洞：还没有渲出帧的任何时刻，元素直接画
+     * 底图上自己那块（[GlassLensNode] 的 drawFallback）。
+     *
+     * capture 产物本来上传完就弃，保留引用零额外采集成本；首帧画出
+     * （[onFrameDrawn]）即丢弃，稳态不占内存。
+     */
+    internal var fallbackBitmap: Bitmap? = null
+        private set
+
+    private var hasRenderedFrame = false
+
     internal fun onPositioned(coords: LayoutCoordinates) {
         coordinates = coords
+        unattachedDraws = 0
         val s = IntSize(coords.size.width, coords.size.height)
         if (s != sizePx) sizePx = s
     }
@@ -124,15 +146,40 @@ class GlassLensAnchor internal constructor(
 
     private var warnedUnanchored = false
 
-    /** 只吼一次，别把 logcat 刷满。 */
+    /** 连续多少次 draw 仍然没有 coordinates。挂上即清零。 */
+    private var unattachedDraws = 0
+
+    /**
+     * draw 期发现锚点还没有 coordinates。
+     *
+     * 立刻吼是误报：分段控件的锚点经 `SideEffect` + state 绕一帧才挂上
+     * （LiquidSelectionComponents 的 segLensAnchor），首个 draw 必然读不到
+     * coordinates —— 实测每个分段控件都会在首帧吼一次。数到第 3 次仍未挂上
+     * 才算真的没挂。组合期自检（等 2 帧）与这里互为冗余，谁先到谁报。
+     */
+    internal fun noteDrawUnanchored() {
+        unattachedDraws++
+        if (unattachedDraws >= 3) warnUnanchored()
+    }
+
+    /**
+     * 只吼一次，别把 logcat 刷满。已经挂上的锚点不吼（组合期自检可能在
+     * `glassLensAnchor` 尚未布局完成时先来问一次）。
+     *
+     * debug 构建用 `Log.wtf` 让 Logcat 高亮：这是调用方的编码错误，而它的
+     * 后果（整块元素无背景）属于"看截图猜不出来"的那一级。
+     */
     internal fun warnUnanchored() {
-        if (warnedUnanchored) return
+        if (warnedUnanchored || coordinates != null) return
         warnedUnanchored = true
-        android.util.Log.e(
-            TAG,
+        val msg =
             "lens region '$tag' was never attached with Modifier.glassLensAnchor — " +
                 "elements using it will have no background at all"
-        )
+        if (BuildConfig.DEBUG) {
+            android.util.Log.wtf(TAG, msg)
+        } else {
+            android.util.Log.e(TAG, msg)
+        }
     }
 
     /** 确保底图已上传。返回底图尺寸，未就绪返回 null。 */
@@ -156,12 +203,34 @@ class GlassLensAnchor internal constructor(
         if (bitmap == null) {
             if (!captureFailed) android.util.Log.w(TAG, "backdrop capture returned null")
             captureFailed = true
+            // 捕获失败必须走 snapshot 失败传播（与 GL 失败同一条路）：
+            // rememberGlassLensAnchor 读到 source.failed 后收回锚点，站点重组
+            // 切回 blur 兜底。曾经这里只 latch 一个普通 Boolean —— 锚点保持
+            // 非 null、调用方继续让掉背景绘制，元素从此**永久空白**，
+            // 正是第 8 节"失败必须让组合期读到"要防的那种事故。
+            source.failCapture()
+            clearFallback()
             return null
         }
         source.uploadSource(bitmap, version)
         uploadedKey = key
         uploadedVersion = version
+        if (!hasRenderedFrame) fallbackBitmap = bitmap
         return size
+    }
+
+    /** 首帧折射结果已画出：兜底位图功成身退。 */
+    internal fun onFrameDrawn() {
+        if (hasRenderedFrame) return
+        hasRenderedFrame = true
+        // 只置 null 不 recycle：区域内其他元素此刻可能还在画同一张位图，
+        // recycle 会 use-after-recycle。位图交给 GC，稳态内存归零。
+        fallbackBitmap = null
+    }
+
+    /** 丢弃兜底位图引用（锚点离开组合 / 捕获失败时）。同样不 recycle，理由同上。 */
+    internal fun clearFallback() {
+        fallbackBitmap = null
     }
 
     /**
@@ -314,6 +383,16 @@ fun rememberGlassLensAnchor(
     // lambda 每次组合都是新实例，但 anchor 要保持同一个（它持有 GL 资源），
     // 所以逐次刷新引用而不是把 lambda 放进 remember 的 key
     anchor.drawSource = drawSource
+    if (BuildConfig.DEBUG) {
+        // 组合期自检：锚点忘了挂 Modifier.glassLensAnchor 是编码错误，但它的
+        // 后果（元素无背景）只在区域内首个元素 draw 时才暴露；区域内暂时没有
+        // 折射元素时（如弹窗还没开过）就一直静默。等两帧（布局跑完）主动查一次。
+        // 33+ 在函数开头就早退了，这里零开销。
+        LaunchedEffect(anchor) {
+            repeat(2) { withFrameNanos { } }
+            anchor.warnUnanchored()
+        }
+    }
     // 换壁纸必须重拍，**这一条建在锚点里，不交给调用方**。
     //
     // 壁纸是每一张底图的最底层：没有哪个区域的底图能在壁纸变了之后还是对的。
@@ -345,7 +424,10 @@ fun rememberGlassLensAnchor(
         }
     }
     DisposableEffect(anchor) {
-        onDispose { anchor.source.release() }
+        onDispose {
+            anchor.source.release()
+            anchor.clearFallback()
+        }
     }
     // 底图彻底失败（GL 挂了、快照拿不到）时把锚点收回去，让站点整体退回 blur 路径。
     // 不收的话站点会保持折射路径，而折射路径把背景绘制让给了折射本身 ——
@@ -589,6 +671,16 @@ private class GlassLensNode(
     private var windowOffset = Offset.Zero
     private val paint = Paint().apply { isFilterBitmap = true }
 
+    // 兜底路径的绘制用具：饱和度滤镜复现着色器的 applyVibrancy
+    // （ColorMatrix.setSaturation 与 mix(luminance, rgb, sat) 同式），
+    // 圆角轮廓用 Path 裁剪。
+    private var fallbackPaint: Paint? = null
+    private var fallbackSaturation = Float.NaN
+    private val fallbackSrc = android.graphics.Rect()
+    private val fallbackClip = Path()
+
+    /** 元素完整轮廓的 dst 框（圆角按它构造，与被裁到的可见 dstRect 区分开）。 */
+    private val fallbackFullDst = android.graphics.RectF()
 
     // 逐实例可变对象，避免多个指示器共享时互相踩
     private val srcRect = android.graphics.Rect()
@@ -617,43 +709,24 @@ private class GlassLensNode(
         // 锚点没被 Modifier.glassLensAnchor 挂到任何节点上 —— 这是调用方的编码错误，
         // 而它的后果很隐蔽：折射一个像素都不画，同时调用方的 onDrawBackdrop 已经把
         // 背景绘制让给了折射，于是整块元素**没有背景**（弹窗上实拍到过一次：卡片
-        // 完全消失，只剩文字和按钮浮在页面上）。所以这里必须吵。
+        // 完全消失，只剩文字和按钮浮在页面上）。所以必须吵 —— 但要去抖（见
+        // noteDrawUnanchored：SideEffect 绕一帧挂锚点的控件首帧必然在这里误报）。
         if (anchor.coordinates == null) {
-            anchor.warnUnanchored()
+            anchor.noteDrawUnanchored()
             return
         }
         anchor.ensureSource() ?: return
         val anchorCoords = anchor.coordinates ?: return
         val renderer = target
-        if (renderer.failed) return
 
         val origin = anchorCoords.positionInWindow()
         val left = windowOffset.x - origin.x
         val top = windowOffset.y - origin.y
 
-        // 先画上一帧的结果，再提交这一帧：在 draw() 里等 GPU 会钉住 UI 线程
-        // 尺寸不一致时**拉伸**而不是丢弃：上一帧的尺寸在布局收敛或动画中经常
-        // 与当前差几像素，严格相等的判断会把「差一帧」放大成「永远不画」。
-        // 几像素的缩放看不出来，不画则是致命的。
+        // 先画上一帧的结果，再提交这一帧：在 draw() 里等 GPU 会钉住 UI 线程。
         // 与库那层 layerBlock 同一份形变：缩放与平移都要跟上，
         // 否则库画的 surface/highlight 与折射会错开（见 GlassLensTransform）。
         val t = scale?.compute(size.width, size.height) ?: GlassLensTransform.Identity
-
-        renderer.latest?.let { frame ->
-            if (!frame.isRecycled) {
-                // 不再翻转：glReadPixels 的自下而上与 copyPixelsFromBuffer 的
-                // 自上而下已互相抵消（见 GlassLensRenderer）。多翻一次会上下镜像。
-                srcRect.set(0, 0, frame.width, frame.height)
-                // 拉伸而非重渲染：库也是先按原尺寸跑完着色器、再由 graphicsLayer
-                // 整层缩放，两者等价。这样 GL 侧的 FBO 尺寸也不必随动画每帧重建。
-                val dw = w * t.scaleX
-                val dh = h * t.scaleY
-                val dx = (w - dw) / 2f + t.translationX
-                val dy = (h - dh) / 2f + t.translationY
-                dstRect.set(dx, dy, dx + dw, dy + dh)
-                drawContext.canvas.nativeCanvas.drawBitmap(frame, srcRect, dstRect, paint)
-            }
-        }
 
         val halfMin = minOf(w, h) / 2f
 
@@ -668,6 +741,40 @@ private class GlassLensNode(
         // 这类"标称 vs 实测"的错配已经害过两次（另一次是斜坡宽度），
         // 所以这里的原则是：**光学参数一律按实测尺寸夹一遍**。
         val radius = optics.cornerRadiusPx.coerceIn(0f, halfMin)
+
+        val frame = renderer.latest
+        if (frame != null && !frame.isRecycled) {
+            // 尺寸不一致时**拉伸**而不是丢弃：上一帧的尺寸在布局收敛或动画中经常
+            // 与当前差几像素，严格相等的判断会把「差一帧」放大成「永远不画」。
+            // 几像素的缩放看不出来，不画则是致命的。
+            // 不再翻转：glReadPixels 的自下而上与 copyPixelsFromBuffer 的
+            // 自上而下已互相抵消（见 GlassLensRenderer）。多翻一次会上下镜像。
+            srcRect.set(0, 0, frame.width, frame.height)
+            // 拉伸而非重渲染：库也是先按原尺寸跑完着色器、再由 graphicsLayer
+            // 整层缩放，两者等价。这样 GL 侧的 FBO 尺寸也不必随动画每帧重建。
+            val dw = w * t.scaleX
+            val dh = h * t.scaleY
+            val dx = (w - dw) / 2f + t.translationX
+            val dy = (h - dh) / 2f + t.translationY
+            dstRect.set(dx, dy, dx + dw, dy + dh)
+            drawContext.canvas.nativeCanvas.drawBitmap(frame, srcRect, dstRect, paint)
+            anchor.onFrameDrawn()
+        } else {
+            // 首帧间隙（提交 → GL 线程 → onFrameReady → 重绘，约一帧）：画兜底
+            // 底图上自己那块。调用方的 onDrawBackdrop 在锚点非 null 时已把背景
+            // 绘制让给了折射，这一帧不画东西就是整块空白 —— App 冷启动的底栏上
+            // 肉眼可见。已知接受的残余：兜底位图在首帧渲出后即被丢弃，此后**新
+            // 出现**的元素（如开弹窗）仍有 1 帧空白，有入场淡入遮掩，不值得为它
+            // 常驻一张全屏位图。
+            drawFallback(left, top, w, h, radius, t, optics.vibrancy)
+        }
+
+        // 元素级失败（如这台设备的 FBO 建不起来）：上面的 stale latest / 兜底已
+        // 保证有东西可看，这里只是不再提交新帧 —— 冻结在最后一帧好过永远空白。
+        // 曾经这行是放在画 latest **之前**的提前 return，而 target 的 ownFailed
+        // 不是 snapshot state、组合期读不到：失败后既不切回 blur 路径，也一个
+        // 像素都不画，直到元素重组（持久元素如底栏则直到重启）。
+        if (renderer.failed) return
 
         // 斜坡上限同样按实测短边施加：斜坡宽到吃掉整个形状时，折射会退化成一个
         // 空心发光环而不是玻璃（实测占半短边 0.6 就是这样）。
@@ -693,5 +800,80 @@ private class GlassLensNode(
                 vibrancy = optics.vibrancy
             )
         )
+    }
+
+    /**
+     * 首帧间隙 / 元素级失败后的兜底：直接画底图上自己那块区域。
+     *
+     * 与着色器的差异只有两处，都是刻意的近似：
+     * - 没有折射位移与色散（那正是还没渲出来的东西）；
+     * - 饱和度用 `ColorMatrix.setSaturation(vibrancy)` 复现 applyVibrancy。
+     *
+     * 圆角用与着色器同一个（已按实测尺寸夹取的）radius 裁剪，且跟着形变缩放
+     * （latest 的画法里圆角同样被 dstRect 缩放）；底图边界外的份额按比例收缩
+     * **dst**（避免 drawBitmap 把可见子区域拉伸到整个目标框），但**不缩半径** ——
+     * 圆角按元素完整轮廓走，见下面 fallbackFullDst 处的注释。
+     */
+    private fun DrawScope.drawFallback(
+        left: Float,
+        top: Float,
+        w: Int,
+        h: Int,
+        radius: Float,
+        t: GlassLensTransform,
+        vibrancy: Float
+    ) {
+        val bmp = anchor.fallbackBitmap ?: return
+        if (bmp.isRecycled) return
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        if (bw < 1f || bh < 1f) return
+
+        // 元素在底图上的窗口（与 u_srcOrigin 同一坐标系），夹到底图边界内。
+        // src 用整型 Rect（Canvas 只有 (Rect, RectF) 这个重载）：亚像素损失对
+        // 一两帧的兜底画面无所谓，dst 的份额按取整后的值算，保证映射不偏。
+        val sx0 = left.coerceIn(0f, bw).toInt()
+        val sy0 = top.coerceIn(0f, bh).toInt()
+        val sx1 = (left + w).coerceIn(0f, bw).toInt().coerceAtLeast(sx0 + 1)
+        val sy1 = (top + h).coerceIn(0f, bh).toInt().coerceAtLeast(sy0 + 1)
+        if (sx1 - sx0 < 1 || sy1 - sy0 < 1) return
+
+        val p = fallbackPaint ?: Paint(Paint.FILTER_BITMAP_FLAG).also { fallbackPaint = it }
+        if (fallbackSaturation != vibrancy) {
+            fallbackSaturation = vibrancy
+            p.colorFilter = ColorMatrixColorFilter(
+                ColorMatrix().apply { setSaturation(vibrancy) }
+            )
+        }
+
+        val dw = w * t.scaleX
+        val dh = h * t.scaleY
+        val dx = (w - dw) / 2f + t.translationX
+        val dy = (h - dh) / 2f + t.translationY
+        // 被底图边界裁掉的份额 → dst 按比例收缩（正常情况 u0v0=0、u1v1=1）
+        val u0 = (sx0 - left) / w
+        val v0 = (sy0 - top) / h
+        val u1 = (sx1 - left) / w
+        val v1 = (sy1 - top) / h
+        fallbackSrc.set(sx0, sy0, sx1, sy1)
+        dstRect.set(dx + dw * u0, dy + dh * v0, dx + dw * u1, dy + dh * v1)
+
+        val canvas = drawContext.canvas.nativeCanvas
+        val save = canvas.save()
+        // 圆角按元素**完整**轮廓构造，半径只随形变缩放 —— 圆角是形状的属性，不是
+        // 「可见了多少」的属性。曾经这里把半径乘了可见比例 (u1-u0)，于是被底图
+        // 边界裁掉一半的元素会得到半圆角。与可见区域求交不必再 clip 一次：
+        // 下面的 drawBitmap 本就只覆盖 dstRect。
+        fallbackFullDst.set(dx, dy, dx + dw, dy + dh)
+        fallbackClip.reset()
+        fallbackClip.addRoundRect(
+            fallbackFullDst,
+            radius * t.scaleX,
+            radius * t.scaleY,
+            Path.Direction.CW
+        )
+        canvas.clipPath(fallbackClip)
+        canvas.drawBitmap(bmp, fallbackSrc, dstRect, p)
+        canvas.restoreToCount(save)
     }
 }
