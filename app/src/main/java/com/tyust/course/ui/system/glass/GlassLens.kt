@@ -6,12 +6,14 @@ import android.graphics.Picture
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.CanvasHolder
@@ -31,6 +33,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.kyant.backdrop.Backdrop
+import com.tyust.course.manager.AppearanceSettingsManager
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * API 31/32 上的真折射：离屏 OpenGL ES 2.0。
@@ -309,6 +314,36 @@ fun rememberGlassLensAnchor(
     // lambda 每次组合都是新实例，但 anchor 要保持同一个（它持有 GL 资源），
     // 所以逐次刷新引用而不是把 lambda 放进 remember 的 key
     anchor.drawSource = drawSource
+    // 换壁纸必须重拍，**这一条建在锚点里，不交给调用方**。
+    //
+    // 壁纸是每一张底图的最底层：没有哪个区域的底图能在壁纸变了之后还是对的。
+    // 曾经这是各调用点自己的 key（MainActivity 的两个区域写了
+    // `AppearanceSettingsManager.style`，底栏和分段控件没写），于是漏的那两个
+    // 在换壁纸后永远refract 着旧壁纸。
+    //
+    // 实测（API 32，「背景」弹窗切 预设/颜色/图片 三段）：切页会由
+    // `LaunchedEffect(tabIndex)` 立刻换壁纸，而分段控件的底图只 key 了选中项。
+    // 把底图与屏幕逐张对比，底图**每次都等于上一张屏幕**：
+    // 与上一张的差 6.2 / 10.8 / 6.6，与当前的差 42.7 / 47.6 / 18.7。
+    // 屏幕上就是用户报的"切换的时候会取样上一个"。
+    //
+    // ## 为什么要拍两次
+    //
+    // 只立刻拍一次不够：`version++` 之后下一次 draw 才会重拍，而那一帧壁纸层
+    // （LayerBackdrop 的 RenderNode）可能还没按新样式重录一遍，拍到的仍是旧的。
+    // 图片壁纸更慢 —— 位图是异步解码的。所以照底栏换页的做法：立刻拍一张
+    // （总比留着上一张好），稍后再补一张。collectLatest 让连续切换只有最后一次
+    // 走到底。
+    //
+    // 在 snapshotFlow **里**读 style，不在组合期读：组合期读会让每个带折射的
+    // 子树都订阅壁纸。
+    LaunchedEffect(anchor) {
+        snapshotFlow { AppearanceSettingsManager.style }.collectLatest {
+            anchor.invalidate()
+            delay(240)
+            anchor.invalidate()
+        }
+    }
     DisposableEffect(anchor) {
         onDispose { anchor.source.release() }
     }
@@ -367,6 +402,17 @@ data class GlassLensOptics(
     val dispersion: Float,
     /** 把梯度混向径向，同库的 `depthEffect`。库的底部标签栏用 0。 */
     val depthEffect: Float = 0f,
+    /**
+     * 饱和度提升，对应库那层 `effects { vibrancy() }`。
+     *
+     * **只有调用点真的调了 `vibrancy()` 才该 > 1。** 默认 1.28 是给底栏/分段控件
+     * 那些确实调了的站点用的；开关、滑块 thumb、取色摘钮的 effects 里只有
+     * `blur` 与 `lens`，没有 vibrancy，那几处必须传 1。
+     *
+     * 实测过差别：API 32 上开关按住时折射出 `16d245`，而 API 37 同一处是
+     * `34c759`（= 轨道原色）。纯色轨道折射出来本该还是同一个绿，1.28 把它推得
+     * 更饱和更暗，一眼能看出两台机器不是一个颜色。
+     */
     val vibrancy: Float = 1.28f
 )
 
@@ -561,6 +607,7 @@ private class GlassLensNode(
         val w = size.width.toInt()
         val h = size.height.toInt()
         if (w <= 1 || h <= 1) return
+
 
         // 在这里求值（而不是组合期）：参数里的按压进度/速度是 snapshot state，
         // 组合期读会让整个导航栏每帧重组。见 GlassLensOpticsProvider。

@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,14 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.DampedDragAnimation
+import com.tyust.course.ui.system.glass.GlassLensFreshness
+import com.tyust.course.ui.system.glass.glassLens
+import com.tyust.course.ui.system.glass.glassLensAnchor
+import com.tyust.course.ui.system.glass.isGlassLensApplicable
+import com.tyust.course.ui.system.glass.rememberGlassLensRegion
+import com.tyust.course.ui.system.glass.thumbLensMaterial
+import com.tyust.course.ui.system.glass.thumbLensOptics
+import com.tyust.course.ui.system.glass.thumbLensTransform
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -83,6 +92,7 @@ fun LiquidSlider(
 
     val trackBackdrop = rememberLayerBackdrop()
     var widthPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
 
     val animationScope = rememberCoroutineScope()
     // 手势期间外部值不许再驱动动画：调用方会把我们刚发出的值原路送回来，
@@ -111,11 +121,41 @@ fun LiquidSlider(
             }
     }
 
+    // API31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 ThumbLens.kt）。
+    // 底图 = 环境背景 + **未缩放**的轨道层（为什么不跟那层按压缩放：见 ThumbLens.kt
+    // 顶部）。锚点挂在外层这条 36dp 高的行容器上 —— 它不随 thumb 移动。
+    val usableBackdropForLens = backdrop?.takeIf { isBackdropSupported() }
+    // 拖动时**环境**在变：蒙版/模糊滑块一拖整张壁纸跟着变，底图不重拍的话折射里
+    // 是拖动前的壁纸。限频重拍（100ms 一次），松手补一次。
+    // 轨道自己的渐变是静态的，不需要为它重拍。
+    val lensFreshness = remember {
+        if (isGlassLensApplicable()) GlassLensFreshness() else null
+    }
+    // 显式命名：DrawScope 里的 `density` 是 Float 成员，写 `density` 靠的是重载
+    // 解析恰好挑中外层这个 Density。改个名就不必依赖那个巧合。
+    val lensDensity = density
+    val sliderLensAnchor = if (usableBackdropForLens != null) {
+        rememberGlassLensRegion(
+            tag = "slider",
+            freshness = lensFreshness
+        ) { coords ->
+            with(usableBackdropForLens) { drawBackdrop(lensDensity, coords, null) }
+            with(trackBackdrop) { drawBackdrop(lensDensity, coords, null) }
+        }
+    } else {
+        null
+    }
+    val sliderLensMaterial = remember {
+        // 库：lens(10dp * press, 14dp * press)
+        thumbLensMaterial(refractionHeightDp = 10f, refractionAmountDp = 14f)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(36.dp)
             .onSizeChanged { widthPx = it.width }
+            .glassLensAnchor(sliderLensAnchor)
             .then(
                 if (enabled) {
                     Modifier.pointerInput(widthPx, valueRange, isLtr) {
@@ -137,15 +177,22 @@ fun LiquidSlider(
                                 val initial = valueAt(down.position.x)
                                 dampedDragAnimation.updateValue(initial)
                                 onValueChange(initial)
+                                // 值一变环境背景就可能整张变（蒙版/模糊滑块改的
+                                // 就是壁纸本身），底图要跟着重拍。限频在
+                                // GlassLensFreshness 里。
+                                lensFreshness?.onScroll()
                                 drag(down.id) { change ->
                                     val target = valueAt(change.position.x)
                                     dampedDragAnimation.updateValue(target)
                                     onValueChange(target)
+                                    lensFreshness?.onScroll()
                                     change.consume()
                                 }
                             } finally {
                                 dampedDragAnimation.release()
                                 isDragging = false
+                                // 松手补一张：用户真正盯着看的是静止态
+                                lensFreshness?.onSettled()
                             }
                         }
                     }
@@ -181,7 +228,29 @@ fun LiquidSlider(
                 }
                 .then(
                     if (usableBackdrop != null) {
-                        Modifier.drawBackdrop(
+                        // 画在 drawBackdrop **之前**：折射结果就是 thumb 的背景，
+                        // 库那层的 surface / highlight / shadow 仍叠在上面。
+                        Modifier.glassLens(
+                            anchor = sliderLensAnchor,
+                            optics = { w, h ->
+                                thumbLensOptics(
+                                    material = sliderLensMaterial,
+                                    density = density,
+                                    // 胶囊：圆角就是短边的一半
+                                    cornerRadiusPx = minOf(w, h) / 2f,
+                                    minDimensionPx = minOf(w, h),
+                                    press = dampedDragAnimation.pressProgress
+                                )
+                            },
+                            // 与下面 layerBlock 读**同一个**函数
+                            scale = { _, _ ->
+                                thumbLensTransform(
+                                    anim = dampedDragAnimation,
+                                    velocityDivisor = 10f,
+                                    reduceMotion = false
+                                )
+                            }
+                        ).drawBackdrop(
                             backdrop = rememberCombinedBackdrop(
                                 usableBackdrop,
                                 rememberBackdrop(trackBackdrop) { drawBackdrop ->
@@ -196,12 +265,20 @@ fun LiquidSlider(
                             shape = { Capsule() },
                             effects = {
                                 val press = dampedDragAnimation.pressProgress
-                                blur(8.dp.toPx() * (1f - press))
-                                lens(
-                                    10.dp.toPx() * press,
-                                    14.dp.toPx() * press,
-                                    chromaticAberration = true
-                                )
+                                if (sliderLensAnchor == null) {
+                                    blur(8.dp.toPx() * (1f - press))
+                                    lens(
+                                        10.dp.toPx() * press,
+                                        14.dp.toPx() * press,
+                                        chromaticAberration = true
+                                    )
+                                }
+                                // 31/32：折射与色散都已由上面的 glassLens 画完。
+                                // 那层 blur 也不能留 —— 它会把自家折射糊掉。
+                            },
+                            onDrawBackdrop = { drawBackdrop ->
+                                // 31/32 上背景已由 glassLens 折射过，不能再画一遍
+                                if (sliderLensAnchor == null) drawBackdrop()
                             },
                             highlight = {
                                 val press = dampedDragAnimation.pressProgress
@@ -219,11 +296,15 @@ fun LiquidSlider(
                                 InnerShadow(radius = 4.dp * press, alpha = press)
                             },
                             layerBlock = {
-                                scaleX = dampedDragAnimation.scaleX
-                                scaleY = dampedDragAnimation.scaleY
-                                val velocity = dampedDragAnimation.velocity / 10f
-                                scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                                scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                                // 与上面 glassLens(scale) 读**同一个** thumbLensTransform，
+                                // 两者不可能再脱钩
+                                val t = thumbLensTransform(
+                                    anim = dampedDragAnimation,
+                                    velocityDivisor = 10f,
+                                    reduceMotion = false
+                                )
+                                scaleX = t.scaleX
+                                scaleY = t.scaleY
                             },
                             onDrawSurface = {
                                 val press = dampedDragAnimation.pressProgress

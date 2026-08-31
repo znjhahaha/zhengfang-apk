@@ -122,6 +122,37 @@ fun LiquidColorField(
         null
     }
 
+    // API31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 ThumbLens.kt）。
+    // 底图 = 环境背景 + **未缩放**的色板层（为什么不跟那层按压缩放：见 ThumbLens.kt
+    // 顶部）。锚点挂在外层容器上 —— 它不随摘钮移动。
+    // 这里**不**像开关那样把 0.75 烤进底图（见 LiquidComponents.kt 里 switchLensAnchor
+    // 的注释）。原因是两者的处境不同：
+    //  - 开关的轨道是**纯色**，不缩就等于折射一片平场，屏幕上旋钮直接消失 ——
+    //    那一步是"有没有效果"的问题；
+    //  - 这块板是 150dp 的连续渐变，摘钮无论缩不缩都有内容可折射，差别只是
+    //    放大率略有不同 —— 是"效果强弱"的问题。
+    // 而要缩就得知道摘钮中心，它跟着 (saturation, brightness) 每帧动，写进重拍
+    // 键就是拖动全程每帧重拍（一次约 5ms）。为一点放大率差付这个代价不值。
+    // 实测按住摘钮：折射输出是 af88a8→b07ca6 的连续渐变（静止是平的 bd91b5），
+    // 效果本身在。
+    val fieldLensAnchor = if (glassBackdrop != null) {
+        // 色板的内容跟着色相走：换色相整块板都变色，底图必须重拍。
+        // 量化到 1 度，拖色相条时最多重拍 360 次而不是每帧。
+        // 显式命名：DrawScope 里的 `density` 是 Float 成员，写 `density` 靠的是
+        // 重载解析恰好挑中外层这个 Density。改个名就不必依赖那个巧合。
+        val lensDensity = density
+        rememberGlassLensRegion(tag = "colorfield", hue.toInt()) { coords ->
+            with(glassBackdrop) { drawBackdrop(lensDensity, coords, null) }
+            with(fieldBackdrop) { drawBackdrop(lensDensity, coords, null) }
+        }
+    } else {
+        null
+    }
+    val puckLensMaterial = remember {
+        // 库：lens(5dp * press, 10dp * press)
+        thumbLensMaterial(refractionHeightDp = 5f, refractionAmountDp = 10f)
+    }
+
     val pureHue = Color.hsv(hue.coerceIn(0f, 360f), 1f, 1f)
     val currentColor = Color.hsv(
         hue.coerceIn(0f, 360f),
@@ -134,6 +165,7 @@ fun LiquidColorField(
             .fillMaxWidth()
             .height(fieldHeight)
             .onSizeChanged { fieldSize = it }
+            .glassLensAnchor(fieldLensAnchor)
             .pointerInput(fieldSize) {
                 val width = fieldSize.width.toFloat()
                 val height = fieldSize.height.toFloat()
@@ -187,17 +219,48 @@ fun LiquidColorField(
         if (puckBackdrop != null) {
             Box(
                 modifier = puckOffsetModifier
+                    // 画在 drawBackdrop **之前**：折射结果就是摘钮的背景，
+                    // 库那层的 surface / highlight / shadow 仍叠在上面。
+                    .glassLens(
+                        anchor = fieldLensAnchor,
+                        optics = { w, h ->
+                            thumbLensOptics(
+                                material = puckLensMaterial,
+                                density = density,
+                                // 圆：圆角就是短边的一半
+                                cornerRadiusPx = minOf(w, h) / 2f,
+                                minDimensionPx = minOf(w, h),
+                                press = dragAnimation.pressProgress
+                            )
+                        },
+                        // 与下面 layerBlock 读**同一个**函数
+                        scale = { _, _ ->
+                            thumbLensTransform(
+                                anim = dragAnimation,
+                                velocityDivisor = 50f,
+                                reduceMotion = accessibility.reduceMotion
+                            )
+                        }
+                    )
                     .drawBackdrop(
                         backdrop = puckBackdrop,
                         shape = { CircleShape },
                         effects = {
                             val progress = dragAnimation.pressProgress
-                            blur(8.dp.toPx() * (1f - progress))
-                            lens(
-                                refractionHeight = 5.dp.toPx() * progress,
-                                refractionAmount = 10.dp.toPx() * progress,
-                                chromaticAberration = true
-                            )
+                            if (fieldLensAnchor == null) {
+                                blur(8.dp.toPx() * (1f - progress))
+                                lens(
+                                    refractionHeight = 5.dp.toPx() * progress,
+                                    refractionAmount = 10.dp.toPx() * progress,
+                                    chromaticAberration = true
+                                )
+                            }
+                            // 31/32：折射与色散都已由上面的 glassLens 画完。
+                            // 那层 blur 也不能留 —— 它会把自家折射糊掉。
+                        },
+                        onDrawBackdrop = { drawBackdrop ->
+                            // 31/32 上背景已由 glassLens 折射过，不能再画一遍
+                            if (fieldLensAnchor == null) drawBackdrop()
                         },
                         highlight = {
                             val progress = dragAnimation.pressProgress
@@ -215,16 +278,15 @@ fun LiquidColorField(
                             InnerShadow(radius = 4.dp * progress, alpha = progress)
                         },
                         layerBlock = {
-                            if (accessibility.reduceMotion) {
-                                scaleX = 1f
-                                scaleY = 1f
-                            } else {
-                                scaleX = dragAnimation.scaleX
-                                scaleY = dragAnimation.scaleY
-                                val velocity = dragAnimation.velocity / 50f
-                                scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                                scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                            }
+                            // 与上面 glassLens(scale) 读**同一个** thumbLensTransform，
+                            // 两者不可能再脱钩
+                            val t = thumbLensTransform(
+                                anim = dragAnimation,
+                                velocityDivisor = 50f,
+                                reduceMotion = accessibility.reduceMotion
+                            )
+                            scaleX = t.scaleX
+                            scaleY = t.scaleY
                         },
                         onDrawSurface = {
                             val surfaceAlpha = lerp(1f, 0f, dragAnimation.pressProgress)

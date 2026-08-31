@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -74,7 +75,12 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.tyust.course.ui.system.glass.LocalGlassLensAnchor
 import com.tyust.course.ui.system.glass.glassLens
+import com.tyust.course.ui.system.glass.glassLensAnchor
 import com.tyust.course.ui.system.glass.glassLensOpticsFrom
+import com.tyust.course.ui.system.glass.rememberGlassLensRegion
+import com.tyust.course.ui.system.glass.thumbLensMaterial
+import com.tyust.course.ui.system.glass.thumbLensOptics
+import com.tyust.course.ui.system.glass.thumbLensTransform
 import com.tyust.course.ui.system.glass.lensCornerRadiusPx
 import com.tyust.course.ui.system.glass.GlassLensTransform
 import com.tyust.course.ui.system.glass.InteractiveOptics
@@ -91,6 +97,7 @@ import com.tyust.course.ui.theme.IOSDisabledFillLight
 import com.tyust.course.ui.theme.IOSFillDark
 import com.tyust.course.ui.theme.IOSFillLight
 import com.tyust.course.ui.theme.MotionSpring
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 
@@ -468,10 +475,75 @@ fun LiquidSwitch(
         null
     }
 
+    // API31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 ThumbLens.kt）。
+    // 底图 = 环境背景 + 轨道层，与 thumbBackdrop 同源。
+    // 锚点挂在外层这个 64×48 的容器上 —— 它不随旋钮移动。
+    //
+    // ## 轨道必须按 0.75 缩，而且要绕**旋钮中心**缩
+    //
+    // 这个开关的轨道是**纯色**的。纯色底图折射出来还是同一个纯色 —— 位移一片
+    // 平场得到的仍是平场。实测过：底图不缩时按住开关，整个开关区域是均匀的
+    // `0fd840`，旋钮彻底消失，屏幕上只剩一圈 highlight（用户报的就是这个）。
+    //
+    // 33+ 那边之所以有东西可看，全靠 `scale(0.75, 0.75)` 把轨道缩得**比旋钮还矮**
+    // （64×28dp 缩成 48×21dp，而旋钮是 40×24dp）：旋钮上下边缘于是采到轨道**外面**
+    // 的环境背景，绿/环境那条边才是折射真正在弯的东西。少了这一步，折射就没有
+    // 输入。所以这里必须把它烤进底图。
+    //
+    // 缩放的原点是**旋钮中心**，与库一致 —— 库那层 `scale()` 画在旋钮自己的
+    // DrawScope 里，默认绕自身中心。绕锚点中心缩会让旋钮在 checked 那一端探出
+    // 轨道右缘 6dp。
+    //
+    // 烤的是**按满**那一档（0.75），不是当前帧的值：静止态折射为 0、表面是不透明
+    // 实色，底图根本看不见；只有按满时它才可见。中途那一两百毫秒里折射强度与表面
+    // 透明度都在同步变化，差异被自己盖住。
+    // 显式命名：DrawScope 里的 `density` 是 Float 成员，写 `density` 靠的是重载
+    // 解析恰好挑中外层这个 Density。改个名就不必依赖那个巧合。
+    val switchLensDensity = density
+    val switchLensAnchor = if (glassBackdrop != null) {
+        rememberGlassLensRegion(
+            tag = "switch",
+            // 轨道色与旋钮位置都跟着 checked 走。用 checked 而不是
+            // dragAnimation.value：后者是每帧变化的动画值，写进 keys 就是整个
+            // 动画期间每帧重拍。
+            checked,
+            enabled,
+            isLightTheme
+        ) { coords ->
+            with(glassBackdrop) { drawBackdrop(switchLensDensity, coords, null) }
+            // 旋钮中心（锚点坐标系）：CenterStart 对齐 + translationX，
+            // 与下面 thumbModifier 的 graphicsLayer 读同一组常量。
+            val padding = 2.dp.toPx()
+            val thumbCenterX =
+                (if (checked) padding + dragWidth else padding) + 40.dp.toPx() / 2f
+            scale(
+                scaleX = 0.75f,
+                scaleY = 0.75f,
+                pivot = Offset(thumbCenterX, size.height / 2f)
+            ) {
+                with(trackBackdrop) { drawBackdrop(switchLensDensity, coords, null) }
+            }
+        }
+    } else {
+        null
+    }
+    // 轨道色是 lerp(灰, 绿, value) 的动画，底图只在 checked 变化时拍了一张 ——
+    // 拍到的是动画**起点**的颜色。开关的拨动动画约 300ms，之后补一张。
+    LaunchedEffect(switchLensAnchor, checked) {
+        if (switchLensAnchor == null) return@LaunchedEffect
+        delay(320)
+        switchLensAnchor.invalidate()
+    }
+    val switchLensMaterial = remember {
+        // 库：lens(5dp * press, 10dp * press)
+        thumbLensMaterial(refractionHeightDp = 5f, refractionAmountDp = 10f)
+    }
+
     Box(
         modifier = modifier
             .width(64.dp)
             .height(48.dp)
+            .glassLensAnchor(switchLensAnchor)
             .semantics {
                 role = Role.Switch
                 stateDescription = if (checked) "已开启" else "已关闭"
@@ -522,17 +594,48 @@ fun LiquidSwitch(
         if (thumbBackdrop != null) {
             Box(
                 modifier = thumbModifier
+                    // 画在 drawBackdrop **之前**：折射结果就是旋钮的背景，
+                    // 库那层的 surface / highlight / shadow 仍叠在上面。
+                    .glassLens(
+                        anchor = switchLensAnchor,
+                        optics = { w, h ->
+                            thumbLensOptics(
+                                material = switchLensMaterial,
+                                density = density,
+                                // 胶囊：圆角就是短边的一半
+                                cornerRadiusPx = minOf(w, h) / 2f,
+                                minDimensionPx = minOf(w, h),
+                                press = dragAnimation.pressProgress
+                            )
+                        },
+                        // 与下面 layerBlock 读**同一个**函数
+                        scale = { _, _ ->
+                            thumbLensTransform(
+                                anim = dragAnimation,
+                                velocityDivisor = 50f,
+                                reduceMotion = accessibility.reduceMotion
+                            )
+                        }
+                    )
                     .drawBackdrop(
                         backdrop = thumbBackdrop,
                         shape = { Capsule() },
                         effects = {
                             val progress = dragAnimation.pressProgress
-                            blur(8.dp.toPx() * (1f - progress))
-                            lens(
-                                refractionHeight = 5.dp.toPx() * progress,
-                                refractionAmount = 10.dp.toPx() * progress,
-                                chromaticAberration = true
-                            )
+                            if (switchLensAnchor == null) {
+                                blur(8.dp.toPx() * (1f - progress))
+                                lens(
+                                    refractionHeight = 5.dp.toPx() * progress,
+                                    refractionAmount = 10.dp.toPx() * progress,
+                                    chromaticAberration = true
+                                )
+                            }
+                            // 31/32：折射与色散都已由上面的 glassLens 画完。
+                            // 那层 blur 也不能留 —— 它会把自家折射糊掉。
+                        },
+                        onDrawBackdrop = { drawBackdrop ->
+                            // 31/32 上背景已由 glassLens 以折射方式画过，不能再画一遍
+                            if (switchLensAnchor == null) drawBackdrop()
                         },
                         highlight = {
                             val progress = dragAnimation.pressProgress
@@ -556,18 +659,16 @@ fun LiquidSwitch(
                             )
                         },
                         layerBlock = {
-                            if (accessibility.reduceMotion) {
-                                scaleX = 1f
-                                scaleY = 1f
-                            } else {
-                                scaleX = dragAnimation.scaleX
-                                scaleY = dragAnimation.scaleY
-                                val velocity = dragAnimation.velocity / 50f
-                                scaleX /= 1f -
-                                    (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                                scaleY *= 1f -
-                                    (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                            }
+                            // 与上面 glassLens(scale) 读**同一个** thumbLensTransform。
+                            // 别在这里重写一份：底栏指示器上"两处各写一遍"已经出过
+                            // 一次按下时 rim 环与玻璃错开的问题。
+                            val t = thumbLensTransform(
+                                anim = dragAnimation,
+                                velocityDivisor = 50f,
+                                reduceMotion = accessibility.reduceMotion
+                            )
+                            scaleX = t.scaleX
+                            scaleY = t.scaleY
                         },
                         onDrawSurface = {
                             val progress = dragAnimation.pressProgress

@@ -428,7 +428,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val appLensAnchor = if (wallpaperBackdrop != null) {
             com.tyust.course.ui.system.glass.rememberGlassLensRegion(
                 tag = "app",
-                AppearanceSettingsManager.style,
+                // 壁纸不必写进 keys：rememberGlassLensAnchor 自己盯着
+                // AppearanceSettingsManager.style（见那边的注释）。写在这里的
+                // 后果是组合期读 style，整棵子树跟着订阅壁纸。
                 drawSource = { coords ->
                     drawBackdropSource(wallpaperBackdrop, appLensDensity, coords)
                 }
@@ -454,7 +456,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val modalLensAnchor = if (wallpaperBackdrop != null) {
             com.tyust.course.ui.system.glass.rememberGlassLensRegion(
                 tag = "app-modal",
-                AppearanceSettingsManager.style,
+                // 壁纸同上，由锚点自己盯
                 drawSource = { coords ->
                     drawBlurred(modalLensBlurPx) {
                         drawBackdropSource(wallpaperBackdrop, appLensDensity, coords)

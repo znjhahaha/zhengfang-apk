@@ -174,7 +174,12 @@ fun glassLensOpticsFrom(
     pressScalesRefraction: Boolean = false,
     refractionFloor: Float = 0.55f,
     /** 静止是否保留弱色散。选中透镜给 true，静态面板给 false。 */
-    chromaticAberrationAtRest: Boolean = false
+    chromaticAberrationAtRest: Boolean = false,
+    /**
+     * 饱和度提升，必须与调用点在 33+ 那条路上**是否调了 `vibrancy()`** 一致。
+     * 详见 [GlassLensOptics.vibrancy]。
+     */
+    vibrancy: Float = 1.28f
 ): GlassLensOptics = with(density) {
     val progress = interactionProgress.coerceIn(0f, 1f)
     val motion = motionIntensity.coerceIn(0f, 1f)
@@ -218,7 +223,8 @@ fun glassLensOpticsFrom(
         dispersion = dispersion,
         // 库的底部标签栏不开 depthEffect（LiquidBottomTabs.kt:246 只有两个位置参数）。
         // 开了会把梯度混向径向，胶囊中部也跟着位移，观感是一颗球而不是一片玻璃。
-        depthEffect = 0f
+        depthEffect = 0f,
+        vibrancy = vibrancy
     )
 }
 
