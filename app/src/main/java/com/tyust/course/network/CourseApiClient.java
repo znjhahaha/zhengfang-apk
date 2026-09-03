@@ -436,12 +436,33 @@ public class CourseApiClient {
         // 获取完整参数 (Display页面) - Web版本的 getCompleteParameters
         public void fetchCourseDisplayParams(SchoolConfig school, String xkkz_id, String kklxdm,
                         String njdm_id, String zyh_id, Callback callback) {
+                fetchCourseDisplayParamsInternal(school, xkkz_id, kklxdm, njdm_id, zyh_id, "xkkz_id", callback);
+        }
+
+        // 🔧 xkkz 参数名自适应版本：xkkzKey 为 "xkkz_id"（旧版）或 "xkkz_xh"（正方 V9）
+        // 注意：Java 重载无法与 accountStorageKey 版本区分（同为 String），故用独立方法名
+        public void fetchCourseDisplayParamsWithKey(SchoolConfig school, String xkkzValue, String kklxdm,
+                        String njdm_id, String zyh_id, String xkkzKey, Callback callback) {
+                fetchCourseDisplayParamsInternal(school, xkkzValue, kklxdm, njdm_id, zyh_id, xkkzKey, callback);
+        }
+
+        public void fetchCourseDisplayParamsWithKey(SchoolConfig school, String xkkzValue, String kklxdm,
+                        String njdm_id, String zyh_id, String xkkzKey, String accountStorageKey, Callback callback) {
+                runWithAccount(accountStorageKey, () -> {
+                        fetchCourseDisplayParamsInternal(school, xkkzValue, kklxdm, njdm_id, zyh_id, xkkzKey, callback);
+                        return null;
+                });
+        }
+
+        private void fetchCourseDisplayParamsInternal(SchoolConfig school, String xkkzValue, String kklxdm,
+                        String njdm_id, String zyh_id, String xkkzKey, Callback callback) {
                 // URL: zzxkyzb_cxZzxkYzbDisplay.html
                 String url = school.getFullBasePath() + school.courseDisplayPath + "?gnmkdm=" + school.courseGnmkdm;
                 Log.d(TAG, "Fetching display params from: " + url);
 
-                // 构建POST参数 (与Web版相同)
-                String postBody = "xkkz_id=" + (xkkz_id != null ? xkkz_id : "") +
+                // 构建POST参数 (与Web版相同)；xkkz 参数名按学校自适应
+                if (xkkzKey == null || xkkzKey.isEmpty()) xkkzKey = "xkkz_id";
+                String postBody = xkkzKey + "=" + (xkkzValue != null ? xkkzValue : "") +
                                 "&kklxdm=" + (kklxdm != null ? kklxdm : "01") +
                                 "&xszxzt=1" +
                                 "&njdm_id=" + (njdm_id != null ? njdm_id : "2024") +
@@ -463,15 +484,22 @@ public class CourseApiClient {
         public void fetchCourseDisplayParams(SchoolConfig school, String xkkz_id, String kklxdm,
                         String njdm_id, String zyh_id, String accountStorageKey, Callback callback) {
                 runWithAccount(accountStorageKey, () -> {
-                        fetchCourseDisplayParams(school, xkkz_id, kklxdm, njdm_id, zyh_id, callback);
+                        fetchCourseDisplayParamsInternal(school, xkkz_id, kklxdm, njdm_id, zyh_id, "xkkz_id", callback);
                         return null;
                 });
         }
 
         public String fetchCourseDisplayParamsSync(SchoolConfig school, String xkkz_id, String kklxdm,
                         String njdm_id, String zyh_id) {
+                return fetchCourseDisplayParamsSyncWithKey(school, xkkz_id, kklxdm, njdm_id, zyh_id, "xkkz_id");
+        }
+
+        // 🔧 xkkz 参数名自适应版本（同步）
+        public String fetchCourseDisplayParamsSyncWithKey(SchoolConfig school, String xkkzValue, String kklxdm,
+                        String njdm_id, String zyh_id, String xkkzKey) {
                 String url = school.getFullBasePath() + school.courseDisplayPath + "?gnmkdm=" + school.courseGnmkdm;
-                String postBody = "xkkz_id=" + (xkkz_id != null ? xkkz_id : "") +
+                if (xkkzKey == null || xkkzKey.isEmpty()) xkkzKey = "xkkz_id";
+                String postBody = xkkzKey + "=" + (xkkzValue != null ? xkkzValue : "") +
                                 "&kklxdm=" + (kklxdm != null ? kklxdm : "01") +
                                 "&xszxzt=1" +
                                 "&njdm_id=" + (njdm_id != null ? njdm_id : "2024") +

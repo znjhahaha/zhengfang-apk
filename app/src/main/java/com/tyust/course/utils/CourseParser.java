@@ -239,11 +239,15 @@ public class CourseParser {
 
                 // ============= Web版兼容: 保存请求参数 =============
                 // 从formParams中获取（获取课程列表时使用的参数）
+                // 🔧 xkkz 参数名兼容：formParams 键可能是 xkkz_id（旧版）或 xkkz_xh（正方 V9）
                 if (formParams != null) {
                     course._rwlx = formParams.getOrDefault("rwlx", "");
                     course._xklc = formParams.getOrDefault("xklc", "");
                     course._xkly = formParams.getOrDefault("xkly", "0");
                     course._xkkz_id = formParams.getOrDefault("xkkz_id", "");
+                    if (course._xkkz_id.isEmpty()) {
+                        course._xkkz_id = formParams.getOrDefault("xkkz_xh", "");
+                    }
                     course.njdm_id = formParams.getOrDefault("njdm_id", "");
                     course.zyh_id = formParams.getOrDefault("zyh_id", "");
                     course.xqh_id = formParams.getOrDefault("xqh_id", "");
@@ -268,6 +272,10 @@ public class CourseParser {
                 // 如果formParams中没有，尝试从JSON响应中获取
                 if (course._xkkz_id.isEmpty()) {
                     course._xkkz_id = item.optString("xkkz_id", "");
+                    // 🔧 兼容正方 V9：JSON 字段可能是 xkkz_xh
+                    if (course._xkkz_id.isEmpty()) {
+                        course._xkkz_id = item.optString("xkkz_xh", "");
+                    }
                 }
                 if (course.njdm_id.isEmpty()) {
                     course.njdm_id = item.optString("njdm_id", "");

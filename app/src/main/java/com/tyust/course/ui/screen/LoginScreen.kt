@@ -342,7 +342,8 @@ fun LoginScreen(
                                     val domain = parts[0].trim()
                                     val basePath = if (parts.size > 1) parts[1] else "/jwglxt"
                                     
-                                    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9]$")
+                                    // 🔧 支持带端口的域名（如 zfjw.mnust.edu.cn:30443）
+                                    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9](:[0-9]{1,5})?$")
                                     val isValidDomain = domain.length >= 2 && domainPattern.matches(domain)
                                     
                                     if (isValidDomain) {
@@ -917,7 +918,8 @@ fun AddSchoolDialog(
     }
     
     // Domain validation
-    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9]$")
+    // 🔧 支持带端口的域名（如 zfjw.mnust.edu.cn:30443）
+    val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.\\-]*[a-zA-Z0-9](:[0-9]{1,5})?$")
     val isValidDomain = domain.length >= 2 && domainPattern.matches(domain) && domain.contains(".")
     val showError = urlInput.isNotBlank() && domain.isNotBlank() && !isValidDomain
     
@@ -988,6 +990,7 @@ fun AddSchoolDialog(
                 value = domain,
                 onValueChange = { domain = it },
                 placeholder = "jwxt.example.edu.cn",
+                helper = "非标准端口可直接带上，如 jw.example.edu.cn:30443",
                 error = if (showError) "请输入有效域名" else null
             )
 

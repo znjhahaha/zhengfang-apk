@@ -121,6 +121,11 @@ android {
         buildConfig true
         compose true
     }
+
+    testOptions {
+        // CourseParser 等被测类内部调用 android.util.Log，JVM 单测返回默认值而非抛异常
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {

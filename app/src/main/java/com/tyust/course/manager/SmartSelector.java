@@ -8,6 +8,7 @@ import android.util.Log;
 import com.tyust.course.model.Course;
 import com.tyust.course.model.SchoolConfig;
 import com.tyust.course.network.CourseApiClient;
+import com.tyust.course.utils.CourseNameKit;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -404,13 +405,18 @@ public class SmartSelector {
                         JSONObject item = items.getJSONObject(i);
                         String kcmc = item.optString("kcmc", "");
 
-                        if (kcmc.equals(targetMatch.name)) {
+                        // 🔧 全半角括号归一化比较：用户输入"大学体育（三）"可匹配教务库"大学体育(三)"
+                        if (CourseNameKit.normalizeBrackets(kcmc).equals(CourseNameKit.normalizeBrackets(targetMatch.name))) {
                             // 找到课程，提取基础参数
                             matchedCourse = new Course();
                             matchedCourse.name = kcmc;
                             matchedCourse.courseId = item.optString("kch_id", "");
                             matchedCourse.kklxdm = item.optString("kklxdm", "");
                             matchedCourse._xkkz_id = item.optString("xkkz_id", "");
+                            if (matchedCourse._xkkz_id.isEmpty()) {
+                                // 🔧 兼容正方 V9：JSON 字段可能是 xkkz_xh
+                                matchedCourse._xkkz_id = item.optString("xkkz_xh", "");
+                            }
                             matchedCourse._rwlx = item.optString("rwlx", "1");
 
                             log("✅ 找到可选课程: " + kcmc + " (kch_id=" + matchedCourse.courseId + ")");
@@ -449,7 +455,9 @@ public class SmartSelector {
             detailBody.append("&");
         detailBody.append("kch_id=").append(targetCourse.courseId);
         if (targetCourse._xkkz_id != null && !targetCourse._xkkz_id.isEmpty()) {
-            detailBody.append("&xkkz_id=").append(targetCourse._xkkz_id);
+            // 🔧 xkkz 参数名自适应：completeParams 含 V9 键时用 xkkz_xh
+            String xkkzKey = CourseNameKit.detectXkkzKey(targetCourse.completeParams);
+            detailBody.append("&").append(xkkzKey).append("=").append(targetCourse._xkkz_id);
         }
 
         CourseApiClient.getInstance().fetchCourseSelectionDetails(school, detailBody.toString(), new Callback() {
@@ -563,7 +571,9 @@ public class SmartSelector {
         if (detailBody.length() > 0)
             detailBody.append("&");
         detailBody.append("kch_id=").append(baseCourse.courseId);
-        detailBody.append("&xkkz_id=").append(baseCourse._xkkz_id);
+        // 🔧 xkkz 参数名自适应：completeParams 含 V9 键时用 xkkz_xh
+        detailBody.append("&").append(CourseNameKit.detectXkkzKey(baseCourse.completeParams))
+                .append("=").append(baseCourse._xkkz_id);
 
         CourseApiClient.getInstance().fetchCourseSelectionDetails(school, detailBody.toString(), new Callback() {
             @Override

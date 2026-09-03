@@ -21,6 +21,7 @@ import com.tyust.course.manager.UserManager
 import com.tyust.course.model.Course
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
+import com.tyust.course.utils.CourseNameKit
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
@@ -789,7 +790,11 @@ class GrabService : Service() {
         formData["kch_id"] = course.courseId?.takeIf { it.isNotEmpty() } ?: ""
         formData["jxbzcxskg"] = params["jxbzcxskg"] ?: "0"
         formData["xklc"] = course._xklc?.takeIf { it.isNotEmpty() } ?: params["xklc"] ?: "2"
-        formData["xkkz_id"] = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: params["xkkz_id"] ?: ""
+        formData[CourseNameKit.detectXkkzKey(params)] =
+            course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(params)
+        // 🔧 正方 V9（如 mnust）：教务端校验 xkkz_xh，需与主键同时携带
+        formData["xkkz_xh"] = params["xkkz_xh"]?.takeIf { it.isNotBlank() }
+            ?: params["firstXkkzXh"] ?: ""
         formData["cxbj"] = params["cxbj"] ?: "0"
         formData["fxbj"] = params["fxbj"] ?: "0"
         formData["kspage"] = "0"
@@ -814,10 +819,11 @@ class GrabService : Service() {
                 val json = response.body?.string() ?: ""
                 try {
                     val courses = com.tyust.course.utils.CourseParser.parseCourseListFromJson(json)
-                    val targetNameLower = targetName.lowercase()
+                    // 🔧 全半角括号归一化：全角输入"大学体育（三）"可精确匹配教务库半角"大学体育(三)"
+                    val targetNameLower = CourseNameKit.normalizeBrackets(targetName).lowercase()
                     val targetTeacher = task.course.teacher?.lowercase() ?: ""
                     val matched = courses.mapNotNull { c ->
-                        val courseName = c.name?.lowercase() ?: ""
+                        val courseName = CourseNameKit.normalizeBrackets(c.name ?: "").lowercase()
                         var score = 0
                         if (courseName == targetNameLower) score = 1000
                         else if (courseName.contains(targetNameLower)) score = 100
@@ -856,7 +862,7 @@ class GrabService : Service() {
     private fun fetchSelectionDetails(school: SchoolConfig, task: GrabTaskContext) {
         val course = task.course
         val params = task.params
-        val xkkzId = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: params["xkkz_id"] ?: ""
+        val xkkzId = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(params)
         val njdmId = course.njdm_id?.takeIf { it.isNotEmpty() } ?: params["njdm_id"] ?: "2024"
         val zyhId = course.zyh_id?.takeIf { it.isNotEmpty() } ?: params["zyh_id"] ?: ""
         val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: params["kklxdm"] ?: "01"
@@ -874,7 +880,7 @@ class GrabService : Service() {
         formData["njdm_id"] = njdmId
         formData["kklxdm"] = kklxdm
         formData["xklc"] = xklc
-        formData["xkkz_id"] = xkkzId
+        formData[CourseNameKit.detectXkkzKey(params)] = xkkzId
         formData["kch_id"] = course.courseId ?: ""
         val postBody = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
 
@@ -922,6 +928,7 @@ class GrabService : Service() {
         val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
         val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
         val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else "01"
+        val xkkzKey = CourseNameKit.detectXkkzKey(task.params)
         val postBody = StringBuilder()
             .append("jxb_ids=").append(details.doJxbId)
             .append("&kch_id=").append(course.courseId)
@@ -933,7 +940,7 @@ class GrabService : Service() {
             .append("&xxkbj=").append(details.xxkbj)
             .append("&qz=0")
             .append("&cxbj=").append(details.cxbj)
-            .append("&xkkz_id=").append(finalXkkzId)
+            .append("&").append(xkkzKey).append("=").append(finalXkkzId)
             .append("&njdm_id=").append(finalNjdmId)
             .append("&zyh_id=").append(finalZyhId)
             .append("&kklxdm=").append(finalKklxdm)
@@ -1429,7 +1436,7 @@ class GrabService : Service() {
         formData["kch_id"] = targetCourse.courseId ?: ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = targetCourse._xklc?.takeIf { it.isNotEmpty() } ?: params?.get("xklc") ?: "2"
-        formData["xkkz_id"] = targetCourse._xkkz_id ?: ""
+        formData[CourseNameKit.detectXkkzKey(params)] = targetCourse._xkkz_id ?: ""
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         // 搜索专用参数
@@ -1566,7 +1573,7 @@ class GrabService : Service() {
         formData["kch_id"] = ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = params?.get("xklc") ?: "2"
-        formData["xkkz_id"] = params?.get("xkkz_id") ?: ""
+        formData[CourseNameKit.detectXkkzKey(params)] = CourseNameKit.resolveIndexXkkz(params)
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         // 🔧 补充 CourseListRoute 中的额外参数
@@ -1579,7 +1586,7 @@ class GrabService : Service() {
         formData["jspage"] = "10000"  // 尽可能多获取
         
         // 🔧 调试：打印关键参数
-        Log.d(TAG, "🔄 智能模式关键参数: xkkz_id=${formData["xkkz_id"]}, kklxdm=${formData["kklxdm"]}, xklc=${formData["xklc"]}")
+        Log.d(TAG, "🔄 智能模式关键参数: xkkz(${CourseNameKit.detectXkkzKey(params)})=${CourseNameKit.resolveIndexXkkz(params)}, kklxdm=${formData["kklxdm"]}, xklc=${formData["xklc"]}")
         Log.d(TAG, "🔄 智能模式: 获取所有课程 (参数数: ${formData.size})")
         val postBody = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
         
@@ -1602,8 +1609,8 @@ class GrabService : Service() {
                         return
                     }
                     
-                    // 🔧 改进的本地匹配：带权重评分
-                    val targetNameLower = targetName.lowercase()
+                    // 🔧 改进的本地匹配：带权重评分（全半角括号归一化比较）
+                    val targetNameLower = CourseNameKit.normalizeBrackets(targetName).lowercase()
                     val targetTeacher = targetCourse.teacher?.lowercase() ?: ""
                     val targetTime = targetCourse.time?.lowercase() ?: ""
                     
@@ -1614,7 +1621,7 @@ class GrabService : Service() {
                     data class MatchResult(val course: Course, val score: Int)
                     
                     val scoredCourses = courses.mapNotNull { c ->
-                        val courseName = c.name?.lowercase() ?: ""
+                        val courseName = CourseNameKit.normalizeBrackets(c.name ?: "").lowercase()
                         var score = 0
                         
                         // 1. 精确匹配 (最高优先级: 1000分)
@@ -1814,7 +1821,8 @@ class GrabService : Service() {
     }
     
     private fun fetchSelectionDetails(school: SchoolConfig, course: Course) {
-        val xkkz_id = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: courseParams?.get("xkkz_id") ?: ""
+        val xkkzKey = CourseNameKit.detectXkkzKey(courseParams)
+        val xkkz_id = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(courseParams)
         val njdm_id = course.njdm_id?.takeIf { it.isNotEmpty() } ?: courseParams?.get("njdm_id") ?: "2024"
         val zyh_id = course.zyh_id?.takeIf { it.isNotEmpty() } ?: courseParams?.get("zyh_id") ?: ""
         val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: courseParams?.get("kklxdm") ?: "01"
@@ -1872,7 +1880,7 @@ class GrabService : Service() {
         formData["kch_id"] = course.courseId ?: ""
         formData["jxbzcxskg"] = courseParams?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = xklc
-        formData["xkkz_id"] = xkkz_id
+        formData[xkkzKey] = xkkz_id
         formData["cxbj"] = courseParams?.get("cxbj") ?: "0"
         formData["fxbj"] = courseParams?.get("fxbj") ?: "0"
         
@@ -2050,6 +2058,7 @@ class GrabService : Service() {
         val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
         val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
         val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else "01"
+        val xkkzKey = CourseNameKit.detectXkkzKey(courseParams)
         
         // 构建POST body（参数顺序与Web版完全一致）
         val postBody = StringBuilder()
@@ -2063,7 +2072,7 @@ class GrabService : Service() {
         postBody.append("&xxkbj=").append(details.xxkbj)
         postBody.append("&qz=0")
         postBody.append("&cxbj=").append(details.cxbj)
-        postBody.append("&xkkz_id=").append(finalXkkzId)
+        postBody.append("&").append(xkkzKey).append("=").append(finalXkkzId)
         postBody.append("&njdm_id=").append(finalNjdmId)
         postBody.append("&zyh_id=").append(finalZyhId)
         postBody.append("&kklxdm=").append(finalKklxdm)
@@ -2508,7 +2517,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             if (tabParamsList.isEmpty()) {
                 val defaultTab = TabParam(
                     indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10",
-                    indexParams["firstXkkzId"] ?: indexParams["xkkz_id"] ?: "",
+                    com.tyust.course.utils.CourseNameKit.resolveIndexXkkz(indexParams),
                     indexParams["njdm_id"] ?: "2024",
                     indexParams["zyh_id"] ?: ""
                 )
@@ -2549,9 +2558,10 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         
         broadcastLog("获取分类 $currentTabIndex/${tabParamsList.size} (kklxdm=${tab.kklxdm})…")
         
-        // 先获取 Display 页面参数
-        CourseApiClient.getInstance().fetchCourseDisplayParams(
-            school, tab.xkkz_id, tab.kklxdm, tab.njdm_id, tab.zyh_id, serviceAccountStorageKey,
+        // 先获取 Display 页面参数（xkkz 参数名按学校自适应）
+        CourseApiClient.getInstance().fetchCourseDisplayParamsWithKey(
+            school, tab.xkkz_id, tab.kklxdm, tab.njdm_id, tab.zyh_id,
+            CourseNameKit.detectXkkzKey(indexParams), serviceAccountStorageKey,
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     // 失败则跳过 Display 参数，直接获取课程列表
@@ -2587,7 +2597,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         currentMergedParams.putAll(indexParams)
         currentMergedParams.putAll(displayParams)
         
-        currentMergedParams["xkkz_id"] = tab.xkkz_id
+        currentMergedParams[CourseNameKit.detectXkkzKey(currentMergedParams)] = tab.xkkz_id
         currentMergedParams["kklxdm"] = tab.kklxdm
         currentMergedParams["njdm_id"] = tab.njdm_id
         currentMergedParams["zyh_id"] = tab.zyh_id
@@ -2666,7 +2676,11 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["xkxnm"] = getParam("xkxnm").ifEmpty { "2025" }
         formData["xkxqm"] = getParam("xkxqm").ifEmpty { "12" }
         formData["kklxdm"] = kklxdm
-        formData["xkkz_id"] = tab.xkkz_id
+        formData[CourseNameKit.detectXkkzKey(currentMergedParams)] = tab.xkkz_id
+        // 🔧 正方 V9（如 mnust）：教务端校验 xkkz_xh，需与主键同时携带；
+        // Display 响应值为空时回退 Index 页面的 firstXkkzXh（与 Go 端 buildZFListForm 一致）
+        formData["xkkz_xh"] = currentMergedParams["xkkz_xh"]?.takeIf { it.isNotBlank() }
+            ?: currentMergedParams["firstXkkzXh"] ?: ""
         formData["kspage"] = currentKspage.toString()
         formData["jspage"] = currentJspage.toString()
         formData["bbhzxjxb"] = currentMergedParams["bbhzxjxb"] ?: "0"
@@ -2862,7 +2876,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["kch_id"] = baseCourse.courseId ?: ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = baseCourse._xklc?.takeIf { it.isNotEmpty() } ?: params?.get("xklc") ?: "2"
-        formData["xkkz_id"] = baseCourse._xkkz_id ?: ""
+        formData[CourseNameKit.detectXkkzKey(params)] = baseCourse._xkkz_id ?: ""
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         
@@ -3344,7 +3358,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["kch_id"] = courseId
         formData["jxbzcxskg"] = courseParams?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = xklc
-        formData["xkkz_id"] = xkkzId
+        formData[CourseNameKit.detectXkkzKey(courseParams)] = xkkzId
         formData["cxbj"] = courseParams?.get("cxbj") ?: "0"
         formData["fxbj"] = courseParams?.get("fxbj") ?: "0"
         
