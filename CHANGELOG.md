@@ -4,6 +4,23 @@
 > 自 1.0.68 起，每个版本的更新日志以 `release-notes/vX.Y.Z.md` 为唯一数据源，由 CI 扇出到本文件、GitHub Release 与应用内更新提示。
 > 1.0.67 未发布：该 tag 的流水线在版本号校验步骤失败，未产出任何 Release，内容顺延至 1.0.68。
 
+## [1.0.73] - 2026-09-03
+
+### 正方 V9 适配（xkkz_xh）
+
+- **新增 `CourseNameKit`**：两组能力——全半角括号归一化（`normalizeBrackets`）与 xkkz 参数名自适应（`detectXkkzKey` / `resolveIndexXkkz`）。正方教务存在两套选课参数名：旧版 `xkkz_id`（Index 页 hidden input 为 `firstXkkzId`），V9（如 mnust）用 `xkkz_xh`（`firstXkkzXh`）。判定按值优先，避免 Display 响应的空字段误判；均无值时回落 `xkkz_id`，既有学校行为不变。
+- **选课全链路参数名自适应**：课程列表（CourseListRoute）、手动/智能选课（GrabService、SmartSelector）的列表、选课、抢课与搜索表单按 `detectXkkzKey` 决定主键名，V9 学校同时携带 `xkkz_xh`。Display 参数请求新增 `fetchCourseDisplayParamsWithKey` / `fetchCourseDisplayParamsSyncWithKey`（Java 无法用重载区分同名 String 参数，故独立方法名）。
+- **解析兼容**：CourseParser 与选课详情解析在 `xkkz_id` 为空时回落读取 `xkkz_xh`。
+
+### 课程名全半角括号归一化
+
+- 教务库课程名通常为半角括号（"大学体育(三)"），中文输入法默认输出全角（"大学体育（三）"），直接字符串比较会匹配失败。列表搜索、课程过滤、抢课本地匹配（含权重评分）统一走 `normalizeBrackets` 归一化后再比较，仅用于比较，不改变原始存储。
+
+### 其他
+
+- **自定义学校域名支持端口**（如 `zfjw.mnust.edu.cn:30443`）：登录页与添加学校弹窗的域名校验正则允许 `:端口` 后缀，输入框增加提示文案。
+- **JVM 单测**：`testOptions.unitTests.returnDefaultValues = true`，被测类内部的 `android.util.Log` 在 JVM 上返回默认值而非抛异常；新增 `CourseNameKitTest` 覆盖括号归一化与参数名自适应，全量 `testDebugUnitTest` 通过。
+
 ## [1.0.71] - 2026-08-31
 
 ### API 31/32 的圆钮折射
