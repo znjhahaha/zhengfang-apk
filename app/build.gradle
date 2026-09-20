@@ -195,8 +195,8 @@ dependencies {
     implementation 'com.squareup.okio:okio:3.6.0'
     
     // Async (Coroutines for Compose)
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
     
     // Modern UI & Animations
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
@@ -238,7 +238,7 @@ dependencies {
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     testImplementation 'org.robolectric:robolectric:4.17'
     // org.json 在 JVM 单测中来自 android.jar 桩(默认抛异常), 补真实实现供单元测试使用
