@@ -160,6 +160,7 @@ class MainActivity : FragmentActivity() {
 
         UserManager.getInstance().init(this)
         if (savedInstanceState == null) com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
+        if (savedInstanceState == null) com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
 
         val userManager = UserManager.getInstance()
         if (BuildConfig.UI_PREVIEW) {
@@ -217,6 +218,7 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
+        com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
     }
 }
 
@@ -275,6 +277,16 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
     val navigationMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedTab, currentAccountStorageKey, accessibility.reduceMotion)
     val reminderRequest = com.tyust.course.schedule.CourseReminderNavigation.requestedId
+    val widgetRequest = com.tyust.course.schedule.ScheduleWidgetNavigation.requested
+    LaunchedEffect(widgetRequest, currentAccountStorageKey) {
+        widgetRequest?.let {
+            if (com.tyust.course.schedule.ScheduleWidgetNavigation.matchesCurrentAccount(it)) selectedTab = 1
+            else {
+                com.tyust.course.ui.system.GlassToaster.show("这张课表属于其他账号，请刷新桌面组件")
+                com.tyust.course.schedule.ScheduleWidgetNavigation.consume()
+            }
+        }
+    }
     LaunchedEffect(reminderRequest, currentAccountStorageKey) {
         if (reminderRequest != null) {
             if (com.tyust.course.schedule.ScheduleReminderScheduler.get(context).findById(reminderRequest) != null) selectedTab = 1

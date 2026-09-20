@@ -13,11 +13,19 @@ internal open class QzAcademicAdapter(
     system: AcademicSystem = AcademicSystem.QZ
 ) : BaseAcademicAdapter(school, session, transport, system), AcademicCaptchaLogin {
     @Volatile private var loginAttempt: AcademicLoginAttempt? = null
+    @Volatile private var casLogin: QzCasSsoClient? = null
+    private var casEpoch: Long = 0
 
     override suspend fun login(credentials: Credentials): LoginResult = serial {
         clearLoginState()
         session.invalidate()
         session.username = credentials.username
+        QzCasEntry.forSchool(school)?.let { entry ->
+            val cas = QzCasSsoClient(entry)
+            casLogin = cas; casEpoch = session.epoch
+            if (!school.allowedAcademicHosts.contains(entry.login.host)) school.allowedAcademicHosts.add(entry.login.host)
+            return@serial finishCas(cas, cas.begin(credentials))
+        }
         val page = transport.get(transport.appUrl(""))
         val form = AcademicLoginHtml.form(page)
             ?: return@serial LoginResult(AcademicStatus.HUMAN_VERIFICATION_REQUIRED, message = "请在教务网页完成登录验证")
@@ -34,6 +42,7 @@ internal open class QzAcademicAdapter(
     }
 
     override suspend fun submitCaptcha(code: String): LoginResult = serial {
+        casLogin?.let { return@serial finishCas(it, it.submit(code.trim())) }
         val attempt = currentLoginAttempt()
             ?: return@serial LoginResult(AcademicStatus.SESSION_EXPIRED, message = "登录会话已失效，请重新登录")
         if (code.isBlank()) return@serial LoginResult(AcademicStatus.CAPTCHA_REQUIRED, message = "请输入验证码")
@@ -41,12 +50,21 @@ internal open class QzAcademicAdapter(
     }
 
     override suspend fun refreshCaptcha(): CaptchaChallenge? = serial {
+        casLogin?.let { return@serial it.refreshCaptcha() }
         val attempt = currentLoginAttempt() ?: return@serial null
         val form = AcademicLoginHtml.form(attempt.page) ?: return@serial null
         AcademicLoginHtml.captcha(form, "RANDOMCODE")?.load(transport, attempt.page.url, refresh = true)
     }
 
-    override fun clearLoginState() { loginAttempt = null }
+    override fun clearLoginState() { loginAttempt = null; casLogin?.clear(); casLogin = null }
+
+    private suspend fun finishCas(cas: QzCasSsoClient, result: LoginResult): LoginResult {
+        session.requireActive()
+        if (cas !== casLogin || casEpoch != session.epoch) throw CancellationException("Login session changed")
+        if (result.status != AcademicStatus.SUCCESS) return finishLogin(result)
+        session.cookies.saveFromResponse(cas.entry.service, cas.teachingCookies())
+        return finishLogin(validateSession())
+    }
 
     private fun currentLoginAttempt(): AcademicLoginAttempt? = loginAttempt?.takeIf { it.sessionEpoch == session.epoch }
         .also { if (it == null) clearLoginState() }

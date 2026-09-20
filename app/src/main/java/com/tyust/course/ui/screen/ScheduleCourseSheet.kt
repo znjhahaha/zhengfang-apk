@@ -64,6 +64,13 @@ private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String
     val status = remember(key, revision) { scheduler.status(key) }
     val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { scheduler.reconcile() }
     val conflicts = remember(course, allCourses) { scheduleConflicts(course.record(), allCourses.map { it.record() }) }
+    val timeRange = remember(account, term, course, revision) {
+        val base = scheduler.timeBase(account, term)
+        val times = com.tyust.course.manager.ScheduleSettingsManager.getInstance().getPeriodTimes(account)
+        val start = base?.periodStarts?.get(course.startPeriod) ?: times.firstOrNull { it.period == course.startPeriod }?.startTime
+        val end = base?.periodEnds?.get(course.endPeriod) ?: times.firstOrNull { it.period == course.endPeriod }?.endTime
+        if (start.isNullOrBlank() || end.isNullOrBlank()) "" else "$start–$end"
+    }
     val description = when (status.availability) {
         ReminderAvailability.Off -> if (term.isBlank()) "学期信息加载后可设置提醒" else "开启后，在上课前通知你"
         ReminderAvailability.NeedsPermission -> "待授权：允许通知和精确闹钟后生效"
@@ -76,7 +83,7 @@ private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String
     CourseDetailContent(
         CourseDetailUiState(course, conflicts, record?.enabled == true, term.isNotBlank(), description,
             record?.enabled == true && status.availability == ReminderAvailability.NeedsPermission,
-            status.availability == ReminderAvailability.NeedsTime, !ScheduleWeeks.parse(course.weeks).valid, sourceCenterX),
+            status.availability == ReminderAvailability.NeedsTime, !ScheduleWeeks.parse(course.weeks).valid, sourceCenterX, timeRange),
         state, close, onReminderChanged = { scheduler.setEnabled(key, course.record(), it) },
         onPermission = {
             val permissions = scheduler.permissions()

@@ -23,20 +23,27 @@ class ProtocolGrabRunner(
 ) {
     fun replaceAdapter(current: AcademicProtocolAdapter) { adapter = current }
     suspend fun runOnce(item: AcademicGrabItem, confirmed: Boolean = false, candidateIntervalMillis: Long = 0): GrabRunEvent {
-        return adapter.inSession { runOnceLocked(item, confirmed, candidateIntervalMillis) }
+        return try { adapter.inSession { runOnceLocked(item, confirmed, candidateIntervalMillis) } }
+        catch (e: AcademicException) {
+            if (e.status in setOf(AcademicStatus.ROUND_CLOSED, AcademicStatus.NETWORK_RETRYABLE))
+                GrabRunEvent.Waiting(item, e.status, e.message.orEmpty())
+            else GrabRunEvent.Paused(item, e.status, e.message.orEmpty())
+        }
     }
 
     private suspend fun runOnceLocked(item: AcademicGrabItem, confirmed: Boolean, candidateIntervalMillis: Long): GrabRunEvent {
+        if (!canContinue()) throw CancellationException("Queue requires attention")
         val context = adapter.loadCourseContext()
         if (context.scopes.isEmpty()) return GrabRunEvent.Waiting(item, AcademicStatus.ROUND_CLOSED, "学校当前未开放选课轮次，等待开放")
         val candidates = if (item.useExactMatch) listOfNotNull(adapter.resolveSelection(context, item.stableCourseId, item.stableSectionId,
-            item.courseName, item.teacher, item.time, item.scopeId, item.sectionName)) else adapter.resolveCandidates(context,
+            item.courseName, item.teacher, item.time, item.scopeId, item.sectionName,
+            allowLegacyRebind = !item.sectionIdentityKnown)) else adapter.resolveCandidates(context,
             item.stableCourseId, "", item.courseName,
             if (item.stableSectionId.isBlank()) item.teacher else "",
             if (item.stableSectionId.isBlank()) item.time else "", item.scopeId,
             if (item.stableSectionId.isBlank()) item.sectionName else "")
         if (candidates.isEmpty()) return if (item.useExactMatch)
-            GrabRunEvent.Paused(item, AcademicStatus.PAGE_CHANGED, "无法唯一确定目标教学班，请重新确认") else
+            GrabRunEvent.Paused(item, AcademicStatus.PAGE_CHANGED, "未找到目标教学班，请刷新课程后重新确认") else
             GrabRunEvent.Waiting(item, AcademicStatus.NO_CAPACITY, "目标课程暂未返回符合条件的教学班")
         var last: GrabRunEvent = GrabRunEvent.Waiting(item, AcademicStatus.NO_CAPACITY, "当前教学班暂无可选名额")
         for ((index, candidate) in candidates.sortedBy { resolved ->
@@ -81,7 +88,12 @@ class ProtocolGrabRunner(
         }
     }
 
-    suspend fun runUntilDone(item: AcademicGrabItem, policy: GrabRunPolicy = GrabRunPolicy(), onEvent: (GrabRunEvent) -> Unit): GrabRunEvent {
+    suspend fun runUntilDone(item: AcademicGrabItem, policy: GrabRunPolicy = GrabRunPolicy(),
+        onEvent: (GrabRunEvent) -> Unit): GrabRunEvent = runUntilDone(item, policy, { it() }, onEvent)
+
+    suspend fun runUntilDone(item: AcademicGrabItem, policy: GrabRunPolicy,
+        withAttempt: suspend (suspend () -> GrabRunEvent) -> GrabRunEvent,
+        onEvent: (GrabRunEvent) -> Unit): GrabRunEvent {
         require(policy.intervalMillis > 0 && policy.maxAttempts > 0 && policy.maxBackoffMillis >= policy.intervalMillis)
         var attempt = 0
         var backoff = policy.intervalMillis
@@ -96,13 +108,17 @@ class ProtocolGrabRunner(
         while (attempt < policy.maxAttempts) {
             coroutineContext.ensureActive()
             attempt++
-            onEvent(GrabRunEvent.Attempt(attempt))
-            var event = executeAttempt()
-            if (event is GrabRunEvent.Paused && event.status == AcademicStatus.SESSION_EXPIRED && !renewalAttempted) {
-                renewalAttempted = true
-                if (renewSession()) event = executeAttempt()
+            val event = withAttempt {
+                if (!canContinue()) throw CancellationException("Queue requires attention")
+                onEvent(GrabRunEvent.Attempt(attempt))
+                var result = executeAttempt()
+                if (result is GrabRunEvent.Paused && result.status == AcademicStatus.SESSION_EXPIRED && !renewalAttempted) {
+                    renewalAttempted = true
+                    if (renewSession()) result = executeAttempt()
+                }
+                onEvent(result)
+                result
             }
-            onEvent(event)
             when (event) {
                 is GrabRunEvent.Success, is GrabRunEvent.Paused -> return event
                 is GrabRunEvent.Waiting -> {

@@ -38,13 +38,20 @@ object ScheduleDates {
     fun date(value: String?, week: Int, day: Int = 1, zone: TimeZone = TimeZone.getDefault()): Calendar? =
         firstMonday(value, zone)?.apply { add(Calendar.DAY_OF_YEAR, (week - 1) * 7 + day - 1) }
 
-    fun weekAt(value: String?, now: Long, zone: TimeZone = TimeZone.getDefault()): Int? {
+    fun dayAt(now: Long, zone: TimeZone = TimeZone.getDefault()): Int =
+        (Calendar.getInstance(zone).apply { timeInMillis = now }.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
+
+    fun weekAt(value: String?, now: Long, zone: TimeZone = TimeZone.getDefault()): Int? =
+        weekIndexAt(value, now, zone)?.takeIf { it in 1..ScheduleMaxWeeks }
+
+    /** An unbounded civil week lets Today stay on the real date before/after a semester. */
+    fun weekIndexAt(value: String?, now: Long, zone: TimeZone = TimeZone.getDefault()): Int? {
         val start = firstMonday(value, TimeZone.getTimeZone("UTC")) ?: return null
         val local = Calendar.getInstance(zone).apply { timeInMillis = now }
         val today = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
             clear(); set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
         }
         val days = (today.timeInMillis - start.timeInMillis) / 86_400_000L
-        return if (days < 0) null else (days / 7 + 1).toInt().takeIf { it in 1..ScheduleMaxWeeks }
+        return Math.floorDiv(days, 7L).toInt() + 1
     }
 }

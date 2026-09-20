@@ -26,6 +26,8 @@ import com.tyust.course.ui.screen.CourseListScreen
 import com.tyust.course.ui.screen.toDynamicDisplayTags
 import com.tyust.course.ui.route.SelectedCoursesRoute
 import com.tyust.course.utils.CourseParser
+import com.tyust.course.academic.ZfSelectionControl
+import com.tyust.course.academic.ZfCourseCategories
 import com.tyust.course.utils.CourseNameKit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,8 +79,12 @@ private data class CourseTabParam(
     val kklxdm: String,
     val xkkzId: String,
     val njdmId: String,
-    val zyhId: String
-)
+    val zyhId: String,
+    val xkkzXh: String = "",
+    val controlKey: String = "xkkz_id"
+) {
+    val control get() = if (controlKey == "xkkz_xh") ZfSelectionControl(xh = xkkzId) else ZfSelectionControl(xkkzId, xkkzXh)
+}
 
 private const val CourseRouteSnapshotMaxAgeMs = 5 * 60 * 1000L
 
@@ -116,21 +122,9 @@ private object CourseListRouteMemoryCache {
 }
 
 private fun parseCourseTabParamsFromIndexHtml(html: String, indexParams: Map<String, String>): List<CourseTabParam> {
-    val tabs = mutableListOf<CourseTabParam>()
-    val queryCoursePattern = """queryCourse\s*\(\s*this\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*\)""".toRegex()
-    queryCoursePattern.findAll(html).forEach { match ->
-        tabs.add(CourseTabParam(match.groupValues[1], match.groupValues[2], match.groupValues[3], match.groupValues[4]))
+    return ZfCourseCategories.parse(html, indexParams).map {
+        CourseTabParam(it.category, it.control.primaryValue, it.grade, it.major, it.control.xh, it.control.primaryKey)
     }
-    if (tabs.isNotEmpty()) return tabs.distinctBy { "${it.kklxdm}_${it.xkkzId}_${it.njdmId}_${it.zyhId}" }
-
-    return listOf(
-        CourseTabParam(
-            indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10",
-            com.tyust.course.utils.CourseNameKit.resolveIndexXkkz(indexParams),
-            indexParams["njdm_id"] ?: "2024",
-            indexParams["zyh_id"] ?: ""
-        )
-    )
 }
 
 private fun parseInputParamsFromHtml(html: String): Map<String, String> {
@@ -692,7 +686,7 @@ fun CourseListRoute() {
 
                     for (tab in tabs) {
                         if (!isCurrentAccount(requestAccountKey)) return@launch
-                        val xkkzKey = CourseNameKit.detectXkkzKey(baseIndexParams)
+                        val xkkzKey = tab.control.primaryKey
                         val displayHtml = CourseApiClient.getInstance().fetchCourseDisplayParamsSyncWithKey(
                             school,
                             tab.xkkzId,
@@ -710,7 +704,7 @@ fun CourseListRoute() {
                         mergedParams.putAll(baseIndexParams)
                         mergedParams.putAll(displayParams)
                         mergedParams.putAll(tabDisplayParams)
-                        mergedParams[xkkzKey] = tab.xkkzId
+                        tab.control.withReturned(tabDisplayParams).applyTo(mergedParams)
                         mergedParams["kklxdm"] = tab.kklxdm
                         mergedParams["njdm_id"] = tab.njdmId
                         mergedParams["zyh_id"] = tab.zyhId
@@ -770,10 +764,7 @@ fun CourseListRoute() {
                             }
 
                             formData["kklxdm"] = tab.kklxdm
-                            formData[xkkzKey] = tab.xkkzId
-                            // 🔧 正方 V9：教务端校验 xkkz_xh，需与主键同时携带
-                            formData["xkkz_xh"] = mergedParams["xkkz_xh"]?.takeIf { it.isNotBlank() }
-                                ?: mergedParams["firstXkkzXh"] ?: ""
+                            CourseNameKit.applyControlParams(formData, mergedParams)
                             formData["kspage"] = kspage.toString()
                             formData["jspage"] = jspage.toString()
                             formData["bbhzxjxb"] = "0"
@@ -798,7 +789,7 @@ fun CourseListRoute() {
                             val parsed = CourseParser.parseCourseListFromJson(json, requestParams, tabDisplayParams)
                             parsed.forEach { course ->
                                 course.kklxdm = tab.kklxdm
-                                course._xkkz_id = tab.xkkzId
+                                ZfSelectionControl.from(requestParams).applyTo(course)
                             }
                             filteredCourses.addAll(parsed)
 
@@ -881,8 +872,6 @@ fun CourseListRoute() {
         
         // 从 course 对象或 mergedParams 获取参数
         val kklxdm = course.kklxdm.ifEmpty { mergedParams["kklxdm"] ?: "09" }
-        val xkkzKey = CourseNameKit.detectXkkzKey(mergedParams)
-        val xkkz_id = course._xkkz_id.ifEmpty { CourseNameKit.resolveIndexXkkz(mergedParams) }
         val njdm_id = course.njdm_id.ifEmpty { mergedParams["njdm_id"] ?: "" }
         val zyh_id = course.zyh_id.ifEmpty { mergedParams["zyh_id"] ?: "" }
         val rwlx = course._rwlx.ifEmpty { mergedParams["rwlx"] ?: "1" }
@@ -928,7 +917,7 @@ fun CourseListRoute() {
         formData["kch_id"] = course.courseId ?: ""
         formData["jxbzcxskg"] = mergedParams["jxbzcxskg"] ?: "0"
         formData["xklc"] = xklc
-        formData[xkkzKey] = xkkz_id
+        CourseNameKit.applyControlParams(formData, mergedParams, course)
         formData["cxbj"] = mergedParams["cxbj"] ?: "0"
         formData["fxbj"] = mergedParams["fxbj"] ?: "0"
         
@@ -1812,9 +1801,10 @@ private class CourseListLogicHelper(
         val tab = tabParamsList[currentTabIndex]
         currentTabIndex++
         
+        displayParams.clear()
         request { api -> api.fetchCourseDisplayParamsWithKey(
             school, tab.xkkzId, tab.kklxdm, tab.njdmId, tab.zyhId,
-            CourseNameKit.detectXkkzKey(indexParams),
+            tab.control.primaryKey,
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                      // Try fetch list anyway (fallback)
@@ -1870,8 +1860,8 @@ private class CourseListLogicHelper(
         
         android.util.Log.d("CourseListRoute", "📊 参数统计: indexParams=${indexParams.size}个, displayParams=${displayParams.size}个, 合并后=${currentMergedParams.size}个")
         
-        currentXkkzKey = CourseNameKit.detectXkkzKey(currentMergedParams)
-        currentMergedParams[currentXkkzKey] = tab.xkkzId
+        currentXkkzKey = tab.control.primaryKey
+        tab.control.withReturned(displayParams).applyTo(currentMergedParams)
         currentMergedParams["kklxdm"] = tab.kklxdm
         currentMergedParams["njdm_id"] = tab.njdmId
         currentMergedParams["zyh_id"] = tab.zyhId
@@ -1952,12 +1942,7 @@ private class CourseListLogicHelper(
         
         // 选项卡参数
         formData["kklxdm"] = tab.kklxdm
-        formData[currentXkkzKey] = tab.xkkzId
-        // 🔧 正方 V9（如 mnust）：教务端校验 xkkz_xh，需与主键同时携带；
-        // Display 响应值为空时回退 Index 页面的 firstXkkzXh（与 Go 端 buildZFListForm 一致）
-        formData["xkkz_xh"] = currentMergedParams["xkkz_xh"]?.takeIf { it.isNotBlank() }
-            ?: currentMergedParams["firstXkkzXh"] ?: ""
-        android.util.Log.d("CourseListRoute", "🔧 xkkz 参数: $currentXkkzKey=${tab.xkkzId}, xkkz_xh=${formData["xkkz_xh"]}, firstXkkzId=${currentMergedParams["firstXkkzId"]}, firstXkkzXh=${currentMergedParams["firstXkkzXh"]}")
+        CourseNameKit.applyControlParams(formData, currentMergedParams)
         
         // 分页参数
         formData["kspage"] = currentKspage.toString()
@@ -2018,7 +2003,7 @@ private class CourseListLogicHelper(
                     // 补充分类参数
                     parsed.forEach { c -> 
                         c.kklxdm = tab.kklxdm
-                        c._xkkz_id = tab.xkkzId 
+                        ZfSelectionControl.from(currentMergedParams).applyTo(c)
                     }
                     allCourses.addAll(parsed)
                     
@@ -2078,7 +2063,8 @@ private class CourseSelectionLogic(
         val xkxnm: String,
         val xkxqm: String,
         val jcxxId: String,  // Web版使用的关键参数
-        val xkkzId: String
+        val xkkzId: String,
+        val xkkzXh: String = ""
     )
     
     fun performSelection(course: Course) {
@@ -2091,7 +2077,7 @@ private class CourseSelectionLogic(
         // 🔧 完整参数构建（与 Web 版 course-api.ts fetchSelectionDetails 一致）
         val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: baseParams?.get("kklxdm") ?: "01"
         val xkkzKey = CourseNameKit.detectXkkzKey(baseParams)
-        val xkkz_id = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(baseParams)
+        val xkkz_id = ZfSelectionControl.forCourse(course, baseParams).id
         val njdm_id = baseParams?.get("njdm_id") ?: "2024"
         val zyh_id = baseParams?.get("zyh_id") ?: ""
         val rwlx = course._rwlx?.takeIf { it.isNotEmpty() } ?: baseParams?.get("rwlx") ?: "1"
@@ -2150,7 +2136,7 @@ private class CourseSelectionLogic(
         formData["kch_id"] = course.courseId!!
         formData["jxbzcxskg"] = baseParams?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = xklc
-        formData[xkkzKey] = xkkz_id
+        CourseNameKit.applyControlParams(formData, baseParams, course)
         formData["cxbj"] = baseParams?.get("cxbj") ?: "0"
         formData["fxbj"] = baseParams?.get("fxbj") ?: "0"
         
@@ -2191,7 +2177,7 @@ private class CourseSelectionLogic(
     fun performSelectionSync(course: Course): Boolean {
         if (!isCurrentAccount()) return false
         val xkkzKey = CourseNameKit.detectXkkzKey(baseParams)
-        val xkkz_id = course._xkkz_id ?: CourseNameKit.resolveIndexXkkz(baseParams)
+        val xkkz_id = ZfSelectionControl.forCourse(course, baseParams).id
         val njdm_id = course.njdm_id ?: baseParams?.get("njdm_id") ?: "2024"
         val zyh_id = course.zyh_id ?: baseParams?.get("zyh_id") ?: ""
         val kklxdm = course.kklxdm ?: baseParams?.get("kklxdm") ?: "01"
@@ -2269,7 +2255,7 @@ private class CourseSelectionLogic(
         formData["kch_id"] = course.courseId ?: ""
         formData["jxbzcxskg"] = hiddenParams["jxbzcxskg"] ?: "0"
         formData["xklc"] = xklc
-        formData[xkkzKey] = xkkz_id
+        CourseNameKit.applyControlParams(formData, baseParams, course)
         formData["cxbj"] = hiddenParams["cxbj"] ?: "0"
         formData["fxbj"] = hiddenParams["fxbj"] ?: "0"
         
@@ -2436,7 +2422,8 @@ private class CourseSelectionLogic(
                 }
             }
             
-            // 没有匹配到则取第一个
+            if (!targetClassId.isNullOrBlank() && targetObj == null) return null
+            // No saved teaching-class target: the caller explicitly requested the first result.
             val obj = targetObj ?: arr.getJSONObject(0)
             if (targetObj == null) {
                 android.util.Log.w("CourseSelectionLogic", "⚠️ 未匹配到 classId=$targetClassId，使用第一个教学班")
@@ -2472,8 +2459,8 @@ private class CourseSelectionLogic(
                 xkxnm = obj.optString("xkxnm", "2025"),
                 xkxqm = obj.optString("xkxqm", "12"),
                 jcxxId = obj.optString("jcxx_id", ""),  // Web版使用的关键参数
-                // 🔧 兼容正方 V9：详情响应字段可能是 xkkz_xh 而非 xkkz_id
-                xkkzId = obj.optString("xkkz_id", "").ifEmpty { obj.optString("xkkz_xh", "") }.ifEmpty { defaultXkkzId }
+                xkkzId = obj.optString("xkkz_id", "").ifEmpty { defaultXkkzId },
+                xkkzXh = obj.optString("xkkz_xh", "")
             )
         } catch (e: Exception) { 
             android.util.Log.e("CourseSelectionLogic", "parseSelectionDetails error: ${e.message}")
@@ -2522,7 +2509,8 @@ private class CourseSelectionLogic(
         // 优先使用课程数据中保存的参数（与Web版一致）
         val finalRwlx = if (course._rwlx?.isNotEmpty() == true) course._rwlx else rwlx
         val finalXklc = if (course._xklc?.isNotEmpty() == true) course._xklc else xklc
-        val finalXkkzId = if (course._xkkz_id?.isNotEmpty() == true) course._xkkz_id else details.xkkzId
+        ZfSelectionControl.forCourse(course, baseParams).withReturned(mapOf("xkkz_id" to details.xkkzId,
+            "xkkz_xh" to details.xkkzXh)).applyTo(course)
         val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
         val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
         val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else kklxdm
@@ -2539,7 +2527,6 @@ private class CourseSelectionLogic(
         sb.append("&xxkbj=").append(details.xxkbj)
         sb.append("&qz=0")  // qz 参数保持硬编码，与Web版一致
         sb.append("&cxbj=").append(details.cxbj)
-        sb.append("&").append(xkkzKey).append("=").append(finalXkkzId)
         sb.append("&njdm_id=").append(finalNjdmId)
         sb.append("&zyh_id=").append(finalZyhId)
         sb.append("&kklxdm=").append(finalKklxdm)
@@ -2547,6 +2534,6 @@ private class CourseSelectionLogic(
         sb.append("&xkxnm=").append(details.xkxnm)
         sb.append("&xkxqm=").append(details.xkxqm)
         sb.append("&jcxx_id=").append(details.jcxxId)  // Web版使用的关键参数
-        return sb.toString()
+        return ZfSelectionControl.appendToBody(sb.toString(), course.completeParams, course, false)
     }
 }

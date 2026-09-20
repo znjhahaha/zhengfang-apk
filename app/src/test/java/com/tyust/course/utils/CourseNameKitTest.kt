@@ -7,7 +7,7 @@ import org.junit.Test
 /**
  * CourseNameKit 单元测试：
  * 1. 全半角括号归一化（中文输入法全角"（三）"应能匹配教务库半角"(三)"）
- * 2. xkkz 参数名自适应（旧版 xkkz_id / 正方 V9 xkkz_xh）
+ * 2. 单字段入口兼容与 xkkz_id / xkkz_xh 独立传递
  */
 class CourseNameKitTest {
 
@@ -103,9 +103,9 @@ class CourseNameKitTest {
     // ===== resolveIndexXkkz =====
 
     @Test
-    fun resolveIndexXkkz_prefersFirstXkkzId() {
+    fun resolveIndexXkkz_prefersCurrentCategoryOverFirstCategory() {
         val params = mapOf("firstXkkzId" to "id1", "firstXkkzXh" to "xh1", "xkkz_id" to "id2")
-        assertEquals("id1", CourseNameKit.resolveIndexXkkz(params))
+        assertEquals("id2", CourseNameKit.resolveIndexXkkz(params))
     }
 
     @Test
@@ -152,13 +152,13 @@ class CourseNameKitTest {
 
         val courses = CourseParser.parseCourseListFromJson(json)
         assertEquals(1, courses.size)
-        assertEquals("460314b1hash", courses[0]._xkkz_id)
+        assertEquals("460314b1hash", courses[0]._xkkz_xh)
         assertEquals("大学体育(三)", courses[0].name)
     }
 
     @Test
-    fun parseCourseList_jsonXkkzIdPreferredOverXh() {
-        // 旧版学校 JSON 同时带两字段时 xkkz_id 优先
+    fun parseCourseList_jsonKeepsBothControlValues() {
+        // 同一课程可以同时携带两个不同的控制值。
         val json = """
             [{"kcmc": "高等数学", "kch_id": "K002", "xkkz_id": "legacy", "xkkz_xh": "v9value"}]
         """.trimIndent()
@@ -166,6 +166,7 @@ class CourseNameKitTest {
         val courses = CourseParser.parseCourseListFromJson(json)
         assertEquals(1, courses.size)
         assertEquals("legacy", courses[0]._xkkz_id)
+        assertEquals("v9value", courses[0]._xkkz_xh)
     }
 
     @Test
@@ -176,7 +177,7 @@ class CourseNameKitTest {
 
         val courses = CourseParser.parseCourseListFromJson(json, formParams, null)
         assertEquals(1, courses.size)
-        assertEquals("hashFromForm", courses[0]._xkkz_id)
+        assertEquals("hashFromForm", courses[0]._xkkz_xh)
     }
 
     @Test

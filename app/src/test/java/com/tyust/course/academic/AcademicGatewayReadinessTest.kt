@@ -22,10 +22,20 @@ class AcademicGatewayReadinessTest {
     }
 
     @Test fun bothQzBrowserEntriesUseThePublicLoginPage() {
-        val school = SchoolConfig("hut", "School", "jwxt.hut.edu.cn", "http").apply { basePath = "/jsxsd" }
+        val school = SchoolConfig("qz", "School", "jw.example.edu.cn", "http").apply { basePath = "/jsxsd" }
         for (type in listOf("qz", "qz_old")) {
             school.academicSystem = type
-            assertEquals("http://jwxt.hut.edu.cn/jsxsd/", AcademicGatewayFactory.loginUrl(school))
+            assertEquals("http://jw.example.edu.cn/jsxsd/", AcademicGatewayFactory.loginUrl(school))
         }
+    }
+
+    @Test fun confirmedHutNewQzUsesItsCasServiceEntry() {
+        val school = SchoolConfig("hut", "School", "jwxt.hut.edu.cn", "http").apply {
+            basePath = "/jsxsd"
+            academicSystem = "qz"
+        }
+        assertEquals("http://jwxt.hut.edu.cn/jsxsd/sso.jsp", AcademicGatewayFactory.loginUrl(school))
+        school.academicSystem = "qz_old"
+        assertEquals("http://jwxt.hut.edu.cn/jsxsd/", AcademicGatewayFactory.loginUrl(school))
     }
 }

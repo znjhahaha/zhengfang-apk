@@ -11,7 +11,7 @@ enum class StartupPage(val route: String, val label: String) {
     Settings("settings", "设置");
 
     companion object {
-        fun decode(value: String?): StartupPage = entries.firstOrNull { it.route == value } ?: Courses
+        fun decode(value: String?): StartupPage = entries.firstOrNull { it.route == value } ?: Schedule
     }
 }
 

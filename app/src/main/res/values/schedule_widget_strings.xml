@@ -1,0 +1,19 @@
+<resources>
+    <string name="schedule_widget_name">双课程</string>
+    <string name="schedule_widget_single_name">简洁单课</string>
+    <string name="schedule_widget_timeline_name">今日时间轴</string>
+    <string name="schedule_widget_single_description">突出当前或下一节课程的时间和教室，小尺寸也清晰。</string>
+    <string name="schedule_widget_timeline_description">按时间排列今天的课程，点按课程即可查看详情。</string>
+    <string name="schedule_widget_description">显示当前账号的今日课程、下一节时间和地点，支持离线查看。</string>
+    <string name="schedule_widget_heading">今日课表</string>
+    <string name="schedule_widget_status">正在上课</string>
+    <string name="schedule_widget_preview">高等数学</string>
+    <string name="schedule_widget_preview_room">博学楼 A205</string>
+    <string name="schedule_widget_preview_time">08:00–09:40</string>
+    <string name="schedule_widget_next_status">下一节</string>
+    <string name="schedule_widget_next_preview">计算机网络</string>
+    <string name="schedule_widget_next_room">明理楼 B302</string>
+    <string name="schedule_widget_next_time">10:00–11:40</string>
+    <string name="schedule_widget_detail">课程时间与上课地点</string>
+    <string name="schedule_widget_footer">点按进入完整课表</string>
+</resources>

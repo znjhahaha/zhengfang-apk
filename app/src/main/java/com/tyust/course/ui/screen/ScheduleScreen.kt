@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -141,9 +143,15 @@ import java.util.Calendar
 import kotlin.math.roundToInt
 import kotlin.math.ceil
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import androidx.lifecycle.repeatOnLifecycle
+import com.tyust.course.schedule.ScheduleAgenda
+import com.tyust.course.schedule.ScheduleDisplayPreferences
+import com.tyust.course.schedule.ScheduleTimeBase
+import com.tyust.course.schedule.ScheduleViewPosition
 
 private val ScheduleTimeColumnWidth = 36.dp
-private val ScheduleTimeColumnShadowWidth = 8.dp
+internal val ScheduleTimeColumnShadowWidth = 8.dp
 private val SchedulePeriodHeight = 84.dp
 
 /** 窄屏收窄的时间列与网格左右留白，把省下的宽度全给七个日列。 */
@@ -151,115 +159,17 @@ private val ScheduleTimeColumnWidthTight = 28.dp
 private val SchedulePeriodHeightTight = 68.dp
 private val ScheduleGridPaddingTight = 10.dp
 
-// ── 顶栏折叠几何 ────────────────────────────────────────────────
-// 展开态与折叠态的高度【差】必须等于折叠行程（travel）：
-// 手指走 60dp -> 内容上移 60dp -> 顶栏下缘也上移 60dp，两者间距恒定。
-// 行程和高度差一旦脱钩，网格顶端就会与收缩中的顶栏彼此追赶——所以 travel
-// 定义成差值而不是另一个常量（与成绩页的 GradesHeaderMetrics 同一套写法）。
-private val HeaderTopPadExpanded = 10.dp
-private val HeaderTopPadCollapsed = 6.dp
-/** 标题 + 分段控件 + 芯片同一行：34(标题) + 6 + 36(分段) = 76。 */
-private val HeaderActionRowExpanded = 76.dp
-private val HeaderActionRowCollapsed = 48.dp
-private val HeaderTitleGap = 6.dp
-/** 分段控件自身高度。它内部写死 36dp，容器给不足就会被压扁而不是被裁。 */
-private val HeaderSegmentHeight = 36.dp
-private val HeaderWeekRowExpanded = 34.dp
-private val HeaderWeekRowCollapsed = 28.dp
-private val HeaderBottomPadExpanded = 8.dp
-private val HeaderBottomPadCollapsed = 4.dp
-
-/**
- * 顶栏两态高度。**短屏只压展开态的空白**——折叠态、分段控件高度与玻璃条几何
- * 一律不动，那几个值同时是胶囊圆角与折射行程的依据。
- */
-private class ScheduleHeaderMetrics(
-    val expanded: Dp,
-    val collapsed: Dp,
-    val topPadExpanded: Dp,
-    val titleGap: Dp,
-    val weekRowExpanded: Dp,
-    val actionRowExpanded: Dp,
-    val actionRowCollapsed: Dp,
-    val stackedActions: Boolean,
-    val semesterWidth: Dp,
-    val prefixFontSize: TextUnit
-) {
-    /** 折叠行程。定义成差值，于是不可能与两态高度脱钩。 */
-    val travel: Dp get() = expanded - collapsed
-}
-
-@Composable
-private fun rememberScheduleHeaderMetrics(availableWidth: Dp): ScheduleHeaderMetrics {
-    val screen = rememberScreenMetrics()
-    val density = LocalDensity.current
-    val measurer = rememberTextMeasurer()
-    val titleStyle = MaterialTheme.typography.bodyLarge
-    val segmentStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold)
-    return remember(screen, availableWidth, density, measurer, titleStyle, segmentStyle) {
-        fun textSize(text: String, style: TextStyle) = measurer.measure(text, style, maxLines = 1)
-        fun textWidth(text: String, style: TextStyle) = with(density) { textSize(text, style).size.width.toDp() }
-        fun textHeight(text: String, style: TextStyle) = with(density) { textSize(text, style).size.height.toDp() }
-        val topPad = screen.tall(HeaderTopPadExpanded, 6.dp)
-        val titleGap = screen.tall(HeaderTitleGap, 4.dp)
-        val weekRow = maxOf(screen.tall(HeaderWeekRowExpanded, 30.dp), 30.dp * density.fontScale)
-        val bottomPad = screen.tall(HeaderBottomPadExpanded, 4.dp)
-        // Four 48dp targets keep their original row. Fit the text to the actual parent,
-        // rather than stacking every device below an arbitrary screen-width breakpoint.
-        val titleAvailable = (availableWidth - PagePadding * 2 - 204.dp - 8.dp).coerceAtLeast(0.dp)
-        val prefixSize = if (availableWidth < 380.dp) 12.sp else 14.sp
-        val expandedStyle = titleStyle.copy(fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
-        val collapsedStyle = expandedStyle.copy(fontSize = 17.sp)
-        val prefixStyle = titleStyle.copy(fontSize = prefixSize, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
-        val segmentMinimum = textWidth("本学期", segmentStyle) * 2 + 30.dp
-        val titleMinimum = maxOf(textWidth("第 25 周", expandedStyle),
-            textWidth("第 25 周", collapsedStyle) + textWidth("下学期 · ", prefixStyle), segmentMinimum)
-        val stacked = titleAvailable < titleMinimum
-        val semesterWidth = if (stacked) maxOf(144.dp, segmentMinimum) else
-            maxOf(segmentMinimum, minOf(144.dp * density.fontScale.coerceAtLeast(1f), titleAvailable))
-        val titleExpanded = textHeight("第 25 周", expandedStyle) + titleGap + HeaderSegmentHeight
-        val titleCollapsed = maxOf(textHeight("第 25 周", collapsedStyle), textHeight("下学期 · ", prefixStyle))
-        val actionExpanded = if (stacked) titleExpanded + 6.dp + 48.dp else maxOf(HeaderActionRowExpanded, titleExpanded)
-        val actionCollapsed = if (stacked) titleCollapsed + 6.dp + 48.dp else maxOf(HeaderActionRowCollapsed, titleCollapsed)
-        val collapsedWeekRow = maxOf(HeaderWeekRowCollapsed, 26.dp * density.fontScale)
-        ScheduleHeaderMetrics(
-            // 展开态：上留白 + 标题行 + 标题间距 + 周次行 + 下留白
-            expanded = topPad + actionExpanded + titleGap + weekRow + bottomPad,
-            collapsed = HeaderTopPadCollapsed + actionCollapsed + collapsedWeekRow + HeaderBottomPadCollapsed,
-            topPadExpanded = topPad,
-            titleGap = titleGap,
-            weekRowExpanded = weekRow,
-            actionRowExpanded = actionExpanded,
-            actionRowCollapsed = actionCollapsed,
-            stackedActions = stacked,
-            semesterWidth = semesterWidth,
-            prefixFontSize = prefixSize
-        )
-    }
-}
-
-/** 悬浮玻璃条相对屏幕边缘的内缩。前景内容不在条里，所以这个值不影响任何对齐。 */
-private val HeaderSlabInset = 12.dp
-/** 与状态栏磨砂之间留一道透明缝：网格清晰穿过，条的上缘才看得出折射。 */
-private val HeaderSlabTopGap = 6.dp
-private val HeaderSlabBottomGap = 4.dp
-/**
- * 固定 29dp = 折叠态条高(58dp)的一半，于是折叠态正好是一枚胶囊。
- * 不用 percent=50：那样半可见的中途会是一枚很大的软药片，观感突兀。
- */
-private val HeaderSlabCorner = 29.dp
-
 /**
  * 网格的横向几何。**星期条与网格必须调用同一对函数**——星期标签靠
  * 「相同的左右留白 + 相同宽度的时间列占位」才和日期列对齐（见 `WeekHeaderCompact`
  * 里那条注释），两边取不同的值就会整体错位。
  */
 @Composable
-private fun scheduleGridPadding(): Dp =
+internal fun scheduleGridPadding(): Dp =
     rememberScreenMetrics().wide(PagePadding, ScheduleGridPaddingTight)
 
 @Composable
-private fun scheduleTimeColumnWidth(): Dp =
+internal fun scheduleTimeColumnWidth(): Dp =
     rememberScreenMetrics().wide(ScheduleTimeColumnWidth, ScheduleTimeColumnWidthTight)
 
 /** 单节课的行高。短屏收到 68dp，一屏能多看一节多。 */
@@ -283,591 +193,13 @@ data class ScheduleCourseUi(
         sourceId, name, teacher, day, startPeriod, endPeriod, weeks, location
     ),
     val hasConflict: Boolean = false,
-    val isCurrent: Boolean = false
+    val isCurrent: Boolean = false,
+    val isNext: Boolean = false
 ) {
     fun record() = com.tyust.course.schedule.ScheduleCourseRecord(id, name, teacher, location, day, startPeriod, endPeriod, weeks, isCustom)
 }
 
 data class PeriodTimeUi(val period: Int, val startTime: String, val endTime: String)
-
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-fun ScheduleScreen(
-    currentWeek: Int,
-    courses: List<ScheduleCourseUi>,
-    isLoading: Boolean,
-    periodTimes: List<PeriodTimeUi> = emptyList(),
-    periodCount: Int = 12,
-    onWeekChange: (Int) -> Unit,
-    onCourseClick: (ScheduleCourseUi) -> Unit,
-    onSettingsClick: () -> Unit = {},
-    onExportClick: () -> Unit = {},
-    isNextSemester: Boolean = false,
-    onToggleSemester: () -> Unit = {},
-    errorMessage: String = "",
-    onRetry: () -> Unit = {},
-    firstWeekDate: String? = null,
-    weekRequestKey: String? = null
-) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-    val coroutineScope = rememberCoroutineScope()
-    val maxWeeks = com.tyust.course.schedule.ScheduleMaxWeeks
-    val reducedMotion = com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion
-    val minuteClock by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
-        while (true) {
-            kotlinx.coroutines.delay(60_000L - System.currentTimeMillis() % 60_000L)
-            value = System.currentTimeMillis()
-        }
-    }
-    val actualWeek = com.tyust.course.schedule.ScheduleDates.weekAt(firstWeekDate, minuteClock)
-    val conflictIds = remember(courses) {
-        val records = courses.map { it.record() }
-        records.filter { com.tyust.course.schedule.scheduleConflicts(it, records).isNotEmpty() }.map { it.id }.toSet()
-    }
-    val liveIds = remember(courses, periodTimes, minuteClock) {
-        val clock = Calendar.getInstance().apply { timeInMillis = minuteClock }
-        val today = (clock.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
-        val nowMinutes = clock.get(Calendar.HOUR_OF_DAY) * 60 + clock.get(Calendar.MINUTE)
-        fun minutes(text: String?): Int? {
-            val parts = text?.split(':')?.map { it.toIntOrNull() } ?: return null
-            return if (parts.size == 2 && parts[0] != null && parts[1] != null) parts[0]!! * 60 + parts[1]!! else null
-        }
-        courses.filter { course ->
-            val start = minutes(periodTimes.firstOrNull { it.period == course.startPeriod }?.startTime)
-            val end = minutes(periodTimes.firstOrNull { it.period == course.endPeriod }?.endTime)
-            course.day == today && start != null && end != null && nowMinutes in start until end
-        }.map { it.id }.toSet()
-    }
-    val pagerState = rememberPagerState(
-        initialPage = (currentWeek - 1).coerceIn(0, maxWeeks - 1),
-        pageCount = { maxWeeks }
-    )
-
-    val latestWeekChange by rememberUpdatedState(onWeekChange)
-    val latestRequestedWeek by rememberUpdatedState(currentWeek)
-    val latestWeekRequestKey by rememberUpdatedState(weekRequestKey)
-    val weekSync = remember(pagerState) {
-        com.tyust.course.schedule.ScheduleWeekPagerSync(currentWeek, weekRequestKey)
-    }
-
-    var arrowJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var requestedPage by remember { mutableIntStateOf(pagerState.currentPage) }
-    val userDragging by pagerState.interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(userDragging) {
-        if (userDragging) { arrowJob?.cancel(); requestedPage = pagerState.currentPage }
-    }
-    fun moveWeek(delta: Int) {
-        requestedPage = ((if (arrowJob?.isActive == true) requestedPage else pagerState.currentPage) + delta).coerceIn(0, maxWeeks - 1)
-        arrowJob?.cancel()
-        arrowJob = coroutineScope.launch {
-            if (reducedMotion) pagerState.scrollToPage(requestedPage)
-            else pagerState.animateScrollToPage(requestedPage, animationSpec = com.tyust.course.ui.theme.MotionProfile.pagerSpring())
-        }
-    }
-
-    LaunchedEffect(pagerState) {
-        snapshotFlow {
-            Triple(latestRequestedWeek to latestWeekRequestKey, pagerState.isScrollInProgress, pagerState.settledPage)
-        }.collect { (request, scrolling, page) ->
-            val targetPage = weekSync.requestPage(request.first, request.second)
-            if (targetPage != null) {
-                arrowJob?.cancel()
-                pagerState.scrollToPage(targetPage)
-                weekSync.settledWeek(targetPage)
-            } else if (!scrolling) {
-                weekSync.settledWeek(page)?.let(latestWeekChange)
-            }
-        }
-    }
-
-    // 所有 pager 页共用一个滚动位置：顶栏折叠进度要跟着它推导，
-    // 而且左右切周时纵向位置不该跳回顶部。
-    val gridScrollState = rememberScrollState()
-    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val headerMetrics = rememberScheduleHeaderMetrics(maxWidth)
-    // 折叠行程 = 顶栏高度差，于是收缩与滚动 1:1 对消，全程跟手。
-    val travelPx = with(LocalDensity.current) { headerMetrics.travel.toPx() }
-    val headerCollapse by remember(travelPx) {
-        derivedStateOf { (gridScrollState.value / travelPx).coerceIn(0f, 1f) }
-    }
-    // 课表内容的捕获层。顶栏玻璃采样「壁纸 + 这一层」，于是网格从顶栏底下
-    // 穿过时会被折射；顶栏本身不在这一层内，不构成自采样。
-    val wallpaperBackdrop = LocalAppBackdrop.current
-    val contentBackdrop = if (wallpaperBackdrop != null && isBackdropSupported()) {
-        rememberLayerBackdrop()
-    } else {
-        null
-    }
-    val headerSampleBackdrop = if (wallpaperBackdrop != null && contentBackdrop != null) {
-        rememberCombinedBackdrop(wallpaperBackdrop, contentBackdrop)
-    } else {
-        null
-    }
-
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            // topBar slot 只测量单个子项，两个兄弟节点会叠放并让通知条压到状态栏，
-            // 因此顶栏与内联通知必须在同一个 Column 里纵向排布。
-            Column(modifier = Modifier.moduleEntrance(0).reportNoticeAnchor()) {
-                WeekHeaderCompact(
-                    currentWeek = pagerState.currentPage + 1,
-                    weekOffset = if (reducedMotion) 0f else pagerState.currentPageOffsetFraction,
-                    firstWeekDate = firstWeekDate,
-                    actualWeek = actualWeek,
-                    onPrevClick = {
-                        moveWeek(-1)
-                    },
-                    onNextClick = {
-                        moveWeek(1)
-                    },
-                    onSettingsClick = onSettingsClick,
-                    onExportClick = onExportClick,
-                    isNextSemester = isNextSemester,
-                    onToggleSemester = onToggleSemester,
-                    collapseFraction = headerCollapse,
-                    sampleBackdrop = headerSampleBackdrop
-                )
-            }
-        }
-    ) { paddingValues ->
-        when {
-            isLoading && courses.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .moduleEntrance(1)
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    GlassLoadingState(text = "正在同步课表…")
-                }
-            }
-
-            errorMessage.isNotBlank() -> {
-                Box(Modifier.fillMaxSize().moduleEntrance(1).padding(paddingValues).padding(24.dp), contentAlignment = Alignment.Center) {
-                    com.tyust.course.ui.system.SystemEmptyState(title = "课表同步失败", message = errorMessage) {
-                        com.tyust.course.ui.system.SystemSecondaryButton(text = "重新同步", onClick = onRetry)
-                    }
-                }
-            }
-
-            else -> {
-                HorizontalPager(
-                    state = pagerState,
-                    flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
-                        state = pagerState, snapAnimationSpec = com.tyust.course.ui.theme.MotionProfile.pagerSpring()),
-                    modifier = Modifier
-                        .testTag("schedule-pager")
-                        .fillMaxSize()
-                        .moduleEntrance(1)
-                        // 内容捕获层挂在 pager 这个稳定节点上（不要挂进每一页）：
-                        // 顶栏玻璃与芯片采样它，才能折射滚动中的网格与课程卡片。
-                        .then(
-                            if (contentBackdrop != null) {
-                                Modifier.layerBackdrop(contentBackdrop)
-                            } else {
-                                Modifier
-                            }
-                        ),
-                    beyondViewportPageCount = 0,
-                    pageSpacing = 0.dp
-                ) { page ->
-                    val weekNumber = page + 1
-                    val displayedCourses = remember(courses, conflictIds, liveIds, weekNumber, actualWeek, isNextSemester) {
-                        courses.map { it.copy(hasConflict = it.id in conflictIds,
-                            isCurrent = !isNextSemester && weekNumber == actualWeek && it.id in liveIds) }
-                    }
-                    Box(Modifier.fillMaxSize().graphicsLayer {
-                        val offset = pagerState.currentPage + pagerState.currentPageOffsetFraction - page
-                        scaleX = if (reducedMotion) 1f else com.tyust.course.ui.theme.SchedulePagerMotion.scale(offset)
-                        scaleY = scaleX
-                        alpha = if (reducedMotion) 1f else com.tyust.course.ui.theme.SchedulePagerMotion.alpha(offset)
-                    }) {
-                    ScheduleGrid(
-                        courses = displayedCourses,
-                        currentWeek = weekNumber,
-                        periodTimes = periodTimes,
-                        periodCount = periodCount,
-                        onCourseClick = onCourseClick,
-                        scrollState = gridScrollState,
-                        // 【常量】而不是 paddingValues.calculateTopPadding()：后者随顶栏
-                        // 一起收缩，而它施加在 verticalScroll 内部，于是顶栏每缩 1dp
-                        // 内容就被额外上提 1dp——手指走 60dp、内容走 120dp。
-                        topInset = statusBarHeight + headerMetrics.expanded
-                    )
-                    }
-                }
-            }
-        }
-    }
-    }
-}
-
-@Composable
-fun WeekHeaderCompact(
-    currentWeek: Int,
-    onPrevClick: () -> Unit,
-    onNextClick: () -> Unit,
-    onSettingsClick: () -> Unit = {},
-    onExportClick: () -> Unit = {},
-    isNextSemester: Boolean = false,
-    onToggleSemester: () -> Unit = {},
-    /** 0=未滚动（大标题直接浮在课表上）、1=已上划（收拢成一条悬浮玻璃）。 */
-    collapseFraction: Float = 0f,
-    /** 「壁纸 + 课表内容」的合成采样源。为空则退回无玻璃顶栏。 */
-    sampleBackdrop: Backdrop? = null,
-    weekOffset: Float = 0f,
-    firstWeekDate: String? = null,
-    actualWeek: Int? = null
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-    val calendar = Calendar.getInstance()
-    val headerFocus = remember { FocusRequester() }
-    val focusRegistry = LocalScheduleFocus.current
-    DisposableEffect(focusRegistry, headerFocus) {
-        focusRegistry?.register("header", headerFocus)
-        onDispose { focusRegistry?.remove("header", headerFocus) }
-    }
-    val currentDayOfWeek = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
-    val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
-    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    // CourseSelectorTheme 已根据系统模式与壁纸明暗选择配色，无需读取 GPU 像素。
-    val titleColor = MaterialTheme.colorScheme.onSurface
-
-    val collapse = collapseFraction.coerceIn(0f, 1f)
-
-    // 顶栏玻璃把自己的渲染结果导出到这一层，供板上的芯片二次采样，
-    // 于是芯片折射「壁纸 + 滚动网格 + 顶栏玻璃」三者的合成——玻璃叠玻璃。
-    val headerBackdrop = rememberLayerBackdrop()
-    val chipBackdrop = if (sampleBackdrop != null) {
-        rememberCombinedBackdrop(sampleBackdrop, headerBackdrop)
-    } else {
-        null
-    }
-    // 与 ScheduleScreen 里那份是同一个纯函数结果，不会算出两套几何
-    val headerMetrics = rememberScheduleHeaderMetrics(maxWidth)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 定高：这是"收起"的来源，也让悬浮条的几何是确定的
-            .height(
-                statusBarHeight +
-                    lerpDp(headerMetrics.expanded, headerMetrics.collapsed, collapse)
-            )
-            .then(com.tyust.course.ui.system.wallpaperHeaderScrim())
-    ) {
-        // 玻璃层：【必须是前景内容的兄弟节点，不能是它的父节点】。
-        // layerBackdrop 捕获所在节点的整棵子树——挂在包含按钮的父节点上，
-        // 按钮就会采样一个含有自己的图层，RenderThread 死循环直接 native 崩溃。
-        // 同款写法见 SystemUi.kt 的 SystemDialog。
-        //
-        // 节点常驻、不用 if(collapse>0) 摘掉：一摘掉这一层就没有内容可导出，
-        // 采样它的芯片会拿到空图层。强度全部由 collapse 调制。
-        if (sampleBackdrop != null) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .layerBackdrop(headerBackdrop)
-            ) {
-                StatusBarFrost(
-                    height = statusBarHeight + 1.dp,
-                    collapse = collapse,
-                    backdrop = sampleBackdrop
-                )
-                HeaderGlassSlab(
-                    // 比 collapse 晚起步：顶栏还高的时候它是一张大卡片，
-                    // 提前显形会让人先看到"卡"再看到"条"。
-                    strength = ((collapse - 0.35f) / 0.65f).coerceIn(0f, 1f),
-                    backdrop = sampleBackdrop,
-                    cornerRadius = HeaderSlabCorner,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            top = statusBarHeight + HeaderSlabTopGap,
-                            start = HeaderSlabInset,
-                            end = HeaderSlabInset,
-                            bottom = HeaderSlabBottomGap
-                        )
-                        .fillMaxHeight()
-                )
-            }
-        }
-
-        CompositionLocalProvider(LocalControlBackdrop provides chipBackdrop) {
-            // 前景横向几何刻意保持不变（padding = PagePadding）：星期条要和网格的
-            // 日期列对齐，塞进内缩 12dp 的玻璃条里就得反向补偿，多一处会飘的耦合。
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(
-                        top = lerpDp(headerMetrics.topPadExpanded, HeaderTopPadCollapsed, collapse)
-                    )
-            ) {
-                ScheduleHeaderActionLayout(
-                    stacked = headerMetrics.stackedActions,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(
-                            lerpDp(headerMetrics.actionRowExpanded, headerMetrics.actionRowCollapsed, collapse)
-                        )
-                        .padding(horizontal = PagePadding)
-                ) {
-                    // 标题与分段控件同属一个纵列、芯片在右侧垂直居中——这是改动前
-                    // 的构图。把芯片单独提到标题行会在分段控件右边空出一大块。
-                    Column(
-                        modifier = Modifier.testTag("schedule-header-title"),
-                        verticalArrangement = Arrangement.spacedBy(
-                            lerpDp(headerMetrics.titleGap, 0.dp, collapse)
-                        )
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // 学期信息从分段控件"凝聚"进标题：控件缩掉的同时
-                            // 「下学期 ·」从左侧挤出、把标题推向右，标题同时在缩字号。
-                            // 一段连续形变，而不是字符串在某一帧突变。
-                            SemesterTitlePrefix(
-                                text = if (isNextSemester) "下学期 · " else "本学期 · ",
-                                fontSize = headerMetrics.prefixFontSize,
-                                progress = ((collapse - 0.45f) / 0.55f).coerceIn(0f, 1f)
-                            )
-                            Text(
-                                text = "第 $currentWeek 周",
-                                modifier = Modifier.focusRequester(headerFocus).focusable().graphicsLayer {
-                                    alpha = (1f - kotlin.math.abs(weekOffset) * 2f).coerceIn(0f, 1f)
-                                    translationX = -weekOffset * 12.dp.toPx()
-                                },
-                                fontSize = lerpSp(26f, 17f, collapse),
-                                fontWeight = FontWeight.Bold,
-                                color = titleColor,
-                                letterSpacing = 0.sp,
-                                maxLines = 1
-                            )
-                        }
-
-                        // 收拢方式：容器高度与内容缩放【同一个系数】，于是绘制尺寸
-                        // 永远等于容器高度——既不会被裁出一条平边，也不会被压扁。
-                        // 单独缩容器高度是上一版"文字挤出轨道"的成因：分段控件内部
-                        // 写死 height(36.dp)，父约束一小它就被压扁。
-                        val segmentFraction = (1f - collapse).coerceIn(0f, 1f)
-                        Box(modifier = Modifier.height(HeaderSegmentHeight * segmentFraction)) {
-                            SemesterCapsuleToggle(
-                                isNextSemester = isNextSemester,
-                                onClick = onToggleSemester,
-                                width = headerMetrics.semesterWidth,
-                                modifier = Modifier.graphicsLayer {
-                                    alpha = (segmentFraction * 2.2f - 0.2f).coerceIn(0f, 1f)
-                                    scaleX = segmentFraction
-                                    scaleY = segmentFraction
-                                    transformOrigin = TransformOrigin(0f, 0f)
-                                }
-                            )
-                        }
-                    }
-
-                    com.tyust.course.ui.system.TopBarActionRail(Modifier.testTag("schedule-header-actions"), spacing = lerpDp(4.dp, 3.dp, collapse)) {
-                        val buttonSize = lerpDp(34.dp, 30.dp, collapse)
-                        val iconSize = lerpDp(16.dp, 15.dp, collapse)
-                        action(
-                            index = 0,
-                            icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "上一周",
-                            onClick = onPrevClick,
-                            enabled = currentWeek > 1,
-                            buttonSize = buttonSize,
-                            iconSize = iconSize
-                        )
-                        action(
-                            index = 1,
-                            icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "下一周",
-                            onClick = onNextClick,
-                            enabled = currentWeek < 25,
-                            buttonSize = buttonSize,
-                            iconSize = iconSize
-                        )
-                        action(
-                            index = 2,
-                            icon = Icons.Default.Share,
-                            contentDescription = "导出",
-                            onClick = onExportClick,
-                            buttonSize = buttonSize,
-                            iconSize = iconSize
-                        )
-                        action(
-                            index = 3,
-                            icon = Icons.Default.Settings,
-                            contentDescription = "设置",
-                            onClick = onSettingsClick,
-                            buttonSize = buttonSize,
-                            iconSize = iconSize
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(lerpDp(headerMetrics.titleGap, 0.dp, collapse)))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(
-                            lerpDp(
-                                headerMetrics.weekRowExpanded,
-                                maxOf(HeaderWeekRowCollapsed, 26.dp * LocalDensity.current.fontScale),
-                                collapse
-                            )
-                        )
-                        .padding(horizontal = scheduleGridPadding()),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Spacer(modifier = Modifier.width(scheduleTimeColumnWidth() + ScheduleTimeColumnShadowWidth))
-                    weekLabels.forEachIndexed { index, day ->
-                        val isToday = index + 1 == currentDayOfWeek && currentWeek == actualWeek
-                        val date = com.tyust.course.schedule.ScheduleDates.date(firstWeekDate, currentWeek, index + 1)
-                        CompactWeekdayLabel(
-                            modifier = Modifier.weight(1f).testTag("schedule-weekday-${index + 1}"),
-                            day = day,
-                            isToday = isToday,
-                            collapse = collapse,
-                            date = date?.let { "${it.get(Calendar.MONTH) + 1}/${it.get(Calendar.DAY_OF_MONTH)}" },
-                            weekOffset = weekOffset
-                        )
-                    }
-                }
-            }
-        }
-    }
-    }
-}
-
-@Composable
-private fun ScheduleHeaderActionLayout(stacked: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
-    Layout(content = content, modifier = modifier) { measurables, constraints ->
-        val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val actions = measurables[1].measure(loose.copy(maxHeight = 48.dp.roundToPx()))
-        val gap = if (stacked) 6.dp.roundToPx() else 8.dp.roundToPx()
-        val title = measurables[0].measure(loose.copy(
-            maxWidth = if (stacked) constraints.maxWidth else (constraints.maxWidth - actions.width - gap).coerceAtLeast(0),
-            maxHeight = if (stacked) (constraints.maxHeight - actions.height - gap).coerceAtLeast(0) else constraints.maxHeight
-        ))
-        layout(constraints.maxWidth, constraints.maxHeight) {
-            if (stacked) {
-                title.placeRelative(0, 0)
-                actions.placeRelative(constraints.maxWidth - actions.width, constraints.maxHeight - actions.height)
-            } else {
-                title.placeRelative(0, (constraints.maxHeight - title.height) / 2)
-                actions.placeRelative(constraints.maxWidth - actions.width, (constraints.maxHeight - actions.height) / 2)
-            }
-        }
-    }
-}
-
-/**
- * 标题左侧的学期前缀。宽度按 progress 缩放，于是它是"挤出来"的而不是"闪出来"的。
- * 用 Modifier.layout 改上报宽度，而不是 animateContentSize：后者需要先测到目标宽度
- * 再补一帧动画，跟手的折叠里会慢半拍。
- */
-@Composable
-private fun SemesterTitlePrefix(
-    text: String,
-    fontSize: TextUnit,
-    progress: Float
-) {
-    if (progress <= 0.001f) return
-    Box(
-        modifier = Modifier
-            .graphicsLayer { alpha = progress }
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                val width = (placeable.width * progress).roundToInt()
-                layout(width, placeable.height) { placeable.place(0, 0) }
-            }
-    ) {
-        Text(
-            text = text,
-            fontSize = fontSize,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 0.sp,
-            maxLines = 1,
-            softWrap = false
-        )
-    }
-}
-
-@Composable
-private fun CompactWeekdayLabel(
-    modifier: Modifier = Modifier,
-    day: String,
-    isToday: Boolean,
-    collapse: Float = 0f,
-    date: String? = null,
-    weekOffset: Float = 0f
-) {
-    val textColor by animateColorAsState(
-        targetValue = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "weekdayColor"
-    )
-    val dotScale by animateFloatAsState(
-        targetValue = if (isToday) 1f else 0.65f,
-        animationSpec = MotionSpring.gentle(),
-        label = "weekdayDotScale"
-    )
-    // 折叠后只留今天那一点——"只留必要信息"落到最小的一处
-    val dotColor = if (isToday) {
-        NeuPrimary
-    } else {
-        NeuDivider.copy(alpha = NeuDivider.alpha * (1f - collapse))
-    }
-
-    Column(
-        modifier = modifier.semantics(mergeDescendants = true) { if (isToday) stateDescription = "今天" },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(lerpDp(3.dp, 2.dp, collapse))
-    ) {
-        Text(
-            text = day,
-            fontSize = lerpSp(13f, 11.5f, collapse),
-            fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
-            color = textColor,
-            maxLines = 1
-        )
-        if (date != null) Text(date, fontSize = lerpSp(9f, 8f, collapse), color = textColor,
-            modifier = Modifier.graphicsLayer { alpha = (1f - kotlin.math.abs(weekOffset) * 2f).coerceIn(0f, 1f) }, maxLines = 1)
-        else Box(
-            modifier = Modifier
-                .scale(dotScale)
-                .size(lerpDp(5.dp, 4.dp, collapse))
-                .background(color = dotColor, shape = CircleShape)
-        )
-    }
-}
-
-@Composable
-private fun SemesterCapsuleToggle(
-    isNextSemester: Boolean,
-    onClick: () -> Unit,
-    width: Dp,
-    modifier: Modifier = Modifier
-) {
-    SystemCompactSegmentedControl(
-        options = listOf("本学期", "下学期"),
-        selectedIndex = if (isNextSemester) 1 else 0,
-        onSelect = { selectedIndex ->
-            val nextSemesterSelected = selectedIndex == 1
-            if (nextSemesterSelected != isNextSemester) {
-                onClick()
-            }
-        },
-        // requiredHeight 无视父约束：容器在收拢过程中比 36dp 矮，
-        // 普通 height 会被钳成压扁，轨道里的文字随之挤出。
-        modifier = modifier
-            .width(width)
-            .requiredHeight(HeaderSegmentHeight)
-    )
-}
-
 
 @Composable
 fun ScheduleGrid(
@@ -887,19 +219,27 @@ fun ScheduleGrid(
      * 加在容器上（`Modifier.padding(paddingValues)`）就成了"内容被推到顶栏下方"，
      * 芯片背后永远是空的。
      */
-    topInset: Dp = 0.dp
+    topInset: Dp = 0.dp,
+    showWeekend: Boolean = true,
+    compact: Boolean = false,
+    beforeGrid: @Composable () -> Unit = {},
+    onCourseLongClick: (ScheduleCourseUi) -> Unit = {}
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val weeklyCourses = remember(courses, currentWeek) {
         courses.filter { isInWeek(it.weeks, currentWeek) }
     }
+    val days = if (showWeekend) 7 else 5
+    val visibleCourses = remember(weeklyCourses, days) { weeklyCourses.filter { it.day in 1..days } }
+    val displayCourses = remember(visibleCourses) { timetableEntries(visibleCourses).map { it.display } }
     val timeColumnWidth = scheduleTimeColumnWidth()
     val gridPadding = scheduleGridPadding()
     val dayColumnWidthPx = with(LocalDensity.current) {
         ((constraints.maxWidth - gridPadding.roundToPx() * 2 - timeColumnWidth.roundToPx() -
-            ScheduleTimeColumnShadowWidth.roundToPx()) / 7f).roundToInt()
+            ScheduleTimeColumnShadowWidth.roundToPx()) / days.toFloat()).roundToInt()
     }
-    val periodHeight = rememberCoursePeriodHeight(courses, dayColumnWidthPx, schedulePeriodHeight())
+    val periodHeight = rememberCoursePeriodHeight(displayCourses, dayColumnWidthPx,
+        schedulePeriodHeight() * if (compact) 0.78f else 1f)
     val totalHeight = periodHeight * periodCount
     val darkGrid = com.tyust.course.ui.system.rememberGlassDarkTheme()
     val gridTint = MaterialTheme.colorScheme.surface.copy(alpha =
@@ -919,6 +259,7 @@ fun ScheduleGrid(
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        beforeGrid()
         // 去卡片化：轻玻璃衬底压到很低，让壁纸渐变与网格线透上来。
         // 这个 alpha 是"顶栏芯片能不能看出折射"的直接开关——衬底一厚，
         // 白芯片压在白板上，折射再准也是白压白。
@@ -1007,23 +348,27 @@ fun ScheduleGrid(
                 ) {
                     TimetableBackground(
                         periodCount = periodCount,
-                        periodHeight = periodHeight
+                        periodHeight = periodHeight,
+                        dayCount = days
                     )
                     TimetableLayout(
-                        courses = weeklyCourses,
+                        courses = visibleCourses,
                         periodCount = periodCount,
                         periodHeight = periodHeight,
-                        onCourseClick = onCourseClick
+                        dayCount = days,
+                        periodTimes = periodTimes,
+                        onCourseClick = onCourseClick,
+                        onCourseLongClick = onCourseLongClick
                     )
 
-                    if (weeklyCourses.isEmpty()) {
+                    if (visibleCourses.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
                             SystemEmptyState(
                                 title = "本周暂无课程",
-                                message = "可以切换周次、学期，或在设置中管理自定义课程。",
+                                message = "",
                                 modifier = Modifier.padding(24.dp)
                             )
                         }
@@ -1049,6 +394,9 @@ fun ScheduleGrid(
                 }
             }
         }
+        if (!showWeekend && weeklyCourses.any { it.day > 5 }) Text(
+            "另有 ${weeklyCourses.count { it.day > 5 }} 节周末课程，可在日视图查看",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     }
 }
@@ -1066,7 +414,7 @@ private fun courseLocationStyle(base: TextStyle, duration: Int): TextStyle = bas
     lineHeight = if (duration <= 2) 10.5.sp else 11.sp
 )
 
-private fun ScheduleCourseUi.hasCardStatus() = hasConflict || isCurrent || isCustom ||
+private fun ScheduleCourseUi.hasCardStatus() = hasConflict || isCurrent || isNext ||
     !com.tyust.course.schedule.ScheduleWeeks.parse(weeks).valid
 
 /** The same measured row height drives the time rail, grid lines and course spans. */
@@ -1081,8 +429,7 @@ private fun rememberCoursePeriodHeight(courses: List<ScheduleCourseUi>, columnWi
             var rowHeight = minimum.toPx()
             for (course in courses) {
                 val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
-                val name = measurer.measure(course.name, courseNameStyle(style, duration),
-                    maxLines = 4, overflow = TextOverflow.Ellipsis, constraints = Constraints(maxWidth = contentWidth))
+                val name = measurer.measure(course.name, courseNameStyle(style, duration), constraints = Constraints(maxWidth = contentWidth))
                 val hasStatus = course.hasCardStatus()
                 val locationHeight = if (course.location.isNotBlank()) measurer.measure(
                     course.location, courseLocationStyle(style, duration), constraints = Constraints(maxWidth = contentWidth)
@@ -1100,18 +447,19 @@ private fun rememberCoursePeriodHeight(courses: List<ScheduleCourseUi>, columnWi
 @Composable
 private fun TimetableBackground(
     periodCount: Int,
-    periodHeight: Dp
+    periodHeight: Dp,
+    dayCount: Int = 7
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // 去斑马纹：透明列 + 极淡分隔线，壁纸从网格间透出
         Row(modifier = Modifier.fillMaxSize()) {
-            repeat(7) { dayIndex ->
+            repeat(dayCount) { dayIndex ->
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
-                    if (dayIndex < 6) {
+                    if (dayIndex < dayCount - 1) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
@@ -1150,23 +498,44 @@ fun TimetableLayout(
     periodCount: Int = 12,
     periodHeight: Dp = SchedulePeriodHeight,
     modifier: Modifier = Modifier,
-    onCourseClick: (ScheduleCourseUi) -> Unit
+    dayCount: Int = 7,
+    periodTimes: List<PeriodTimeUi> = emptyList(),
+    onCourseClick: (ScheduleCourseUi) -> Unit,
+    onCourseLongClick: (ScheduleCourseUi) -> Unit = {}
 ) {
+    val entries = remember(courses, dayCount) { timetableEntries(courses.filter { it.day in 1..dayCount }) }
+    var selectedGroup by remember(courses) { mutableStateOf<List<ScheduleCourseUi>?>(null) }
+    selectedGroup?.let { group ->
+        com.tyust.course.ui.system.SystemDialog(onDismissRequest = { selectedGroup = null }, title = { Text("重叠课程") }) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                group.forEach { course ->
+                    ScheduleDayCourse(course, periodTimes, compact = false,
+                        onClick = { selectedGroup = null; onCourseClick(course) },
+                        onLongClick = { selectedGroup = null; onCourseLongClick(course) })
+                }
+            }
+        }
+    }
     Layout(
         modifier = modifier.fillMaxSize(),
         content = {
-            courses.forEach { course ->
-                androidx.compose.runtime.key(course.id) { CourseCard(course = course, onClick = { onCourseClick(course) }) }
+            entries.forEach { entry ->
+                androidx.compose.runtime.key(entry.display.id) { CourseCard(course = entry.display, onClick = {
+                    if (entry.courses.size == 1) onCourseClick(entry.courses.first()) else selectedGroup = entry.courses
+                }, onLongClick = {
+                    if (entry.courses.size == 1) onCourseLongClick(entry.courses.first()) else selectedGroup = entry.courses
+                }) }
             }
         }
     ) { measurables, constraints ->
         val width = constraints.maxWidth
-        val columnWidth = width / 7f
+        val columnWidth = width / dayCount.toFloat()
         val cardInset = 1.dp.roundToPx()
         val pxPerPeriod = periodHeight.toPx()
 
         val placeables = measurables.mapIndexed { index, measurable ->
-            val course = courses[index]
+            val course = entries[index].display
             val duration = course.endPeriod - course.startPeriod + 1
             val height = (duration * pxPerPeriod).roundToInt()
             val cardWidth = (columnWidth.roundToInt() - cardInset * 2).coerceAtLeast(1)
@@ -1184,8 +553,8 @@ fun TimetableLayout(
 
         layout(width, (periodCount * pxPerPeriod).roundToInt()) {
             placeables.forEachIndexed { index, placeable ->
-                val course = courses[index]
-                val dayIndex = (course.day - 1).coerceIn(0, 6)
+                val course = entries[index].display
+                val dayIndex = (course.day - 1).coerceIn(0, dayCount - 1)
                 val startPeriodIndex = (course.startPeriod - 1).coerceIn(0, periodCount - 1)
 
                 val x = (dayIndex * columnWidth).roundToInt() + cardInset
@@ -1197,8 +566,24 @@ fun TimetableLayout(
     }
 }
 
+private data class TimetableEntry(val display: ScheduleCourseUi, val courses: List<ScheduleCourseUi>)
+
+private fun timetableEntries(courses: List<ScheduleCourseUi>): List<TimetableEntry> {
+    val byId = courses.associateBy { it.id }
+    return com.tyust.course.schedule.scheduleOverlapGroups(courses.map { it.record() }).map { group ->
+        val originals = group.courses.map { byId.getValue(it.id) }
+        val first = originals.first()
+        val display = if (originals.size == 1) first else first.copy(
+            id = "overlap:" + com.tyust.course.schedule.ScheduleIdentity.digest(originals.joinToString { it.id }),
+            name = first.name, location = "${originals.size} 门重叠 · 点按查看",
+            startPeriod = group.start, endPeriod = group.end, hasConflict = true,
+            isCurrent = originals.any { it.isCurrent })
+        TimetableEntry(display, originals)
+    }
+}
+
 @Composable
-fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
+fun CourseCard(course: ScheduleCourseUi, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val darkCard = com.tyust.course.ui.system.rememberGlassDarkTheme()
     val focusRequester = remember { FocusRequester() }
     val focusRegistry = LocalScheduleFocus.current
@@ -1210,8 +595,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
     }
     val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
     // 彩色半透玻璃 tile：加深填充保证壁纸上可读，边缘细亮线似透镜
-    val containerColor = androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surface, course.color, if (course.isCustom) 0.30f else 0.22f)
-    val borderColor = course.color.copy(alpha = 0.50f)
+    val containerColor = scheduleCardColor(course.color, if (course.isCurrent) 0.20f else 0.10f)
     val accentColor = course.color.copy(alpha = 0.85f)
 
     val displayLocation = course.location
@@ -1220,7 +604,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && !com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion) 0.97f else 1f,
-        animationSpec = com.tyust.course.ui.theme.MotionProfile.iconSpring(),
+        animationSpec = androidx.compose.animation.core.tween(140),
         label = "courseCardScale"
     )
 
@@ -1238,9 +622,11 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     if (unknownWeeks) "周次待核对" else null).joinToString("，")
             }
             .scale(scale)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
+                onLongClickLabel = "课程快捷操作",
+                onLongClick = onLongClick,
                 onClick = {
                     // A course can also exist in the pager's adjacent week. The clicked copy
                     // owns the opening origin and the focus returned after dismissal.
@@ -1252,7 +638,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
         shape = RoundedCornerShape(12.dp),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(0.6.dp, borderColor)
+        border = scheduleCardBorder(course.color, course.isCurrent || course.isNext)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // 顶部玻璃高光渐变：模拟光源照射的反射
@@ -1295,8 +681,7 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     text = course.name,
                     style = courseNameStyle(MaterialTheme.typography.labelSmall, duration),
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = true,
                 )
 
                 if (displayLocation.isNotBlank()) {
@@ -1309,14 +694,10 @@ fun CourseCard(course: ScheduleCourseUi, onClick: () -> Unit) {
                     )
                 }
                 // A status symbol must not reserve a column beside every line of a long address.
-                if (course.hasConflict || course.isCurrent || course.isCustom || unknownWeeks) Icon(
-                        imageVector = when { course.hasConflict || unknownWeeks -> Icons.Default.Warning
-                            course.isCurrent -> Icons.Default.PlayArrow
-                            else -> Icons.Default.Edit },
-                        contentDescription = null,
-                        modifier = Modifier.size(10.dp),
-                        tint = if (course.hasConflict || unknownWeeks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (course.hasCardStatus()) com.tyust.course.ui.system.AnimatedLineIcon(
+                    spec = if (course.hasConflict || unknownWeeks) com.tyust.course.ui.system.AnimatedIconSpec.Warning else com.tyust.course.ui.system.AnimatedIconSpec.Clock,
+                    description = when { unknownWeeks -> "周次待核对"; course.isCurrent -> "正在上课"; course.isNext -> "下一节"; else -> "重叠课程" },
+                    modifier = Modifier.size(10.dp), tint = if (unknownWeeks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
             }
         }
     }

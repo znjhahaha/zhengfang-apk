@@ -46,8 +46,10 @@ class ScheduleCalendarFlowDeviceTest {
                     scheduler.updateTimeBase(account, nextTerm, nextCalendar)
                 }
                 ui.navigate("课表")
-                ui.click("设置")
+                ui.click("更多课表操作")
+                ui.click("课表设置")
                 ui.waitText("课表设置")
+                ui.scrollTo("第一周开始日期")
                 ui.click("第一周开始日期")
                 var day = initial.get(Calendar.DAY_OF_MONTH)
                 while (day < selected.get(Calendar.DAY_OF_MONTH)) {
@@ -64,8 +66,9 @@ class ScheduleCalendarFlowDeviceTest {
                 ui.waitText("第 $expectedWeek 周")
                 ui.screenshot("calendar-saved-current-week")
 
-                ui.click("下一周")
                 val browsedWeek = expectedWeek + 1
+                ui.click("选择日期与学期")
+                ui.click("选择第 $browsedWeek 周")
                 ui.waitText("第 $browsedWeek 周")
                 ui.onMain {
                     val base = requireNotNull(scheduler.timeBase(account, term))
@@ -76,12 +79,13 @@ class ScheduleCalendarFlowDeviceTest {
                 ui.navigate("课程")
                 ui.navigate("课表")
                 ui.waitText("第 $browsedWeek 周")
-                ui.click("设置")
+                ui.click("更多课表操作")
+                ui.click("课表设置")
                 ui.click("完成")
                 ui.waitText("课表设置", false)
                 ui.waitText("第 $browsedWeek 周")
                 ui.screenshot("calendar-browsed-week-preserved")
-                ui.click("设置")
+                ui.click("更多课表操作")
                 ui.click("同步课表")
                 ui.waitText("课表设置", false)
                 ui.waitText("第 $browsedWeek 周")

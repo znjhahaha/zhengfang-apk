@@ -30,9 +30,8 @@ class AcademicHttpTransport(
         .filter(String::isNotBlank).toSet()
 
     fun appUrl(path: String): String {
-        if (path.startsWith("http://") || path.startsWith("https://")) return path
-        val base = school.getFullBasePath().trimEnd('/') + "/"
-        return URI(base).resolve(path.trimStart('/')).toString()
+        if (path.isEmpty()) return school.fullBasePath.trimEnd('/') + "/"
+        return AcademicUrls.appUrl(school, path)
     }
 
     suspend fun get(url: String, referer: String? = null, ajax: Boolean = false): AcademicResponse = request("GET", url, null, referer, ajax = ajax)
@@ -82,6 +81,12 @@ class AcademicHttpTransport(
             val builder = Request.Builder().url(parsed).header("Accept", "text/html,application/json,*/*;q=0.8")
                 .header("User-Agent", USER_AGENT)
             if (ajax) builder.header("X-Requested-With", "XMLHttpRequest")
+            if (ajax && currentMethod == "POST" && referer != null) {
+                val source = referer.toHttpUrlOrNull()
+                if (source != null && source.scheme == parsed.scheme && source.host == parsed.host && source.port == parsed.port) {
+                    builder.header("Origin", source.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().trimEnd('/'))
+                }
+            }
             if (referer != null) builder.header("Referer", referer)
             if (currentMethod == "POST") builder.post(body ?: FormBody.Builder().build()) else builder.get()
             val request = builder.build()

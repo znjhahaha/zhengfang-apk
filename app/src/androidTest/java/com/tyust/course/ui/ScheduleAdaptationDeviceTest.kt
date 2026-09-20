@@ -62,8 +62,8 @@ class ScheduleAdaptationDeviceTest {
                 val actions = compose.onNodeWithTag("schedule-header-actions", true).fetchSemanticsNode().boundsInRoot
                 assertTrue("Title overlaps actions at $w/$f/$p", title.right <= actions.left + 1f || title.bottom <= actions.top + 1f)
                 assertTrue(actions.left >= viewport.left && actions.right <= viewport.right + 1f)
-                if (w == 412 && f == 1f) assertTrue("Keep the approved two-column header", title.right <= actions.left + 1f)
-                val actionBounds = listOf("上一周", "下一周", "导出", "设置").map {
+                assertTrue("Date and controls share the first row", title.right <= actions.left + 1f)
+                val actionBounds = listOf("日视图", "周视图", "更多课表操作").map {
                     compose.onNodeWithContentDescription(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
                 }
                 actionBounds.forEach { assertEquals(actionBounds.first().center.y, it.center.y, 1f) }
@@ -128,7 +128,7 @@ class ScheduleAdaptationDeviceTest {
 
     private fun capture(name: String) {
         val bitmap = compose.onNodeWithTag("schedule-viewport").captureToImage().asAndroidBitmap()
-        val directory = File(compose.activity.getExternalFilesDir(null), "api32-fixes").apply { mkdirs() }
+        val directory = File(compose.activity.getExternalFilesDir(null), "light-glass-validation").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

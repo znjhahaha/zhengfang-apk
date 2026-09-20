@@ -245,9 +245,7 @@ public class CourseParser {
                     course._xklc = formParams.getOrDefault("xklc", "");
                     course._xkly = formParams.getOrDefault("xkly", "0");
                     course._xkkz_id = formParams.getOrDefault("xkkz_id", "");
-                    if (course._xkkz_id.isEmpty()) {
-                        course._xkkz_id = formParams.getOrDefault("xkkz_xh", "");
-                    }
+                    course._xkkz_xh = formParams.getOrDefault("xkkz_xh", "");
                     course.njdm_id = formParams.getOrDefault("njdm_id", "");
                     course.zyh_id = formParams.getOrDefault("zyh_id", "");
                     course.xqh_id = formParams.getOrDefault("xqh_id", "");
@@ -272,11 +270,12 @@ public class CourseParser {
                 // 如果formParams中没有，尝试从JSON响应中获取
                 if (course._xkkz_id.isEmpty()) {
                     course._xkkz_id = item.optString("xkkz_id", "");
-                    // 🔧 兼容正方 V9：JSON 字段可能是 xkkz_xh
-                    if (course._xkkz_id.isEmpty()) {
-                        course._xkkz_id = item.optString("xkkz_xh", "");
-                    }
+
                 }
+                if (course._xkkz_xh.isEmpty()) course._xkkz_xh = item.optString("xkkz_xh", "");
+                if (formParams != null) course.completeParams.putAll(formParams);
+                course.completeParams.put("academic_stable_section", Boolean.toString(!course.classId.isEmpty()));
+                com.tyust.course.academic.ZfSelectionControl.forCourse(course, formParams).applyTo(course);
                 if (course.njdm_id.isEmpty()) {
                     course.njdm_id = item.optString("njdm_id", "");
                 }

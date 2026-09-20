@@ -24,7 +24,8 @@ data class AcademicGrabItem(
     val scopeId: String = "",
     val enabled: Boolean = true,
     val useExactMatch: Boolean = stableSectionId.isNotBlank(),
-    val sectionName: String = ""
+    val sectionName: String = "",
+    val sectionIdentityKnown: Boolean = false
 ) {
     // 没有教学班条件时沿用旧 key，保留已有队列状态。
     val key: String get() = listOf(schoolId, scopeId, stableCourseId, stableSectionId, courseName, teacher, time)
@@ -81,11 +82,12 @@ class AcademicGrabQueueStore(private val context: Context) {
     private fun fromJson(account: String, json: JSONObject) = AcademicGrabItem(account, json.optString("schoolId"), json.optString("courseName"),
         json.optString("teacher"), json.optString("time"), json.optString("stableCourseId"), json.optString("stableSectionId"),
         json.optString("scopeId"), json.optBoolean("enabled", true), json.optBoolean("useExactMatch", json.optString("stableSectionId").isNotBlank()),
-        json.optString("sectionName"))
+        json.optString("sectionName"), json.optBoolean("sectionIdentityKnown", false))
     private fun toJson(item: AcademicGrabItem) = JSONObject().apply {
         put("schoolId", item.schoolId); put("courseName", item.courseName); put("teacher", item.teacher); put("time", item.time)
         put("stableCourseId", item.stableCourseId); put("stableSectionId", item.stableSectionId); put("scopeId", item.scopeId)
         put("enabled", item.enabled); put("useExactMatch", item.useExactMatch); put("sectionName", item.sectionName)
+        put("sectionIdentityKnown", item.sectionIdentityKnown)
     }
     companion object { private val lock = Any() }
 }

@@ -65,7 +65,7 @@ object AcademicCourseBridge {
             // 对教学班粒度的列表（如河北传媒学院）一组几十行会串行几十轮请求，
             // 慢到像一直加载。
             val raw = course.completeParams
-            val directOffer = raw.takeIf { it.containsKey("kklxdm") && it.containsKey("xkkz_id") }?.let {
+            val directOffer = raw.takeIf { it.containsKey("kklxdm") && !ZfSelectionControl.from(it).isEmpty }?.let {
                 CourseOffer(
                     it["academic_course_id"].orEmpty().ifBlank { course.courseId },
                     course.name, course.teacher, course.time, course.location, course.credit,
@@ -86,8 +86,9 @@ object AcademicCourseBridge {
             val resolved = adapter.resolveSelection(context,
                 course.completeParams["academic_course_id"].orEmpty().ifBlank { course.courseId },
                 course.classId.ifBlank { course.doJxbId }, course.name, course.teacher, course.time,
-                course.completeParams["academic_scope_id"].orEmpty())
-                ?: return@inSession SelectionResult(AcademicStatus.PAGE_CHANGED, "无法唯一确定目标教学班，请刷新后重新确认")
+                course.completeParams["academic_scope_id"].orEmpty(), course.jxbmc,
+                allowLegacyRebind = course.completeParams["academic_stable_section"] != "true")
+                ?: return@inSession SelectionResult(AcademicStatus.PAGE_CHANGED, "未找到目标教学班，请刷新课程后重新确认")
             val (offer, section) = resolved
             prepareSession(school, accountStorageKey, expected)
             val result = try { adapter.select(SelectionTarget(offer, section, confirmed = true)) }
@@ -109,7 +110,10 @@ object AcademicCourseBridge {
                 ?: return@inSession OperationResult(AcademicStatus.PAGE_CHANGED, "课程已不在当前已选列表")
             val offer = CourseOffer(enrolled.courseId, enrolled.name, enrolled.teacher, scopeId = "",
                 raw = enrolled.raw)
-            val section = CourseSection(enrolled.sectionId.ifBlank { enrolled.stableId }, enrolled.courseId, raw = enrolled.raw)
+            val section = CourseSection(enrolled.sectionId.ifBlank { enrolled.stableId }, enrolled.courseId, raw = enrolled.raw,
+                selectionId = if (school.academicType() == AcademicSystem.ZF)
+                    enrolled.raw["do_jxb_id"].orEmpty().ifBlank { enrolled.sectionId.ifBlank { enrolled.stableId } }
+                else enrolled.sectionId.ifBlank { enrolled.stableId })
             prepareSession(school, accountStorageKey, expected)
             adapter.drop(SelectionTarget(offer, section, confirmed = true))
         }
@@ -134,11 +138,12 @@ object AcademicCourseBridge {
         }
     }
 
-    private fun toCourse(offer: CourseOffer, section: CourseSection? = null): Course = Course().apply {
+    internal fun toCourse(offer: CourseOffer, section: CourseSection? = null): Course = Course().apply {
         name = offer.name
         courseId = offer.raw["kch_id"] ?: offer.raw["kcid"] ?: offer.stableId
-        classId = section?.stableId ?: offer.raw["jxb_id"] ?: offer.raw["jx0404id"] ?: offer.raw["sectionId"] ?: offer.stableId
-        doJxbId = section?.stableId ?: offer.raw["do_jxb_id"] ?: classId
+        classId = section?.stableId ?: sequenceOf("jxb_id", "jx0404id", "sectionId", "do_jxb_id")
+            .mapNotNull { offer.raw[it]?.takeIf(String::isNotBlank) }.firstOrNull().orEmpty()
+        doJxbId = section?.selectionId ?: offer.raw["do_jxb_id"]?.takeIf(String::isNotBlank) ?: classId
         teacher = section?.teacher?.ifBlank { offer.teacher } ?: offer.teacher
         jxbmc = section?.name.orEmpty().ifBlank { offer.raw["jxbmc"].orEmpty() }
         time = section?.time?.ifBlank { offer.time } ?: offer.time
@@ -149,6 +154,8 @@ object AcademicCourseBridge {
         isSelected = offer.raw["isSelected"] == "true" || offer.raw["sfxz"] == "1"
         completeParams = offer.raw.toMutableMap().apply {
             if (section != null) putAll(section.raw)
+            put("academic_stable_section", (classId.isNotBlank() &&
+                (offer.raw["academic_system"] != "zf" || get("jxb_id") == classId)).toString())
             put("academic_system", offer.raw["academic_system"].orEmpty())
             put("academic_scope_id", offer.scopeId)
             put("academic_course_id", offer.stableId)

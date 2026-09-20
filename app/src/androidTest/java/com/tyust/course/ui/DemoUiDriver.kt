@@ -140,6 +140,18 @@ internal class DemoUiDriver : AutoCloseable {
         device.executeShellCommand("input -d $display tap ${rect.centerX()} ${rect.centerY()}")
         SystemClock.sleep(400)
     }
+    fun scrollTo(text: String) {
+        SystemClock.sleep(800)
+        repeat(12) {
+            if (hasText(text)) return
+            val activity = requireNotNull(foreground)
+            val view = activity.window.decorView
+            val x = view.width / 2
+            shell("input -d ${activity.display!!.displayId} swipe $x ${view.height * 3 / 4} $x ${view.height * 11 / 20} 450")
+            SystemClock.sleep(400)
+        }
+        waitText(text)
+    }
     fun longClick(text: String) {
         val rect = boundsOf(text)
         val display = requireNotNull(foreground).display!!.displayId

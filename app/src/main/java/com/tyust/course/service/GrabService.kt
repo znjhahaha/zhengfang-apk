@@ -21,6 +21,8 @@ import com.tyust.course.manager.UserManager
 import com.tyust.course.model.Course
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.network.CourseApiClient
+import com.tyust.course.academic.ZfSelectionControl
+import com.tyust.course.academic.ZfCourseCategories
 import com.tyust.course.utils.CourseNameKit
 import com.tyust.course.utils.SessionRenewer
 import okhttp3.Call
@@ -104,10 +106,12 @@ class GrabService : Service() {
         val courseKey: String,
         var retryCount: Int = 0,
         var skipCount: Int = 0,
-        var cancelled: Boolean = false
+        var cancelled: Boolean = false,
+        var readyAtMillis: Long = 0
     )
 
     private val pendingGrabTasks = java.util.ArrayDeque<GrabTaskContext>()
+    private var parallelRetryWakeup: Runnable? = null
     private val activeGrabTasks = mutableMapOf<Int, GrabTaskContext>()
     private var nextParallelWorkerId = 1
     private var isParallelTaskPoolRunning = false
@@ -211,6 +215,7 @@ class GrabService : Service() {
             put("doJxbId", course.doJxbId)
             put("kklxdm", course.kklxdm)
             put("_xkkz_id", course._xkkz_id)
+            CourseNameKit.saveControls(this, course)
             put("_rwlx", course._rwlx)
             put("_xklc", course._xklc)
             put("njdm_id", course.njdm_id)
@@ -496,11 +501,7 @@ class GrabService : Service() {
                     currentQueueIndex = 0
                     totalQueueSuccess = 0
                     
-                    if (isParallelMode && queue.size > 1) {
-                        startParallelCourseTasks(queue, origin = "queue", label = "队列抢课")
-                    } else {
-                        startNextQueueItem()
-                    }
+                    startParallelCourseTasks(queue, origin = "queue", label = "队列轮询")
                 }
             }
             ACTION_START_FUZZY_MATCH -> {
@@ -579,16 +580,15 @@ class GrabService : Service() {
         store.resetStatuses(account, items)
         successCount = 0; failCount = 0; retryCount = 0
         startForeground(NOTIFICATION_ID, createNotification("教务抢课：${items.size} 门课程"))
-        broadcastLog("开始教务抢课：${items.size} 门课程，$workers 个执行任务")
+        broadcastLog("开始全队列轮询：${items.size} 门课程，最多同时处理 $workers 门")
         academicJob = academicScope.launch {
             val semaphore = Semaphore(workers)
             val queueHalted = java.util.concurrent.atomic.AtomicBoolean(false)
             try {
                 coroutineScope {
                     items.map { item -> launch {
-                        semaphore.withPermit {
                             var expected = queueSession.get()
-                            if (queueHalted.get() || !currentUser.sessionState.isCurrent(expected)) return@withPermit
+                            if (queueHalted.get() || !currentUser.sessionState.isCurrent(expected)) return@launch
                             val adapter = AcademicGatewayFactory.create(school, account)
                             lateinit var runner: ProtocolGrabRunner
                             runner = ProtocolGrabRunner(adapter, canContinue = { !queueHalted.get() && currentUser.sessionState.isCurrent(expected) }) {
@@ -609,7 +609,15 @@ class GrabService : Service() {
                                     }
                                 }
                             }
-                            runner.runUntilDone(item, policy) { event ->
+                            runner.runUntilDone(item, policy, withAttempt = { attempt ->
+                                semaphore.withPermit {
+                                    expected = queueSession.get()
+                                    if (queueHalted.get() || !currentUser.sessionState.isCurrent(expected))
+                                        throw CancellationException("Queue requires attention")
+                                    runner.replaceAdapter(AcademicGatewayFactory.create(school, account))
+                                    attempt()
+                                }
+                            }) { event ->
                                 val eventSession = expected
                                 if (event is GrabRunEvent.Attempt && queueHalted.get()) throw CancellationException("Queue requires attention")
                                 if (event is GrabRunEvent.Paused && event.status.blocksFurtherSelections()) queueHalted.set(true)
@@ -636,7 +644,6 @@ class GrabService : Service() {
                                     }
                                 }
                             }
-                        }
                     } }.joinAll()
                 }
                 handler.post {
@@ -796,7 +803,7 @@ class GrabService : Service() {
             )
         }
 
-        val workerLimit = minOf(parallelWorkerCount, pendingGrabTasks.size)
+        val workerLimit = minOf(if (isParallelMode) parallelWorkerCount else 1, pendingGrabTasks.size)
         startForeground(NOTIFICATION_ID, createNotification("$label：并行 $workerLimit/$parallelTaskTotal"))
         broadcastLog("启动并行抢课：$label，共 $parallelTaskTotal 门，仅使用当前账号")
         fillParallelTaskSlots(school)
@@ -804,9 +811,18 @@ class GrabService : Service() {
 
     private fun fillParallelTaskSlots(school: SchoolConfig) {
         if (!isRunning || !isParallelTaskPoolRunning) return
-        val workerLimit = parallelWorkerCount.coerceAtLeast(1)
+        parallelRetryWakeup?.let(handler::removeCallbacks)
+        parallelRetryWakeup = null
+        val workerLimit = if (isParallelMode) parallelWorkerCount.coerceAtLeast(1) else 1
         while (activeGrabTasks.size < workerLimit && pendingGrabTasks.isNotEmpty()) {
-            val task = pendingGrabTasks.removeFirst()
+            val now = android.os.SystemClock.uptimeMillis()
+            val task = pendingGrabTasks.firstOrNull { it.readyAtMillis <= now }
+            if (task == null) {
+                val wait = (pendingGrabTasks.minOf { it.readyAtMillis } - now).coerceAtLeast(1)
+                parallelRetryWakeup = Runnable { fillParallelTaskSlots(school) }.also { handler.postDelayed(it, wait) }
+                break
+            }
+            pendingGrabTasks.remove(task)
             activeGrabTasks[task.workerId] = task
             activeWorkers.add(task.workerId)
             broadcastCourseStatus(task.course, "grabbing")
@@ -866,6 +882,19 @@ class GrabService : Service() {
         Thread {
             val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school, serviceAccountStorageKey)
             val hiddenParams = parseHiddenParams(hiddenHtml ?: "")
+            if (task.course.completeParams["zf_refresh_controls"] == "true") {
+                val refreshed = refreshLegacyControls(school, task.course, hiddenHtml.orEmpty())
+                if (refreshed == null) {
+                    handler.post {
+                        if (isRunning && !task.cancelled) {
+                            broadcastLog("无法确认旧队列的选课分类，等待重新获取当前上下文")
+                            scheduleParallelTaskRetry(school, task)
+                        }
+                    }
+                    return@Thread
+                }
+                task.params = refreshed
+            }
             val merged = task.params.toMutableMap()
             hiddenParams.forEach { (key, value) ->
                 if (value.isNotEmpty() && merged[key].isNullOrEmpty()) {
@@ -883,6 +912,11 @@ class GrabService : Service() {
                 }
             }
         }.start()
+    }
+
+    /** Old queues stored either control value in _xkkz_id. Resolve the saved category before any write. */
+    private fun refreshLegacyControls(school: SchoolConfig, course: Course, html: String): Map<String, String>? {
+        return com.tyust.course.academic.ZfSelectionContext.refreshLegacy(school, serviceAccountStorageKey, course, html)
     }
 
     private fun getTaskParam(params: Map<String, String>, baseName: String): String {
@@ -936,11 +970,7 @@ class GrabService : Service() {
         formData["kch_id"] = course.courseId?.takeIf { it.isNotEmpty() } ?: ""
         formData["jxbzcxskg"] = params["jxbzcxskg"] ?: "0"
         formData["xklc"] = course._xklc?.takeIf { it.isNotEmpty() } ?: params["xklc"] ?: "2"
-        formData[CourseNameKit.detectXkkzKey(params)] =
-            course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(params)
-        // 🔧 正方 V9（如 mnust）：教务端校验 xkkz_xh，需与主键同时携带
-        formData["xkkz_xh"] = params["xkkz_xh"]?.takeIf { it.isNotBlank() }
-            ?: params["firstXkkzXh"] ?: ""
+        CourseNameKit.applyControlParams(formData, params, course)
         formData["cxbj"] = params["cxbj"] ?: "0"
         formData["fxbj"] = params["fxbj"] ?: "0"
         formData["kspage"] = "0"
@@ -990,6 +1020,7 @@ class GrabService : Service() {
                     task.course.courseId = matched.courseId
                     task.course.kklxdm = matched.kklxdm
                     task.course._xkkz_id = matched._xkkz_id
+                    task.course._xkkz_xh = matched._xkkz_xh
                     task.course._rwlx = matched._rwlx
                     task.course._xklc = matched._xklc
                     task.course.zyh_id = matched.zyh_id
@@ -1006,9 +1037,9 @@ class GrabService : Service() {
     }
 
     private fun fetchSelectionDetails(school: SchoolConfig, task: GrabTaskContext) {
+        if (!isRunning || task.cancelled || activeGrabTasks[task.workerId] !== task) return
         val course = task.course
         val params = task.params
-        val xkkzId = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(params)
         val njdmId = course.njdm_id?.takeIf { it.isNotEmpty() } ?: params["njdm_id"] ?: "2024"
         val zyhId = course.zyh_id?.takeIf { it.isNotEmpty() } ?: params["zyh_id"] ?: ""
         val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: params["kklxdm"] ?: "01"
@@ -1026,7 +1057,7 @@ class GrabService : Service() {
         formData["njdm_id"] = njdmId
         formData["kklxdm"] = kklxdm
         formData["xklc"] = xklc
-        formData[CourseNameKit.detectXkkzKey(params)] = xkkzId
+        CourseNameKit.applyControlParams(formData, params, course)
         formData["kch_id"] = course.courseId ?: ""
         val postBody = formData.entries.joinToString("&") { "${it.key}=${it.value}" }
 
@@ -1066,18 +1097,22 @@ class GrabService : Service() {
     }
 
     private fun executeSelection(school: SchoolConfig, task: GrabTaskContext, details: SelectionDetails, rwlx: String, xklc: String) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { executeSelection(school, task, details, rwlx, xklc) }
+            return
+        }
+        if (!isRunning || task.cancelled || activeGrabTasks[task.workerId] !== task || !isServiceAccountCurrent()) return
         val course = task.course
+        ZfSelectionControl.forCourse(course, task.params).withReturned(mapOf("xkkz_id" to details.xkkzId, "xkkz_xh" to details.xkkzXh)).applyTo(course)
         val finalRwlx = if (course._rwlx?.isNotEmpty() == true) course._rwlx else rwlx
         val finalXklc = if (course._xklc?.isNotEmpty() == true) course._xklc else xklc
-        val finalXkkzId = if (course._xkkz_id?.isNotEmpty() == true) course._xkkz_id else details.xkkzId
         val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
         val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
         val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else "01"
-        val xkkzKey = CourseNameKit.detectXkkzKey(task.params)
         val postBody = StringBuilder()
-            .append("jxb_ids=").append(details.doJxbId)
-            .append("&kch_id=").append(course.courseId)
-            .append("&kcmc=(").append(course.courseId).append(")").append(course.name ?: "")
+            .append("jxb_ids=").append(java.net.URLEncoder.encode(details.doJxbId, "UTF-8"))
+            .append("&kch_id=").append(java.net.URLEncoder.encode(course.courseId.orEmpty(), "UTF-8"))
+            .append("&kcmc=").append(java.net.URLEncoder.encode(course.name.orEmpty(), "UTF-8"))
             .append("&rwlx=").append(finalRwlx)
             .append("&rlkz=").append(details.rlkz)
             .append("&rlzlkz=").append(details.rlzlkz)
@@ -1085,7 +1120,6 @@ class GrabService : Service() {
             .append("&xxkbj=").append(details.xxkbj)
             .append("&qz=0")
             .append("&cxbj=").append(details.cxbj)
-            .append("&").append(xkkzKey).append("=").append(finalXkkzId)
             .append("&njdm_id=").append(finalNjdmId)
             .append("&zyh_id=").append(finalZyhId)
             .append("&kklxdm=").append(finalKklxdm)
@@ -1093,32 +1127,51 @@ class GrabService : Service() {
             .append("&xkxnm=").append(details.xkxnm)
             .append("&xkxqm=").append(details.xkxqm)
             .append("&jcxx_id=").append(details.jcxxId)
-            .toString()
+            .toString().let { ZfSelectionControl.appendToBody(it, task.params, course, false) }
 
         CourseApiClient.getInstance().selectCourse(school, postBody, serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                broadcastLog("线程 ${task.workerId} 选课请求失败：${e.message}")
-                scheduleParallelTaskRetry(school, task)
+                broadcastLog("线程 ${task.workerId} 未收到选课结果，先检查已选列表")
+                verifyParallelSelectionAsync(school, task, accepted = false)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 val result = response.body?.string() ?: ""
-                val success = result.contains("\"flag\":\"1\"") || result.contains("成功")
-                if (success) {
-                    verifyParallelSelectionAsync(school, task)
-                } else {
-                    val errorMsg = parseErrorMessage(result)
-                    broadcastLog("线程 ${task.workerId} 第 ${task.retryCount} 次失败：$errorMsg")
-                    scheduleParallelTaskRetry(school, task)
+                val status = com.tyust.course.academic.AcademicJson.zfStatus(result, response.code)
+                when (status) {
+                    com.tyust.course.academic.AcademicStatus.SUCCESS -> verifyParallelSelectionAsync(school, task)
+                    com.tyust.course.academic.AcademicStatus.RESULT_UNKNOWN,
+                    com.tyust.course.academic.AcademicStatus.ALREADY_SELECTED -> verifyParallelSelectionAsync(school, task, accepted = false)
+                    com.tyust.course.academic.AcademicStatus.NO_CAPACITY,
+                    com.tyust.course.academic.AcademicStatus.ROUND_CLOSED,
+                    com.tyust.course.academic.AcademicStatus.NETWORK_RETRYABLE -> {
+                        broadcastLog("等待重试：${courseDisplayName(task.course)}，${if (status == com.tyust.course.academic.AcademicStatus.NO_CAPACITY) "暂无名额" else parseErrorMessage(result)}")
+                        scheduleParallelTaskRetry(school, task)
+                    }
+                    else -> handler.post {
+                        if (!isRunning || activeGrabTasks[task.workerId] !== task) return@post
+                        val message = com.tyust.course.academic.AcademicJson.message(result).ifBlank { "选课响应异常，请检查教务页面" }
+                        broadcastLog("任务已暂停：${courseDisplayName(task.course)}，$message")
+                        postAcademicAttention(courseDisplayName(task.course), message)
+                        stopGrabbing(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+                    }
                 }
             }
         })
     }
 
-    private fun verifyParallelSelectionAsync(school: SchoolConfig, task: GrabTaskContext) {
+    private fun verifyParallelSelectionAsync(school: SchoolConfig, task: GrabTaskContext, accepted: Boolean = true) {
         Thread {
-            val verified = verifySelection(school, task.course.courseId ?: "")
+            val verified = verifySelection(school, task.course.courseId ?: "", task.course.classId.orEmpty())
             handler.post {
+                if (!isRunning || task.cancelled || activeGrabTasks[task.workerId] !== task) return@post
+                if (!accepted && !verified) {
+                    val message = "已选列表尚未确认此次选课结果，请核对后再继续"
+                    broadcastLog(message)
+                    postAcademicAttention(courseDisplayName(task.course), message)
+                    stopGrabbing(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+                    return@post
+                }
                 if (verified) {
                     broadcastLog("线程 ${task.workerId} 验证成功：${courseDisplayName(task.course)}")
                 } else {
@@ -1130,16 +1183,31 @@ class GrabService : Service() {
     }
 
     private fun scheduleParallelTaskRetry(school: SchoolConfig, task: GrabTaskContext) {
-        if (!isRunning || task.cancelled || !activeGrabTasks.containsKey(task.workerId)) return
+        // OkHttp callbacks arrive off the main thread; the pool has a single owner.
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { scheduleParallelTaskRetry(school, task) }
+            return
+        }
+        if (!isRunning || task.cancelled || activeGrabTasks[task.workerId] !== task) return
         if (task.retryCount >= maxRetry) {
             finishParallelTask(task, success = false, message = "达到最大重试次数")
             return
         }
-        handler.postDelayed({ runParallelTaskLoop(school, task) }, interval.toLong())
+        // One attempt owns a slot. Waiting courses return to the tail so all courses get a turn.
+        activeGrabTasks.remove(task.workerId)
+        activeWorkers.remove(task.workerId)
+        task.readyAtMillis = android.os.SystemClock.uptimeMillis() + interval.coerceAtLeast(500)
+        pendingGrabTasks.addLast(task)
+        broadcastCourseStatus(task.course, "waiting")
+        fillParallelTaskSlots(school)
     }
 
     private fun finishParallelTask(task: GrabTaskContext, success: Boolean, message: String) {
-        if (!activeGrabTasks.containsKey(task.workerId)) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { finishParallelTask(task, success, message) }
+            return
+        }
+        if (!isRunning || task.cancelled || activeGrabTasks[task.workerId] !== task) return
         activeGrabTasks.remove(task.workerId)
         activeWorkers.remove(task.workerId)
         task.cancelled = true
@@ -1244,6 +1312,8 @@ class GrabService : Service() {
         if (currentSchool?.let(AcademicGatewayFactory::supports) == true)
             AcademicGrabRuntimeStore.update(serviceAccountStorageKey, AcademicGrabRuntime(false, successCount, failCount, retryCount))
         isParallelTaskPoolRunning = false
+        parallelRetryWakeup?.let(handler::removeCallbacks)
+        parallelRetryWakeup = null
         pendingGrabTasks.clear()
         activeGrabTasks.values.forEach { it.cancelled = true }
         activeGrabTasks.clear()
@@ -1488,6 +1558,19 @@ class GrabService : Service() {
         Thread {
             val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school, serviceAccountStorageKey)
             val hiddenParams = parseHiddenParams(hiddenHtml ?: "")
+            if (course.completeParams["zf_refresh_controls"] == "true") {
+                val refreshed = refreshLegacyControls(school, course, hiddenHtml.orEmpty())
+                if (refreshed == null) {
+                    handler.post {
+                        if (isRunning) {
+                            broadcastLog("无法确认旧队列的选课分类，等待重新获取当前上下文")
+                            scheduleNextAttempt()
+                        }
+                    }
+                    return@Thread
+                }
+                courseParams = refreshed
+            }
             
             Log.d(TAG, "Step 0: 获取隐藏参数完成，共 ${hiddenParams.size} 个")
             
@@ -1580,7 +1663,7 @@ class GrabService : Service() {
         formData["kch_id"] = targetCourse.courseId ?: ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = targetCourse._xklc?.takeIf { it.isNotEmpty() } ?: params?.get("xklc") ?: "2"
-        formData[CourseNameKit.detectXkkzKey(params)] = targetCourse._xkkz_id ?: ""
+        CourseNameKit.applyControlParams(formData, params, targetCourse)
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         // 搜索专用参数
@@ -1622,6 +1705,7 @@ class GrabService : Service() {
                         targetCourse.courseId = matched.courseId
                         targetCourse.kklxdm = matched.kklxdm
                         targetCourse._xkkz_id = matched._xkkz_id
+                        targetCourse._xkkz_xh = matched._xkkz_xh
                         targetCourse._rwlx = matched._rwlx
                         targetCourse._xklc = matched._xklc
                         // 🔧 智能模式匹配，确保不走精确模式
@@ -1717,7 +1801,7 @@ class GrabService : Service() {
         formData["kch_id"] = ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = params?.get("xklc") ?: "2"
-        formData[CourseNameKit.detectXkkzKey(params)] = CourseNameKit.resolveIndexXkkz(params)
+        CourseNameKit.applyControlParams(formData, params)
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         // 🔧 补充 CourseListRoute 中的额外参数
@@ -1820,6 +1904,7 @@ class GrabService : Service() {
                     targetCourse.courseId = matched.courseId
                     targetCourse.kklxdm = matched.kklxdm
                     targetCourse._xkkz_id = matched._xkkz_id
+                    targetCourse._xkkz_xh = matched._xkkz_xh
                     targetCourse._rwlx = matched._rwlx
                     targetCourse._xklc = matched._xklc
                     targetCourse.zyh_id = matched.zyh_id
@@ -1920,6 +2005,7 @@ class GrabService : Service() {
         targetCourse.courseId = matched.courseId
         targetCourse.kklxdm = matched.kklxdm
         targetCourse._xkkz_id = matched._xkkz_id
+        targetCourse._xkkz_xh = matched._xkkz_xh
         targetCourse._rwlx = matched._rwlx
         targetCourse._xklc = matched._xklc
         targetCourse.zyh_id = matched.zyh_id
@@ -1966,8 +2052,6 @@ class GrabService : Service() {
     }
     
     private fun fetchSelectionDetails(school: SchoolConfig, course: Course) {
-        val xkkzKey = CourseNameKit.detectXkkzKey(courseParams)
-        val xkkz_id = course._xkkz_id?.takeIf { it.isNotEmpty() } ?: CourseNameKit.resolveIndexXkkz(courseParams)
         val njdm_id = course.njdm_id?.takeIf { it.isNotEmpty() } ?: courseParams?.get("njdm_id") ?: "2024"
         val zyh_id = course.zyh_id?.takeIf { it.isNotEmpty() } ?: courseParams?.get("zyh_id") ?: ""
         val kklxdm = course.kklxdm?.takeIf { it.isNotEmpty() } ?: courseParams?.get("kklxdm") ?: "01"
@@ -2025,7 +2109,7 @@ class GrabService : Service() {
         formData["kch_id"] = course.courseId ?: ""
         formData["jxbzcxskg"] = courseParams?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = xklc
-        formData[xkkzKey] = xkkz_id
+        CourseNameKit.applyControlParams(formData, courseParams, course)
         formData["cxbj"] = courseParams?.get("cxbj") ?: "0"
         formData["fxbj"] = courseParams?.get("fxbj") ?: "0"
         
@@ -2090,6 +2174,10 @@ class GrabService : Service() {
             
             val obj = TeachingClassMatcher.selectRow(arr, course) ?: return null
             course.jxbmc = obj.optString("jxbmc", course.jxbmc)
+            obj.optString("jxb_id").takeIf(String::isNotBlank)?.let {
+                course.classId = it
+                course.completeParams["academic_stable_section"] = "true"
+            }
                 
             // 提取加密的 jxb_id（Web版通常是100+字符的长字符串，但有时是32字符的短ID也可用）
             var doJxbId = obj.optString("do_jxb_id", "")
@@ -2121,7 +2209,8 @@ class GrabService : Service() {
                 xkxnm = obj.optString("xkxnm", "2025"),
                 xkxqm = obj.optString("xkxqm", "12"),
                 jcxxId = obj.optString("jcxx_id", ""),  // Web版关键参数
-                xkkzId = obj.optString("xkkz_id", "")
+                xkkzId = obj.optString("xkkz_id", ""),
+                xkkzXh = obj.optString("xkkz_xh", "")
             )
         } catch (e: Exception) {
             Log.e(TAG, "parseSelectionDetails error: ${e.message}")
@@ -2142,21 +2231,21 @@ class GrabService : Service() {
         val xkxnm: String,
         val xkxqm: String,
         val jcxxId: String,
-        val xkkzId: String
+        val xkkzId: String,
+        val xkkzXh: String = ""
     )
     
     private fun executeSelection(
         school: SchoolConfig, course: Course, details: SelectionDetails,
         rwlx: String, xklc: String
     ) {
+        ZfSelectionControl.forCourse(course, courseParams).withReturned(mapOf("xkkz_id" to details.xkkzId, "xkkz_xh" to details.xkkzXh)).applyTo(course)
         // 优先使用课程数据中的参数
         val finalRwlx = if (course._rwlx?.isNotEmpty() == true) course._rwlx else rwlx
         val finalXklc = if (course._xklc?.isNotEmpty() == true) course._xklc else xklc
-        val finalXkkzId = if (course._xkkz_id?.isNotEmpty() == true) course._xkkz_id else details.xkkzId
         val finalNjdmId = if (course.njdm_id?.isNotEmpty() == true) course.njdm_id else details.njdmId
         val finalZyhId = if (course.zyh_id?.isNotEmpty() == true) course.zyh_id else details.zyhId
         val finalKklxdm = if (course.kklxdm?.isNotEmpty() == true) course.kklxdm else "01"
-        val xkkzKey = CourseNameKit.detectXkkzKey(courseParams)
         
         // 构建POST body（参数顺序与Web版完全一致）
         val postBody = StringBuilder()
@@ -2170,7 +2259,6 @@ class GrabService : Service() {
         postBody.append("&xxkbj=").append(details.xxkbj)
         postBody.append("&qz=0")
         postBody.append("&cxbj=").append(details.cxbj)
-        postBody.append("&").append(xkkzKey).append("=").append(finalXkkzId)
         postBody.append("&njdm_id=").append(finalNjdmId)
         postBody.append("&zyh_id=").append(finalZyhId)
         postBody.append("&kklxdm=").append(finalKklxdm)
@@ -2179,7 +2267,7 @@ class GrabService : Service() {
         postBody.append("&xkxqm=").append(details.xkxqm)
         postBody.append("&jcxx_id=").append(details.jcxxId)  // Web版关键参数
         
-        CourseApiClient.getInstance().selectCourse(school, postBody.toString(), serviceAccountStorageKey, object : Callback {
+        CourseApiClient.getInstance().selectCourse(school, ZfSelectionControl.appendToBody(postBody.toString(), courseParams, course, false), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 failCount++
                 broadcastUpdate("失败：选课请求出错：${e.message}")
@@ -2287,16 +2375,15 @@ class GrabService : Service() {
     }
     
     // 验证选课是否成功 (Web版 verifyCourseSelection)
-    private fun verifySelection(school: SchoolConfig, courseId: String): Boolean {
+    private fun verifySelection(school: SchoolConfig, courseId: String, sectionId: String = ""): Boolean {
         try {
             val selectedCoursesJson = CourseApiClient.getInstance().fetchSelectedCoursesSync(school, "", serviceAccountStorageKey)
             if (selectedCoursesJson == null) return false
             
-            val arr = JSONArray(selectedCoursesJson)
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
+            val rows = com.tyust.course.academic.AcademicJson.objects(selectedCoursesJson, "tmpList", "courses", "items")
+            for (obj in rows) {
                 val kchId = obj.optString("kch_id", "")
-                if (kchId == courseId) {
+                if (kchId == courseId && (sectionId.isBlank() || obj.optString("jxb_id") == sectionId || obj.optString("do_jxb_id") == sectionId)) {
                     Log.d(TAG, "验证成功: 找到已选课程 $courseId")
                     return true
                 }
@@ -2422,7 +2509,10 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
     private var currentKeywords = ""
     
     // 多分类遍历状态（与 CourseListLogicHelper 一致）
-    data class TabParam(val kklxdm: String, val xkkz_id: String, val njdm_id: String, val zyh_id: String)
+    data class TabParam(val kklxdm: String, val xkkz_id: String, val njdm_id: String, val zyh_id: String,
+        val xkkz_xh: String = "", val controlKey: String = "xkkz_id") {
+        val control get() = if (controlKey == "xkkz_xh") ZfSelectionControl(xh = xkkz_id) else ZfSelectionControl(xkkz_id, xkkz_xh)
+    }
     private var tabParamsList = mutableListOf<TabParam>()
     private var currentTabIndex = 0
     private var indexParams = mutableMapOf<String, String>()
@@ -2448,14 +2538,14 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         }
         
         if (keywordQueue.size > 1) {
-            val modeDesc = if (isParallelMode) "并行处理" else "顺序处理"
+            val modeDesc = if (isParallelMode) "双线程轮询全部关键词" else "单线程轮询全部关键词"
             broadcastLog("检测到 ${keywordQueue.size} 组课程关键词，将 $modeDesc")
             keywordQueue.forEachIndexed { index, kw ->
                 broadcastLog("   ${index + 1}. $kw")
             }
         }
         
-        if (isParallelMode && keywordQueue.size > 1) {
+        if (keywordQueue.size > 1) {
             val keywordCourses = keywordQueue.map { keywordToCourse(it) }
             startParallelCourseTasks(keywordCourses, origin = "keyword", label = "关键词抢课")
         } else {
@@ -2607,30 +2697,10 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
             
             Log.d(TAG, "解析到 ${indexParams.size} 个 Index 参数")
             
-            // 提取所有 queryCourse Tab 参数（与 CourseListLogicHelper 完全一致）
-            val queryCoursePattern = """queryCourse\s*\(\s*this\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*\)""".toRegex()
-            queryCoursePattern.findAll(html).forEach { match ->
-                tabParamsList.add(TabParam(
-                    match.groupValues[1],  // kklxdm
-                    match.groupValues[2],  // xkkz_id
-                    match.groupValues[3],  // njdm_id
-                    match.groupValues[4]   // zyh_id
-                ))
-            }
-            
-            // 如果没找到 queryCourse，使用默认参数
-            if (tabParamsList.isEmpty()) {
-                val defaultTab = TabParam(
-                    indexParams["firstKklxdm"] ?: indexParams["kklxdm"] ?: "10",
-                    com.tyust.course.utils.CourseNameKit.resolveIndexXkkz(indexParams),
-                    indexParams["njdm_id"] ?: "2024",
-                    indexParams["zyh_id"] ?: ""
-                )
-                if (defaultTab.xkkz_id.isNotEmpty()) {
-                    tabParamsList.add(defaultTab)
-                }
-            }
-            
+            tabParamsList.addAll(ZfCourseCategories.parse(html, indexParams).map {
+                TabParam(it.category, it.control.primaryValue, it.grade, it.major, it.control.xh, it.control.primaryKey)
+            })
+
             if (tabParamsList.isEmpty()) {
                 retryOrFail("选课参数为空（可能选课未开放）")
                 return
@@ -2663,10 +2733,11 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         
         broadcastLog("获取分类 $currentTabIndex/${tabParamsList.size} (kklxdm=${tab.kklxdm})…")
         
-        // 先获取 Display 页面参数（xkkz 参数名按学校自适应）
+        displayParams.clear()
+        // Each category owns its Display state.
         CourseApiClient.getInstance().fetchCourseDisplayParamsWithKey(
             school, tab.xkkz_id, tab.kklxdm, tab.njdm_id, tab.zyh_id,
-            CourseNameKit.detectXkkzKey(indexParams), serviceAccountStorageKey,
+            tab.control.primaryKey, serviceAccountStorageKey,
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     // 失败则跳过 Display 参数，直接获取课程列表
@@ -2702,7 +2773,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         currentMergedParams.putAll(indexParams)
         currentMergedParams.putAll(displayParams)
         
-        currentMergedParams[CourseNameKit.detectXkkzKey(currentMergedParams)] = tab.xkkz_id
+        tab.control.withReturned(displayParams).applyTo(currentMergedParams)
         currentMergedParams["kklxdm"] = tab.kklxdm
         currentMergedParams["njdm_id"] = tab.njdm_id
         currentMergedParams["zyh_id"] = tab.zyh_id
@@ -2781,11 +2852,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["xkxnm"] = getParam("xkxnm").ifEmpty { "2025" }
         formData["xkxqm"] = getParam("xkxqm").ifEmpty { "12" }
         formData["kklxdm"] = kklxdm
-        formData[CourseNameKit.detectXkkzKey(currentMergedParams)] = tab.xkkz_id
-        // 🔧 正方 V9（如 mnust）：教务端校验 xkkz_xh，需与主键同时携带；
-        // Display 响应值为空时回退 Index 页面的 firstXkkzXh（与 Go 端 buildZFListForm 一致）
-        formData["xkkz_xh"] = currentMergedParams["xkkz_xh"]?.takeIf { it.isNotBlank() }
-            ?: currentMergedParams["firstXkkzXh"] ?: ""
+        CourseNameKit.applyControlParams(formData, currentMergedParams)
         formData["kspage"] = currentKspage.toString()
         formData["jspage"] = currentJspage.toString()
         formData["bbhzxjxb"] = currentMergedParams["bbhzxjxb"] ?: "0"
@@ -2819,7 +2886,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                     // 补充分类参数
                     parsed.forEach { c ->
                         c.kklxdm = tab.kklxdm
-                        c._xkkz_id = tab.xkkz_id
+                        ZfSelectionControl.from(currentMergedParams).applyTo(c)
                     }
                     
                     allFetchedCourses.addAll(parsed)
@@ -2985,7 +3052,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["kch_id"] = baseCourse.courseId ?: ""
         formData["jxbzcxskg"] = params?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = baseCourse._xklc?.takeIf { it.isNotEmpty() } ?: params?.get("xklc") ?: "2"
-        formData[CourseNameKit.detectXkkzKey(params)] = baseCourse._xkkz_id ?: ""
+        CourseNameKit.applyControlParams(formData, params, baseCourse)
         formData["cxbj"] = params?.get("cxbj") ?: "0"
         formData["fxbj"] = params?.get("fxbj") ?: "0"
         
@@ -3203,6 +3270,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                 course._rwlx = obj.optString("rwlx", "1")
                 course._xklc = obj.optString("xklc", "2")
                 course._xkkz_id = obj.optString("xkkz_id", "")
+                course._xkkz_xh = obj.optString("xkkz_xh", "")
                 course.njdm_id = obj.optString("njdm_id", "")
                 course.zyh_id = obj.optString("zyh_id", "")
                 course.kklxdm = obj.optString("kklxdm", "")
@@ -3273,22 +3341,23 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         
         Thread {
             val hiddenHtml = CourseApiClient.getInstance().fetchPageHiddenParamsSync(school, serviceAccountStorageKey)
-            val hiddenParams = parseHiddenParams(hiddenHtml ?: "")
-            
-            Log.d(TAG, "模糊匹配: 获取隐藏参数完成，共 ${hiddenParams.size} 个")
-            
-            // 合并到 courseParams
-            if (hiddenParams.isNotEmpty()) {
-                val merged = (courseParams ?: emptyMap()).toMutableMap()
-                hiddenParams.forEach { (key, value) ->
-                    if (value.isNotEmpty() && merged[key].isNullOrEmpty()) {
-                        merged[key] = value
+            // Monitor targets also have to reload their own category. Older saved targets
+            // did not distinguish the two control fields and cannot supply a safe fallback.
+            val target = Course().apply { kklxdm = serviceFuzzyMatchKklxdm.orEmpty() }
+            val refreshed = refreshLegacyControls(school, target, hiddenHtml.orEmpty())
+            if (refreshed == null) {
+                handler.post {
+                    if (isRunning) {
+                        broadcastLog("无法确认监控目标的选课分类，请重新选择目标")
+                        stopGrabbing()
                     }
                 }
-                courseParams = merged
+                return@Thread
             }
+            courseParams = refreshed
             
             handler.post {
+                if (!isRunning || !isFuzzyMatchMode) return@post
                 broadcastLog("成功：参数就绪 (共 ${courseParams?.size ?: 0} 个)，开始轮询…")
                 startFuzzyMatchPolling()
             }
@@ -3385,6 +3454,9 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
                                 this.capacity = capacity
                                 this.selected = currentSelected
                                 useExactMatch = true
+                                kklxdm = serviceFuzzyMatchKklxdm.orEmpty()
+                                completeParams.putAll(courseParams.orEmpty())
+                                com.tyust.course.academic.ZfSelectionControl.from(courseParams).applyTo(this)
                             }
                             vacancyCourses.add(vacancyCourse)
                             
@@ -3420,7 +3492,6 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
      * 构建模糊匹配详情请求体（完整参数，参考 fetchSelectionDetails）
      */
     private fun buildFuzzyMatchDetailsBody(courseId: String): String {
-        val xkkzId = serviceFuzzyMatchXkkzId ?: courseParams?.get("xkkz_id") ?: ""
         val njdm_id = courseParams?.get("njdm_id") ?: "2024"
         val zyh_id = courseParams?.get("zyh_id") ?: ""
         // 🔧 优先使用保存的 kklxdm（课程类型代码）
@@ -3478,7 +3549,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         formData["kch_id"] = courseId
         formData["jxbzcxskg"] = courseParams?.get("jxbzcxskg") ?: "0"
         formData["xklc"] = xklc
-        formData[CourseNameKit.detectXkkzKey(courseParams)] = xkkzId
+        CourseNameKit.applyControlParams(formData, courseParams)
         formData["cxbj"] = courseParams?.get("cxbj") ?: "0"
         formData["fxbj"] = courseParams?.get("fxbj") ?: "0"
         
@@ -3540,7 +3611,7 @@ private fun broadcastQueueUpdate(courseName: String? = null, status: String? = n
         postBody.append("&xxkbj=0")
         postBody.append("&qz=0")
         
-        CourseApiClient.getInstance().selectCourse(school, postBody.toString(), serviceAccountStorageKey, object : Callback {
+        CourseApiClient.getInstance().selectCourse(school, ZfSelectionControl.appendToBody(postBody.toString(), courseParams, course, false), serviceAccountStorageKey, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 failCount++
                 broadcastLog("注意：请求出错：${e.message} [$retryCount/10]")

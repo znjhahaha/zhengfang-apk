@@ -24,6 +24,7 @@ fun GlassPageScaffold(
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    topBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     val page: @Composable () -> Unit = {
@@ -32,7 +33,7 @@ fun GlassPageScaffold(
                 contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
                 bottomBar = bottomBar,
                 topBar = {
-                    SystemTopBar(
+                    if (topBar != null) topBar() else SystemTopBar(
                         title = title,
                         subtitle = subtitle,
                         navigationIcon = {

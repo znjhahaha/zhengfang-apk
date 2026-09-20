@@ -58,8 +58,8 @@ fun EditSchoolConfigDialog(
     var scheduleGnmkdm by remember { mutableStateOf(school.scheduleGnmkdm) }
 
     // URL input for smart parsing
-    var urlInput by remember { mutableStateOf("") }
     var addressError by remember { mutableStateOf<String?>(null) }
+    var detectionSource by remember { mutableStateOf(school.detectionSource) }
 
     // Advanced paths
     var showAdvanced by remember { mutableStateOf(false) }
@@ -70,16 +70,7 @@ fun EditSchoolConfigDialog(
     var schedulePath by remember { mutableStateOf(school.schedulePath) }
     var gradesPath by remember { mutableStateOf(school.gradesPath) }
     val supportsZfModulePaths = academicSystem in setOf("auto", "legacy_zf", "zf")
-    val draft = com.tyust.course.model.SchoolFormDraft(name, domain, protocol, basePath, academicSystem)
-
-    fun parseUrl(url: String) {
-        val parsed = com.tyust.course.academic.AcademicAddress.parse(url)
-        if (parsed == null) { addressError = "无法解析，请检查教务网址"; return }
-        addressError = null
-        protocol = parsed.protocol
-        domain = parsed.domain
-        basePath = parsed.basePath
-    }
+    val draft = com.tyust.course.model.SchoolFormDraft(name, domain, protocol, basePath, academicSystem, detectionSource)
 
     SystemDialog(
         onDismissRequest = onDismiss,
@@ -132,30 +123,18 @@ fun EditSchoolConfigDialog(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            SchoolFormPanel {
-                SchoolFormPanelTitle(
-                    icon = Icons.Default.AutoAwesome,
-                    text = "从网址填写"
-                )
-                SchoolFormField(
-                    label = "教务系统网址",
-                    value = urlInput,
-                    onValueChange = { urlInput = it; addressError = null },
-                    placeholder = "http://jwxt.example.edu.cn/jwglxt",
-                    helper = "解析后填写域名、协议和基础路径，保留所选教务类型",
-                    error = addressError
-                )
-                SystemPrimaryButton(
-                    text = "解析网址",
-                    onClick = { parseUrl(urlInput) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = urlInput.isNotBlank()
-                )
-            }
+            SchoolUrlRecognition(
+                selectedType = academicSystem,
+                addressKey = "$protocol|$domain|$basePath",
+                manualType = detectionSource == "manual" || detectionSource == "legacy",
+                onAddress = { protocol = it.protocol; domain = it.domain; basePath = it.basePath },
+                onDetected = { academicSystem = it.id; detectionSource = "automatic" },
+                onInvalidAddress = { addressError = it }
+            )
 
             SchoolFormSectionTitle("基本配置")
 
-            SchoolAcademicSystemField(academicSystem) { academicSystem = it }
+            SchoolAcademicSystemField(academicSystem) { academicSystem = it; detectionSource = if (it == "auto") "pending" else "manual" }
 
             SchoolFormField(
                 label = "学校名称",

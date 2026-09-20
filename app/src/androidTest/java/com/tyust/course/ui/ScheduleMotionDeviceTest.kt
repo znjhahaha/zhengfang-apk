@@ -161,7 +161,7 @@ class ScheduleMotionDeviceTest {
             CourseSelectorTheme {
                 Box(Modifier.size(360.dp, 640.dp)) {
                     ScheduleScreen(week.intValue, courses, false, onWeekChange = { week.intValue = it }, onCourseClick = {},
-                        firstWeekDate = "2026-09-07")
+                        firstWeekDate = "2026-09-07", displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false))
                 }
             }
         }
@@ -173,11 +173,32 @@ class ScheduleMotionDeviceTest {
         compose.runOnIdle { assertEquals(2, week.intValue) }
         val nextScroll = compose.onNodeWithTag("schedule-grid-2").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
         assertEquals(previousScroll, nextScroll, 2f)
-        compose.mainClock.autoAdvance = false
-        repeat(3) { compose.onNodeWithContentDescription("下一周").performClick() }
-        compose.mainClock.advanceTimeBy(1800)
+        compose.onNodeWithContentDescription("选择日期与学期").performClick()
+        repeat(3) { compose.onNodeWithContentDescription("下一周").performClick(); compose.waitForIdle() }
+        compose.onNodeWithContentDescription("选择第 5 周").performClick()
         compose.runOnIdle { assertEquals(5, week.intValue) }
         compose.onNodeWithText("第 5 周").assertIsDisplayed()
+    }
+
+    @Test fun restoredScrollSurvivesAnInitiallyShortLayout() {
+        val periods = mutableIntStateOf(4)
+        compose.setContent {
+            CourseSelectorTheme {
+                Box(Modifier.size(360.dp, 640.dp)) {
+                    ScheduleScreen(1, emptyList(), false, periodCount = periods.intValue,
+                        onWeekChange = {}, onCourseClick = {}, firstWeekDate = "2026-09-07",
+                        displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false),
+                        positionKey = "restore-fixture", positionCalendar = "calendar",
+                        restoredPosition = com.tyust.course.schedule.ScheduleViewPosition(1, 1, 600, 0, "calendar"))
+                }
+            }
+        }
+        fun scrollOffset() = compose.onNodeWithTag("schedule-grid-1").fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue("Initial viewport must clamp the saved position", scrollOffset() < 600f)
+        compose.runOnIdle { periods.intValue = 12 }
+        compose.waitForIdle()
+        assertEquals(600f, scrollOffset(), 1f)
     }
 
     @Test fun nestedScrollHandsOnlyUnconsumedDownwardMovementToSheet() {

@@ -144,6 +144,11 @@ android {
     testOptions {
         // CourseParser 等被测类内部调用 android.util.Log，JVM 单测返回默认值而非抛异常
         unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            maxHeapSize = '2g'
+            systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+        }
     }
 }
 
@@ -154,6 +159,7 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.10.1'
     implementation 'androidx.core:core-splashscreen:1.2.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.9.1'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1'
     
     // Jetpack Compose BOM (Bill of Materials)
@@ -227,12 +233,14 @@ dependencies {
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test:rules:1.6.1'
     androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+    androidTestImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     androidTestImplementation composeBom
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.robolectric:robolectric:4.17'
     // org.json 在 JVM 单测中来自 android.jar 桩(默认抛异常), 补真实实现供单元测试使用
     testImplementation 'org.json:json:20231013'
 }

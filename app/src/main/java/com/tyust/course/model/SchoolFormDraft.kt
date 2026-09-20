@@ -10,7 +10,8 @@ data class SchoolFormDraft(
     val domain: String,
     val protocol: String,
     val basePath: String,
-    val academicSystem: String
+    val academicSystem: String,
+    val detectionSource: String = if (academicSystem == AcademicSystem.AUTO.id) "pending" else "manual"
 ) {
     val isValidDomain: Boolean get() = runCatching {
         val authority = domain.trim()
@@ -33,7 +34,7 @@ data class SchoolFormDraft(
         return SchoolConfig(id, name.trim().ifBlank { host }, host, protocol).apply {
             basePath = normalizedBasePath
             academicSystem = this@SchoolFormDraft.academicSystem
-            detectionSource = if (academicSystem == AcademicSystem.AUTO.id) "pending" else "manual"
+            detectionSource = this@SchoolFormDraft.detectionSource
             allowedAcademicHosts.add(host)
         }
     }
@@ -46,7 +47,7 @@ data class SchoolFormDraft(
             protocol = address.protocol
             basePath = address.basePath
             academicSystem = address.academicSystem
-            detectionSource = if (academicSystem == existing.academicSystem) existing.detectionSource else address.detectionSource
+            detectionSource = address.detectionSource
             if (!allowedAcademicHosts.contains(domain)) allowedAcademicHosts.add(domain)
         }
     }

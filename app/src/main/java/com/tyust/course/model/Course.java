@@ -41,6 +41,7 @@ public class Course {
     public String _xklc = ""; // 获取课程列表时使用的 xklc 参数
     public String _xkly = ""; // 获取课程列表时使用的 xkly 参数
     public String _xkkz_id = ""; // 获取课程列表时使用的 xkkz_id 参数
+    public String _xkkz_xh = ""; // 独立的选课校验序号，不能替代 xkkz_id
 
     // 从 Display 页面提取的关键参数
     public String _sfkxq = ""; // 是否开学前 (sfkxq)
@@ -154,6 +155,7 @@ public class Course {
         copy._xklc = this._xklc;
         copy._xkly = this._xkly;
         copy._xkkz_id = this._xkkz_id;
+        copy._xkkz_xh = this._xkkz_xh;
         copy._sfkxq = this._sfkxq;
         copy._xkxskcgskg = this._xkxskcgskg;
         copy.completeParams = new HashMap<>(this.completeParams);

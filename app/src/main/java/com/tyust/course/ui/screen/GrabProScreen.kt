@@ -209,7 +209,7 @@ fun GrabProScreen(
             hasScheduledTask && localScheduledMode -> scheduledTaskInfo.ifBlank { "等待计划时间" }
             !targetCourseName.isNullOrBlank() -> targetCourseTeacher.orEmpty()
             isFuzzyMatchMode && !localScheduledMode -> "持续检查所选课程组"
-            queue.isNotEmpty() -> if (isParallelMode) "并行处理 · 最多 2 门" else "按队列顺序执行"
+            queue.isNotEmpty() -> if (isParallelMode) "全队列轮询 · 最多同时 2 门" else "全队列依次轮询"
             else -> "从课程列表添加到队列"
         }
     )
@@ -408,7 +408,7 @@ fun GrabProScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Column(Modifier.weight(1f)) {
                                     Text("并行执行", style = MaterialTheme.typography.titleSmall)
-                                    Text("同时处理最多 2 门课程", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("轮询全部课程，同时处理最多 2 门；无名额时继续等待", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 LiquidSwitch(isParallelMode, onParallelModeChange, enabled = configurationEnabled)
                             }
