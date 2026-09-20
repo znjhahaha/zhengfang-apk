@@ -345,8 +345,33 @@ public class SmartSelector {
         if (!isRunning)
             return;
 
+        if ("true".equals(targetMatch.completeParams.get("zf_refresh_controls"))) {
+            String account = accountStorageKey();
+            new Thread(() -> {
+                Map<String, String> refreshed = com.tyust.course.academic.ZfSelectionContext.refreshLegacy(school, account, targetMatch);
+                handler.post(() -> {
+                    if (!isRunning || !account.equals(accountStorageKey())) return;
+                    if (refreshed == null) {
+                        log("旧队列的分类上下文暂不可用，稍后重试");
+                        scheduleRetryOrNext(school, targetMatch);
+                    } else {
+                        courseParams = refreshed;
+                        saveCourseQueue();
+                        findAndGrabCourse(targetMatch, school);
+                    }
+                });
+            }).start();
+            return;
+        }
+        Map<String, String> scoped = new java.util.HashMap<>();
+        if (courseParams != null) scoped.putAll(courseParams);
+        scoped.putAll(targetMatch.completeParams);
+        com.tyust.course.academic.ZfSelectionControl.forCourse(targetMatch, scoped).applyTo(scoped, true);
+        if (targetMatch.kklxdm != null && !targetMatch.kklxdm.isEmpty()) scoped.put("kklxdm", targetMatch.kklxdm);
+        courseParams = scoped;
+
         // 🔧 精确模式：直接使用保存的 classId，跳过搜索
-        if (targetMatch.useExactMatch && targetMatch.classId != null && !targetMatch.classId.isEmpty()) {
+        if (!"true".equals(targetMatch.completeParams.get("zf_refresh_controls")) && targetMatch.useExactMatch && targetMatch.classId != null && !targetMatch.classId.isEmpty()) {
             log("🔒 精确模式: 使用保存的ID直接选课");
             // 精确模式下直接获取教学班详情并选课
             fetchDetailsWithExactClassId(targetMatch, school);
@@ -418,10 +443,7 @@ public class SmartSelector {
                             matchedCourse.courseId = item.optString("kch_id", "");
                             matchedCourse.kklxdm = item.optString("kklxdm", "");
                             matchedCourse._xkkz_id = item.optString("xkkz_id", "");
-                            if (matchedCourse._xkkz_id.isEmpty()) {
-                                // 🔧 兼容正方 V9：JSON 字段可能是 xkkz_xh
-                                matchedCourse._xkkz_id = item.optString("xkkz_xh", "");
-                            }
+                            matchedCourse._xkkz_xh = item.optString("xkkz_xh", "");
                             matchedCourse._rwlx = item.optString("rwlx", "1");
 
                             log("✅ 找到可选课程: " + kcmc + " (kch_id=" + matchedCourse.courseId + ")");
@@ -435,7 +457,8 @@ public class SmartSelector {
                         return;
                     }
 
-                    // Step 3: 获取课程详情，匹配具体教学班
+                    if (courseParams != null) matchedCourse.completeParams.putAll(courseParams);
+                    com.tyust.course.academic.ZfSelectionControl.forCourse(matchedCourse, courseParams).applyTo(matchedCourse);
                     fetchDetailsAndMatch(matchedCourse, targetMatch, school);
 
                 } catch (Exception e) {
@@ -459,13 +482,8 @@ public class SmartSelector {
         if (detailBody.length() > 0)
             detailBody.append("&");
         detailBody.append("kch_id=").append(targetCourse.courseId);
-        if (targetCourse._xkkz_id != null && !targetCourse._xkkz_id.isEmpty()) {
-            // 🔧 xkkz 参数名自适应：completeParams 含 V9 键时用 xkkz_xh
-            String xkkzKey = CourseNameKit.detectXkkzKey(targetCourse.completeParams);
-            detailBody.append("&").append(xkkzKey).append("=").append(targetCourse._xkkz_id);
-        }
 
-        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, detailBody.toString(), new Callback() {
+        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, com.tyust.course.academic.ZfSelectionControl.appendToBody(detailBody.toString(), courseParams, targetCourse, true), new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
                 log("⚠️ 精确模式获取详情失败: " + e.getMessage());
@@ -489,7 +507,7 @@ public class SmartSelector {
                         // 精确匹配 classId
                         if ((jxbId.equals(targetCourse.classId) || doJxbId.equals(targetCourse.classId))
                                 && TeachingClassMatcher.matchesRequest(cls, targetCourse)) {
-                            matchedClass = new Course();
+                            matchedClass = targetCourse.copy();
                             matchedClass.name = targetCourse.name;
                             matchedClass.courseId = targetCourse.courseId;
                             matchedClass.classId = jxbId;
@@ -501,6 +519,7 @@ public class SmartSelector {
                             matchedClass.teachingClassFilter = targetCourse.teachingClassFilter;
                             matchedClass._rwlx = targetCourse._rwlx;
                             matchedClass._xkkz_id = targetCourse._xkkz_id;
+                            matchedClass._xkkz_xh = targetCourse._xkkz_xh;
                             matchedClass.rlkz = cls.optString("rlkz", "0");
                             matchedClass.rlzlkz = cls.optString("rlzlkz", "1");
                             matchedClass.sxbj = cls.optString("sxbj", "0");
@@ -508,27 +527,6 @@ public class SmartSelector {
 
                             log("✅ 精确匹配成功: " + matchedClass.teacher + " | classId=" + jxbId);
                             break;
-                        }
-                    }
-
-                    if (matchedClass == null) {
-                        // 如果精确匹配失败，回退到第一个（兼容旧数据）
-                        if (classes.length() > 0 && TeachingClassMatcher.canUseSavedClass(targetCourse)) {
-                            JSONObject cls = classes.getJSONObject(0);
-                            matchedClass = new Course();
-                            matchedClass.name = targetCourse.name;
-                            matchedClass.courseId = targetCourse.courseId;
-                            matchedClass.classId = cls.optString("jxb_id", "");
-                            matchedClass.doJxbId = cls.optString("do_jxb_id", "");
-                            matchedClass.teacher = cls.optString("jsxm", "");
-                            matchedClass.time = cls.optString("sksj", "");
-                            matchedClass.uuid = targetCourse.getUuid();
-                            matchedClass.jxbmc = cls.optString("jxbmc", "");
-                            matchedClass._rwlx = targetCourse._rwlx;
-                            matchedClass._xkkz_id = targetCourse._xkkz_id;
-                            matchedClass.rlkz = cls.optString("rlkz", "0");
-
-                            log("⚠️ 精确ID未匹配，使用第一个教学班: " + matchedClass.teacher);
                         }
                     }
 
@@ -583,11 +581,8 @@ public class SmartSelector {
         if (detailBody.length() > 0)
             detailBody.append("&");
         detailBody.append("kch_id=").append(baseCourse.courseId);
-        // 🔧 xkkz 参数名自适应：completeParams 含 V9 键时用 xkkz_xh
-        detailBody.append("&").append(CourseNameKit.detectXkkzKey(baseCourse.completeParams))
-                .append("=").append(baseCourse._xkkz_id);
 
-        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, detailBody.toString(), new Callback() {
+        CourseApiClient.getInstance().fetchCourseSelectionDetails(school, com.tyust.course.academic.ZfSelectionControl.appendToBody(detailBody.toString(), courseParams, baseCourse, true), new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
                 log("⚠️ 获取课程详情失败: " + e.getMessage());
@@ -616,7 +611,7 @@ public class SmartSelector {
                         boolean matches = targetMatch.hasTeachingClassFilter()
                                 ? TeachingClassMatcher.matchesRequest(cls, targetMatch) : teacherMatch && timeMatch;
                         if (matches) {
-                            matchedClass = new Course();
+                            matchedClass = baseCourse.copy();
                             matchedClass.name = baseCourse.name;
                             matchedClass.courseId = baseCourse.courseId;
                             matchedClass.classId = cls.optString("jxb_id", "");
@@ -628,6 +623,7 @@ public class SmartSelector {
                             matchedClass.teachingClassFilter = targetMatch.teachingClassFilter;
                             matchedClass._rwlx = baseCourse._rwlx;
                             matchedClass._xkkz_id = baseCourse._xkkz_id;
+                            matchedClass._xkkz_xh = baseCourse._xkkz_xh;
                             matchedClass.rlkz = cls.optString("rlkz", "0");
                             matchedClass.rlzlkz = cls.optString("rlzlkz", "1");
                             matchedClass.sxbj = cls.optString("sxbj", "0");
@@ -708,7 +704,8 @@ public class SmartSelector {
 
         // 选课参数
         json.put("kklxdm", course.kklxdm); // 课程类型代码
-        json.put("_xkkz_id", course._xkkz_id); // 选课控制ID
+        json.put("_xkkz_id", course._xkkz_id);
+        CourseNameKit.saveControls(json, course); // 选课控制ID
         json.put("_rwlx", course._rwlx); // 任务类型
         json.put("_xklc", course._xklc); // 选课轮次
         json.put("njdm_id", course.njdm_id); // 年级代码
@@ -761,6 +758,7 @@ public class SmartSelector {
 
         // 🔧 抢课模式（默认精确模式）
         course.useExactMatch = json.optBoolean("useExactMatch", true);
+        CourseNameKit.restoreControls(json, course);
 
         return course;
     }
@@ -902,7 +900,8 @@ public class SmartSelector {
         Log.d(TAG, "Auto-select POST body: " + postBody.toString());
         retryCount++;
 
-        CourseApiClient.getInstance().selectCourse(school, postBody.toString(), new Callback() {
+        CourseApiClient.getInstance().selectCourse(school,
+                com.tyust.course.academic.ZfSelectionControl.appendToBody(postBody.toString(), courseParams, targetCourse, false), new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
                 failCount++;

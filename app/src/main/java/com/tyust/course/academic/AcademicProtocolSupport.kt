@@ -90,8 +90,17 @@ internal object AcademicJson {
         return if (hasSuccess(body)) AcademicStatus.SUCCESS else AcademicStatus.VALIDATION_FAILED
     }
 
-    fun zfStatus(body: String, code: Int = 200): AcademicStatus =
-        if (code in 200..299 && body.trim().trim('"') == "1") AcademicStatus.SUCCESS else status(body, code)
+    fun zfStatus(body: String, code: Int = 200): AcademicStatus {
+        if (code in 200..299) {
+            if (body.trim().trim('"') == "1") return AcademicStatus.SUCCESS
+            val json = runCatching { JSONObject(body) }.getOrNull()
+            // ZF's front end decodes this ASCII result as a class with no remaining places.
+            if (json?.optString("flag") in setOf("-1", "0") &&
+                Regex("\\d+,[0-9A-Za-z]+,\\d*,?").matches(json?.optString("msg").orEmpty().trim()))
+                return AcademicStatus.NO_CAPACITY
+        }
+        return status(body, code)
+    }
 
     fun message(body: String): String {
         val json = runCatching { JSONObject(body) }.getOrNull()
@@ -176,11 +185,13 @@ internal abstract class BaseAcademicAdapter(
     }
 
     protected fun section(json: JSONObject, course: CourseOffer): CourseSection {
-        val id = AcademicJson.string(json, "do_jxb_id", "jxb_id", "jx0404id", "jx02id", "kcid", "kch")
+        val id = if (system == AcademicSystem.ZF) AcademicJson.string(json, "jxb_id", "do_jxb_id")
+            else AcademicJson.string(json, "do_jxb_id", "jxb_id", "jx0404id", "jx02id", "kcid", "kch")
         return CourseSection(id, course.stableId, AcademicJson.string(json, "jxbmc", "ktmc", "fzmc"),
             AcademicJson.string(json, "jsxm", "skls", "xm", "jsxx"), AcademicJson.string(json, "sksj", "sksjmc"),
             AcademicJson.string(json, "jxdd", "skdd"), AcademicJson.int(json, "jxbrl", "capacity"),
-            AcademicJson.int(json, "yxzrs", "yxrs", "selected"), AcademicJson.fields(json))
+            AcademicJson.int(json, "yxzrs", "yxrs", "selected"), AcademicJson.fields(json),
+            if (system == AcademicSystem.ZF) AcademicJson.string(json, "do_jxb_id", "jxb_id") else id)
     }
 
     protected fun selected(json: JSONObject): SelectedCourse = SelectedCourse(

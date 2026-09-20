@@ -58,8 +58,8 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         return p.getInt(scoped, defaultValue)
     }
 
-    private fun getScopedLong(key: String, defaultValue: Long): Long {
-        val scoped = scopedKey(key)
+    private fun getScopedLong(key: String, defaultValue: Long, accountKey: String = accountStorageKey()): Long {
+        val scoped = "${key}_$accountKey"
         val p = prefs ?: return defaultValue
         if (!p.contains(scoped) && p.contains(key)) {
             val value = p.getLong(key, defaultValue)
@@ -69,8 +69,8 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         return p.getLong(scoped, defaultValue)
     }
 
-    private fun getScopedString(key: String): String? {
-        val scoped = scopedKey(key)
+    private fun getScopedString(key: String, accountKey: String = accountStorageKey()): String? {
+        val scoped = "${key}_$accountKey"
         val p = prefs ?: return null
         if (!p.contains(scoped) && p.contains(key)) {
             val value = p.getString(key, null)
@@ -92,12 +92,14 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
     // ============ 第一周日期 ============
     
     var semesterStartDate: Long
-        get() = getScopedLong(KEY_SEMESTER_START, 0L)
+        get() = getSemesterStartDate()
         set(value) {
             if (semesterStartDate == value) return
             prefs?.edit()?.putLong(scopedKey(KEY_SEMESTER_START), value)?.remove(KEY_SEMESTER_START)?.apply()
             revision++
         }
+
+    fun getSemesterStartDate(accountKey: String = accountStorageKey()): Long = getScopedLong(KEY_SEMESTER_START, 0L, accountKey)
     
     /**
      * 根据第一周日期计算当前是第几周
@@ -140,8 +142,8 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         val endTime: String
     )
     
-    fun getPeriodTimes(): List<PeriodTime> {
-        val json = getScopedString(KEY_PERIOD_TIMES)
+    @JvmOverloads fun getPeriodTimes(accountKey: String = accountStorageKey()): List<PeriodTime> {
+        val json = getScopedString(KEY_PERIOD_TIMES, accountKey)
         if (json != null) {
             try {
                 val array = JSONArray(json)
@@ -175,6 +177,7 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
             ?.putString(scopedKey(KEY_PERIOD_TIMES), array.toString())
             ?.remove(KEY_PERIOD_TIMES)
             ?.apply()
+        revision++
     }
     
     fun getDefaultPeriodTimes(): List<PeriodTime> {

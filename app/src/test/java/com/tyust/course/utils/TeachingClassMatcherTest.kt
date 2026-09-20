@@ -82,4 +82,22 @@ class TeachingClassMatcherTest {
         assertEquals(target(), target().apply { teachingClassFilter = null })
         assertEquals(target().hashCode(), target().apply { teachingClassFilter = null }.hashCode())
     }
+
+    @Test fun exactQueueNeverFallsBackToAnotherClassOrASavedOperationToken() {
+        val target = target().apply { useExactMatch = true; classId = "gone"; teacher = "张老师" }
+        assertNull(TeachingClassMatcher.selectRow(rows, target))
+        assertFalse(TeachingClassMatcher.canUseSavedClass(target))
+        target.jxbmc = "足球0003"
+        assertEquals("football", TeachingClassMatcher.selectRow(rows, target)?.optString("jxb_id"))
+        target.completeParams["academic_stable_section"] = "true"
+        assertNull(TeachingClassMatcher.selectRow(rows, target))
+    }
+
+    @Test fun duplicateRowsAreOneClassButAmbiguousManualExactTargetsStop() {
+        val target = target("篮球").apply { useExactMatch = true }
+        assertNull(TeachingClassMatcher.selectRow(rows, target))
+        target.teachingClassFilter = "篮球0003"
+        val duplicates = JSONArray().put(rows.getJSONObject(1)).put(rows.getJSONObject(1))
+        assertEquals("basketball", TeachingClassMatcher.selectRow(duplicates, target)?.optString("jxb_id"))
+    }
 }

@@ -421,6 +421,10 @@ fun LiquidSegmentedControl(
     enabled: Boolean = true,
     backdrop: Backdrop? = LocalControlBackdrop.current,
     height: Dp = 52.dp,
+    edgePadding: Dp? = null,
+    verticalInset: Dp? = null,
+    restingRefraction: Float? = null,
+    showTrack: Boolean = true,
     labelContent: (@Composable (index: Int, selection: Float, color: Color) -> Unit)? = null
 ) {
     if (options.isEmpty()) return
@@ -473,8 +477,9 @@ fun LiquidSegmentedControl(
     ) {
         val density = LocalDensity.current
         val compact = height <= 36.dp
-        val horizontalPadding = if (compact) 3.dp else 5.dp
-        val verticalPadding = if (compact) 3.dp else 5.dp
+        val horizontalPadding = edgePadding ?: if (compact) 3.dp else 5.dp
+        val verticalPadding = verticalInset ?: if (compact) 3.dp else 5.dp
+        val refractionFloor = restingRefraction?.coerceIn(0f, 1f) ?: if (compact) 0.30f else 0.42f
         val horizontalPaddingPx = with(density) { horizontalPadding.toPx() }
         val segmentWidthPx =
             ((constraints.maxWidth - horizontalPaddingPx * 2f) / optionCount)
@@ -729,7 +734,9 @@ fun LiquidSegmentedControl(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (glassBackdrop != null) {
+                    if (!showTrack && glassBackdrop != null) {
+                        Modifier
+                    } else if (glassBackdrop != null) {
                         Modifier.drawBackdrop(
                             backdrop = glassBackdrop,
                             shape = { Capsule() },
@@ -767,10 +774,10 @@ fun LiquidSegmentedControl(
                             onDrawSurface = { drawRect(trackBackgroundColor) }
                         )
                     } else {
-                        Modifier
+                        (if (showTrack) Modifier
                             .clip(trackShape)
                             .background(trackBackgroundColor)
-                            .border(0.75.dp, trackBorderColor, trackShape)
+                            .border(0.75.dp, trackBorderColor, trackShape) else Modifier)
                             .drawBehind {
                                 val transform = segIndicatorScale(dragAnimation)
                                 val left = horizontalPaddingPx + dragAnimation.value * segmentWidthPx
@@ -870,10 +877,10 @@ fun LiquidSegmentedControl(
                                         indicatorMaterial.optics.velocityForFullEffect
                                 ),
                                 pressScalesRefraction = true,
-                                // 与 API33+ 同值（见下面 resolvePhysicalLens 的调用）：
-                                // 这个控件静止态**保留**折射，与底栏指示器不同。
-                                refractionFloor = if (compact) 0.30f else 0.42f,
-                                chromaticAberrationAtRest = true
+                                // Dense multi-line labels can opt out of resting distortion.
+                                // Both rendering paths retain the same press/motion optics.
+                                refractionFloor = refractionFloor,
+                                chromaticAberrationAtRest = refractionFloor > 0f
                             )
                         },
                         // 与下面 layerBlock **同一份**形变。不传的话按下时库的
@@ -901,9 +908,9 @@ fun LiquidSegmentedControl(
                                 motionIntensity = motion,
                                 enableBlur = false,
                                 allowChromaticAberration = true,
-                                chromaticAberrationAtRest = true,
+                                chromaticAberrationAtRest = refractionFloor > 0f,
                                 pressScalesRefraction = true,
-                                refractionFloor = if (compact) 0.30f else 0.42f
+                                refractionFloor = refractionFloor
                             )
                             if (params.useLens) {
                                 lens(

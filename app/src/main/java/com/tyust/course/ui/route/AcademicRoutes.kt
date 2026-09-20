@@ -127,7 +127,8 @@ fun AcademicCourseListRoute(school: SchoolConfig) {
         if (AcademicGrabRuntimeStore.get(account).running) { GlassToaster.show("请先停止当前抢课任务再修改队列"); return }
         val added = queue.add(AcademicGrabItem(account, school.id, course.name, course.teacher, course.time,
             course.completeParams["academic_course_id"].orEmpty().ifBlank { course.courseId }, course.classId,
-            course.completeParams["academic_scope_id"].orEmpty(), sectionName = course.jxbmc))
+            course.completeParams["academic_scope_id"].orEmpty(), sectionName = course.jxbmc,
+            sectionIdentityKnown = course.completeParams["academic_stable_section"] == "true"))
         GlassToaster.show(if (added) "已加入抢课队列" else "课程已在队列中")
     }
 
@@ -137,7 +138,8 @@ fun AcademicCourseListRoute(school: SchoolConfig) {
             if (exact) course.teacher else "", if (exact) course.time else "",
             course.completeParams["academic_course_id"].orEmpty().ifBlank { course.courseId },
             if (exact) course.classId else "", course.completeParams["academic_scope_id"].orEmpty(), useExactMatch = exact,
-            sectionName = if (exact) course.jxbmc else ""))
+            sectionName = if (exact) course.jxbmc else "",
+            sectionIdentityKnown = course.completeParams["academic_stable_section"] == "true"))
         GlassToaster.show(if (exact) "已设为目标教学班" else "已设为同课程教学班监控目标")
     }
 

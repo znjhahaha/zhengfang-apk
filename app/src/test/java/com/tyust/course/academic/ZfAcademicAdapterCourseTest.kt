@@ -128,7 +128,7 @@ class ZfAcademicAdapterCourseTest {
         val sent = fields(request)
         assertEquals("AS0000013", sent["kch_id"])
         assertEquals("06", sent["kklxdm"])
-        assertEquals("1", sent["kspage"])
+        assertFalse(sent.containsKey("kspage"))
         for (banned in listOf("firstKklxdm", "sessionEpoch", "kcmc", "jxb_id")) {
             assertFalse("教学班请求不允许提交 $banned", sent.containsKey(banned))
         }
@@ -165,13 +165,14 @@ class ZfAcademicAdapterCourseTest {
     @Test fun selectedAcceptsEmptyRootArray() = runBlocking {
         server.enqueue(json("[]"))
         val context = CourseContext(1, listOf(CourseScope("zf-0-06", "主修课程",
-            params = mapOf("kklxdm" to "06", "xkkz_id" to "5B6CA02A897EDFC8E0633A00FE0A6C0E", "xklc" to "1"))))
+            params = mapOf("kklxdm" to "06", "xkkz_id" to "CONTROL-ID", "xkkz_xh" to "CONTROL-XH",
+                "xklc" to "1", "xkxnm" to "2025", "xkxqm" to "12"))))
 
         val selected = adapter.selected(context)
         assertTrue(selected.isEmpty())
         val request = server.next()
         assertEquals("/xsxk/zzxkyzb_cxZzxkYzbChoosedDisplay.html?gnmkdm=N253512", request.path)
-        assertNotNull(fields(request)["kklxdm"])
+        assertEquals(mapOf("xkxnm" to "2025", "xkxqm" to "12"), fields(request))
     }
 
     companion object {

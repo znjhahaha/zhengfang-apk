@@ -19,27 +19,15 @@ object AcademicGatewayFactory {
     }
 
     suspend fun detect(school: SchoolConfig, accountStorageKey: String): AcademicSystem? {
-        val originalPath = school.basePath
-        val normalized = AcademicAddress.parse(school.fullBasePath)?.basePath ?: originalPath
-        for (root in listOf(normalized, "", "/jsxsd", "/jwglxt").distinct()) {
-            val probe = SchoolConfig.fromJson(school.toJson()).apply { basePath = root }
-            val session = sessions.session(school.id, accountStorageKey + "_detect", probe.fullBasePath)
-            val transport = AcademicHttpTransport(probe, session)
-            val candidates = listOf("", "framework/xsMainV.htmlx", "xk/LoginToXk", "xtgl/login_slogin.html", "default2.aspx")
-            for (candidate in candidates) {
-                val response = try { transport.get(transport.appUrl(candidate)) }
-                    catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: AcademicException) { continue }
-                if (response.code !in 200..299) continue
-                val detected = SystemDetector.classify(response.text) ?: continue
-                school.basePath = root
-                school.academicSystem = detected.id
-                school.detectionSource = "automatic"
-                if (!school.allowedAcademicHosts.contains(school.domain)) school.allowedAcademicHosts.add(school.domain)
-                session.invalidate()
-                return detected
-            }
-        }
-        return null
+        val result = AcademicDetection.detect(school.fullBasePath, school)
+        if (result.status == AcademicDetectionStatus.NETWORK_ERROR)
+            throw AcademicException(AcademicStatus.NETWORK_RETRYABLE, result.message)
+        val system = result.system ?: return null
+        result.address?.let { school.protocol = it.protocol; school.domain = it.domain; school.basePath = it.basePath }
+        school.academicSystem = system.id
+        school.detectionSource = "automatic"
+        if (!school.allowedAcademicHosts.contains(school.domain)) school.allowedAcademicHosts.add(school.domain)
+        return system
     }
 
     fun create(school: SchoolConfig, accountStorageKey: String): AcademicProtocolAdapter {
@@ -87,6 +75,7 @@ object AcademicGatewayFactory {
         (school.id + "::" + username.trim()).replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     fun loginUrl(school: SchoolConfig): String {
+        if (school.academicType() == AcademicSystem.QZ) QzCasEntry.forSchool(school)?.let { return it.service.toString() }
         val path = when (AcademicSystem.fromId(school.academicSystem)) {
             AcademicSystem.ZF -> "xtgl/login_slogin.html"
             AcademicSystem.ZF_OLD -> "default2.aspx"

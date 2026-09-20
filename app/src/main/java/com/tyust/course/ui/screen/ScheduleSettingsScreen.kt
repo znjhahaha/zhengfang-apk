@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -96,8 +97,11 @@ fun ScheduleSettingsScreen(
     customCourses: List<ScheduleSettingsManager.CustomCourse> = emptyList(),
     onAddCustomCourse: (() -> Unit)? = null,
     onEditCustomCourse: (String) -> Unit = {},
-    onSyncSchedule: (() -> Unit)? = null
+    onSyncSchedule: (() -> Unit)? = null,
+    displayPreferences: com.tyust.course.schedule.ScheduleDisplayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(),
+    onDisplayPreferences: ((com.tyust.course.schedule.ScheduleDisplayPreferences) -> Unit)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var periodCount by remember { mutableStateOf(manager.periodCount) }
     var storedPeriodTimes by remember { mutableStateOf(periodTimesOverride ?: manager.getPeriodTimes()) }
     var semesterStartDate by remember { mutableStateOf(semesterStartOverride ?: manager.semesterStartDate) }
@@ -194,6 +198,27 @@ fun ScheduleSettingsScreen(
                         ),
                     verticalArrangement = Arrangement.spacedBy(SectionSpacing)
                 ) {
+                    if (onDisplayPreferences != null) {
+                        InsetGroupedSection(header = "课表显示") {
+                            InsetGroupedRow(title = "周末", subtitle = "只影响周视图", trailing = {
+                                com.tyust.course.ui.system.SystemPicker(listOf("显示", "隐藏"),
+                                    if (displayPreferences.showWeekend) 0 else 1,
+                                    { onDisplayPreferences(displayPreferences.copy(showWeekend = it == 0)) }, Modifier.width(104.dp))
+                            })
+                            InsetGroupedRow(title = "显示密度", subtitle = "名称和地点仍可完整查看", showDivider = false, trailing = {
+                                com.tyust.course.ui.system.SystemPicker(listOf("标准", "紧凑"),
+                                    if (displayPreferences.compact) 1 else 0,
+                                    { onDisplayPreferences(displayPreferences.copy(compact = it == 1)) }, Modifier.width(104.dp))
+                            })
+                        }
+                    }
+                    InsetGroupedSection(header = "桌面组件") {
+                        com.tyust.course.schedule.ScheduleWidgetStyle.entries.forEachIndexed { index, style ->
+                            InsetGroupedRow(title = style.title, subtitle = style.description,
+                                showDivider = index < com.tyust.course.schedule.ScheduleWidgetStyle.entries.lastIndex,
+                                onClick = { com.tyust.course.schedule.ScheduleWidgetUpdater.requestPin(context, style) })
+                        }
+                    }
                     if (onAddCustomCourse != null) {
                         InsetGroupedSection(header = "自定义课程") {
                             InsetGroupedRow(title = "添加课程", subtitle = "课程只保存在当前账号", onClick = onAddCustomCourse)

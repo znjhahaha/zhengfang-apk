@@ -74,6 +74,7 @@ private const val ScheduleRouteSnapshotMaxAgeMs = 5 * 60 * 1000L
 
 /** 保留课表数据状态，但页面 Composition 与玻璃图层仍在切走时立即释放。 */
 private data class ScheduleRouteSnapshot(
+    val browsingSession: String,
     val savedAtMs: Long,
     val currentWeek: Int,
     val courses: List<ScheduleCourseUi>,
@@ -87,8 +88,8 @@ private data class ScheduleRouteSnapshot(
 private object ScheduleRouteMemoryCache {
     private val snapshots = mutableMapOf<String, ScheduleRouteSnapshot>()
 
-    fun get(accountKey: String): ScheduleRouteSnapshot? = snapshots[accountKey]?.takeIf {
-        System.currentTimeMillis() - it.savedAtMs <= ScheduleRouteSnapshotMaxAgeMs
+    fun get(accountKey: String, browsingSession: String): ScheduleRouteSnapshot? = snapshots[accountKey]?.takeIf {
+        it.browsingSession == browsingSession && System.currentTimeMillis() - it.savedAtMs <= ScheduleRouteSnapshotMaxAgeMs
     }
 
     fun put(accountKey: String, snapshot: ScheduleRouteSnapshot) {
@@ -102,12 +103,13 @@ fun ScheduleRoute() {
     val scope = rememberCoroutineScope()
     val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
+    val browsingSession = rememberSaveable(routeAccountKey) { java.util.UUID.randomUUID().toString() }
     val sessions = UserManager.getInstance().sessionState
     val session by sessions.state.collectAsState()
     val requests = remember { com.tyust.course.manager.SessionRequestGate(sessions) }
     DisposableEffect(requests) { onDispose { requests.cancelAll() } }
     val restoredSnapshot = remember(routeAccountKey) {
-        ScheduleRouteMemoryCache.get(routeAccountKey)
+        ScheduleRouteMemoryCache.get(routeAccountKey, browsingSession)
     }
     var hasInitializedRoute by remember(routeAccountKey) {
         mutableStateOf(restoredSnapshot != null)
@@ -136,10 +138,21 @@ fun ScheduleRoute() {
     var isNextSemester by rememberSaveable(routeAccountKey) {
         mutableStateOf(restoredSnapshot?.isNextSemester ?: false)
     }
+    val displayStore = remember(context, browsingSession) {
+        ScheduleDisplayStore(context.getSharedPreferences("schedule_display", android.content.Context.MODE_PRIVATE), browsingSession)
+    }
+    var displayPreferences by remember(routeAccountKey) { mutableStateOf(displayStore.read(routeAccountKey)) }
+    var selectedDay by rememberSaveable(routeAccountKey) {
+        mutableIntStateOf(displayStore.position(routeAccountKey, restoredSnapshot?.termId.orEmpty())?.day
+            ?: (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1)
+    }
+    var pendingToday by rememberSaveable(routeAccountKey) { mutableStateOf(false) }
+    var todayRequest by rememberSaveable(routeAccountKey) { mutableIntStateOf(0) }
     
     // Dialog State
     var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
     var detailId by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
+    var quickCourseId by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var detailSourceBounds by remember(routeAccountKey) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var editingId by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var resolvedTermId by rememberSaveable(routeAccountKey) { mutableStateOf(restoredSnapshot?.termId.orEmpty()) }
@@ -155,13 +168,21 @@ fun ScheduleRoute() {
     val scheduleCache = remember(context) {
         ScheduleCacheStore(context.getSharedPreferences("schedule_cache", android.content.Context.MODE_PRIVATE))
     }
+    val scheduleRepository = remember(context) { ScheduleRepository(context) }
+    val routeSchoolId = UserManager.getInstance().currentSchool?.id.orEmpty()
+    val actualTermId = if (isDemoMode) DemoData.currentTerm.id else scheduleCache.currentTerm(routeAccountKey, routeSchoolId).id
+    val savedPosition = remember(routeAccountKey, resolvedTermId) { displayStore.position(routeAccountKey, resolvedTermId) }
     val reminderScheduler = remember(context) { ScheduleReminderScheduler.get(context) }
     val customRevision = settingsManager.revision
     val customCourses = remember(customRevision, routeAccountKey) { settingsManager.getCustomCourses(routeAccountKey) }
     val remindersRevision = reminderScheduler.revision
     val settingsTerm = settingsTermOverride ?: resolvedTermId
-    val termTimeBase = remember(settingsTerm, remindersRevision) { reminderScheduler.timeBase(routeAccountKey, settingsTerm) }
-    val displayedTimeBase = remember(resolvedTermId, remindersRevision) { reminderScheduler.timeBase(routeAccountKey, resolvedTermId) }
+    val termTimeBase = remember(settingsTerm, remindersRevision, customRevision, actualTermId) {
+        scheduleRepository.timeBase(routeAccountKey, settingsTerm, actualTermId)
+    }
+    val displayedTimeBase = remember(resolvedTermId, remindersRevision, customRevision, actualTermId) {
+        scheduleRepository.timeBase(routeAccountKey, resolvedTermId, actualTermId)
+    }
     fun periodTimesFor(base: ScheduleTimeBase?): List<ScheduleSettingsManager.PeriodTime> = settingsManager.getPeriodTimes().map {
         it.copy(startTime = base?.periodStarts?.get(it.period) ?: it.startTime, endTime = base?.periodEnds?.get(it.period) ?: it.endTime)
     }
@@ -179,6 +200,7 @@ fun ScheduleRoute() {
     }
 
     val snapshotForCache = ScheduleRouteSnapshot(
+        browsingSession = browsingSession,
         savedAtMs = System.currentTimeMillis(),
         currentWeek = currentWeek,
         courses = courses,
@@ -213,16 +235,12 @@ fun ScheduleRoute() {
     }
 
     fun reloadCustomCourses(currentList: List<ScheduleCourseUi>): List<ScheduleCourseUi> {
-        val customCourses = settingsManager.getCustomCourses(routeAccountKey)
-        val customUi = customCourses.map { cc ->
-            ScheduleCourseUi(
-                name = cc.name, teacher = cc.teacher, location = cc.location, day = cc.day,
-                startPeriod = cc.startPeriod, endPeriod = cc.endPeriod, weeks = cc.weeks,
-                color = courseColors[ScheduleIdentity.colorIndex("custom:${cc.id}", courseColors.size)], isCustom = true, customId = cc.id
-            )
+        val existing = currentList.associateBy { it.id }
+        return ScheduleRepository.mergeCustom(currentList.map { it.record() }, settingsManager.getCustomCourses(routeAccountKey)).map { c ->
+            if (!c.custom) existing.getValue(c.id) else ScheduleCourseUi(c.name, c.teacher, c.location, c.day,
+                c.startPeriod, c.endPeriod, c.weeks, courseColors[ScheduleIdentity.colorIndex(c.id, courseColors.size)],
+                isCustom = true, customId = c.id.removePrefix("custom:"), id = c.id)
         }
-        val nonCustom = currentList.filter { !it.isCustom }
-        return nonCustom + customUi
     }
 
     // Load Schedule Function
@@ -252,7 +270,10 @@ fun ScheduleRoute() {
                 return
             }
             // Refresh in place. Only a different semester must discard the previous rows.
-            if (resolvedTermId != requestedTerm.id) courses = reloadCustomCourses(emptyList())
+            if (resolvedTermId != requestedTerm.id) {
+                courses = reloadCustomCourses(emptyList())
+                resolvedTermId = requestedTerm.id
+            }
             val hasRetainedSchedule = cached != null || courses.isNotEmpty()
             isLoading = true
 
@@ -364,17 +385,25 @@ fun ScheduleRoute() {
                 periodTimes.associate { it.period to it.endTime }))
         }
     }
-    LaunchedEffect(displayedTimeBase) {
+    LaunchedEffect(displayedTimeBase, customRevision) {
         periodTimes = periodTimesFor(displayedTimeBase).map { PeriodTimeUi(it.period, it.startTime, it.endTime) }
     }
-    LaunchedEffect(resolvedTermId, displayedTimeBase?.firstWeekDate) {
+    LaunchedEffect(resolvedTermId, displayedTimeBase.firstWeekDate, pendingToday, isNextSemester) {
         if (resolvedTermId.isBlank()) return@LaunchedEffect
         val calendar = "$resolvedTermId|${displayedTimeBase?.firstWeekDate.orEmpty()}"
         // Apply date changes when saved, including system-back dismissal. Retain a
         // browsed week across page restoration and unrelated reminder/time changes.
-        if (appliedCalendar != calendar) {
+        if (pendingToday && !isNextSemester && resolvedTermId == actualTermId) {
+            currentWeek = ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, System.currentTimeMillis()) ?: 1
+            selectedDay = (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
             appliedCalendar = calendar
-            currentWeek = ScheduleDates.weekAt(displayedTimeBase?.firstWeekDate, System.currentTimeMillis()) ?: 1
+            todayRequest++
+            pendingToday = false
+        } else if (appliedCalendar != calendar) {
+            val position = displayStore.position(routeAccountKey, resolvedTermId)?.takeIf { it.calendar == calendar }
+            appliedCalendar = calendar
+            currentWeek = position?.week ?: if (isNextSemester) 1 else ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, System.currentTimeMillis()) ?: 1
+            selectedDay = position?.day ?: (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
         }
     }
     LaunchedEffect(undoDeadline) {
@@ -384,6 +413,39 @@ fun ScheduleRoute() {
             deletedRemindersJson = "[]"
         }
     }
+    val widgetRequest = ScheduleWidgetNavigation.requested
+    LaunchedEffect(widgetRequest, resolvedTermId, isNextSemester, isLoading) {
+        val request = widgetRequest ?: return@LaunchedEffect
+        if (!request.matches(routeAccountKey, routeSchoolId)) {
+            ScheduleWidgetNavigation.consume()
+            return@LaunchedEffect
+        }
+        if (isNextSemester) { isNextSemester = false; pendingToday = true; return@LaunchedEffect }
+        if (resolvedTermId.isBlank() || isLoading) return@LaunchedEffect
+        displayPreferences = displayPreferences.copy(dayView = true)
+        displayStore.write(routeAccountKey, displayPreferences)
+        pendingToday = request.course == null
+        if (request.course != null) {
+            if (request.term == resolvedTermId && courses.any { it.id == request.course }) {
+                notificationCourseJson = null
+                detailSourceBounds = null
+                detailId = request.course
+                request.startsAt?.let { startsAt ->
+                    currentWeek = ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, startsAt) ?: currentWeek
+                    selectedDay = courses.first { it.id == request.course }.day
+                    todayRequest++
+                }
+            } else GlassToaster.show("这节课已更新，请查看当前课表")
+        }
+        ScheduleWidgetNavigation.consume()
+        when (request.action) {
+            ScheduleWidgetAction.Calendar -> { settingsTermOverride = null; showSettingsDialog = true }
+            ScheduleWidgetAction.Sync -> loadSchedule(true)
+            else -> Unit
+        }
+    }
+    var showWidgetPicker by rememberSaveable { mutableStateOf(false) }
+    if (showWidgetPicker) com.tyust.course.ui.screen.ScheduleWidgetPicker { showWidgetPicker = false }
     com.tyust.course.ui.system.ReportPageContent(courses.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
     CompositionLocalProvider(com.tyust.course.ui.screen.LocalScheduleFocus provides focusRegistry) {
@@ -396,7 +458,16 @@ fun ScheduleRoute() {
         periodTimes = periodTimes,
         periodCount = periodCount,
         firstWeekDate = displayedTimeBase?.firstWeekDate,
-        weekRequestKey = appliedCalendar.orEmpty(),
+        weekRequestKey = "${appliedCalendar.orEmpty()}|today:$todayRequest",
+        displayPreferences = displayPreferences,
+        onDisplayPreferences = { displayPreferences = it; displayStore.write(routeAccountKey, it) },
+        selectedDay = selectedDay,
+        onDayChange = { selectedDay = it },
+        onTodayClick = { isNextSemester = false; pendingToday = true },
+        positionKey = "$routeAccountKey|$resolvedTermId",
+        positionCalendar = appliedCalendar?.takeIf { it == "$resolvedTermId|${displayedTimeBase.firstWeekDate}" }.orEmpty(),
+        restoredPosition = savedPosition,
+        onPositionChange = { if (it.calendar.isNotBlank()) displayStore.savePosition(routeAccountKey, resolvedTermId, it) },
         onWeekChange = { currentWeek = it },
         onCourseClick = {
             notificationCourseJson = null
@@ -404,6 +475,9 @@ fun ScheduleRoute() {
             detailSourceBounds = focusRegistry.bounds(it.id)
             detailId = it.id
         },
+        onCourseLongClick = { quickCourseId = it.id },
+        onAddClick = { editingId = java.util.UUID.randomUUID().toString() },
+        onWidgetClick = { showWidgetPicker = true },
         onSettingsClick = { settingsTermOverride = null; showSettingsDialog = true },
         onExportClick = {
             if (courses.isEmpty()) {
@@ -459,6 +533,8 @@ fun ScheduleRoute() {
         com.tyust.course.ui.system.GlassSubpage(onDismiss = { showSettingsDialog = false; settingsTermOverride = null }) { close ->
             ScheduleSettingsScreen(
                 manager = settingsManager,
+                displayPreferences = displayPreferences,
+                onDisplayPreferences = { displayPreferences = it; displayStore.write(routeAccountKey, it) },
                 periodTimesOverride = periodTimesFor(termTimeBase),
                 semesterStartOverride = termTimeBase?.firstWeekDate?.takeIf { it.isNotBlank() }?.let {
                     runCatching { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).parse(it)?.time }.getOrNull()
@@ -497,6 +573,27 @@ fun ScheduleRoute() {
         ScheduleCourseUi(it.name, it.teacher, it.location, it.day, it.startPeriod, it.endPeriod, it.weeks,
             courseColors[ScheduleIdentity.colorIndex(it.id, courseColors.size)], it.custom, if (it.custom) it.id.removePrefix("custom:") else "", id = it.id)
     }
+    courses.firstOrNull { it.id == quickCourseId }?.let { course ->
+        val reminderKey = CourseReminderKey(routeAccountKey, resolvedTermId, course.id)
+        val enabled = reminderScheduler.find(reminderKey)?.enabled == true
+        com.tyust.course.ui.screen.ScheduleQuickActions(course, enabled,
+            onDismiss = { quickCourseId = null },
+            onReminder = {
+                quickCourseId = null
+                reminderScheduler.setEnabled(reminderKey, course.record(), !enabled)
+                val availability = reminderScheduler.status(reminderKey).availability
+                if (!enabled && availability != ReminderAvailability.Scheduled) {
+                    notificationCourseJson = null; detailSourceBounds = null; detailId = course.id
+                } else GlassToaster.show(if (enabled) "已关闭提醒" else "已开启课前提醒")
+            },
+            onCopy = {
+                quickCourseId = null
+                context.getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("教室", course.location))
+                if (android.os.Build.VERSION.SDK_INT < 33) GlassToaster.show("教室已复制")
+            },
+            onEdit = { quickCourseId = null; editingId = course.customId })
+    }
     selectedDetail?.let { course ->
         com.tyust.course.ui.screen.ScheduleCourseSheet(course, routeAccountKey, detailTerm, if (detailTerm == resolvedTermId) courses else listOf(course),
             sourceCenterX = detailSourceBounds?.center?.x,
@@ -517,7 +614,7 @@ fun ScheduleRoute() {
     }
     editingId?.let { id ->
         val initial = customCourses.firstOrNull { it.id == id } ?: ScheduleSettingsManager.CustomCourse(
-            id, "", "", "", 1, 1, 2, "1-16周")
+            id, "", "", "", selectedDay, 1, 2, "1-16周")
         com.tyust.course.ui.system.GlassSubpage(onDismiss = { editingId = null }) { close ->
             com.tyust.course.ui.screen.ScheduleCourseEditor(initial, courses, periodCount,
                 isNew = customCourses.none { it.id == id }, onClose = close, onSave = { saved ->

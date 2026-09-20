@@ -491,7 +491,7 @@ public class CourseApiClient {
         private void fetchCourseDisplayParamsInternal(SchoolConfig school, String xkkzValue, String kklxdm,
                         String njdm_id, String zyh_id, String xkkzKey, Callback callback) {
                 // URL: zzxkyzb_cxZzxkYzbDisplay.html
-                String url = school.getFullBasePath() + school.courseDisplayPath + "?gnmkdm=" + school.courseGnmkdm;
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.courseDisplayPath) + "?gnmkdm=" + school.courseGnmkdm;
                 Log.d(TAG, "Fetching display params from: " + url);
 
                 // 构建POST参数 (与Web版相同)；xkkz 参数名按学校自适应
@@ -509,7 +509,7 @@ public class CourseApiClient {
                 Request request = createRequestBuilder(school)
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -531,7 +531,7 @@ public class CourseApiClient {
         // 🔧 xkkz 参数名自适应版本（同步）
         public String fetchCourseDisplayParamsSyncWithKey(SchoolConfig school, String xkkzValue, String kklxdm,
                         String njdm_id, String zyh_id, String xkkzKey) {
-                String url = school.getFullBasePath() + school.courseDisplayPath + "?gnmkdm=" + school.courseGnmkdm;
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.courseDisplayPath) + "?gnmkdm=" + school.courseGnmkdm;
                 if (xkkzKey == null || xkkzKey.isEmpty()) xkkzKey = "xkkz_id";
                 String postBody = xkkzKey + "=" + (xkkzValue != null ? xkkzValue : "") +
                                 "&kklxdm=" + (kklxdm != null ? kklxdm : "01") +
@@ -547,7 +547,7 @@ public class CourseApiClient {
                 Request request = createRequestBuilder(school)
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -572,7 +572,7 @@ public class CourseApiClient {
                                 .header("X-Requested-With", "XMLHttpRequest");
 
                 if (postBody != null && !postBody.isEmpty()) {
-                        builder.post(okhttp3.RequestBody.create(postBody,
+                        builder.post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                         okhttp3.MediaType.parse("application/x-www-form-urlencoded")));
                 }
 
@@ -590,7 +590,7 @@ public class CourseApiClient {
                                 .header("X-Requested-With", "XMLHttpRequest");
 
                 if (postBody != null && !postBody.isEmpty()) {
-                        builder.post(okhttp3.RequestBody.create(postBody,
+                        builder.post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                         okhttp3.MediaType.parse("application/x-www-form-urlencoded")));
                 }
 
@@ -629,19 +629,7 @@ public class CourseApiClient {
         }
 
         private String buildAbsoluteCourseUrl(SchoolConfig school, String pathOrUrl) {
-                if (pathOrUrl == null || pathOrUrl.isEmpty()) {
-                        return school.getFullBasePath();
-                }
-                if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
-                        return pathOrUrl;
-                }
-                if (pathOrUrl.startsWith(school.basePath + "/")) {
-                        return school.getBaseUrl() + pathOrUrl;
-                }
-                if (pathOrUrl.startsWith("/")) {
-                        return school.getFullBasePath() + pathOrUrl;
-                }
-                return school.getFullBasePath() + "/" + pathOrUrl;
+                return com.tyust.course.academic.AcademicUrls.appUrl(school, pathOrUrl == null ? "" : pathOrUrl);
         }
 
         /**
@@ -670,7 +658,7 @@ public class CourseApiClient {
                                 .header("X-Requested-With", "XMLHttpRequest");
 
                 if (postBody != null && !postBody.isEmpty()) {
-                        builder.post(okhttp3.RequestBody.create(postBody,
+                        builder.post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                         okhttp3.MediaType.parse("application/x-www-form-urlencoded")));
                 }
 
@@ -695,7 +683,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -720,7 +708,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -759,7 +747,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -776,7 +764,7 @@ public class CourseApiClient {
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -785,7 +773,7 @@ public class CourseApiClient {
         // 获取成绩 (单学期)
         public void fetchGrades(SchoolConfig school, String semester, Callback callback) {
                 String[] params = school.parseSemester(semester);
-                String url = school.getFullBasePath() + school.gradesPath
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.gradesPath)
                                 + "?doType=query&gnmkdm=" + school.gradeGnmkdm;
                 String postBody = "xnm=" + params[0] + "&xqm=" + params[1]
                                 + "&queryModel.showCount=1500&queryModel.currentPage=1"
@@ -796,7 +784,7 @@ public class CourseApiClient {
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -814,7 +802,7 @@ public class CourseApiClient {
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -822,7 +810,7 @@ public class CourseApiClient {
 
         // 获取考试安排
         public void fetchExamSchedule(SchoolConfig school, String xnm, String xqm, Callback callback) {
-                String url = school.getBaseUrl() + "/kwgl/kscx_cxXsksxxIndex.html?doType=query&gnmkdm=N358105";
+                String url = school.getFullBasePath() + "/kwgl/kscx_cxXsksxxIndex.html?doType=query&gnmkdm=N358105";
                 Log.d(TAG, "Fetching exam schedule from: " + url);
 
                 String postBody = "xnm=" + xnm + "&xqm=" + xqm;
@@ -832,7 +820,7 @@ public class CourseApiClient {
                                 .url(url)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -861,7 +849,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -871,7 +859,7 @@ public class CourseApiClient {
         public void fetchCourses(String baseUrl, String studentId, String name, Callback callback) {
                 Log.d(TAG, "Fetching courses for: " + studentId);
                 Request request = accountAwareRequestBuilder()
-                                .url(baseUrl + "/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512")
+                                .url(com.tyust.course.academic.AcademicUrls.resolve(baseUrl, "", "xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512"))
                                 .header("User-Agent", "Mozilla/5.0")
                                 .build();
                 client.newCall(request).enqueue(sessionBound(callback));
@@ -1000,7 +988,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -1037,7 +1025,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -1062,7 +1050,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -1119,7 +1107,7 @@ public class CourseApiClient {
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01");
 
                 if (postBody != null && !postBody.isEmpty()) {
-                        builder.post(okhttp3.RequestBody.create(postBody,
+                        builder.post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                         okhttp3.MediaType.parse("application/x-www-form-urlencoded")));
                 } else {
                         builder.get();
@@ -1156,7 +1144,7 @@ public class CourseApiClient {
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                                .post(okhttp3.RequestBody.create(postBody,
+                                .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
 
@@ -1186,7 +1174,7 @@ public class CourseApiClient {
         }
 
         public void getLoginPage(SchoolConfig school, Callback callback) {
-                String url = school.getFullBasePath() + school.loginPagePath;
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.loginPagePath);
                 Log.d(TAG, "GET login page: " + url);
 
                 Request request = accountAwareRequestBuilder()
@@ -1199,7 +1187,7 @@ public class CourseApiClient {
         }
 
         public void getPublicKey(SchoolConfig school, Callback callback) {
-                String url = school.getFullBasePath() + school.publicKeyPath + "?time=" + System.currentTimeMillis();
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.publicKeyPath) + "?time=" + System.currentTimeMillis();
                 Log.d(TAG, "GET public key: " + url);
 
                 Request request = accountAwareRequestBuilder()
@@ -1213,7 +1201,7 @@ public class CourseApiClient {
         }
 
         public void getCaptchaImage(SchoolConfig school, Callback callback) {
-                String url = school.getFullBasePath() + school.captchaPath + "?time=" + System.currentTimeMillis();
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.captchaPath) + "?time=" + System.currentTimeMillis();
                 Log.d(TAG, "GET captcha: " + url);
 
                 // 记录当前发送的 cookies
@@ -1236,7 +1224,7 @@ public class CourseApiClient {
                                 .header("Accept-Language", "zh-CN,zh;q=0.9")
                                 .header("Accept-Encoding", "gzip, deflate")
                                 .header("Connection", "keep-alive")
-                                .header("Referer", school.getFullBasePath() + school.loginPagePath)
+                                .header("Referer", com.tyust.course.academic.AcademicUrls.appUrl(school, school.loginPagePath))
                                 .header("sec-ch-ua", "\"Chromium\";v=\"139\", \"Google Chrome\";v=\"139\"")
                                 .header("sec-ch-ua-mobile", "?0")
                                 .header("sec-ch-ua-platform", "\"Windows\"")
@@ -1277,7 +1265,7 @@ public class CourseApiClient {
         }
 
         public void submitLogin(SchoolConfig school, okhttp3.RequestBody formBody, Callback callback) {
-                String url = school.getFullBasePath() + school.loginPagePath + "?time=" + System.currentTimeMillis();
+                String url = com.tyust.course.academic.AcademicUrls.appUrl(school, school.loginPagePath) + "?time=" + System.currentTimeMillis();
                 Log.d(TAG, "POST login: " + url);
 
                 OkHttpClient noRedirectClient = client.newBuilder()
@@ -1290,7 +1278,7 @@ public class CourseApiClient {
                                 .header("User-Agent",
                                                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
                                 .header("Content-Type", "application/x-www-form-urlencoded")
-                                .header("Referer", school.getBaseUrl() + school.loginPagePath)
+                                .header("Referer", com.tyust.course.academic.AcademicUrls.appUrl(school, school.loginPagePath))
                                 .post(formBody)
                                 .build();
                 noRedirectClient.newCall(request).enqueue(sessionBound(callback));

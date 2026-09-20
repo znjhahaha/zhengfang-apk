@@ -52,48 +52,48 @@ public class SchoolConfig {
     }
 
     public String getFullBasePath() {
-        return getBaseUrl() + basePath;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, "");
     }
 
     // 生成学生信息验证URL
     public String getStudentInfoUrl() {
-        return getFullBasePath() + studentInfoPath + "?xt=jw&localeKey=zh_CN&_="
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, studentInfoPath) + "?xt=jw&localeKey=zh_CN&_="
                 + System.currentTimeMillis() + "&gnmkdm=index";
     }
 
     // 生成选课参数页面URL
     public String getCourseSelectionParamsUrl() {
-        return getFullBasePath() + courseIndexPath + "?gnmkdm=" + courseGnmkdm + "&layout=default&su=" + domain;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, courseIndexPath) + "?gnmkdm=" + courseGnmkdm + "&layout=default&su=" + domain;
     }
 
     // 生成可选课程列表URL
     public String getAvailableCoursesUrl() {
-        return getFullBasePath() + courseListPath + "?gnmkdm=" + courseGnmkdm;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, courseListPath) + "?gnmkdm=" + courseGnmkdm;
     }
 
     // 生成已选课程列表URL
     public String getSelectedCoursesUrl() {
-        return getFullBasePath() + selectedCoursesPath + "?gnmkdm=" + courseGnmkdm;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, selectedCoursesPath) + "?gnmkdm=" + courseGnmkdm;
     }
 
     // 生成选课执行URL
     public String getSelectCourseUrl() {
-        return getFullBasePath() + selectCoursePath + "?gnmkdm=" + courseGnmkdm;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, selectCoursePath) + "?gnmkdm=" + courseGnmkdm;
     }
 
     // 生成选课详情URL
     public String getCourseSelectionDetailsUrl() {
-        return getFullBasePath() + courseDetailsPath + "?gnmkdm=" + courseGnmkdm;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, courseDetailsPath) + "?gnmkdm=" + courseGnmkdm;
     }
 
     // 生成Referer头
     public String getCourseReferer() {
-        return getFullBasePath() + courseIndexPath + "?gnmkdm=" + courseGnmkdm + "&layout=default&su=" + domain;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, courseIndexPath) + "?gnmkdm=" + courseGnmkdm + "&layout=default&su=" + domain;
     }
 
     // 生成课表URL
     public String getScheduleUrl() {
-        return getFullBasePath() + schedulePath + "?gnmkdm=" + scheduleGnmkdm + "&su=" + domain;
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, schedulePath) + "?gnmkdm=" + scheduleGnmkdm + "&su=" + domain;
     }
 
     // 生成成绩查询URL
@@ -109,7 +109,7 @@ public class SchoolConfig {
             }
         }
 
-        return getFullBasePath() + gradesPath + "?gnmkdm=" + gradeGnmkdm
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, gradesPath) + "?gnmkdm=" + gradeGnmkdm
                 + "&doType=query&xnm=" + xnm + "&xqm=" + xqm
                 + "&queryModel.showCount=1500&queryModel.currentPage=1";
     }
@@ -135,12 +135,12 @@ public class SchoolConfig {
 
     // 生成总体成绩查询URL
     public String getOverallGradesUrl() {
-        return getFullBasePath() + overallGradesIndexPath + "?gnmkdm=N105515&layout=default";
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, overallGradesIndexPath) + "?gnmkdm=N105515&layout=default";
     }
 
     // 生成总体成绩数据URL
     public String getOverallGradesDataUrl() {
-        return getFullBasePath() + overallGradesDataPath + "?gnmkdm=N105515";
+        return com.tyust.course.academic.AcademicUrls.appUrl(this, overallGradesDataPath) + "?gnmkdm=N105515";
     }
 
     // 序列化为 JSON

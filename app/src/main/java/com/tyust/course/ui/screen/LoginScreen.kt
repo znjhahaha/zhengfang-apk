@@ -755,26 +755,14 @@ fun AddSchoolDialog(
     onConfirm: (com.tyust.course.model.SchoolFormDraft) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var urlInput by remember { mutableStateOf("") }
     var domain by remember { mutableStateOf("") }
     var basePath by remember { mutableStateOf("") }
     var protocol by remember { mutableStateOf("https") }
     var academicSystem by remember { mutableStateOf("auto") }
+    var detectionSource by remember { mutableStateOf("pending") }
     var addressError by remember { mutableStateOf<String?>(null) }
-    
-    fun parseUrl(url: String) {
-        val parsed = com.tyust.course.academic.AcademicAddress.parse(url)
-        if (parsed == null) {
-            addressError = "无法解析，请检查教务网址"
-            return
-        }
-        addressError = null
-        protocol = parsed.protocol
-        domain = parsed.domain
-        basePath = parsed.basePath
-    }
-    
-    val draft = com.tyust.course.model.SchoolFormDraft(name, domain, protocol, basePath, academicSystem)
+
+    val draft = com.tyust.course.model.SchoolFormDraft(name, domain, protocol, basePath, academicSystem, detectionSource)
     val showError = domain.isNotBlank() && !draft.isValidDomain
     
     SystemDialog(
@@ -810,30 +798,18 @@ fun AddSchoolDialog(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            SchoolFormPanel {
-                SchoolFormPanelTitle(
-                    icon = Icons.Default.AutoAwesome,
-                    text = "从网址填写"
-                )
-                SchoolFormField(
-                    label = "教务系统网址",
-                    value = urlInput,
-                    onValueChange = { urlInput = it; addressError = null },
-                    placeholder = "http://jwxt.example.edu.cn/jwglxt",
-                    helper = "粘贴教务登录页或登录后的页面网址，解析域名、协议和基础路径",
-                    error = addressError
-                )
-                SystemPrimaryButton(
-                    text = "解析网址",
-                    onClick = { parseUrl(urlInput) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = urlInput.isNotBlank()
-                )
-            }
+            SchoolUrlRecognition(
+                selectedType = academicSystem,
+                addressKey = "$protocol|$domain|$basePath",
+                manualType = detectionSource == "manual" || detectionSource == "legacy",
+                onAddress = { protocol = it.protocol; domain = it.domain; basePath = it.basePath },
+                onDetected = { academicSystem = it.id; detectionSource = "automatic" },
+                onInvalidAddress = { addressError = it }
+            )
 
             SchoolFormSectionTitle("基本信息")
 
-            SchoolAcademicSystemField(academicSystem) { academicSystem = it }
+            SchoolAcademicSystemField(academicSystem) { academicSystem = it; detectionSource = if (it == "auto") "pending" else "manual" }
 
             SchoolFormField(
                 label = "学校名称（可选）",

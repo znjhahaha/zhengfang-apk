@@ -39,11 +39,15 @@ object LoginEncoding {
 object SystemDetector {
     fun classify(html: String): AcademicSystem? {
         val lower = html.lowercase()
+        val qzForm = Jsoup.parse(html).select("form[action]").any { form ->
+            form.attr("action").contains("LoginToXk", true) &&
+                form.select("input[name=userAccount], input[name=userPassword], input[name=encoded]").size >= 3
+        }
         return when {
             lower.contains("default2.aspx") && (lower.contains("txtkeymodulus") || lower.contains("checkcode")) -> AcademicSystem.ZF_OLD
             lower.contains("login_getpublickey") || (lower.contains("csrftoken") && lower.contains("xtgl")) -> AcademicSystem.ZF
-            lower.contains("var scode") && lower.contains("var sxh") && lower.contains("logintoxk") -> AcademicSystem.QZ
-            lower.contains("flag=sess") || (lower.contains("encodeinp") && lower.contains("%%%")) -> AcademicSystem.QZ_OLD
+            Regex("\\b(?:var|let|const)\\s+scode\\b").containsMatchIn(lower) && Regex("\\b(?:var|let|const)\\s+sxh\\b").containsMatchIn(lower) && lower.contains("logintoxk") -> AcademicSystem.QZ
+            lower.contains("flag=sess") || ((qzForm || lower.contains("encodeinp")) && lower.contains("%%%")) -> AcademicSystem.QZ_OLD
             else -> null
         }
     }

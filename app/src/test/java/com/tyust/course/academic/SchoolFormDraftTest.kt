@@ -33,7 +33,7 @@ class SchoolFormDraftTest {
         assertEquals(1, AcademicCapabilities.selectionIndex(existing.academicSystem))
         val selected = AcademicCapabilities.selectedTypeId(existing.academicSystem, AcademicSystem.ZF)
         assertEquals("legacy_zf", selected)
-        val updated = SchoolFormDraft("新名称", "new.example.edu.cn", "https", "/root", selected).applyTo(existing)
+        val updated = SchoolFormDraft("新名称", "new.example.edu.cn", "https", "/root", selected, existing.detectionSource).applyTo(existing)
         val restored = SchoolConfig.fromJson(updated.toJson())
         assertEquals(existing.id, restored.id)
         assertEquals("legacy_zf", restored.academicSystem)
@@ -43,6 +43,7 @@ class SchoolFormDraftTest {
         assertEquals("custom-module", restored.courseGnmkdm)
         assertEquals("旧配置", existing.name)
         assertEquals("jw.example.edu.cn", existing.domain)
+        assertEquals("manual", SchoolFormDraft("新名称", "new.example.edu.cn", "https", "/root", selected, "manual").applyTo(existing).detectionSource)
     }
 
     @Test fun parsingAnAddressDoesNotChooseATypeOrReplaceTheUsersManualChoice() {

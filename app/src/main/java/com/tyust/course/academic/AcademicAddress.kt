@@ -7,6 +7,7 @@ data class AcademicAddress(val protocol: String, val domain: String, val basePat
         fun parse(input: String): AcademicAddress? = runCatching {
             val uri = URI(input.trim().let { if (it.contains("://")) it else "https://$it" })
             require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null)
+            require(uri.port == -1 || uri.port in 1..65535)
             val path = uri.path.orEmpty().trimEnd('/')
             val feature = Regex("/(?:framework|xtgl|xsxk|xsxkkc|xk|xkgl)(?:/|$)").find(path)
             val root = when {

@@ -87,6 +87,25 @@
             android:foregroundServiceType="dataSync" />
         
         <!-- Scheduled grab alarm receiver -->
+        <receiver android:name=".schedule.ScheduleWidgetProvider" android:exported="false" android:label="@string/schedule_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_info" />
+        </receiver>
+        <receiver android:name=".schedule.ScheduleSingleWidgetProvider" android:label="@string/schedule_widget_single_name" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_single_info" />
+        </receiver>
+        <receiver android:name=".schedule.ScheduleTimelineWidgetProvider" android:label="@string/schedule_widget_timeline_name" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_timeline_info" />
+        </receiver>
         <receiver android:name=".schedule.CourseReminderReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

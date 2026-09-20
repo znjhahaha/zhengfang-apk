@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:paddingStart="8dp" android:paddingEnd="8dp"
+    android:paddingTop="6dp" android:paddingBottom="6dp" android:background="@drawable/schedule_widget_light">
+    <LinearLayout android:id="@+id/widget_header" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:paddingBottom="2dp">
+        <TextView android:id="@+id/widget_heading" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="@string/schedule_widget_heading" android:textSize="12sp" android:textStyle="bold" android:textColor="#1D2433"
+            android:includeFontPadding="false" android:maxLines="1" />
+        <TextView android:id="@+id/widget_date" style="@style/ScheduleWidgetMetadata" android:layout_width="wrap_content" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_courses" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="horizontal" android:baselineAligned="false">
+        <LinearLayout android:id="@+id/widget_course" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center_vertical">
+            <TextView android:id="@+id/widget_status" style="@style/ScheduleWidgetMetadata" android:textColor="#345DC4"
+                android:layout_marginBottom="2dp" android:text="@string/schedule_widget_status" />
+            <TextView android:id="@+id/widget_name" style="@style/ScheduleWidgetCourseName" android:text="@string/schedule_widget_preview" />
+            <TextView android:id="@+id/widget_location" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_preview_room" />
+            <TextView android:id="@+id/widget_time" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_preview_time" />
+        </LinearLayout>
+        <ImageView android:id="@+id/widget_separator" android:layout_width="1dp" android:layout_height="match_parent" android:contentDescription="@null"
+            android:layout_marginStart="10dp" android:layout_marginEnd="10dp" android:layout_marginTop="6dp" android:layout_marginBottom="6dp" android:background="#22536078" />
+        <LinearLayout android:id="@+id/widget_next" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center_vertical">
+            <TextView android:id="@+id/widget_next_status" style="@style/ScheduleWidgetMetadata" android:textColor="#345DC4"
+                android:layout_marginBottom="2dp" android:text="@string/schedule_widget_next_status" />
+            <TextView android:id="@+id/widget_next_name" style="@style/ScheduleWidgetCourseName" android:text="@string/schedule_widget_next_preview" />
+            <TextView android:id="@+id/widget_next_location" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_next_room" />
+            <TextView android:id="@+id/widget_next_time" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_next_time" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="vertical" android:gravity="center_vertical" android:visibility="gone">
+        <TextView android:id="@+id/widget_message" style="@style/ScheduleWidgetCourseName" android:maxLines="3" />
+        <TextView android:id="@+id/widget_action" style="@style/ScheduleWidgetMetadata" android:textColor="#345DC4"
+            android:textSize="12sp" android:paddingTop="6dp" android:paddingBottom="6dp" android:layout_marginTop="4dp" />
+    </LinearLayout>
+    <TextView android:id="@+id/widget_footer" style="@style/ScheduleWidgetMetadata" android:paddingTop="6dp" android:visibility="gone" />
+</LinearLayout>

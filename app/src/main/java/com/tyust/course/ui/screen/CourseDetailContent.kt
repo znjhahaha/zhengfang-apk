@@ -1,6 +1,5 @@
 package com.tyust.course.ui.screen
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -15,7 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
@@ -42,7 +43,8 @@ data class CourseDetailUiState(
     val needsPermission: Boolean = false,
     val needsTime: Boolean = false,
     val invalidWeeks: Boolean = false,
-    val sourceCenterX: Float? = null
+    val sourceCenterX: Float? = null,
+    val timeRange: String = ""
 )
 
 /** Content-sized sheet with a bounded scroll body and a persistent, single primary action. */
@@ -67,15 +69,16 @@ fun CourseDetailContent(
         val compactHeight = maxHeight < 420.dp
         val titleDrift = ui.sourceCenterX?.let { (it - with(density) { maxWidth.toPx() } / 2f)
             .coerceIn(-with(density) { 16.dp.toPx() }, with(density) { 16.dp.toPx() }) } ?: 0f
-        Surface(
+        Box(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(max = maxHeight * 0.85f)
                 .testTag("course-detail-surface").onSizeChanged { sheet.height = it.height.toFloat() }
-                .nestedScroll(connection).semantics { contentDescription = "课程详情" },
-            shape = RoundedCornerShape(28.dp), color = colors.surface,
-            border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.45f)), shadowElevation = 10.dp
+                .nestedScroll(connection).semantics { contentDescription = "课程详情" }
         ) {
-            Column(Modifier.background(Brush.verticalGradient(
-                listOf(course.color.copy(alpha = 0.06f), colors.surface), endY = with(density) { 144.dp.toPx() }
+            // Keep backdrop effects on a background sibling; animated content must
+            // not be part of the optical layer or a translucent Material shadow.
+            Box(Modifier.matchParentSize().scheduleDetailGlass())
+            Column(Modifier.clip(RoundedCornerShape(28.dp)).background(Brush.verticalGradient(
+                listOf(course.color.copy(alpha = 0.08f), Color.Transparent), endY = with(density) { 144.dp.toPx() }
             )).padding(horizontal = 18.dp)) {
                 Box(Modifier.fillMaxWidth().height(if (compactHeight) 16.dp else 26.dp)
                     .draggable(rememberDraggableState { sheet.dragBy(it) }, Orientation.Vertical,
@@ -110,7 +113,8 @@ fun CourseDetailContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.moduleEntrance(1, entrance), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val weekday = "一二三四五六日".getOrElse(course.day - 1) { ' ' }
-                        val time = "周$weekday · 第 ${course.startPeriod}–${course.endPeriod} 节"
+                        val time = (ui.timeRange.takeIf { it.isNotBlank() }?.plus("\n").orEmpty()) +
+                            "周$weekday · 第 ${course.startPeriod}–${course.endPeriod} 节"
                         if (wideDetails) Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             DetailInfoTile("上课时间", time, AnimatedIconSpec.Clock, Modifier.weight(1f).fillMaxHeight())
                             DetailInfoTile("上课地点", course.location.ifBlank { "未指定地点" }, AnimatedIconSpec.Location,
@@ -135,8 +139,8 @@ fun CourseDetailContent(
                             }
                         }
                     }
-                    Surface(Modifier.fillMaxWidth().moduleEntrance(2, entrance), color = colors.surfaceContainerLow,
-                        shape = RoundedCornerShape(18.dp)) {
+                    Surface(Modifier.fillMaxWidth().moduleEntrance(2, entrance), color = scheduleCardColor(course.color, 0.025f),
+                        border = scheduleCardBorder(course.color), shape = RoundedCornerShape(18.dp)) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 AnimatedLineIcon(AnimatedIconSpec.Bell, Modifier.size(20.dp),
@@ -172,8 +176,9 @@ fun CourseDetailContent(
 
 @Composable
 private fun DetailInfoTile(label: String, value: String, icon: AnimatedIconSpec, modifier: Modifier = Modifier) {
-    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Surface(modifier.fillMaxWidth(), color = scheduleCardColor(MaterialTheme.colorScheme.primary, 0.02f),
+        border = scheduleCardBorder(MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.scheduleGlassSheen().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                 AnimatedLineIcon(icon, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

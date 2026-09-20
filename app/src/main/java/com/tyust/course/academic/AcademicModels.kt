@@ -79,7 +79,9 @@ data class CourseSection(
     val location: String = "",
     val capacity: Int? = null,
     val selected: Int? = null,
-    val raw: Map<String, String> = emptyMap()
+    val raw: Map<String, String> = emptyMap(),
+    /** A request token (e.g. do_jxb_id) can change while the teaching class stays the same. */
+    val selectionId: String = stableId
 )
 
 data class SelectionTarget(
