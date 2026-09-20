@@ -27,7 +27,7 @@ object AcademicStudyBridge {
 
     fun exam(item: AcademicExam) = ExamItemUi(item.name, item.time, item.location, item.seat, item.examName, item.teacher)
 
-    fun semesters(grades: List<AcademicGrade>): List<String> = grades.mapNotNull { AcademicStudyParser.term(it.term)?.id }
+    fun semesters(grades: List<AcademicGrade>): List<String> = grades.mapNotNull { it.term.takeIf(String::isNotBlank) }
         .distinct().sortedDescending()
 
     fun stats(report: AcademicGradeReport): OverallStatsUi {

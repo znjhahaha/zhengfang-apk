@@ -1,4 +1,5 @@
 # Gradle
+/academic-plugin-api/node_modules/
 *.iml
 .gradle/
 build/
@@ -52,6 +53,7 @@ credentials*.json
 
 # Proguard
 proguard-rules.pro
+!app/proguard-rules.pro
 
 # Python
 __pycache__/

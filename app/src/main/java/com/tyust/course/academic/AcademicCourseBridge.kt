@@ -40,15 +40,15 @@ object AcademicCourseBridge {
                 Course().apply {
                     name = selected.name
                     teacher = selected.teacher
-                    time = selected.raw["sksj"] ?: selected.raw["sksjmc"].orEmpty()
-                    location = selected.raw["skdd"] ?: selected.raw["jxdd"].orEmpty()
-                    credit = selected.raw["xf"].orEmpty()
-                    jxbmc = selected.raw["jxbmc"].orEmpty()
+                    time = selected.presentation.time
+                    location = selected.presentation.location
+                    credit = selected.presentation.credit
+                    jxbmc = selected.presentation.sectionName
                     courseId = selected.courseId
                     classId = selected.sectionId.ifBlank { selected.stableId }
                     doJxbId = selected.sectionId
                     isSelected = true
-                    completeParams = selected.raw.toMutableMap()
+                    completeParams = selected.raw.filterKeys { it.startsWith("academic_") }.toMutableMap()
                     completeParams["academic_system"] = school.academicSystem
                     completeParams["academic_selected_id"] = selected.stableId
                 }
@@ -58,19 +58,10 @@ object AcademicCourseBridge {
 
     suspend fun listSections(school: SchoolConfig, accountStorageKey: String, course: Course, expected: SessionToken = UserManager.getInstance().sessionState.token): List<Course> {
         val adapter = prepareSession(school, accountStorageKey, expected)
-        if (school.academicType() in setOf(AcademicSystem.QZ, AcademicSystem.QZ_OLD)) return listOf(course)
         return adapter.inSession {
-            // 课程行自带列表页快照的完整协议参数（kklxdm/xkkz_id/xklc 等），
-            // 直接请求教学班即可。原先每次点击都要重走"入口页+Display+搜索定位"，
-            // 对教学班粒度的列表（如河北传媒学院）一组几十行会串行几十轮请求，
-            // 慢到像一直加载。
-            val raw = course.completeParams
-            val directOffer = raw.takeIf { it.containsKey("kklxdm") && !ZfSelectionControl.from(it).isEmpty }?.let {
-                CourseOffer(
-                    it["academic_course_id"].orEmpty().ifBlank { course.courseId },
-                    course.name, course.teacher, course.time, course.location, course.credit,
-                    scopeId = it["academic_scope_id"].orEmpty(), raw = it)
-            }
+            // Reuse the provider-owned snapshot when available; stale references
+            // fall back to a fresh lookup before selecting a teaching class.
+            val directOffer = adapter.restoreOffer(course.completeParams)
             val offer = directOffer ?: run {
                 val context = adapter.loadCourseContext()
                 findOffer(adapter, context, course)
@@ -110,10 +101,7 @@ object AcademicCourseBridge {
                 ?: return@inSession OperationResult(AcademicStatus.PAGE_CHANGED, "课程已不在当前已选列表")
             val offer = CourseOffer(enrolled.courseId, enrolled.name, enrolled.teacher, scopeId = "",
                 raw = enrolled.raw)
-            val section = CourseSection(enrolled.sectionId.ifBlank { enrolled.stableId }, enrolled.courseId, raw = enrolled.raw,
-                selectionId = if (school.academicType() == AcademicSystem.ZF)
-                    enrolled.raw["do_jxb_id"].orEmpty().ifBlank { enrolled.sectionId.ifBlank { enrolled.stableId } }
-                else enrolled.sectionId.ifBlank { enrolled.stableId })
+            val section = CourseSection(enrolled.sectionId.ifBlank { enrolled.stableId }, enrolled.courseId, raw = enrolled.raw)
             prepareSession(school, accountStorageKey, expected)
             adapter.drop(SelectionTarget(offer, section, confirmed = true))
         }
@@ -123,9 +111,8 @@ object AcademicCourseBridge {
         val query = CourseQuery(course.name, scopeId = course.completeParams["academic_scope_id"].orEmpty())
         return adapter.listCourses(context, query).firstOrNull { offer ->
             val sameCourse = offer.stableId == course.courseId || offer.stableId == course.completeParams["academic_course_id"]
-            val rowSection = offer.raw["jx0404id"].orEmpty().ifBlank { offer.raw["sectionId"].orEmpty() }
-            val samePopup = !offer.raw["popupUrl"].isNullOrBlank() && offer.raw["popupUrl"] == course.completeParams["popupUrl"]
-            sameCourse && (rowSection.isBlank() || course.classId.isBlank() || rowSection == course.classId || samePopup)
+            val rowSection = offer.identity.sectionId
+            sameCourse && (rowSection.isBlank() || course.classId.isBlank() || rowSection == course.classId || offer.identity.flexibleSection)
         }
     }
 
@@ -140,22 +127,20 @@ object AcademicCourseBridge {
 
     internal fun toCourse(offer: CourseOffer, section: CourseSection? = null): Course = Course().apply {
         name = offer.name
-        courseId = offer.raw["kch_id"] ?: offer.raw["kcid"] ?: offer.stableId
-        classId = section?.stableId ?: sequenceOf("jxb_id", "jx0404id", "sectionId", "do_jxb_id")
-            .mapNotNull { offer.raw[it]?.takeIf(String::isNotBlank) }.firstOrNull().orEmpty()
-        doJxbId = section?.selectionId ?: offer.raw["do_jxb_id"]?.takeIf(String::isNotBlank) ?: classId
+        courseId = offer.identity.courseId
+        classId = section?.stableId ?: offer.identity.sectionId
+        doJxbId = section?.selectionId ?: offer.identity.selectionId
         teacher = section?.teacher?.ifBlank { offer.teacher } ?: offer.teacher
-        jxbmc = section?.name.orEmpty().ifBlank { offer.raw["jxbmc"].orEmpty() }
+        jxbmc = section?.name.orEmpty().ifBlank { offer.identity.sectionName }
         time = section?.time?.ifBlank { offer.time } ?: offer.time
         location = section?.location?.ifBlank { offer.location } ?: offer.location
         credit = offer.credit
         capacity = section?.capacity ?: offer.capacity ?: 0
         selected = section?.selected ?: offer.selected ?: 0
-        isSelected = offer.raw["isSelected"] == "true" || offer.raw["sfxz"] == "1"
-        completeParams = offer.raw.toMutableMap().apply {
-            if (section != null) putAll(section.raw)
-            put("academic_stable_section", (classId.isNotBlank() &&
-                (offer.raw["academic_system"] != "zf" || get("jxb_id") == classId)).toString())
+        isSelected = offer.identity.selected
+        completeParams = offer.raw.filterKeys { it.startsWith("academic_") }.toMutableMap().apply {
+            put("academic_stable_section", (if (section != null) section.knownIdentity
+                else offer.identity.sectionKnown).toString())
             put("academic_system", offer.raw["academic_system"].orEmpty())
             put("academic_scope_id", offer.scopeId)
             put("academic_course_id", offer.stableId)

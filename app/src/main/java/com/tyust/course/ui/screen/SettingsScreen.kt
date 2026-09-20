@@ -98,7 +98,8 @@ fun SettingsScreen(
     canRefreshCookie: Boolean = false,
     isRefreshingCookie: Boolean = false,
     academicSystemName: String = "",
-    onAcademicSupport: () -> Unit = {}
+    onAcademicSupport: () -> Unit = {},
+    onAcademicPlugins: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     // 折叠进度随滚动偏移连续变化（约 96px 行程），全程跟手
@@ -156,6 +157,13 @@ fun SettingsScreen(
                     title = "教务支持与限制",
                     subtitle = academicSystemName.ifBlank { com.tyust.course.academic.AcademicCapabilities.FOUR_SYSTEMS },
                     onClick = onAcademicSupport
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.AssignmentInd,
+                    iconTint = Color(0xFF18796B),
+                    title = "教务适配",
+                    subtitle = "适配版本、支持能力与开发调试",
+                    onClick = onAcademicPlugins
                 )
                 SettingsRow(
                     icon = Icons.Outlined.AssignmentInd,

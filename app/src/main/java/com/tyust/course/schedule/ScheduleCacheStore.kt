@@ -12,7 +12,8 @@ internal data class CachedSchedule(
     val currentTerm: AcademicTerm,
     val term: AcademicTerm,
     val json: String,
-    val fromCache: Boolean
+    val fromCache: Boolean,
+    val calendar: JSONObject? = null
 )
 
 /** Account/term data survives login sessions; only an explicit sync bypasses a valid cache. */
@@ -29,8 +30,9 @@ internal class ScheduleCacheStore(
         }.getOrNull()
         // Resolve the school's term again when the local academic half-year changes.
         // A school can legitimately start later than the calendar fallback.
-        return known?.takeIf { it.optString("calendar") == calendar.id }
-            ?.optString("term")?.let(AcademicStudyParser::term) ?: calendar
+        val current = known?.takeIf { it.optString("calendar") == calendar.id }
+        return current?.optJSONObject("termMetadata")?.let(AcademicTerm::fromJson)
+            ?: current?.optString("term")?.let(AcademicStudyParser::term) ?: calendar
     }
 
     fun read(account: String, school: String, term: AcademicTerm): String? {
@@ -47,7 +49,7 @@ internal class ScheduleCacheStore(
 
     fun selected(account: String, school: String, nextSemester: Boolean): CachedSchedule? {
         val current = currentTerm(account, school)
-        val term = if (nextSemester) current.next() else current
+        val term = if (nextSemester) runCatching { current.next() }.getOrNull() ?: return null else current
         return read(account, school, term)?.let { CachedSchedule(current, term, it, true) }
     }
 
@@ -60,11 +62,13 @@ internal class ScheduleCacheStore(
     ): CachedSchedule {
         if (!forceRefresh) selected(account, school, nextSemester)?.let { return it }
         val remote = reader()
-        val current = remote.catalog().currentTerm
-        val term = if (nextSemester) current.next() else current
+        val catalog = remote.catalog()
+        val current = catalog.currentTerm
+        val next = if (nextSemester) current.next() else current
+        val term = catalog.terms.firstOrNull { it.id == next.id } ?: next
         // Existing installations may have data but no persisted current-term metadata yet.
         if (!forceRefresh) read(account, school, term)?.let { return CachedSchedule(current, term, it, true) }
-        return CachedSchedule(current, term, AcademicStudyBridge.scheduleJson(remote.schedule(term)), false)
+        return CachedSchedule(current, term, AcademicStudyBridge.scheduleJson(remote.schedule(term)), false, remote.calendar(term))
     }
 
     fun save(account: String, school: String, schedule: CachedSchedule) {
@@ -74,6 +78,7 @@ internal class ScheduleCacheStore(
             .putString("${base}_${schedule.term.id}", schedule.json)
             .putLong("${base}_${schedule.term.id}_time", System.currentTimeMillis())
             .putString("${base}_current", JSONObject().put("term", schedule.currentTerm.id)
+                .put("termMetadata", schedule.currentTerm.toJson())
                 .put("calendar", calendarTerm().id).toString())
             .apply()
     }

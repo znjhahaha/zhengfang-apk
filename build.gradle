@@ -4,6 +4,8 @@ buildscript {
         mavenCentral()
     }
     dependencies {
+        // Kotlin 2.4 metadata requires R8 9.1.29 or newer; keep the existing AGP.
+        classpath 'com.android.tools:r8:9.4.24'
         classpath 'com.android.tools.build:gradle:8.13.2'
         // Kotlin / Compose 编译器插件版本由 settings.gradle 的 pluginManagement 统一声明
     }

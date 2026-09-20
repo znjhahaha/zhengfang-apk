@@ -53,6 +53,9 @@ import java.util.Locale
 
 @Composable
 fun AcademicCourseListRoute(school: SchoolConfig) {
+    if (!com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "selection.courses")) {
+        AcademicCapabilityUnavailable("课程", "该学校尚未适配选课查询"); return
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val account = UserManager.getInstance().currentAccountStorageKey
@@ -313,6 +316,9 @@ fun AcademicCourseListRoute(school: SchoolConfig) {
 
 @Composable
 fun AcademicSelectedCoursesRoute(school: SchoolConfig, refreshRevision: Int = 0, onLoadingChange: (Boolean) -> Unit = {}) {
+    if (!com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "selection.enrolled")) {
+        AcademicCapabilityUnavailable("已选课程", "该学校尚未适配已选课程查询"); return
+    }
     val scope = rememberCoroutineScope()
     val account = UserManager.getInstance().currentAccountStorageKey
     val sessions = UserManager.getInstance().sessionState
@@ -360,6 +366,9 @@ fun AcademicSelectedCoursesRoute(school: SchoolConfig, refreshRevision: Int = 0,
 
 @Composable
 fun AcademicGrabQueueRoute(school: SchoolConfig) {
+    if (!com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "selection.select")) {
+        AcademicCapabilityUnavailable("抢课", "该学校尚未适配选课，暂不能添加抢课任务"); return
+    }
     val context = LocalContext.current
     val account = UserManager.getInstance().currentAccountStorageKey
     val sessions = UserManager.getInstance().sessionState

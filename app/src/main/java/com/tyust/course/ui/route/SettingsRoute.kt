@@ -388,7 +388,8 @@ fun SettingsRoute(
         canRefreshCookie = canRefreshCookie,
         isRefreshingCookie = isRefreshingCookie,
         academicSystemName = com.tyust.course.academic.AcademicCapabilities.name(UserManager.getInstance().currentSchool?.academicSystem),
-        onAcademicSupport = { showAcademicSupport = true }
+        onAcademicSupport = { showAcademicSupport = true },
+        onAcademicPlugins = { context.startActivity(Intent(context, com.tyust.course.academic.plugin.PluginCenterActivity::class.java)) }
     )
     if (showAcademicSupport) com.tyust.course.ui.screen.AcademicSupportDialog(
         UserManager.getInstance().currentSchool?.academicSystem, onDismiss = { showAcademicSupport = false })

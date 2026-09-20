@@ -28,7 +28,7 @@ object AcademicCapabilities {
     }
     fun support(id: String?): AcademicSystemSupport? = systems.firstOrNull { it.system == system(id) }
     fun name(id: String?): String = support(id)?.name ?: "自动识别教务系统"
-    fun supportsParallel(school: SchoolConfig): Boolean = system(school.academicSystem) == AcademicSystem.ZF
+    fun supportsParallel(school: SchoolConfig): Boolean = !com.tyust.course.academic.plugin.AcademicProviderRegistry.hasBinding(school) && system(school.academicSystem) == AcademicSystem.ZF
     fun queueLimit(school: SchoolConfig): String = if (supportsParallel(school))
         "当前账号可串行或最多 2 门并行尝试；学校选课规则始终生效。" else
         "${name(school.academicSystem)}按账号串行提交，避免学校会话或表单参数互相覆盖。"

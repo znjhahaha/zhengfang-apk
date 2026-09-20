@@ -21,7 +21,11 @@ class ProtocolGrabRunner(
     private val canContinue: () -> Boolean = { true },
     private val renewSession: suspend () -> Boolean = { false }
 ) {
-    fun replaceAdapter(current: AcademicProtocolAdapter) { adapter = current }
+    fun replaceAdapter(current: AcademicProtocolAdapter) {
+        val pinned = adapter as? com.tyust.course.academic.plugin.PluginAcademicAdapter
+        adapter = if (pinned != null && current is com.tyust.course.academic.plugin.PluginAcademicAdapter)
+            pinned.rebind(current.session) else current
+    }
     suspend fun runOnce(item: AcademicGrabItem, confirmed: Boolean = false, candidateIntervalMillis: Long = 0): GrabRunEvent {
         return try { adapter.inSession { runOnceLocked(item, confirmed, candidateIntervalMillis) } }
         catch (e: AcademicException) {
