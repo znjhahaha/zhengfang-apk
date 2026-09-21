@@ -4,6 +4,7 @@ import com.tyust.course.model.SchoolConfig
 import org.jsoup.Jsoup
 import org.json.JSONObject
 import java.net.URI
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSession, transport: AcademicHttpTransport) :
     QzAcademicAdapter(school, session, transport, AcademicSystem.QZ_OLD), AcademicCaptchaLogin {
@@ -22,6 +23,7 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
             for (script in AcademicHtml.scriptUrls(document, page.url).filter { it.contains("conwork", true) || it.contains("login", true) }.take(4))
                 scripts += "\n" + transport.get(script, page.url).text
         }
+        scripts = activeLoginScript(form, scripts)
         if (!scripts.contains("flag=sess", true) && !(scripts.contains("encodeInp") && scripts.contains("%%%")))
             return@serial LoginResult(AcademicStatus.HUMAN_VERIFICATION_REQUIRED, message = "学校登录编码无法识别，请使用教务网页登录")
         val attempt = AcademicLoginAttempt(credentials, page, session.epoch, scripts)
@@ -45,6 +47,38 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
 
     override fun clearLoginState() { loginAttempt = null }
 
+    // Some templates retain an unused shift-login function next to the active Base64
+    // handler. Inspect the function the form actually calls; never evaluate page JS.
+    private fun activeLoginScript(form: org.jsoup.nodes.Element, scripts: String): String {
+        val events = listOf(form.attr("onsubmit")) + form.select("[onclick]").map { it.attr("onclick") }
+        val names = events.mapNotNull { Regex("""(?:return\s+)?([\w$]+)\s*\(""").find(it)?.groupValues?.get(1) }
+            .filter { it.contains("login", true) || it.contains("submit", true) }.distinct()
+        if (names.size != 1) return scripts
+        val start = Regex("""function\s+${Regex.escape(names.single())}\s*\([^)]*\)\s*\{""").find(scripts) ?: return scripts
+        var depth = 1
+        var quote: Char? = null
+        var escaped = false
+        var lineComment = false
+        var blockComment = false
+        var index = start.range.last + 1
+        while (index < scripts.length) {
+            val ch = scripts[index]
+            val next = scripts.getOrNull(index + 1)
+            when {
+                lineComment -> if (ch == '\n' || ch == '\r') lineComment = false
+                blockComment -> if (ch == '*' && next == '/') { blockComment = false; index++ }
+                quote != null -> if (escaped) escaped = false else if (ch == '\\') escaped = true else if (ch == quote) quote = null
+                ch == '/' && next == '/' -> { lineComment = true; index++ }
+                ch == '/' && next == '*' -> { blockComment = true; index++ }
+                ch == '\'' || ch == '"' || ch == '`' -> quote = ch
+                ch == '{' -> depth++
+                ch == '}' -> if (--depth == 0) return scripts.substring(start.range.first, index + 1)
+            }
+            index++
+        }
+        return "" // An incomplete active handler must not fall back to unrelated code.
+    }
+
     private fun currentLoginAttempt(): AcademicLoginAttempt? = loginAttempt?.takeIf { it.sessionEpoch == session.epoch }
         .also { if (it == null) clearLoginState() }
 
@@ -55,12 +89,35 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
         val scripts = attempt.scripts
         val fields = AcademicHtml.formFields(form).toMap().toMutableMap()
         if (scripts.contains("flag=sess", true)) {
-            val response = transport.postForm(transport.appUrl("xk/LoginToXk?flag=sess"), emptyList(), page.url)
+            // Old QZ installations use either LoginToXk or Logon.do for this handshake.
+            // Read the literal endpoint without executing school JavaScript.
+            val endpoint = Regex("""["']([^"'<>\s]*[?&]flag=sess(?:&[^"'<>\s]*)?)["']""", RegexOption.IGNORE_CASE)
+                .find(scripts)?.groupValues?.get(1)
+                ?: return finishLogin(LoginResult(AcademicStatus.PAGE_CHANGED, message = "未找到学校的登录编码地址"))
+            val target = transport.appUrl(endpoint).toHttpUrlOrNull()
+            val origin = page.url.toHttpUrlOrNull()
+            if (target == null || origin == null || target.scheme != origin.scheme || target.host != origin.host || target.port != origin.port ||
+                target.username.isNotEmpty() || target.password.isNotEmpty())
+                throw AcademicException(AcademicStatus.UNTRUSTED_URL, "学校登录编码地址超出当前站点")
+            if (!(target.encodedPath.endsWith("/xk/LoginToXk") ||
+                    target.encodedPath.endsWith("/Logon.do") && target.queryParameter("method") == "logon"))
+                return finishLogin(LoginResult(AcademicStatus.PAGE_CHANGED, message = "学校登录编码地址无法识别"))
+            val response = transport.postForm(target.toString(), emptyList(), page.url, ajax = true)
             val token = runCatching { JSONObject(response.text).getString("data") }.getOrDefault(response.text.trim().trim('"'))
             val parts = token.split('#', limit = 2)
-            if (parts.size != 2 || parts[1].isBlank()) return finishLogin(LoginResult(AcademicStatus.PAGE_CHANGED, message = "登录编码参数已变化"))
-            fields["USERNAME"] = credentials.username
-            fields["PASSWORD"] = if (Regex("""PASSWORD[^\r\n;]*\.value\s*=\s*["']{2}""").containsMatchIn(scripts)) "" else credentials.password
+            if (response.code !in 200..299 || parts.size != 2 || !parts[1].matches(Regex("[0-9]+")))
+                return finishLogin(LoginResult(AcademicStatus.PAGE_CHANGED, message = "登录编码参数已变化"))
+            val inputs = form.select("input[name]")
+            val usernameField = inputs.firstOrNull { it.attr("name") in setOf("USERNAME", "userAccount") }?.attr("name")
+            val passwordInput = inputs.firstOrNull { it.attr("name") in setOf("PASSWORD", "userPassword") }
+            if (usernameField == null || passwordInput == null)
+                return finishLogin(LoginResult(AcademicStatus.PAGE_CHANGED, message = "学校登录字段已变化"))
+            val passwordField = passwordInput.attr("name")
+            val passwordId = passwordInput.id().ifBlank { passwordField }
+            val clearsPassword = Regex("""(?:\b${Regex.escape(passwordField)}\b|getElementById\(\s*["']${Regex.escape(passwordId)}["']\s*\))\s*\.value\s*=\s*["']{2}""")
+                .containsMatchIn(scripts) && fields["loginMethod"] != "logonLdap"
+            fields[usernameField] = credentials.username
+            fields[passwordField] = if (clearsPassword) "" else credentials.password
             fields["encoded"] = LoginEncoding.qzOldShift(credentials.username, credentials.password, parts[0], parts[1])
         } else if (scripts.contains("encodeInp") && scripts.contains("%%%")) {
             fields["userAccount"] = credentials.username

@@ -12,7 +12,8 @@ export const errors = ['UNSUPPORTED','NOT_OPEN','INVALID_CREDENTIALS','SESSION_E
 export const methods = {
  'auth.start':'AuthState', 'auth.resume':'AuthState', 'auth.refreshCaptcha':'AuthState', 'auth.validate':'AuthState',
  'study.terms':'Terms', 'study.schedule':'Schedule','study.calendar':'Calendar','study.grades':'Grades','study.gradeDetails':'GradeDetails','study.exams':'Exams',
- 'selection.catalog':'Rounds','selection.courses':'Courses','selection.sections':'Sections','selection.enrolled':'Enrollments','selection.select':'SelectionReceipt','selection.drop':'SelectionReceipt'
+ 'selection.catalog':'Rounds','selection.courses':'Courses','selection.sections':'Sections','selection.enrolled':'Enrollments','selection.select':'SelectionReceipt','selection.drop':'SelectionReceipt',
+ 'service.page':'ServicePage','service.action':'ServiceReceipt'
 };
 const page = name => obj({items:arr(ref(name)),nextCursor:string({maxLength:1024})},['items']);
 const display = {teacher:string(),time:string(),location:string(),credits:string()};
@@ -39,17 +40,46 @@ const $defs = {
  Exams:page('Exam'),Rounds:page('Round'),Courses:page('Course'),Sections:page('Section'),Enrollments:page('Enrollment'),
  Grades:obj({items:arr(ref('Grade')),nextCursor:string(),gradePointAverage:string(),totalCredits:string()},['items'])
 };
+const label = string({minLength:1,maxLength:100});
+const prose = string({maxLength:2000});
+const key = string({pattern:'^[a-z][a-z0-9_-]{0,63}$'});
+const params = {type:'object',additionalProperties:string({maxLength:1000})};
+const tone = string({enum:['default','positive','warning']});
+$defs.ServiceLink = {anyOf:[
+ obj({type:{const:'page'},pageId:key,params},['type','pageId']),
+ obj({type:{const:'action'},actionId:key,params},['type','actionId']),
+ obj({type:{const:'url'},url:string({minLength:1,maxLength:2000})})
+]};
+const baseBlock = {id:key,title:label};
+$defs.ServiceBlock = {anyOf:[
+ obj({...baseBlock,type:{const:'profile'},subtitle:prose,details:arr(label,8),badge:label},['id','type','title']),
+ obj({...baseBlock,type:{const:'metrics'},columns:integer(1,3),items:{...arr(obj({id:key,label,value:label,unit:label},['id','label','value']),12),minItems:1}},['id','type','columns','items']),
+ obj({...baseBlock,type:{const:'progress'},items:arr(obj({id:key,label,value:{type:'number',minimum:0,maximum:1e9},max:{type:'number',minimum:0.000001,maximum:1e9},detail:prose,displayValue:label,tone},['id','label','value','max']),40)},['id','type','title','items']),
+ obj({...baseBlock,type:{const:'list'},items:arr(obj({id:key,title:label,subtitle:prose,value:label,action:ref('ServiceLink')},['id','title']),100)},['id','type','items']),
+ obj({id:key,type:{const:'notice'},text:prose,tone},['id','type','text']),
+ obj({...baseBlock,type:{const:'actions'},items:arr(obj({label,action:ref('ServiceLink')}),12)},['id','type','items']),
+ obj({...baseBlock,type:{const:'form'},fields:arr(obj({id:key,label,type:string({enum:['text','number','select']}),required:bool,placeholder:label,value:string({maxLength:1000}),options:arr(obj({value:string({maxLength:1000}),label}),30)},['id','label','type','required']),12),submit:obj({label,actionId:key})},['id','type','fields','submit'])
+]};
+$defs.ServicePage = obj({pageId:key,title:label,subtitle:prose,layout:string({enum:['comfortable','compact']}),blocks:arr(ref('ServiceBlock'),40)},['pageId','title','blocks']);
+$defs.ServiceReceipt = obj({actionId:key,confirmed:bool,message:prose,page:ref('ServicePage')},['actionId','confirmed']);
 const success = name => obj({ok:{const:true},data:ref(name)});
 const failure = obj({ok:{const:false},error:ref('Error')});
 for (const [method,name] of Object.entries(methods)) $defs[method] = {anyOf:[success(name),failure]};
-export const contract = {$schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://zfplugin.local/api/1/contract.schema.json',apiVersion:1,methods,$defs};
+export const contract = {$schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://zfplugin.local/api/2/contract.schema.json',apiVersion:2,methods,$defs};
 const builtins = ['builtin.zf','builtin.zf_old','builtin.qz','builtin.qz_old','builtin.legacy_zf'];
-export const manifest = {$schema:contract.$schema,$id:'https://zfplugin.local/api/1/manifest.schema.json',...obj({
- id:string({pattern:'^[a-z][a-z0-9.-]{2,95}$'}),name:string({minLength:1,maxLength:80}),version:string({pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+$'}),apiVersion:{const:1},
- kind:string({enum:['configuration','extension','independent']}),extends:string({enum:builtins}),entry:{const:'index.js'},
- capabilities:{...arr(string({enum:Object.keys(methods)}),16),uniqueItems:true},
+export const manifest = {$schema:contract.$schema,$id:'https://zfplugin.local/api/2/manifest.schema.json',...obj({
+ id:string({pattern:'^[a-z][a-z0-9.-]{2,95}$'}),name:string({minLength:1,maxLength:80}),version:string({pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+$'}),apiVersion:{enum:[1,2]},
+ kind:string({enum:['configuration','extension','independent','service']}),extends:string({enum:builtins}),entry:{const:'index.js'},
+ capabilities:{...arr(string({enum:Object.keys(methods)}),18),uniqueItems:true},
  network:arr(obj({origin:string({maxLength:300}),pathPrefix:string({pattern:'^/'}),methods:arr(string({enum:['GET','POST']}),2),purposes:arr(string({enum:['query','auth','mutation']}),3),requiredQuery:map(string()),requiredForm:map(string())},['origin','pathPrefix','methods','purposes']),50),
  school:obj({id,name:id,domain:id,protocol:string({enum:['http','https']}),basePath:string(),academicSystem:string(),allowedAcademicHosts:arr(string(),30),pageCharset:string()},['id','name','domain','protocol','basePath']),
+ service:obj({
+  schoolIds:{...arr(id,30),minItems:1,uniqueItems:true},academicHosts:{...arr(string({pattern:'^[a-z0-9.-]+$'}),30),uniqueItems:true},
+  authentication:obj({mode:string({enum:['none','password']}),usernameLabel:label,passwordLabel:label,help:prose},['mode']),
+  pages:{...arr(obj({id:key,title:label}),12),minItems:1},
+  entries:{...arr(obj({id:key,title:label,pageId:key,icon:string({enum:['school','book','chart','calendar','wallet','activity']}),order:integer(0,100)}),12),minItems:1},
+  actions:arr(obj({id:key,title:label,kind:string({enum:['query','mutation']}),confirmation:prose},['id','title','kind']),40)
+ },['schoolIds','authentication','pages','entries','actions']),
  description:string({maxLength:2000}),files:map(string({pattern:'^[a-f0-9]{64}$'}))
 },['id','name','version','apiVersion','kind','capabilities','network','school','files'])};
 mkdirSync(new URL('./assets/academic-plugin/',import.meta.url),{recursive:true});

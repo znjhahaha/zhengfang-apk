@@ -79,8 +79,10 @@ class PluginCenterDeviceTest {
                 compose.onNodeWithTag("catalog-install-$id").assertIsEnabled().performClick()
                 compose.waitUntil(15_000) { AcademicProviderRegistry.packages().active(id)?.official == true }
                 compose.waitForIdle()
-                // Dismiss the optional school binding prompt; importing itself is complete.
-                if (compose.onAllNodesWithText("取消").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithText("取消").performClick()
+                // Package activation precedes the UI update that opens the binding prompt.
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("使用 模拟大学适配").fetchSemanticsNodes().size == 1 }
+                compose.onNodeWithText("取消").performClick()
+                compose.waitUntil(10_000) { compose.onAllNodes(isRoot()).fetchSemanticsNodes().size == 1 }
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsNotEnabled()
                 capture("installed")
             } finally {

@@ -1,5 +1,7 @@
 # 教务插件 v1 本地验收
 
+> 这是 API v1 阶段的 Windows 历史验收记录，不代表后续 API v2 修改已通过同一轮测试。校园服务、正式网站及迁回本地后的验收另见 [API v2 本地验收记录](2026-09-21-campus-plugins-v2-local.md)。
+
 基线：`17ada56634b4ce89b88c3e8e3978c2ae0a961692`。工作目录：`D:\zfapk-plugins-v1`，分支：`codex/academic-plugins-v1`。原工作区的独立玻璃性能改动未纳入本分支。
 
 ## 交付范围

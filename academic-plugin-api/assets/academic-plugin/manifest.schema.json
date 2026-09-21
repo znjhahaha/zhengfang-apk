@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zfplugin.local/api/1/manifest.schema.json",
+  "$id": "https://zfplugin.local/api/2/manifest.schema.json",
   "type": "object",
   "properties": {
     "id": {
@@ -17,14 +17,18 @@
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "apiVersion": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "kind": {
       "type": "string",
       "enum": [
         "configuration",
         "extension",
-        "independent"
+        "independent",
+        "service"
       ]
     },
     "extends": {
@@ -60,10 +64,12 @@
           "selection.sections",
           "selection.enrolled",
           "selection.select",
-          "selection.drop"
+          "selection.drop",
+          "service.page",
+          "service.action"
         ]
       },
-      "maxItems": 16,
+      "maxItems": 18,
       "uniqueItems": true
     },
     "network": {
@@ -173,6 +179,175 @@
         "domain",
         "protocol",
         "basePath"
+      ],
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "schoolIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "academicHosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9.-]+$"
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "authentication": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "none",
+                "password"
+              ]
+            },
+            "usernameLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "passwordLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "help": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12,
+          "minItems": 1
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "pageId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "school",
+                  "book",
+                  "chart",
+                  "calendar",
+                  "wallet",
+                  "activity"
+                ]
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "pageId",
+              "icon",
+              "order"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12,
+          "minItems": 1
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "query",
+                  "mutation"
+                ]
+              },
+              "confirmation": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 40
+        }
+      },
+      "required": [
+        "schoolIds",
+        "authentication",
+        "pages",
+        "entries",
+        "actions"
       ],
       "additionalProperties": false
     },

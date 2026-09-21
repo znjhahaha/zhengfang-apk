@@ -81,6 +81,8 @@
             android:windowSoftInputMode="adjustResize" />
         
         <activity android:name=".academic.plugin.PluginCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.CampusServiceCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.ServicePluginActivity" android:exported="false" android:configChanges="uiMode" />
         <!-- Background grab service -->
         <service
             android:name=".academic.plugin.runtime.PluginSandboxService"

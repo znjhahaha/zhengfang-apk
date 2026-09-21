@@ -1,0 +1,69 @@
+{
+  "id": "example.campus.service",
+  "name": "校园服务演示（虚构数据）",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "kind": "service",
+  "entry": "index.js",
+  "description": "开发演示：独立登录、七种页面模块、查询表单和操作确认。demo/demo；captcha/demo 演示验证码 1234。没有连接真实校园平台。",
+  "capabilities": [
+    "auth.start",
+    "auth.resume",
+    "auth.refreshCaptcha",
+    "auth.validate",
+    "service.page",
+    "service.action"
+  ],
+  "network": [],
+  "school": {
+    "id": "example.school",
+    "name": "示例大学",
+    "domain": "campus.example",
+    "protocol": "https",
+    "basePath": "/"
+  },
+  "service": {
+    "schoolIds": [
+      "example.school"
+    ],
+    "authentication": {
+      "mode": "password",
+      "help": "这是虚构数据演示。账号 demo，密码 demo；也可用 captcha / demo 演示验证码。"
+    },
+    "pages": [
+      {
+        "id": "overview",
+        "title": "成长记录"
+      },
+      {
+        "id": "records",
+        "title": "活动记录"
+      }
+    ],
+    "entries": [
+      {
+        "id": "growth",
+        "title": "成长记录（演示）",
+        "pageId": "overview",
+        "icon": "chart",
+        "order": 10
+      }
+    ],
+    "actions": [
+      {
+        "id": "filter",
+        "title": "查询活动",
+        "kind": "query"
+      },
+      {
+        "id": "register",
+        "title": "报名演示活动",
+        "kind": "mutation",
+        "confirmation": "将报名“校园阅读日”演示活动。本模板只更新虚构记录；真实适配应在这里说明活动、时间和费用。"
+      }
+    ]
+  },
+  "files": {
+    "index.js": "81423a614e62d26a7790140c49d8a723763b42c17a216418b9412b8bcdf850c2"
+  }
+}

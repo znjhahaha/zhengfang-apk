@@ -1,5 +1,7 @@
 # 教务插件 v1
 
+> 本文记录 API v1 阶段设计。API v2 校园服务和正式签名目录的后续接入见 [校园服务 API v2](campus-services-v2.md)。
+
 ## 提供者和兼容
 
 `AcademicGatewayFactory` 为登录、学习数据、选课和队列提供统一的创建入口。学校的 `academicProvider` 可绑定已安装插件或内置实现；未绑定的学校保留 `academicSystem` 和已有学校、账号 ID。原有兼容界面继续服务未启用新适配器的旧配置，四类原生协议通过 `BuiltinAcademicProvider` 接入。学校专用密码登录保留原实现，插件覆盖认证组时优先采用插件。

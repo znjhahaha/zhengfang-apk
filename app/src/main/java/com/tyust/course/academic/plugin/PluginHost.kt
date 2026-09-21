@@ -70,7 +70,10 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
         val supplied = payload.optJSONObject("headers") ?: JSONObject()
-        supplied.keys().forEach { if (it.lowercase() !in setOf("accept", "content-type", "x-requested-with")) invalid("该请求头由宿主管理") }
+        val allowedHeaders = setOf("accept", "content-type", "x-requested-with") + if (operation.manifest.isService) setOf("authorization") else emptySet()
+        supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
+        val authorization = supplied.keys().asSequence().firstOrNull { it.equals("authorization", true) }
+        if (authorization != null && (!supplied.getString(authorization).startsWith("Bearer ") || supplied.getString(authorization).length > 8192)) invalid("服务认证仅支持 Bearer 请求头")
         var redirected = 0
         while (true) {
             operation.requireActive()
@@ -93,10 +96,12 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                     if (log.size < 200) log += JSONObject().put("event", "http").put("origin", "${url.scheme}://${url.host}:${url.port}")
                         .put("method", method).put("purpose", purpose).put("status", response.code)
                     if (response.code in 300..399) {
-                        if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "选退课请求发生跳转，请先核实结果")
+                        if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
                         if (++redirected > 5) invalid("跳转次数超过上限")
                         if (method == "POST" && response.code in setOf(307, 308)) invalid("不能自动重放 POST 跳转")
                         val next = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
+                        if (authorization != null && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
+                            throw PluginException(PluginErrorCode.UNTRUSTED_URL, "服务认证不能随跳转发送到其他站点")
                         if (url.isHttps && !next.isHttps) throw PluginException(PluginErrorCode.UNTRUSTED_URL, "不允许 HTTPS 降级")
                         url = next
                         method = "GET"
@@ -108,7 +113,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                             throw operation.failure(PluginErrorCode.RESOURCE_LIMIT, "响应超过 5 MiB")
                         val bytes = stream?.readByteArray() ?: ByteArray(0)
                         operation.requireActive()
-                        if (purpose == "mutation" && response.code >= 500) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "学校未确认选退课结果")
+                        if (purpose == "mutation" && response.code >= 500) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "服务端未确认写入结果")
                         val body = when (payload.optString("responseType", "text")) {
                             "text" -> bytes.toString(charset)
                             "base64" -> bytes.toByteString().base64()

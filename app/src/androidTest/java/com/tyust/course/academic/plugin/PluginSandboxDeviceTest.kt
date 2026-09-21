@@ -20,7 +20,7 @@ class PluginSandboxDeviceTest {
     private val sessions = AcademicSessionStore()
     private fun operation(method: String = "study.terms", manifest: JSONObject = JSONObject().put("network", org.json.JSONArray())) = PluginOperation(
         sessions.session("test-school", "test-account", "https://school.test"),
-        PluginManifest(manifest.put("id", "test.school").put("version", "1.0.0")), method, development = true)
+        PluginManifest(manifest.put("id", "test.school").put("kind", "independent").put("version", "1.0.0")), method, development = true)
     private suspend fun run(source: String, op: PluginOperation = operation()) = PluginSandboxClient(context).execute(source, JSONObject(), op, PluginHost(op, context.cacheDir))
     @Test fun runsSharedHtmlAndPassesLargeResponsesOutsideBinder() = runBlocking {
         val result = run("""globalThis.plugin={study:{terms:async(a,c,s)=>({ok:true,data:{text:s.html.text('<b>A &amp; B</b>'),large:'x'.repeat(2*1024*1024),android:typeof Java,network:typeof fetch}})}};""")
@@ -92,7 +92,7 @@ class PluginSandboxDeviceTest {
                 val origin = server.url("/").toString().trimEnd('/')
                 val purpose = if (mutation) "mutation" else "query"
                 val method = if (mutation) "selection.select" else "study.terms"
-                val manifest = PluginManifest(JSONObject("""{"id":"test.exit","version":"1.0.0","network":[{"origin":"$origin","pathPrefix":"/wait","methods":["GET"],"purposes":["$purpose"]}]}"""))
+                val manifest = PluginManifest(JSONObject("""{"id":"test.exit","kind":"independent","version":"1.0.0","network":[{"origin":"$origin","pathPrefix":"/wait","methods":["GET"],"purposes":["$purpose"]}]}"""))
                 val op = PluginOperation(sessions.session("test-exit", "test", origin), manifest, method, development = true, confirmed = mutation)
                 val source = """globalThis.plugin={${method.substringBefore('.') }:{${method.substringAfter('.')}:async(a,c,s)=>({ok:true,data:await s.http({url:'$origin/wait',purpose:'$purpose'})})}};"""
                 val task = async(Dispatchers.IO) { runCatching { run(source, op) } }

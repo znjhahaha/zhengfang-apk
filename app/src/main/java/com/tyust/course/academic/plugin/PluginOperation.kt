@@ -13,7 +13,9 @@ class PluginOperation(
     val method: String,
     val development: Boolean = false,
     val confirmed: Boolean = false,
-    val id: String = UUID.randomUUID().toString()
+    val actionId: String? = null,
+    val id: String = UUID.randomUUID().toString(),
+    private val scopeStillActive: () -> Boolean = { true }
 ) {
     val epoch = session.epoch
     private val active = AtomicBoolean(true)
@@ -27,14 +29,17 @@ class PluginOperation(
 
     fun requireActive() {
         if (!active.get()) throw PluginException(PluginErrorCode.CANCELLED, "调用已取消")
+        if (!scopeStillActive()) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "账号或插件状态已改变")
         if (session.retired || session.epoch != epoch) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "会话已失效")
     }
     fun markMutation() {
         requireActive()
-        if (!confirmed || method !in setOf("selection.select", "selection.drop"))
-            throw PluginException(PluginErrorCode.VALIDATION_FAILED, "选退课需要用户确认")
+        val serviceMutation = manifest.isService && method == "service.action" && actionId != null &&
+            ServicePluginContract.action(manifest, actionId).getString("kind") == "mutation"
+        if (!confirmed || method !in setOf("selection.select", "selection.drop") && !serviceMutation)
+            throw PluginException(PluginErrorCode.VALIDATION_FAILED, "写入操作需要用户确认")
         if (!mutation.compareAndSet(false, true))
-            throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "单次调用不能重放选退课请求")
+            throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "单次调用不能重放写入请求")
     }
     fun register(call: Call) { calls.add(call); try { requireActive() } catch (e: Exception) { call.cancel(); calls.remove(call); throw e } }
     fun unregister(call: Call) { calls.remove(call) }

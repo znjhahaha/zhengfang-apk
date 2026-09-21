@@ -49,7 +49,7 @@ Object.defineProperty(globalThis,'__zfInvoke',{value:async function(request) {
     const plugin=globalThis.plugin;
     if(request.operation==='__inspect') {
       const capabilities=[];
-      for(const group of ['auth','study','selection']) if(plugin?.[group]) for(const method of Object.keys(plugin[group])) {
+      for(const group of ['auth','study','selection','service']) if(plugin?.[group]) for(const method of Object.keys(plugin[group])) {
         if(typeof plugin[group][method]!=='function') throw new Error('Capability must be a function');
         capabilities.push(`${group}.${method}`);
       }

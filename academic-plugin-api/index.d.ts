@@ -1,4 +1,4 @@
-/** Academic Plugin API v1. IDs are opaque and must remain stable across refreshes. */
+/** Academic Plugin API v2 (compatible with v1). IDs are opaque and stable across refreshes. */
 export type ErrorCode = 'UNSUPPORTED' | 'NOT_OPEN' | 'INVALID_CREDENTIALS' | 'SESSION_EXPIRED' |
   'CAPTCHA_REQUIRED' | 'WEB_LOGIN_REQUIRED' | 'NO_CAPACITY' | 'CONFLICT' | 'ALREADY_SELECTED' |
   'CREDIT_LIMIT' | 'PAGE_CHANGED' | 'NETWORK_RETRYABLE' | 'RESULT_UNKNOWN' | 'UNTRUSTED_URL' |
@@ -101,16 +101,52 @@ export interface Selection {
 }
 /** Authentication and selection are replaced as complete groups. Study methods are independent. */
 export interface AcademicPlugin { auth?: Auth; study?: Partial<Study>; selection?: Selection; }
-export type Capability = `auth.${keyof Auth}` | `study.${keyof Study}` | `selection.${keyof Selection}`;
+export type Capability = `auth.${keyof Auth}` | `study.${keyof Study}` | `selection.${keyof Selection}` | `service.${keyof Service}`;
 export interface NetworkRule {
   origin: string; pathPrefix: string; methods: ('GET' | 'POST')[]; purposes: ('query' | 'auth' | 'mutation')[];
   requiredQuery?: Record<string, string>; requiredForm?: Record<string, string>;
 }
 export interface PluginManifest {
-  id: string; name: string; version: string; apiVersion: 1;
-  kind: 'configuration' | 'extension' | 'independent';
+  id: string; name: string; version: string; apiVersion: 1 | 2;
+  kind: 'configuration' | 'extension' | 'independent' | 'service';
   extends?: 'builtin.zf' | 'builtin.zf_old' | 'builtin.qz' | 'builtin.qz_old' | 'builtin.legacy_zf';
   entry?: 'index.js'; capabilities: Capability[]; network: NetworkRule[];
   school: { id: string; name: string; domain: string; protocol: 'http' | 'https'; basePath: string; academicSystem?: string; allowedAcademicHosts?: string[]; pageCharset?: string };
+  service?: ServiceManifest;
   description?: string; files: Record<string, string>;
 }
+
+/** API v2: separate service sessions and native, declarative pages. API v1 remains supported. */
+export interface ServiceManifest {
+  schoolIds: string[];
+  /** Exact academic host aliases, for custom school configurations with a different ID. */
+  academicHosts?: string[];
+  authentication: { mode: 'none' | 'password'; usernameLabel?: string; passwordLabel?: string; help?: string };
+  pages: { id: string; title: string }[];
+  entries: { id: string; title: string; pageId: string; icon: 'school' | 'book' | 'chart' | 'calendar' | 'wallet' | 'activity'; order: number }[];
+  actions: { id: string; title: string; kind: 'query' | 'mutation'; confirmation?: string }[];
+}
+export type ServiceParams = Record<string, string>;
+export type ServiceLink = { type: 'page'; pageId: string; params?: ServiceParams } |
+  { type: 'action'; actionId: string; params?: ServiceParams } | { type: 'url'; url: string };
+export type ServiceTone = 'default' | 'positive' | 'warning';
+export interface ServiceField {
+  id: string; label: string; type: 'text' | 'number' | 'select'; required: boolean;
+  placeholder?: string; value?: string; options?: { value: string; label: string }[];
+}
+export type ServiceBlock =
+  { id: string; type: 'profile'; title: string; subtitle?: string; details?: string[]; badge?: string } |
+  { id: string; type: 'metrics'; title?: string; columns: 1 | 2 | 3; items: { id: string; label: string; value: string; unit?: string }[] } |
+  { id: string; type: 'progress'; title: string; items: { id: string; label: string; value: number; max: number; detail?: string; displayValue?: string; tone?: ServiceTone }[] } |
+  { id: string; type: 'list'; title?: string; items: { id: string; title: string; subtitle?: string; value?: string; action?: ServiceLink }[] } |
+  { id: string; type: 'notice'; text: string; tone?: ServiceTone } |
+  { id: string; type: 'actions'; title?: string; items: { label: string; action: ServiceLink }[] } |
+  { id: string; type: 'form'; title?: string; fields: ServiceField[]; submit: { label: string; actionId: string } };
+export interface ServicePage { pageId: string; title: string; subtitle?: string; layout?: 'comfortable' | 'compact'; blocks: ServiceBlock[] }
+export interface ServiceReceipt { actionId: string; confirmed: boolean; message?: string; page?: ServicePage }
+export interface Service {
+  page: Handler<{ pageId: string; params?: ServiceParams }, ServicePage>;
+  /** Only declared mutation actions can send purpose=mutation, after the host's confirmation. */
+  action: Handler<{ actionId: string; params?: ServiceParams }, ServiceReceipt>;
+}
+export interface CampusServicePlugin { auth?: Auth; service: Pick<Service, 'page'> & Partial<Pick<Service, 'action'>> }

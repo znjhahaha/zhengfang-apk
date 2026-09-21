@@ -14,7 +14,7 @@ enum class PluginErrorCode {
 class PluginException(val code: PluginErrorCode, message: String, cause: Throwable? = null) : Exception(message, cause)
 
 object PluginLimits {
-    const val API_VERSION = 1
+    const val API_VERSION = 2
     const val MEMORY_BYTES = 64L * 1024 * 1024
     const val STACK_BYTES = 1024L * 1024
     const val JS_MILLIS = 5_000L
@@ -156,6 +156,8 @@ data class PluginManifest(val json: JSONObject) {
     val version: String get() = json.getString("version")
     val name: String get() = json.getString("name")
     val kind: String get() = json.getString("kind")
+    val isService: Boolean get() = kind == "service"
+    val service: JSONObject? get() = json.optJSONObject("service")
     val baseProvider: String? get() = json.optString("extends").takeIf(String::isNotBlank)
     val capabilities: Set<String> get() = PluginJson.strings(json.getJSONArray("capabilities")).toSet()
     val network: List<JSONObject> get() = PluginJson.objects(json.getJSONArray("network"))
@@ -163,7 +165,9 @@ data class PluginManifest(val json: JSONObject) {
 
     fun validate(schema: PluginSchema) {
         schema.validate(json)
-        if (kind == "independent" && baseProvider != null || kind != "independent" && baseProvider == null) invalid("适配类型与内置继承关系不一致")
+        if (kind in setOf("independent", "service") && baseProvider != null || kind !in setOf("independent", "service") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
+        if (isService) ServicePluginContract.validateManifest(this)
+        else if (service != null || capabilities.any { it.startsWith("service.") }) invalid("教务适配不能声明校园服务")
         if (kind == "configuration" && (capabilities.isNotEmpty() || json.has("entry"))) invalid("配置型适配不能包含可执行能力")
         if (kind != "configuration" && json.optString("entry") != "index.js") invalid("可执行适配缺少入口")
         for ((group, expected) in GROUPS) {

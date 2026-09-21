@@ -70,7 +70,8 @@ if (releaseKeystoreFile != null && isReleaseTask && !hasReleaseSigning) {
 
 android {
     namespace 'com.tyust.course'
-    compileSdk 37
+    // Match the stable SDK package's full target hash on fresh SDK installations.
+    compileSdkVersion 'android-37.0'
 
     defaultConfig {
         applicationId "com.tyust.course"

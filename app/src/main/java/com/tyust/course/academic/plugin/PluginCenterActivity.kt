@@ -105,12 +105,12 @@ class PluginCenterActivity : ComponentActivity() {
                 operation = pkg.manifest.capabilities.firstOrNull() ?: "study.terms"
                 args = defaultArgs(operation)
                 feedback = "${pkg.manifest.name} 安装完成"
-                if (addSchool) bindCandidate = pkg
+                if (addSchool && !pkg.manifest.isService) bindCandidate = pkg
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { feedback = e.message ?: "安装失败，请重试" }
             finally { busy = false }
         } }
-        GlassPageScaffold(title = "教务适配", subtitle = "管理学校的教务连接", onBack = { finish() }) { padding ->
+        GlassPageScaffold(title = "插件中心", subtitle = "学校连接与校园服务", onBack = { finish() }) { padding ->
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(
                     start = 20.dp, end = 20.dp, top = padding.calculateTopPadding() + 8.dp,
@@ -124,12 +124,14 @@ class PluginCenterActivity : ComponentActivity() {
                         subtitle = current?.let { "${it.manifest.name} · ${it.manifest.version}" } ?: "内置适配 · 无需额外安装",
                         showDivider = false)
                 }
-                InsetGroupedSection(header = "获取适配", footer = "内置学校可直接使用。正式线上目录尚未启用。") {
+                InsetGroupedSection(header = "获取插件", footer = if (AcademicProviderRegistry.usingLocalCatalog) "当前使用本地调试目录，重启应用后恢复正式目录。" else "正式目录已启用，下载与更新均会校验签名。") {
                     InsetGroupedRow(title = "浏览适配目录", subtitle = "查看可用学校，下载或更新适配", icon = Icons.Outlined.CloudDownload,
                         enabled = !busy, onClick = ::loadCatalog, trailing = { ForwardIcon() })
-                    InsetGroupedRow(title = "导入适配包", subtitle = "从设备选择教务适配包，也支持重新导入", icon = Icons.Outlined.FileOpen,
-                        enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) }, showDivider = false,
+                    InsetGroupedRow(title = "导入适配包", subtitle = "支持学校适配与校园服务插件", icon = Icons.Outlined.FileOpen,
+                        enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) },
                         modifier = Modifier.testTag("plugin-import"), trailing = { ForwardIcon() })
+                    InsetGroupedRow(title = "访问插件网站", subtitle = "安装指南、源码提交与作者交流", icon = Icons.Outlined.Language,
+                        onClick = { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(AcademicProviderRegistry.OFFICIAL_WEBSITE))) }, showDivider = false, trailing = { ForwardIcon() })
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (feedback.isNotBlank()) Text(feedback, style = MaterialTheme.typography.bodySmall,
@@ -178,7 +180,9 @@ class PluginCenterActivity : ComponentActivity() {
                                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        InsetGroupedRow(title = "用于此学校", icon = Icons.Outlined.School, enabled = !busy,
+                        if (pkg.manifest.isService) InsetGroupedRow(title = if (pkg.official) "打开校园服务" else "预览校园服务", icon = Icons.Outlined.School, enabled = !busy,
+                            onClick = { ServicePluginActivity.open(this@PluginCenterActivity, pkg, preview = !pkg.official) }, trailing = { ForwardIcon() })
+                        else InsetGroupedRow(title = "用于此学校", icon = Icons.Outlined.School, enabled = !busy,
                             onClick = { bindCandidate = pkg }, trailing = { ForwardIcon() })
                         InsetGroupedRow(title = "检查并更新适配", icon = Icons.Outlined.SystemUpdate, enabled = !busy,
                             onClick = { installFromCatalog(pkg.manifest.id, false) }, trailing = { ForwardIcon() })
@@ -192,7 +196,9 @@ class PluginCenterActivity : ComponentActivity() {
                                 catch (e: Exception) { feedback = e.message.orEmpty() }
                                 finally { busy = false }
                             } }, trailing = { ForwardIcon() })
-                        InsetGroupedRow(title = "恢复内置适配", icon = Icons.Outlined.Restore, enabled = !busy, showDivider = false,
+                        if (pkg.manifest.isService) InsetGroupedRow(title = "停用此校园服务", icon = Icons.Outlined.Close, enabled = !busy, showDivider = false,
+                            onClick = { AcademicProviderRegistry.packages().deactivate(pkg.manifest.id); AcademicProviderRegistry.reload(); selected = null; scope.launch { refresh() }; feedback = "已停用校园服务" })
+                        else InsetGroupedRow(title = "恢复内置适配", icon = Icons.Outlined.Restore, enabled = !busy, showDivider = false,
                             onClick = {
                                 val boundSchool = UserManager.getInstance().getSchoolById(pkg.manifest.school.getString("id"))
                                 if (boundSchool != null && pkg.manifest.baseProvider != null) {
@@ -218,6 +224,7 @@ class PluginCenterActivity : ComponentActivity() {
                                 try { AcademicProviderRegistry.configureLocalCatalog(catalogUrl, catalogKey); feedback = "本地目录已配置" }
                                 catch (e: Exception) { feedback = e.message.orEmpty() }
                             }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("应用本地目录") }
+                            LiquidButton(onClick = { AcademicProviderRegistry.restoreOfficialCatalog(); feedback = "已恢复正式目录"; loadCatalog() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("恢复正式目录") }
                         }
                     }
                 }
@@ -236,7 +243,7 @@ class PluginCenterActivity : ComponentActivity() {
                                 }
                             }
                             OutlinedTextField(args, { args = it }, label = { Text("JSON 参数") }, modifier = Modifier.fillMaxWidth(), minLines = 3, enabled = !busy)
-                            LiquidButton({ if (operation in setOf("selection.select", "selection.drop")) confirmWrite = true else runOperation(false) },
+                            LiquidButton({ if (operation in setOf("selection.select", "selection.drop", "service.action")) confirmWrite = true else runOperation(false) },
                                 enabled = !busy, modifier = Modifier.fillMaxWidth(), style = LiquidButtonStyle.Tinted) {
                                 Icon(Icons.Outlined.PlayArrow, null, Modifier.size(20.dp)); Text("运行测试")
                             }
@@ -252,8 +259,8 @@ class PluginCenterActivity : ComponentActivity() {
                 }
             }
         }
-        if (confirmWrite) AlertDialog(onDismissRequest = { confirmWrite = false }, title = { Text("确认测试选退课") },
-            text = { Text("此操作会执行所选适配的写入接口。模拟学校只修改模拟数据，真实学校可能改变选课记录。") },
+        if (confirmWrite) AlertDialog(onDismissRequest = { confirmWrite = false }, title = { Text("确认测试操作") },
+            text = { Text("此操作会执行所选插件接口。模拟插件只修改模拟数据，真实服务可能改变账号记录。") },
             confirmButton = { TextButton({ confirmWrite = false; runOperation(true) }) { Text("确认执行") } },
             dismissButton = { TextButton({ confirmWrite = false }) { Text("取消") } })
         bindCandidate?.let { pkg -> AlertDialog(onDismissRequest = { bindCandidate = null }, title = { Text("使用 ${pkg.manifest.name}") },
@@ -267,20 +274,22 @@ class PluginCenterActivity : ComponentActivity() {
     }
     @Composable private fun ForwardIcon() = Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     private fun packageKind(pkg: PluginPackage) = when (pkg.manifest.kind) {
-        "configuration" -> "学校配置"; "extension" -> "内置扩展"; else -> "独立适配"
+        "configuration" -> "学校配置"; "extension" -> "内置扩展"; "service" -> "校园服务"; else -> "独立适配"
     }
     private fun packageIcon(pkg: PluginPackage) = when (pkg.manifest.kind) {
-        "configuration" -> Icons.Outlined.Tune; "extension" -> Icons.Outlined.Extension; else -> Icons.Outlined.School
+        "configuration" -> Icons.Outlined.Tune; "extension", "service" -> Icons.Outlined.Extension; else -> Icons.Outlined.School
     }
     private fun defaultArgs(method: String) = when (method) {
         "auth.start" -> "{\"username\":\"demo\",\"password\":\"demo\"}"
         "study.schedule", "study.exams", "study.calendar" -> "{\"termId\":\"autumn:2026\"}"
+        "service.page" -> "{\"pageId\":\"overview\"}"
         else -> "{}"
     }
     private fun capabilityName(method: String) = when (method) {
         "auth.start" -> "账号登录"; "auth.resume" -> "继续验证"; "auth.refreshCaptcha" -> "刷新验证码"; "auth.validate" -> "登录校验"
         "study.terms" -> "学期"; "study.schedule" -> "课表"; "study.calendar" -> "校历与作息"; "study.grades" -> "成绩"; "study.gradeDetails" -> "成绩明细"; "study.exams" -> "考试"
         "selection.catalog" -> "选课轮次"; "selection.courses" -> "可选课程"; "selection.sections" -> "教学班"; "selection.enrolled" -> "已选课程"; "selection.select" -> "选课"; "selection.drop" -> "退课"
+        "service.page" -> "服务页面"; "service.action" -> "服务操作"
         else -> method
     }
 }
