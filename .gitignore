@@ -1,166 +1,88 @@
-# Gradle
-/academic-plugin-api/node_modules/
-*.iml
+# Android and Gradle outputs
 .gradle/
+.kotlin/
 build/
-app/build/
-
-# IDE
-/.idea/
-*.iml
-.DS_Store
-
-# Cursor / agent plan scratch
-/.zcode/
-/.local/
-
-# Android
-/local.properties
 local.properties
-/captures
-captures/
 .externalNativeBuild/
 .cxx/
+captures/
 *.apk
 *.ap_
+*.aab
 *.dex
 *.class
 bin/
 gen/
 out/
 
-# Firebase
-.google_services.json
-google-services.json
+# IDE metadata
+.idea/
+.vscode/
+.settings/
+.project
+.classpath
+*.iml
+.DS_Store
 
-# Keystore (sensitive)
-*.jks
-*.keystore
-*.pem
-*.key
-*.p12
-*.pfx
-*.cer
-*.crt
-release-key.jks
-
-# Secrets
+# Credentials and signing material
 .env
 .env.*
 secrets.properties
 secret.properties
 service-account*.json
 credentials*.json
+google-services.json
+.google_services.json
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
 
-# Proguard
-proguard-rules.pro
-!app/proguard-rules.pro
-
-# Python
+# Local tools, experiments, and verification artifacts
+.local/
+.zcode/
+.agent/
+.claude/
+.superpowers/
+.playwright*/
+.survey-work/
+.gradle-user/
+.npm-cache/
+node_modules/
 __pycache__/
 *.py[cod]
-*$py.class
 .venv/
-venv/
-*.spec
-
-# PyInstaller
-dist/
-
-# Logs
 *.log
-build_error.txt
-build_output.log
-build*.txt
-build_out*.txt
-signature_report.txt
-
-# Whitelist (sensitive)
-whitelist.json
-
-# Other
 *.bak
 *.tmp
 *.swp
-k_b64.txt
-tmp.txt
-*base64.txt
-
-# Test screenshots & debug artifacts
+/.cursor-*
 /test-screenshots/
-
-# Documentation & Tools (not needed in repo)
-api.md
-使用教程.html
-add_device.py
-paper.md
-log.txt
-update.json
-announcement.json
-
-# Agent Skills
-.agent/
-/web-app
-.vscode
-.gocache
-PLAN.md
-work
-UI_pic
-backdrop_docs_summary.md
-.gitignore
-backdrop_library_guide.md
-demo
-!app/src/main/java/com/tyust/course/demo/
-!app/src/main/java/com/tyust/course/demo/**
-AndroidLiquidGlass
-.gomodcache/
-.kotlin
-.gogetcache
-.claude
-成绩查询接口技术文档.md
-.playwright-mcp/page-2026-07-13T15-32-15-216Z.yml
-.playwright-mcp/page-2026-07-13T15-32-34-484Z.yml
-.playwright-mcp/page-2026-07-13T15-33-23-441Z.yml
-.playwright-mcp/page-2026-07-13T15-34-05-259Z.yml
-.playwright-mcp/page-2026-07-13T15-34-21-766Z.yml
-.playwright-mcp/page-2026-07-13T15-34-42-688Z.yml
-.playwright-mcp/page-2026-07-13T15-35-11-134Z.yml
-.playwright-mcp/page-2026-07-13T15-35-30-767Z.yml
-.playwright-mcp/page-2026-07-13T15-35-51-585Z.png
-zfapk-app-screen-small.jpg
-# Reference screenshots from chip surface tuning
-/c4.png
-/chip.png
-/chip2.png
-/chip3.png
-cmp_diff.png
-cmp_rest_vs_press.png
-cmp_three.png
-s_a.png
-s_a2.png
-s_after.png
-s_press.png
-v1_rest_crop.png
-v1_rest.png
-v2_head_crop.png
-v2_press_crop.png
-v2_press.png
-v2_rest_b.png
-v2_rest_c.png
-v2_rest.png
-promo_hyperframes
-正方教务助手宣传片
-姝ｆ柟鏁欏姟鍔╂墜瀹ｄ紶鐗嘰hf
-.npm-cache
-promo-video
-.superpowers
-
-# Tool caches & debug artifacts
-.survey-work/
-.gradle-user/
-.playwright-cli/
-.playwright-mcp/
 /artifacts/
-/screenshot_domain_error.png
-/ui.xml
-output
+/output/
+/UI_pic/
+/work/
+/demo/
+/promo*/
+/videos/
+/正方教务助手宣传片/
+
+# Independently maintained projects and local reference material
+/academic-plugin-api/
+/usage-stats-service/
+/web-app/
+/AndroidLiquidGlass/
+/tools/
+/docs/
+/pic/
+/api.md
+/退课API技术文档.md
+/成绩查询接口技术文档.md
+/使用教程.html
+/update.json
+/announcement.json
+/whitelist.json
+/k_b64.txt
+/*base64.txt

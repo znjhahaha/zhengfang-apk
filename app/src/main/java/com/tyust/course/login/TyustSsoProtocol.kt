@@ -78,8 +78,7 @@ internal object TyustSsoProtocol {
 
     /**
      * The 2026-08 SSO frontend submits an AES-encrypted empty JSON object as
-     * `captcha_payload` alongside the credentials. See the protocol change note
-     * in docs/superpowers/specs/2026-07-10-tyust-sso-protocol-login-design.md.
+     * `captcha_payload` alongside the credentials, as observed in that login flow.
      */
     fun encryptCaptchaPayload(base64Key: String): String =
         encryptPassword(CAPTCHA_PAYLOAD_EMPTY_JSON, base64Key)

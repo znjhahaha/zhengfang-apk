@@ -9,7 +9,7 @@ import org.json.JSONObject
 object ServicePluginContract {
     fun validateManifest(manifest: PluginManifest) {
         val config = manifest.service ?: invalid("校园服务缺少页面声明")
-        if (manifest.json.getInt("apiVersion") != 2 || manifest.baseProvider != null) invalid("校园服务需要 API 2，不能继承教务登录")
+        if (manifest.json.getInt("apiVersion") !in 2..3 || manifest.baseProvider != null) invalid("校园服务需要 API 2 或 3，不能继承教务登录")
         if (manifest.capabilities.any { it !in PluginManifest.AUTH && it !in setOf("service.page", "service.action") } ||
             "service.page" !in manifest.capabilities) invalid("校园服务不能替换教务能力")
         val password = config.getJSONObject("authentication").getString("mode") == "password"
@@ -22,6 +22,7 @@ object ServicePluginContract {
         val actions = PluginJson.objects(config.getJSONArray("actions"))
         if (actions.isNotEmpty() != ("service.action" in manifest.capabilities)) invalid("操作声明与实现不一致")
         actions.forEach { if (it.getString("kind") == "mutation" && it.optString("confirmation").isBlank()) invalid("写入操作必须说明确认内容") }
+        ServiceNativePolicy.validateManifest(manifest)
         val school = manifest.school
         val base = "${school.getString("protocol")}://${school.getString("domain")}${school.getString("basePath")}".toHttpUrlOrNull()
             ?: invalid("服务地址无效")
@@ -43,6 +44,7 @@ object ServicePluginContract {
         if (method == "service.action") {
             val declaration = action(manifest, args.optString("actionId"))
             if (declaration.getString("kind") == "mutation" && !confirmed) invalid("请先确认服务操作")
+            args.optJSONObject("nativeResult")?.let { ServiceNativePolicy.validateResult(manifest, args.getString("actionId"), it) }
         }
         if (method.startsWith("service.")) validateParams(args.optJSONObject("params"))
     }
@@ -51,12 +53,20 @@ object ServicePluginContract {
         requirePageId(manifest, page.getString("pageId"))
         unique(page.getJSONArray("blocks"))
         PluginJson.objects(page.getJSONArray("blocks")).forEach { block ->
+            val type = block.getString("type")
+            if (manifest.json.getInt("apiVersion") < 3 && type in ServiceNativePolicy.NEW_BLOCKS) invalid("此页面组件需要 API 3")
+            if (type == "table") {
+                unique(block.getJSONArray("rows"))
+                if (PluginJson.objects(block.getJSONArray("rows")).any { it.getJSONArray("cells").length() != block.getJSONArray("columns").length() }) invalid("表格列数不匹配")
+            }
             val items = block.optJSONArray("items")
             if (items != null && block.getString("type") != "actions") unique(items)
             if (block.getString("type") == "form") {
                 val fields = block.getJSONArray("fields"); unique(fields)
                 action(manifest, block.getJSONObject("submit").getString("actionId"))
                 PluginJson.objects(fields).forEach { field ->
+                    if (field.getString("type") in setOf("multiline", "toggle") && manifest.json.getInt("apiVersion") < 3) invalid("此表单字段需要 API 3")
+                    if (field.getString("type") == "toggle" && field.has("value") && field.getString("value") !in setOf("true", "false")) invalid("开关默认值无效")
                     if (field.getString("type") == "select") {
                         val options = field.optJSONArray("options") ?: invalid("选择字段缺少选项")
                         if (options.length() == 0) invalid("选择字段缺少选项")
@@ -78,6 +88,7 @@ object ServicePluginContract {
                 val url = link.getString("url").toHttpUrlOrNull() ?: invalid("服务链接无效")
                 PluginNetworkPolicy(manifest.network).requireAllowed(url, "GET", "query", null)
             }
+            "native" -> ServiceNativePolicy.request(manifest, link)
             else -> invalid("不支持的页面操作")
         }
         validateParams(link.optJSONObject("params"))

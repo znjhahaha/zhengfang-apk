@@ -70,7 +70,8 @@ if (releaseKeystoreFile != null && isReleaseTask && !hasReleaseSigning) {
 
 android {
     namespace 'com.tyust.course'
-    compileSdk 37
+    // Match the stable SDK package's full target hash on fresh SDK installations.
+    compileSdkVersion 'android-37.0'
 
     defaultConfig {
         applicationId "com.tyust.course"
@@ -142,7 +143,6 @@ android {
         aidl true
     }
 
-    sourceSets.main.assets.srcDir rootProject.file('academic-plugin-api/assets')
     sourceSets.test.java.srcDir 'src/sharedTest/java'
     sourceSets.androidTest.java.srcDir 'src/sharedTest/java'
 
@@ -203,6 +203,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
     implementation 'io.github.dokar3:quickjs-kt-android:1.0.15'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     
     // Modern UI & Animations
     implementation 'com.airbnb.android:lottie-compose:6.3.0'

@@ -1,0 +1,103 @@
+{
+  "id": "example.native.service",
+  "name": "原生扩展示例",
+  "version": "1.0.0",
+  "apiVersion": 3,
+  "kind": "service",
+  "entry": "index.js",
+  "description": "开发模板：多页、原生图表和表单、页面入口及四种逐次授权的系统操作。所有业务数据为虚构示例，没有真实学校网络。",
+  "capabilities": [
+    "service.page",
+    "service.action"
+  ],
+  "network": [],
+  "school": {
+    "id": "example.school",
+    "name": "示例大学",
+    "domain": "campus.example",
+    "protocol": "https",
+    "basePath": "/"
+  },
+  "service": {
+    "schoolIds": [
+      "example.school"
+    ],
+    "authentication": {
+      "mode": "none"
+    },
+    "pages": [
+      {
+        "id": "overview",
+        "title": "校园工具"
+      },
+      {
+        "id": "report",
+        "title": "成长报告"
+      }
+    ],
+    "entries": [
+      {
+        "id": "tools",
+        "title": "校园工具（示例）",
+        "pageId": "overview",
+        "icon": "activity",
+        "order": 10,
+        "placements": [
+          "home",
+          "schedule",
+          "grades"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "native-result",
+        "title": "处理系统结果",
+        "kind": "query"
+      },
+      {
+        "id": "save-note",
+        "title": "预览表单内容",
+        "kind": "query"
+      }
+    ],
+    "nativeOperations": [
+      {
+        "id": "scan",
+        "title": "扫描二维码",
+        "kind": "scanCode",
+        "reason": "读取你主动扫描的二维码文字，不自动打开网址。",
+        "resultActionId": "native-result"
+      },
+      {
+        "id": "file",
+        "title": "选择一个小文件",
+        "kind": "pickFile",
+        "reason": "读取你选择的文件，演示文件信息与内容回传；此模板不会上传或保存文件。",
+        "resultActionId": "native-result",
+        "mimeTypes": [
+          "text/plain",
+          "text/csv",
+          "application/json"
+        ]
+      },
+      {
+        "id": "notify",
+        "title": "发送演示通知",
+        "kind": "notification",
+        "reason": "演示由 App 标注插件来源的通知。",
+        "resultActionId": "native-result"
+      },
+      {
+        "id": "event",
+        "title": "添加演示日程",
+        "kind": "calendar",
+        "reason": "打开系统日历编辑器，由你确认是否保存演示活动。",
+        "resultActionId": "native-result"
+      }
+    ]
+  },
+  "files": {
+    "index.js": "1a602c25ca6483a2f5ea9970e1e76dc0eee06250967b506da0e68c378928e5da"
+  }
+}

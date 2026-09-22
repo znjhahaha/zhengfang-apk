@@ -13,7 +13,7 @@ import java.util.zip.ZipOutputStream
 import okio.ByteString.Companion.toByteString
 
 class PluginPackageTest {
-    private val schema = PluginSchema(JSONObject(File("../academic-plugin-api/assets/academic-plugin/manifest.schema.json").readText()))
+    private val schema = PluginSchema(JSONObject(File("src/main/assets/academic-plugin/manifest.schema.json").readText()))
     private fun manifest() = JSONObject("""{"id":"test.school","name":"测试学校","version":"1.0.0","apiVersion":1,"kind":"configuration","extends":"builtin.zf","capabilities":[],"network":[],"school":{"id":"test","name":"测试学校","domain":"school.test","protocol":"https","basePath":"/"},"files":{}}""")
     private fun zip(files: Map<String, ByteArray>): ByteArray = ByteArrayOutputStream().also { output ->
         ZipOutputStream(output).use { zip -> files.forEach { (name, bytes) -> zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() } }

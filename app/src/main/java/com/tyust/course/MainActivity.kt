@@ -577,6 +577,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                 }
                             ) { page ->
                               savedPages.SaveableStateProvider(items[page].route) {
+                                com.tyust.course.academic.plugin.ServiceExtensionHost(when (page) { 0 -> "home"; 1 -> "schedule"; 3 -> "grades"; else -> null }) {
                                 when (page) {
                                     0 -> com.tyust.course.ui.route.CourseListRoute()
                                     1 -> com.tyust.course.ui.route.ScheduleRoute()
@@ -587,6 +588,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                         surveyUnreadCount = surveyFeed.unreadCount(System.currentTimeMillis())
                                     )
                                     else -> com.tyust.course.ui.route.CourseListRoute()
+                                }
                                 }
                               }
                             }
@@ -820,4 +822,3 @@ private fun Modifier.debugPiracyWatermark(enabled: Boolean): Modifier {
         }
     }
 }
-

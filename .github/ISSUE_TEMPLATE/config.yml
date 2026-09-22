@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 使用问题咨询
-    url: https://github.com/znjhahaha/zhengfang-apk/discussions
-    about: 一般使用问题请到 Discussions 讨论区提问
+  - name: 站内反馈
+    url: https://plugins.hidisiwa.xyz/feedback
+    about: 无需 GitHub 账号，可在站内提交问题并查看回复
+  - name: 校园插件开发
+    url: https://plugins.hidisiwa.xyz/developers
+    about: SDK、模板、开发文档与开发者 QQ 群 1074017033

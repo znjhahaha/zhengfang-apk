@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -58,6 +59,10 @@ class CampusServiceUiDeviceTest {
     }
     private fun capture(context: android.content.Context, name: String) {
         val file = File(context.getExternalFilesDir(null), "plugin-ui/$name.png"); file.parentFile!!.mkdirs()
+        if (android.os.Build.VERSION.SDK_INT < 26) {
+            check(androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(file))
+            return
+        }
         compose.onRoot().captureToImage().asAndroidBitmap().let { bitmap -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     }
 }

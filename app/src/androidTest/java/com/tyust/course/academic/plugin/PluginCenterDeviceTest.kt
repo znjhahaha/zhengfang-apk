@@ -23,8 +23,13 @@ class PluginCenterDeviceTest {
         val previous = appearance.themeMode
         try {
             compose.runOnIdle { appearance.updateThemeMode(com.tyust.course.manager.AppThemeMode.Light) }
-            compose.onNodeWithTag("plugin-import").assertIsDisplayed()
+            compose.onNodeWithText("本校").assertIsDisplayed()
+            compose.onNodeWithText("已安装").assertIsDisplayed()
             capture("management")
+            compose.onNodeWithContentDescription("更多").performClick()
+            compose.onNodeWithText("导入、回滚与开发工具").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("plugin-import").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("plugin-import").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("plugin-developer-toggle").performScrollTo().performClick()
             compose.onNodeWithText("本地验收目录 URL").performScrollTo().assertIsDisplayed()
             capture("development")
@@ -72,15 +77,18 @@ class PluginCenterDeviceTest {
             try {
                 AcademicProviderRegistry.configureLocalCatalog(server.url("/catalog.json").toString(), key.toString())
                 server.enqueue(MockResponse().setBody(catalog)); server.enqueue(MockResponse().setBody(catalog)); server.enqueue(MockResponse().setBody(okio.Buffer().write(signed)))
-                compose.onNodeWithText("浏览适配目录").performScrollTo().performClick()
+                compose.onNodeWithText("浏览并安装插件").performScrollTo().performClick()
                 compose.waitUntil(10_000) { compose.onAllNodesWithTag("catalog-install-$id").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo()
                 capture("catalog")
                 compose.onNodeWithTag("catalog-install-$id").assertIsEnabled().performClick()
                 compose.waitUntil(15_000) { AcademicProviderRegistry.packages().active(id)?.official == true }
                 compose.waitForIdle()
-                // Dismiss the optional school binding prompt; importing itself is complete.
-                if (compose.onAllNodesWithText("取消").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithText("取消").performClick()
+                // Installation opens details; school binding remains a deliberate action.
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("声明支持").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithText("实际验证").assertExists()
+                compose.onNodeWithText("完成").performClick()
+                compose.waitUntil(10_000) { compose.onAllNodes(isRoot()).fetchSemanticsNodes().size == 1 }
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsNotEnabled()
                 capture("installed")
             } finally {
@@ -93,6 +101,10 @@ class PluginCenterDeviceTest {
     private fun capture(name: String) {
         val file = File(compose.activity.getExternalFilesDir(null), "plugin-ui/$name.png")
         file.parentFile!!.mkdirs()
+        if (android.os.Build.VERSION.SDK_INT < 26) {
+            check(androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(file))
+            return
+        }
         compose.onRoot().captureToImage().asAndroidBitmap().let { bitmap -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     }
 }

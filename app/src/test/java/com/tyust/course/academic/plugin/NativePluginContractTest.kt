@@ -15,7 +15,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [24, 35], application = android.app.Application::class)
 class NativePluginContractTest {
     private fun manifest() = PluginManifest(JSONObject(File("src/androidTest/assets/academic-plugin/native-components-manifest.json").readText()))
-    private val schema = PluginSchema(JSONObject(File("../academic-plugin-api/assets/academic-plugin/manifest.schema.json").readText()))
+    private val schema = PluginSchema(JSONObject(File("src/main/assets/academic-plugin/manifest.schema.json").readText()))
     private fun rejects(code: PluginErrorCode = PluginErrorCode.VALIDATION_FAILED, block: () -> Unit) {
         try { block(); fail("Expected $code") } catch (error: PluginException) { assertEquals(code, error.code) }
     }

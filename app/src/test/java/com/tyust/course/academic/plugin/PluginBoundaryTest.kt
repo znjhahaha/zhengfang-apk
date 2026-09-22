@@ -59,7 +59,7 @@ class PluginBoundaryTest {
         assertEquals("900150983cd24fb0d6963f7d28e17f72", c.call("crypto.digest", JSONObject().put("algorithm", "MD5").put("text", "abc")).getString("data"))
     }
     @Test fun sharedSchemaRejectsOversizedWeekAndUnknownFields() {
-        val schema = PluginSchema(JSONObject(File("../academic-plugin-api/assets/academic-plugin/contract.schema.json").readText()))
+        val schema = PluginSchema(JSONObject(File("src/main/assets/academic-plugin/contract.schema.json").readText()))
         val schedule = JSONObject("""{"ok":true,"data":{"termId":"opaque:summer","entries":[],"maxWeeks":25}}""")
         assertEquals("opaque:summer", schema.response("study.schedule", schedule).getString("termId"))
         schedule.getJSONObject("data").put("maxWeeks", 26)

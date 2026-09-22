@@ -392,7 +392,7 @@ private const val SWITCH_LENS_TRACK_SCALE_X = 0.75f
  * 整块消失（用户报过，API32/API35 逐像素对比确认）。
  *
  * 0.4 让旋钮上下各探出 16.8px（> 13.1px 斜坡），与 API35 目测的 16/18px 环境带
- * 对得上。改这个数之前先按 `docs/glass-lens-api32.md` 的方法两台设备对拍。
+ * 对得上。修改时需在 API 32 与 API 33 以上设备对比相同背景下的折射结果。
  */
 private const val SWITCH_LENS_TRACK_SCALE_Y = 0.4f
 
