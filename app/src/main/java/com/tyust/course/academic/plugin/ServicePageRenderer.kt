@@ -72,6 +72,7 @@ fun ServicePageBlock(block: JSONObject, enabled: Boolean, onAction: (JSONObject)
                 items.forEach { action -> LiquidButton({ onAction(action.getJSONObject("action")) }, enabled = enabled, modifier = Modifier.fillMaxWidth(), style = LiquidButtonStyle.Tinted) { Text(action.getString("label")) } }
             }
             "form" -> ServiceForm(block, enabled, onAction)
+            else -> ServiceExtendedBlock(block, enabled, onAction)
         }
     }
 }
@@ -80,7 +81,7 @@ fun ServicePageBlock(block: JSONObject, enabled: Boolean, onAction: (JSONObject)
     val fields = PluginJson.objects(block.getJSONArray("fields"))
     val values = remember(block.toString()) { mutableStateMapOf<String, String>().apply {
         fields.forEach { field -> put(field.getString("id"), field.optString("value").ifBlank {
-            if (field.getString("type") == "select" && field.getBoolean("required")) field.getJSONArray("options").getJSONObject(0).getString("value") else ""
+            when { field.getString("type") == "toggle" -> "false"; field.getString("type") == "select" && field.getBoolean("required") -> field.getJSONArray("options").getJSONObject(0).getString("value"); else -> "" }
         }) }
     } }
     var error by remember(block.toString()) { mutableStateOf("") }
@@ -104,8 +105,11 @@ fun ServicePageBlock(block: JSONObject, enabled: Boolean, onAction: (JSONObject)
                         }
                     }
                 }
+            } else if (field.getString("type") == "toggle") Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                LiquidSwitch(value == "true", { values[id] = it.toString() }, enabled = enabled, modifier = Modifier.testTag("service-field-$id"))
             } else OutlinedTextField(value, { values[id] = it.take(1000) }, label = { Text(label) },
-                placeholder = { Text(field.optString("placeholder")) }, enabled = enabled, singleLine = true,
+                placeholder = { Text(field.optString("placeholder")) }, enabled = enabled, singleLine = field.getString("type") != "multiline", minLines = if (field.getString("type") == "multiline") 3 else 1, maxLines = 6,
                 keyboardOptions = KeyboardOptions(keyboardType = if (field.getString("type") == "number") KeyboardType.Decimal else KeyboardType.Text),
                 modifier = Modifier.fillMaxWidth().testTag("service-field-$id"))
         }

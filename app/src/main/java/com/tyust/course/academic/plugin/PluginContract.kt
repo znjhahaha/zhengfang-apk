@@ -14,7 +14,7 @@ enum class PluginErrorCode {
 class PluginException(val code: PluginErrorCode, message: String, cause: Throwable? = null) : Exception(message, cause)
 
 object PluginLimits {
-    const val API_VERSION = 2
+    const val API_VERSION = 3
     const val MEMORY_BYTES = 64L * 1024 * 1024
     const val STACK_BYTES = 1024L * 1024
     const val JS_MILLIS = 5_000L

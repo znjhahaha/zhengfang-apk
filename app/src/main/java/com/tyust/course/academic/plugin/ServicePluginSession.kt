@@ -47,6 +47,13 @@ class ServicePluginSession(
     }
     suspend fun page(id: String, params: JSONObject = JSONObject()): JSONObject = invoke("service.page", JSONObject().put("pageId", id).put("params", params))
     suspend fun action(id: String, params: JSONObject, confirmed: Boolean): JSONObject = invoke("service.action", JSONObject().put("actionId", id).put("params", params), confirmed)
+    fun requireActive() { ensureScope(); session.requireActive(); if (!authenticated) throw AcademicException(AcademicStatus.SESSION_EXPIRED, "请先登录此服务") }
+    suspend fun nativeResult(result: JSONObject): JSONObject {
+        requireActive()
+        val callback = ServiceNativePolicy.operation(pkg.manifest, result.getString("operationId")).getString("resultActionId")
+        ServiceNativePolicy.validateResult(pkg.manifest, callback, result)
+        return invoke("service.action", JSONObject().put("actionId", callback).put("nativeResult", result).put("params", JSONObject()))
+    }
     private suspend fun invoke(method: String, args: JSONObject, confirmed: Boolean = false): JSONObject {
         ensureScope()
         if (!authenticated) throw AcademicException(AcademicStatus.SESSION_EXPIRED, "请先登录此服务")

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zfplugin.local/api/2/manifest.schema.json",
+  "$id": "https://zfplugin.local/api/3/manifest.schema.json",
   "type": "object",
   "properties": {
     "id": {
@@ -19,7 +19,8 @@
     "apiVersion": {
       "enum": [
         1,
-        2
+        2,
+        3
       ]
     },
     "kind": {
@@ -292,6 +293,19 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 100
+              },
+              "placements": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "home",
+                    "schedule",
+                    "grades"
+                  ]
+                },
+                "maxItems": 3,
+                "uniqueItems": true
               }
             },
             "required": [
@@ -340,6 +354,67 @@
             "additionalProperties": false
           },
           "maxItems": 40
+        },
+        "nativeOperations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "scanCode",
+                  "pickFile",
+                  "notification",
+                  "calendar"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "resultActionId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "mimeTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "text/plain",
+                    "text/csv",
+                    "application/json",
+                    "application/pdf",
+                    "image/png",
+                    "image/jpeg"
+                  ]
+                },
+                "maxItems": 6,
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "kind",
+              "reason",
+              "resultActionId"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12
         }
       },
       "required": [

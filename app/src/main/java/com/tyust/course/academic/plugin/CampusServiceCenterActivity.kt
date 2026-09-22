@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.system.*
@@ -32,6 +33,8 @@ class CampusServiceCenterActivity : ComponentActivity() {
         var services by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
         var loading by remember { mutableStateOf(true) }
         var problem by remember { mutableStateOf("") }
+        var visibilityRevision by remember { mutableIntStateOf(0) }
+        val entryPreferences = remember(school?.id, UserManager.getInstance().currentAccountStorageKey) { ServiceEntryPreferences(this, ServiceEntryPreferences.accountScope()) }
         LaunchedEffect(generation) {
             loading = true
             try { services = withContext(Dispatchers.IO) { AcademicProviderRegistry.reload(); school?.let(AcademicProviderRegistry::services).orEmpty() } }
@@ -51,6 +54,19 @@ class CampusServiceCenterActivity : ComponentActivity() {
                         InsetGroupedRow(title = entry.getString("title"), subtitle = pkg.manifest.name, icon = serviceIcon(entry.getString("icon")),
                             onClick = { ServicePluginActivity.open(this@CampusServiceCenterActivity, pkg, entry.getString("pageId")) }, showDivider = index < entries.lastIndex,
                             trailing = { Icon(Icons.Outlined.ChevronRight, null) })
+                    }
+                }
+                val mounted = services.filter { it.official }.flatMap { pkg ->
+                    PluginJson.objects(pkg.manifest.service!!.getJSONArray("entries")).flatMap { entry ->
+                        PluginJson.strings(entry.optJSONArray("placements")).map { placement -> Triple(pkg, entry, placement) }
+                    }
+                }
+                if (mounted.isNotEmpty()) InsetGroupedSection(header = "页面扩展入口", footer = "只调整当前账号的入口显示；关闭入口不会停用插件，仍可从本校服务打开。") {
+                    mounted.forEachIndexed { index, (pkg, entry, placement) ->
+                        val visible = remember(visibilityRevision, pkg.digest, entry.getString("id"), placement) { entryPreferences.visible(pkg.manifest.id, entry.getString("id"), placement) }
+                        InsetGroupedRow(title = entry.getString("title"), subtitle = ServiceEntryPreferences.placementName(placement), showDivider = index < mounted.lastIndex,
+                            trailing = { LiquidSwitch(visible, { entryPreferences.setVisible(pkg.manifest.id, entry.getString("id"), placement, it); visibilityRevision++ },
+                                modifier = Modifier.testTag("service-entry-visible-${entry.getString("id")}-${placement}")) })
                     }
                 }
                 InsetGroupedSection(header = "发现更多") {

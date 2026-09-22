@@ -1,4 +1,4 @@
-/** Academic Plugin API v2 (compatible with v1). IDs are opaque and stable across refreshes. */
+/** Academic Plugin API v3 (compatible with v1/v2). IDs are opaque and stable across refreshes. */
 export type ErrorCode = 'UNSUPPORTED' | 'NOT_OPEN' | 'INVALID_CREDENTIALS' | 'SESSION_EXPIRED' |
   'CAPTCHA_REQUIRED' | 'WEB_LOGIN_REQUIRED' | 'NO_CAPACITY' | 'CONFLICT' | 'ALREADY_SELECTED' |
   'CREDIT_LIMIT' | 'PAGE_CHANGED' | 'NETWORK_RETRYABLE' | 'RESULT_UNKNOWN' | 'UNTRUSTED_URL' |
@@ -107,7 +107,7 @@ export interface NetworkRule {
   requiredQuery?: Record<string, string>; requiredForm?: Record<string, string>;
 }
 export interface PluginManifest {
-  id: string; name: string; version: string; apiVersion: 1 | 2;
+  id: string; name: string; version: string; apiVersion: 1 | 2 | 3;
   kind: 'configuration' | 'extension' | 'independent' | 'service';
   extends?: 'builtin.zf' | 'builtin.zf_old' | 'builtin.qz' | 'builtin.qz_old' | 'builtin.legacy_zf';
   entry?: 'index.js'; capabilities: Capability[]; network: NetworkRule[];
@@ -123,15 +123,28 @@ export interface ServiceManifest {
   academicHosts?: string[];
   authentication: { mode: 'none' | 'password'; usernameLabel?: string; passwordLabel?: string; help?: string };
   pages: { id: string; title: string }[];
-  entries: { id: string; title: string; pageId: string; icon: 'school' | 'book' | 'chart' | 'calendar' | 'wallet' | 'activity'; order: number }[];
+  entries: { id: string; title: string; pageId: string; icon: 'school' | 'book' | 'chart' | 'calendar' | 'wallet' | 'activity'; order: number; placements?: ServicePlacement[] }[];
   actions: { id: string; title: string; kind: 'query' | 'mutation'; confirmation?: string }[];
+  /** API 3 only. Every operation needs a user gesture and an explicit one-time confirmation. */
+  nativeOperations?: ServiceNativeOperation[];
+}
+export type ServicePlacement = 'home' | 'schedule' | 'grades';
+export interface ServiceNativeOperation {
+  id: string; title: string; reason: string; resultActionId: string;
+  kind: 'scanCode' | 'pickFile' | 'notification' | 'calendar';
+  mimeTypes?: ('text/plain' | 'text/csv' | 'application/json' | 'application/pdf' | 'image/png' | 'image/jpeg')[];
+}
+export interface ServiceNativeResult {
+  operationId: string; status: 'success' | 'cancelled' | 'opened' | 'unavailable' | 'error';
+  text?: string; name?: string; mimeType?: string; size?: number; base64?: string;
 }
 export type ServiceParams = Record<string, string>;
 export type ServiceLink = { type: 'page'; pageId: string; params?: ServiceParams } |
-  { type: 'action'; actionId: string; params?: ServiceParams } | { type: 'url'; url: string };
+  { type: 'action'; actionId: string; params?: ServiceParams } | { type: 'url'; url: string } |
+  { type: 'native'; operationId: string; params?: ServiceParams };
 export type ServiceTone = 'default' | 'positive' | 'warning';
 export interface ServiceField {
-  id: string; label: string; type: 'text' | 'number' | 'select'; required: boolean;
+  id: string; label: string; type: 'text' | 'number' | 'select' | 'multiline' | 'toggle'; required: boolean;
   placeholder?: string; value?: string; options?: { value: string; label: string }[];
 }
 export type ServiceBlock =
@@ -141,12 +154,17 @@ export type ServiceBlock =
   { id: string; type: 'list'; title?: string; items: { id: string; title: string; subtitle?: string; value?: string; action?: ServiceLink }[] } |
   { id: string; type: 'notice'; text: string; tone?: ServiceTone } |
   { id: string; type: 'actions'; title?: string; items: { label: string; action: ServiceLink }[] } |
-  { id: string; type: 'form'; title?: string; fields: ServiceField[]; submit: { label: string; actionId: string } };
+  { id: string; type: 'form'; title?: string; fields: ServiceField[]; submit: { label: string; actionId: string } } |
+  { id: string; type: 'keyValue'; title?: string; items: { id: string; label: string; value: string }[] } |
+  { id: string; type: 'table'; title?: string; columns: string[]; rows: { id: string; cells: string[] }[] } |
+  { id: string; type: 'timeline'; title?: string; items: { id: string; title: string; time: string; detail?: string; tone?: ServiceTone }[] } |
+  { id: string; type: 'barChart'; title?: string; unit?: string; items: { id: string; label: string; value: number; tone?: ServiceTone }[] } |
+  { id: string; type: 'grid'; title?: string; columns: 1 | 2 | 3; items: { id: string; label: string; subtitle?: string; action: ServiceLink }[] };
 export interface ServicePage { pageId: string; title: string; subtitle?: string; layout?: 'comfortable' | 'compact'; blocks: ServiceBlock[] }
 export interface ServiceReceipt { actionId: string; confirmed: boolean; message?: string; page?: ServicePage }
 export interface Service {
   page: Handler<{ pageId: string; params?: ServiceParams }, ServicePage>;
   /** Only declared mutation actions can send purpose=mutation, after the host's confirmation. */
-  action: Handler<{ actionId: string; params?: ServiceParams }, ServiceReceipt>;
+  action: Handler<{ actionId: string; params?: ServiceParams; nativeResult?: ServiceNativeResult }, ServiceReceipt>;
 }
 export interface CampusServicePlugin { auth?: Auth; service: Pick<Service, 'page'> & Partial<Pick<Service, 'action'>> }

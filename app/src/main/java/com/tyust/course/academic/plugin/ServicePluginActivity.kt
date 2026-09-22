@@ -103,12 +103,22 @@ class ServicePluginActivity : ComponentActivity() {
             if (pop) history = history.dropLast(1)
             else if (push) history = history + (id to params)
         }
+        val native = rememberServiceNativeActions(runtime, onResult = { result -> run {
+            val response = withContext(Dispatchers.IO) { runtime.nativeResult(result) }
+            message = response.optString("message").ifBlank { when (result.getString("status")) {
+                "success" -> "系统操作已完成"; "opened" -> "已打开系统编辑器，请在其中确认保存"; "cancelled" -> "已取消系统操作"; else -> "系统能力暂时不可用"
+            } }
+            if (response.getBoolean("confirmed")) response.optJSONObject("page")?.let { next ->
+                if (next.getString("pageId") != history.last().first) history = history + (next.getString("pageId") to JSONObject())
+                page = next
+            }
+        } }, onMessage = { message = it })
         fun back() {
-            if (busy) return
+            if (busy || native.busy) return
             if (history.size > 1) { val previous = history[history.lastIndex - 1]; load(previous.first, previous.second, pop = true) }
             else finish()
         }
-        BackHandler(busy || history.size > 1) { back() }
+        BackHandler(busy || native.busy || history.size > 1) { back() }
         fun performAction(action: JSONObject, confirmed: Boolean) = run {
             val response = withContext(Dispatchers.IO) { runtime.action(action.getString("actionId"), action.optJSONObject("params") ?: JSONObject(), confirmed) }
             message = response.optString("message").ifBlank { if (response.getBoolean("confirmed")) "操作已完成" else "结果尚未确认，请先查询服务记录" }
@@ -118,21 +128,22 @@ class ServicePluginActivity : ComponentActivity() {
             }
         }
         fun navigate(action: JSONObject) {
-            if (busy) return
+            if (busy || native.busy) return
             try {
                 ServicePluginContract.validateLink(pkg.manifest, action)
                 when (action.getString("type")) {
                     "page" -> load(action.getString("pageId"), action.optJSONObject("params") ?: JSONObject(), push = true)
                     "url" -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(action.getString("url"))))
                     "action" -> if (ServicePluginContract.action(pkg.manifest, action.getString("actionId")).getString("kind") == "mutation") pendingAction = JSONObject(action.toString()) else performAction(action, false)
+                    "native" -> native.request(action)
                 }
             } catch (e: Exception) { message = e.message ?: "无法打开此操作" }
         }
         LaunchedEffect(runtime) { if (runtime.authenticated) load(initial) }
         GlassPageScaffold(title = page?.getString("title") ?: pkg.manifest.name,
             subtitle = if (preview) "开发预览 · 独立服务会话" else "${pkg.manifest.school.getString("name")} · 校园服务", onBack = ::back) { padding ->
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp,
-                top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 24.dp),
+            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp,
+                top = 8.dp, bottom = padding.calculateBottomPadding() + 24.dp),
                 verticalArrangement = Arrangement.spacedBy(if (page?.optString("layout") == "compact") 12.dp else 22.dp)) {
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("service-busy"))
                 if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("service-message"))
@@ -173,9 +184,9 @@ class ServicePluginActivity : ComponentActivity() {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LiquidButton({ val current = history.last(); load(current.first, current.second) }, enabled = !busy, modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text("刷新") }
-                        LiquidButton({ editing = !editing }, enabled = !busy && page != null, modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text(if (editing) "完成排布" else "调整排布") }
-                        if (runtime.needsLogin) LiquidButton({ runtime.logout(); loggedIn = false; page = null; captcha = null }, enabled = !busy, horizontalPadding = 12.dp) { Text("退出") }
+                        LiquidButton({ val current = history.last(); load(current.first, current.second) }, enabled = !busy && !native.busy, modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text("刷新") }
+                        LiquidButton({ editing = !editing }, enabled = !busy && !native.busy && page != null, modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text(if (editing) "完成排布" else "调整排布") }
+                        if (runtime.needsLogin) LiquidButton({ runtime.logout(); loggedIn = false; page = null; captcha = null }, enabled = !busy && !native.busy, horizontalPadding = 12.dp) { Text("退出") }
                     }
                     val current = page
                     if (current != null) {
@@ -198,7 +209,7 @@ class ServicePluginActivity : ComponentActivity() {
                                 InsetGroupedRow(title = "恢复插件默认布局", showDivider = false, onClick = { layout.reset(current.getString("pageId")); layoutRevision++ })
                             }
                         }
-                        blocks.filter { it.getString("id") !in hidden }.forEach { block -> key(block.getString("id")) { ServicePageBlock(block, !busy && !editing, ::navigate) } }
+                        blocks.filter { it.getString("id") !in hidden }.forEach { block -> key(block.getString("id")) { ServicePageBlock(block, !busy && !native.busy && !editing, ::navigate) } }
                         if (blocks.isNotEmpty() && blocks.all { it.getString("id") in hidden }) Text("模块已全部隐藏，可在“调整排布”中恢复。", style = MaterialTheme.typography.bodySmall)
                     } else if (!busy) Text("页面暂未加载，点击刷新重试。")
                 }
@@ -230,6 +241,6 @@ class ServicePluginActivity : ComponentActivity() {
             context.startActivity(Intent(context, ServicePluginActivity::class.java).putExtra("pluginId", pkg.manifest.id).putExtra("pageId", pageId).putExtra("preview", preview))
         }
         private fun accountScope(): String = UserManager.getInstance().let { (it.currentSchool?.id ?: "") + ":" + it.currentAccountStorageKey }
-        private fun blockName(type: String) = when (type) { "profile" -> "个人信息"; "metrics" -> "统计卡片"; "progress" -> "分类进度"; "list" -> "记录列表"; "notice" -> "说明"; "actions" -> "功能入口"; else -> "查询表单" }
+        private fun blockName(type: String) = when (type) { "profile" -> "个人信息"; "metrics" -> "统计卡片"; "progress" -> "分类进度"; "list" -> "记录列表"; "notice" -> "说明"; "actions" -> "功能入口"; "keyValue" -> "信息摘要"; "table" -> "数据表格"; "timeline" -> "时间线"; "barChart" -> "柱状图"; "grid" -> "网格入口"; else -> "查询表单" }
     }
 }

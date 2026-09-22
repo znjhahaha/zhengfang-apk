@@ -48,7 +48,8 @@ const tone = string({enum:['default','positive','warning']});
 $defs.ServiceLink = {anyOf:[
  obj({type:{const:'page'},pageId:key,params},['type','pageId']),
  obj({type:{const:'action'},actionId:key,params},['type','actionId']),
- obj({type:{const:'url'},url:string({minLength:1,maxLength:2000})})
+ obj({type:{const:'url'},url:string({minLength:1,maxLength:2000})}),
+ obj({type:{const:'native'},operationId:key,params},['type','operationId'])
 ]};
 const baseBlock = {id:key,title:label};
 $defs.ServiceBlock = {anyOf:[
@@ -58,17 +59,22 @@ $defs.ServiceBlock = {anyOf:[
  obj({...baseBlock,type:{const:'list'},items:arr(obj({id:key,title:label,subtitle:prose,value:label,action:ref('ServiceLink')},['id','title']),100)},['id','type','items']),
  obj({id:key,type:{const:'notice'},text:prose,tone},['id','type','text']),
  obj({...baseBlock,type:{const:'actions'},items:arr(obj({label,action:ref('ServiceLink')}),12)},['id','type','items']),
- obj({...baseBlock,type:{const:'form'},fields:arr(obj({id:key,label,type:string({enum:['text','number','select']}),required:bool,placeholder:label,value:string({maxLength:1000}),options:arr(obj({value:string({maxLength:1000}),label}),30)},['id','label','type','required']),12),submit:obj({label,actionId:key})},['id','type','fields','submit'])
+ obj({...baseBlock,type:{const:'form'},fields:arr(obj({id:key,label,type:string({enum:['text','number','select','multiline','toggle']}),required:bool,placeholder:label,value:string({maxLength:1000}),options:arr(obj({value:string({maxLength:1000}),label}),30)},['id','label','type','required']),12),submit:obj({label,actionId:key})},['id','type','fields','submit']),
+ obj({...baseBlock,type:{const:'keyValue'},items:arr(obj({id:key,label,value:prose}),40)},['id','type','items']),
+ obj({...baseBlock,type:{const:'table'},columns:{...arr(label,6),minItems:1},rows:arr(obj({id:key,cells:arr(prose,6)}),100)},['id','type','columns','rows']),
+ obj({...baseBlock,type:{const:'timeline'},items:arr(obj({id:key,title:label,time:label,detail:prose,tone},['id','title','time']),40)},['id','type','items']),
+ obj({...baseBlock,type:{const:'barChart'},unit:label,items:arr(obj({id:key,label,value:{type:'number',minimum:0,maximum:1e9},tone},['id','label','value']),24)},['id','type','items']),
+ obj({...baseBlock,type:{const:'grid'},columns:integer(1,3),items:arr(obj({id:key,label,subtitle:label,action:ref('ServiceLink')},['id','label','action']),12)},['id','type','columns','items'])
 ]};
 $defs.ServicePage = obj({pageId:key,title:label,subtitle:prose,layout:string({enum:['comfortable','compact']}),blocks:arr(ref('ServiceBlock'),40)},['pageId','title','blocks']);
 $defs.ServiceReceipt = obj({actionId:key,confirmed:bool,message:prose,page:ref('ServicePage')},['actionId','confirmed']);
 const success = name => obj({ok:{const:true},data:ref(name)});
 const failure = obj({ok:{const:false},error:ref('Error')});
 for (const [method,name] of Object.entries(methods)) $defs[method] = {anyOf:[success(name),failure]};
-export const contract = {$schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://zfplugin.local/api/2/contract.schema.json',apiVersion:2,methods,$defs};
+export const contract = {$schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://zfplugin.local/api/3/contract.schema.json',apiVersion:3,methods,$defs};
 const builtins = ['builtin.zf','builtin.zf_old','builtin.qz','builtin.qz_old','builtin.legacy_zf'];
-export const manifest = {$schema:contract.$schema,$id:'https://zfplugin.local/api/2/manifest.schema.json',...obj({
- id:string({pattern:'^[a-z][a-z0-9.-]{2,95}$'}),name:string({minLength:1,maxLength:80}),version:string({pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+$'}),apiVersion:{enum:[1,2]},
+export const manifest = {$schema:contract.$schema,$id:'https://zfplugin.local/api/3/manifest.schema.json',...obj({
+ id:string({pattern:'^[a-z][a-z0-9.-]{2,95}$'}),name:string({minLength:1,maxLength:80}),version:string({pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+$'}),apiVersion:{enum:[1,2,3]},
  kind:string({enum:['configuration','extension','independent','service']}),extends:string({enum:builtins}),entry:{const:'index.js'},
  capabilities:{...arr(string({enum:Object.keys(methods)}),18),uniqueItems:true},
  network:arr(obj({origin:string({maxLength:300}),pathPrefix:string({pattern:'^/'}),methods:arr(string({enum:['GET','POST']}),2),purposes:arr(string({enum:['query','auth','mutation']}),3),requiredQuery:map(string()),requiredForm:map(string())},['origin','pathPrefix','methods','purposes']),50),
@@ -77,8 +83,9 @@ export const manifest = {$schema:contract.$schema,$id:'https://zfplugin.local/ap
   schoolIds:{...arr(id,30),minItems:1,uniqueItems:true},academicHosts:{...arr(string({pattern:'^[a-z0-9.-]+$'}),30),uniqueItems:true},
   authentication:obj({mode:string({enum:['none','password']}),usernameLabel:label,passwordLabel:label,help:prose},['mode']),
   pages:{...arr(obj({id:key,title:label}),12),minItems:1},
-  entries:{...arr(obj({id:key,title:label,pageId:key,icon:string({enum:['school','book','chart','calendar','wallet','activity']}),order:integer(0,100)}),12),minItems:1},
-  actions:arr(obj({id:key,title:label,kind:string({enum:['query','mutation']}),confirmation:prose},['id','title','kind']),40)
+  entries:{...arr(obj({id:key,title:label,pageId:key,icon:string({enum:['school','book','chart','calendar','wallet','activity']}),order:integer(0,100),placements:{...arr(string({enum:['home','schedule','grades']}),3),uniqueItems:true}},['id','title','pageId','icon','order']),12),minItems:1},
+  actions:arr(obj({id:key,title:label,kind:string({enum:['query','mutation']}),confirmation:prose},['id','title','kind']),40),
+  nativeOperations:arr(obj({id:key,title:label,kind:string({enum:['scanCode','pickFile','notification','calendar']}),reason:string({minLength:1,maxLength:500}),resultActionId:key,mimeTypes:{...arr(string({enum:['text/plain','text/csv','application/json','application/pdf','image/png','image/jpeg']}),6),minItems:1,uniqueItems:true}},['id','title','kind','reason','resultActionId']),12)
  },['schoolIds','authentication','pages','entries','actions']),
  description:string({maxLength:2000}),files:map(string({pattern:'^[a-f0-9]{64}$'}))
 },['id','name','version','apiVersion','kind','capabilities','network','school','files'])};
