@@ -116,17 +116,24 @@ class SurveyRepository(
 
     suspend fun setRemindersEnabled(enabled: Boolean) = mutate { it.copy(remindersEnabled = enabled) }
 
-    fun reminderCandidate(): Survey? {
+    fun reminderCandidates(): List<Survey> {
         val value = mutableState.value
         // Never announce a cached result when the current publication status is unknown.
-        if (value.loading || value.refreshing || value.error != null || !value.saved.remindersEnabled || lastAttempt == null) return null
-        return value.saved.surveys.firstOrNull { survey ->
+        if (value.loading || value.refreshing || value.error != null || !value.saved.remindersEnabled || lastAttempt == null) return emptyList()
+        val day = surveyReminderDay(clock())
+        return value.saved.surveys.filter { survey ->
             val local = value.local(survey.id)
-            survey.important && survey.isActive(value.serverNow(clock())) && !local.reminded && !local.seen
-        }
+            survey.isActive(value.serverNow(clock())) && local.completedAt == null && local.remindedOn != day
+        }.sortedWith(compareByDescending<Survey> { it.important }.thenByDescending { it.pinned }.thenBy { it.id })
     }
-
-    suspend fun markReminded(survey: Survey) = local(survey) { it.copy(reminded = true) }
+    fun reminderCandidate(): Survey? = reminderCandidates().firstOrNull()
+    suspend fun markReminded(survey: Survey) = markReminded(listOf(survey))
+    suspend fun markReminded(surveys: Collection<Survey>) = mutate { current ->
+        val day = surveyReminderDay(clock())
+        val local = current.local.toMutableMap()
+        surveys.forEach { survey -> local[survey.id] = (local[survey.id] ?: SurveyLocalState()).copy(reminded = true, remindedOn = day) }
+        current.copy(local = local)
+    }
 
     /** A cached URL is never sufficient to start filling. The server must approve now. */
     suspend fun prepareOpen(id: String): Survey {

@@ -8,13 +8,13 @@ enum class PluginErrorCode {
     UNSUPPORTED, NOT_OPEN, INVALID_CREDENTIALS, SESSION_EXPIRED, CAPTCHA_REQUIRED, WEB_LOGIN_REQUIRED,
     NO_CAPACITY, CONFLICT, ALREADY_SELECTED, CREDIT_LIMIT, PAGE_CHANGED, NETWORK_RETRYABLE,
     RESULT_UNKNOWN, UNTRUSTED_URL, VALIDATION_FAILED, TIMEOUT, CANCELLED, RUNTIME_EXITED,
-    RESOURCE_LIMIT, BAD_SIGNATURE
+    RESOURCE_LIMIT, BAD_SIGNATURE, PERMISSION_DENIED, STALE_CONTEXT
 }
 
 class PluginException(val code: PluginErrorCode, message: String, cause: Throwable? = null) : Exception(message, cause)
 
 object PluginLimits {
-    const val API_VERSION = 1
+    const val API_VERSION = 3
     const val MEMORY_BYTES = 64L * 1024 * 1024
     const val STACK_BYTES = 1024L * 1024
     const val JS_MILLIS = 5_000L
@@ -156,6 +156,13 @@ data class PluginManifest(val json: JSONObject) {
     val version: String get() = json.getString("version")
     val name: String get() = json.getString("name")
     val kind: String get() = json.getString("kind")
+    val isService: Boolean get() = kind == "service"
+    val isNative: Boolean get() = kind == "native"
+    val isAcademic: Boolean get() = !isService && (!isNative || contributes.optBoolean("academic"))
+    val apiVersion: Int get() = json.getInt("apiVersion")
+    val contributes: JSONObject get() = json.optJSONObject("contributes") ?: JSONObject()
+    val permissions: Set<String> get() = PluginJson.strings(json.optJSONArray("permissions")).toSet()
+    val service: JSONObject? get() = json.optJSONObject("service")
     val baseProvider: String? get() = json.optString("extends").takeIf(String::isNotBlank)
     val capabilities: Set<String> get() = PluginJson.strings(json.getJSONArray("capabilities")).toSet()
     val network: List<JSONObject> get() = PluginJson.objects(json.getJSONArray("network"))
@@ -163,7 +170,12 @@ data class PluginManifest(val json: JSONObject) {
 
     fun validate(schema: PluginSchema) {
         schema.validate(json)
-        if (kind == "independent" && baseProvider != null || kind != "independent" && baseProvider == null) invalid("适配类型与内置继承关系不一致")
+        if (kind in setOf("independent", "service", "native") && baseProvider != null || kind !in setOf("independent", "service", "native") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
+        if (!isNative && !json.has("school")) invalid("教务适配和旧版服务需要学校信息")
+        if (isNative) NativePluginContract.validateManifest(this)
+        else if (json.has("contributes") || json.has("permissions") || capabilities.any { it.startsWith("ui.") || it.startsWith("task.") || it.startsWith("data.") }) invalid("通用组件需要 API v3 原生插件")
+        if (isService) ServicePluginContract.validateManifest(this)
+        else if (service != null || capabilities.any { it.startsWith("service.") }) invalid("教务适配不能声明校园服务")
         if (kind == "configuration" && (capabilities.isNotEmpty() || json.has("entry"))) invalid("配置型适配不能包含可执行能力")
         if (kind != "configuration" && json.optString("entry") != "index.js") invalid("可执行适配缺少入口")
         for ((group, expected) in GROUPS) {

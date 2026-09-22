@@ -1,0 +1,1413 @@
+[
+  {
+    "name": "network.request",
+    "version": 1,
+    "permission": "network",
+    "input": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "query",
+            "auth",
+            "mutation"
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "form": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "charset": {
+          "enum": [
+            "UTF-8",
+            "GBK",
+            "GB2312",
+            "GB18030"
+          ]
+        },
+        "responseType": {
+          "enum": [
+            "text",
+            "base64"
+          ]
+        },
+        "credential": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bindings": {
+          "type": "object",
+          "properties": {
+            "form": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "url",
+        "purpose"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 7340032
+        }
+      },
+      "required": [
+        "status",
+        "url",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "responseBytes": 5242880
+    }
+  },
+  {
+    "name": "storage.get",
+    "version": 1,
+    "permission": "storage",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "bytes": 262144
+    }
+  },
+  {
+    "name": "storage.set",
+    "version": 1,
+    "permission": "storage",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "bytes": 262144
+    }
+  },
+  {
+    "name": "storage.remove",
+    "version": 1,
+    "permission": "storage",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "auth.prompt",
+    "version": 1,
+    "permission": "auth",
+    "input": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "remember": {
+          "type": "boolean"
+        },
+        "imageHandle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 12,
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "type": {
+                "enum": [
+                  "text",
+                  "password",
+                  "otp"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "title",
+        "key",
+        "fields"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "credential": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "credential"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "credentials.find",
+    "version": 1,
+    "permission": "credentials",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "credentials.remove",
+    "version": 1,
+    "permission": "credentials",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "session.save",
+    "version": 1,
+    "permission": "session",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "session.restore",
+    "version": 1,
+    "permission": "session",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "restored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "restored"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "session.clear",
+    "version": 1,
+    "permission": "session",
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.pick",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "mimeTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "mimeTypes"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        }
+      },
+      "required": [
+        "handle",
+        "name",
+        "mime",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32,
+      "bytes": 16777216
+    }
+  },
+  {
+    "name": "files.create",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "name",
+        "mime"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        }
+      },
+      "required": [
+        "handle",
+        "name",
+        "mime",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.read",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        }
+      },
+      "required": [
+        "handle",
+        "length"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "base64": {
+          "type": "string",
+          "maxLength": 350000
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "eof": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "base64",
+        "size",
+        "eof"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.write",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "base64": {
+          "type": "string",
+          "maxLength": 350000
+        }
+      },
+      "required": [
+        "handle",
+        "base64"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        }
+      },
+      "required": [
+        "handle",
+        "name",
+        "mime",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.remove",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.download",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            },
+            "purpose": {
+              "enum": [
+                "query",
+                "auth",
+                "mutation"
+              ]
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "form": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 262144
+            },
+            "charset": {
+              "enum": [
+                "UTF-8",
+                "GBK",
+                "GB2312",
+                "GB18030"
+              ]
+            },
+            "responseType": {
+              "enum": [
+                "text",
+                "base64"
+              ]
+            },
+            "credential": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "bindings": {
+              "type": "object",
+              "properties": {
+                "form": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "url",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "request",
+        "name",
+        "mime"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        }
+      },
+      "required": [
+        "handle",
+        "name",
+        "mime",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.upload",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "request": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            },
+            "purpose": {
+              "enum": [
+                "query",
+                "auth",
+                "mutation"
+              ]
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "form": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 262144
+            },
+            "charset": {
+              "enum": [
+                "UTF-8",
+                "GBK",
+                "GB2312",
+                "GB18030"
+              ]
+            },
+            "responseType": {
+              "enum": [
+                "text",
+                "base64"
+              ]
+            },
+            "credential": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "bindings": {
+              "type": "object",
+              "properties": {
+                "form": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "url",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        "field": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "handle",
+        "request",
+        "field"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 7340032
+        }
+      },
+      "required": [
+        "status",
+        "url",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.open",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "files.share",
+    "version": 1,
+    "permission": "files",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "device.clipboard.read",
+    "version": 1,
+    "permission": "device.clipboard",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 8000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "device.clipboard.write",
+    "version": 1,
+    "permission": "device.clipboard",
+    "input": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 8000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "device.haptic",
+    "version": 1,
+    "permission": "device.haptics",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "tasks.schedule",
+    "version": 1,
+    "permission": "tasks",
+    "input": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "delaySeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "input": {},
+        "state": {}
+      },
+      "required": [
+        "taskId",
+        "delaySeconds",
+        "input",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32,
+      "pending": 16
+    }
+  },
+  {
+    "name": "tasks.cancel",
+    "version": 1,
+    "permission": "tasks",
+    "input": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "handle"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "tasks.list",
+    "version": 1,
+    "permission": "tasks",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "scheduledAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "handle",
+          "taskId",
+          "status",
+          "scheduledAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "notifications.post",
+    "version": 1,
+    "permission": "notifications",
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "navigation.page",
+    "version": 1,
+    "permission": "navigation",
+    "input": {
+      "type": "object",
+      "properties": {
+        "pageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "pageId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "navigation.back",
+    "version": 1,
+    "permission": "navigation",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "navigation.url",
+    "version": 1,
+    "permission": "navigation",
+    "input": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "runtime.cancel",
+    "version": 1,
+    "permission": "runtime",
+    "input": {
+      "type": "object",
+      "properties": {
+        "effectIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "effectIds"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "data.query",
+    "version": 1,
+    "permission": "runtime",
+    "input": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {},
+        "cursor": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "providerId",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {},
+          "maxItems": 1000
+        },
+        "nextCursor": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  }
+]

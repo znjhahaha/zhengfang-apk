@@ -1,0 +1,79 @@
+{
+  "id": "example.native.components",
+  "name": "原生组件与状态示例",
+  "version": "1.0.0",
+  "apiVersion": 3,
+  "kind": "native",
+  "entry": "index.js",
+  "description": "只修改插件即可组合原生页面、条件表单、虚拟列表和绘图，并保存当前学校账号的偏好。全部数据为示例。",
+  "features": [
+    "原生组件组合",
+    "条件交互",
+    "虚拟列表与基础绘图",
+    "异步效果与持久状态",
+    "数据提供者"
+  ],
+  "releaseNotes": "API v3 通用组件示例，不连接任何学校业务。",
+  "permissions": [
+    "storage",
+    "navigation",
+    "runtime"
+  ],
+  "requires": [
+    {
+      "name": "storage.get",
+      "version": 1
+    },
+    {
+      "name": "storage.set",
+      "version": 1
+    },
+    {
+      "name": "data.query",
+      "version": 1
+    }
+  ],
+  "capabilities": [
+    "ui.init",
+    "ui.reduce",
+    "data.query"
+  ],
+  "contributes": {
+    "pages": [
+      {
+        "id": "overview",
+        "title": "组件与状态"
+      },
+      {
+        "id": "summary",
+        "title": "已保存的偏好"
+      }
+    ],
+    "entries": [
+      {
+        "id": "components",
+        "title": "原生组件示例",
+        "pageId": "overview",
+        "icon": "chart",
+        "order": 20
+      }
+    ],
+    "menuActions": [
+      {
+        "id": "reset",
+        "title": "重置示例",
+        "event": "reset"
+      }
+    ],
+    "dataProviders": [
+      {
+        "id": "sample.rows",
+        "title": "分页示例数据"
+      }
+    ]
+  },
+  "network": [],
+  "files": {
+    "index.js": "aa38327b6e73c956f60530db87cb981db0918247f555071ba650a2dcc6f54fbc"
+  }
+}

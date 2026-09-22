@@ -48,19 +48,20 @@ internal object SurveyJson {
     }
 
     fun encode(data: SurveySavedData): String = JSONObject().apply {
-        put("version", 1); put("schoolHost", data.schoolHost); put("fetchedAt", data.fetchedAt); put("serverTime", data.serverTime)
+        put("version", 2); put("schoolHost", data.schoolHost); put("fetchedAt", data.fetchedAt); put("serverTime", data.serverTime)
         put("remindersEnabled", data.remindersEnabled)
         put("surveys", JSONArray().apply { data.surveys.forEach { put(surveyJson(it)) } })
         put("records", JSONArray().apply { data.records.values.forEach { put(surveyJson(it)) } })
         put("local", JSONObject().apply { data.local.forEach { (id, state) -> put(id, JSONObject().apply {
             put("favorite", state.favorite); put("seen", state.seen); put("reminded", state.reminded)
+            put("remindedOn", state.remindedOn ?: JSONObject.NULL)
             put("viewed", state.lastViewedAt ?: JSONObject.NULL); put("completed", state.completedAt ?: JSONObject.NULL)
         }) } })
     }.toString()
 
-    fun decode(value: String): SurveySavedData {
+    fun decode(value: String, now: Long = System.currentTimeMillis()): SurveySavedData {
         val json = JSONObject(value)
-        require(json.optInt("version") == 1)
+        require(json.optInt("version") in 1..2)
         fun surveys(key: String): List<Survey> = json.optJSONArray(key)?.let { array ->
             List(array.length()) { fromDisk(array.getJSONObject(it)) }
         }.orEmpty()
@@ -70,7 +71,9 @@ internal object SurveyJson {
                 val state = localJson.getJSONObject(id)
                 put(id, SurveyLocalState(state.optBoolean("favorite"),
                     if (state.isNull("viewed")) null else state.optLong("viewed"),
-                    if (state.isNull("completed")) null else state.optLong("completed"), state.optBoolean("seen"), state.optBoolean("reminded")))
+                    if (state.isNull("completed")) null else state.optLong("completed"), state.optBoolean("seen"), state.optBoolean("reminded"),
+                    if (state.has("remindedOn") && !state.isNull("remindedOn")) state.getString("remindedOn")
+                    else if (json.optInt("version") == 1 && state.optBoolean("reminded")) surveyReminderDay(now) else null))
             }
         }
         return SurveySavedData(schoolHost = json.optString("schoolHost"), surveys = surveys("surveys"),

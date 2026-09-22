@@ -5,6 +5,7 @@ import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -34,11 +35,14 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
 
     @Synchronized fun call(method: String, payload: JSONObject): JSONObject {
         operation.requireActive()
+        if (operation.method.substringBefore('.') in setOf("ui", "task", "data") && method != "capabilities.list" && method != "log" && !method.startsWith("crypto."))
+            throw PluginException(PluginErrorCode.VALIDATION_FAILED, "原生插件须通过效果调用宿主能力")
         if (operation.method == "__inspect" && !method.startsWith("crypto."))
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "包加载检查不允许网络或存储副作用")
         if (++calls > 2000) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "宿主调用次数超过上限")
         val value: Any? = when {
             method == "http" -> http(payload)
+            method == "capabilities.list" -> operation.pageContext.optJSONArray("capabilities") ?: org.json.JSONArray()
             method.startsWith("crypto.") -> crypto(method.substringAfter('.'), payload)
             method.startsWith("state.") -> store(false, method.substringAfter('.'), payload)
             method.startsWith("storage.") -> store(true, method.substringAfter('.'), payload)
@@ -55,11 +59,16 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
     @Synchronized fun report(): List<JSONObject> = log.toList()
 
-    private fun http(payload: JSONObject): JSONObject {
+    @Synchronized fun upload(payload: JSONObject, file: File, field: String): JSONObject {
+        operation.requireActive()
+        if (!operation.manifest.isNative || operation.method != "host.effect") invalid("文件传输仅供原生宿主效果")
+        return http(payload, file, field)
+    }
+    private fun http(payload: JSONObject, upload: File? = null, field: String = "file"): JSONObject {
         if (++requests > 100) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "网络请求次数超过上限")
         val purpose = payload.getString("purpose")
         if (purpose !in setOf("query", "auth", "mutation")) invalid("未知请求用途")
-        if (purpose == "auth" && !operation.method.startsWith("auth.")) invalid("查询不能执行认证请求")
+        if (purpose == "auth" && !operation.method.startsWith("auth.") && !(operation.manifest.isNative && operation.method == "host.effect" && "auth" in operation.manifest.permissions)) invalid("查询不能执行认证请求")
         var method = payload.optString("method", "GET")
         if (method !in setOf("GET", "POST")) invalid("不支持的请求方法")
         var url = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效 URL")
@@ -70,7 +79,10 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
         val supplied = payload.optJSONObject("headers") ?: JSONObject()
-        supplied.keys().forEach { if (it.lowercase() !in setOf("accept", "content-type", "x-requested-with")) invalid("该请求头由宿主管理") }
+        val allowedHeaders = setOf("accept", "content-type", "x-requested-with") + if (operation.manifest.isService || operation.manifest.isNative) setOf("authorization") else emptySet()
+        supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
+        val authorization = supplied.keys().asSequence().firstOrNull { it.equals("authorization", true) }
+        if (authorization != null && (!supplied.getString(authorization).startsWith("Bearer ") || supplied.getString(authorization).length > 8192)) invalid("服务认证仅支持 Bearer 请求头")
         var redirected = 0
         while (true) {
             operation.requireActive()
@@ -78,7 +90,10 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
             if (method == "POST") {
-                val body = if (form != null) FormBody.Builder(charset).apply {
+                val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+                    form?.keys()?.forEach { addFormDataPart(it, form!!.getString(it)) }
+                    addFormDataPart(field, "upload", upload.asRequestBody("application/octet-stream".toMediaType()))
+                }.build() else if (form != null) FormBody.Builder(charset).apply {
                     form!!.keys().forEach { add(it, form!!.getString(it)) }
                 }.build() else payload.optString("body").toRequestBody(
                     supplied.optString("Content-Type", "application/x-www-form-urlencoded; charset=$charsetName").toMediaType())
@@ -93,10 +108,12 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                     if (log.size < 200) log += JSONObject().put("event", "http").put("origin", "${url.scheme}://${url.host}:${url.port}")
                         .put("method", method).put("purpose", purpose).put("status", response.code)
                     if (response.code in 300..399) {
-                        if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "选退课请求发生跳转，请先核实结果")
+                        if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
                         if (++redirected > 5) invalid("跳转次数超过上限")
                         if (method == "POST" && response.code in setOf(307, 308)) invalid("不能自动重放 POST 跳转")
                         val next = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
+                        if (authorization != null && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
+                            throw PluginException(PluginErrorCode.UNTRUSTED_URL, "服务认证不能随跳转发送到其他站点")
                         if (url.isHttps && !next.isHttps) throw PluginException(PluginErrorCode.UNTRUSTED_URL, "不允许 HTTPS 降级")
                         url = next
                         method = "GET"
@@ -108,7 +125,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                             throw operation.failure(PluginErrorCode.RESOURCE_LIMIT, "响应超过 5 MiB")
                         val bytes = stream?.readByteArray() ?: ByteArray(0)
                         operation.requireActive()
-                        if (purpose == "mutation" && response.code >= 500) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "学校未确认选退课结果")
+                        if (purpose == "mutation" && response.code >= 500) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "服务端未确认写入结果")
                         val body = when (payload.optString("responseType", "text")) {
                             "text" -> bytes.toString(charset)
                             "base64" -> bytes.toByteString().base64()
@@ -129,7 +146,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         val key = payload.getString("key")
         if (key.isEmpty() || key.length > 200) invalid("无效存储键")
         val namespace = PluginJson.sha256((operation.session.key.schoolId + "\u0000" + operation.session.key.accountKey +
-            "\u0000" + operation.manifest.id + "\u0000" + operation.development).toByteArray())
+            "\u0000" + operation.manifest.id + "\u0000" + operation.development + if (operation.manifest.isNative) "\u0000" + operation.packageDigest else "").toByteArray())
         synchronized(storeLock) {
             operation.requireActive()
             val file = AtomicFile(File(storageRoot, "$namespace.json"))

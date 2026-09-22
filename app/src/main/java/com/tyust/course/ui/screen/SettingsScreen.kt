@@ -99,7 +99,9 @@ fun SettingsScreen(
     isRefreshingCookie: Boolean = false,
     academicSystemName: String = "",
     onAcademicSupport: () -> Unit = {},
-    onAcademicPlugins: () -> Unit = {}
+    onAcademicPlugins: () -> Unit = {},
+    onCampusServices: () -> Unit = {},
+    onQuickFeedback: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     // 折叠进度随滚动偏移连续变化（约 96px 行程），全程跟手
@@ -161,9 +163,16 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Outlined.AssignmentInd,
                     iconTint = Color(0xFF18796B),
-                    title = "教务适配",
-                    subtitle = "适配版本、支持能力与开发调试",
+                    title = "插件中心",
+                    subtitle = "本校适配与已安装插件",
                     onClick = onAcademicPlugins
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.School,
+                    iconTint = Color(0xFF18796B),
+                    title = "校园服务",
+                    subtitle = "本校服务与可配置页面",
+                    onClick = onCampusServices
                 )
                 SettingsRow(
                     icon = Icons.Outlined.AssignmentInd,
@@ -254,6 +263,13 @@ fun SettingsScreen(
                     title = "检查更新",
                     subtitle = "当前版本 $currentVersion",
                     onClick = onCheckUpdate
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.ContentPasteSearch,
+                    iconTint = Color(0xFF18796B),
+                    title = "快捷反馈",
+                    subtitle = "无需 GitHub 账号，可在站内查看回复",
+                    onClick = onQuickFeedback
                 )
                 SettingsRow(
                     icon = Icons.Outlined.ContentPasteSearch,

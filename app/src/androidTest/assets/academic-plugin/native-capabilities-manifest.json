@@ -1,0 +1,75 @@
+{
+  "id": "example.native.capabilities",
+  "name": "宿主能力示例",
+  "version": "1.0.0",
+  "apiVersion": 3,
+  "kind": "native",
+  "entry": "index.js",
+  "description": "演示文件句柄、系统交互、认证挑战、隔离存储与后台任务。网络使用不可达的 example.test 示例地址，请在样本环境验证。",
+  "features": [
+    "文件选择、读写与分享",
+    "受控认证与加密会话",
+    "剪贴板与通知",
+    "取消和异步流程",
+    "宿主调度任务"
+  ],
+  "capabilities": [
+    "ui.init",
+    "ui.reduce",
+    "task.run"
+  ],
+  "permissions": [
+    "network",
+    "storage",
+    "auth",
+    "credentials",
+    "session",
+    "files",
+    "device.clipboard",
+    "device.haptics",
+    "notifications",
+    "tasks",
+    "runtime"
+  ],
+  "contributes": {
+    "pages": [
+      {
+        "id": "overview",
+        "title": "宿主能力"
+      }
+    ],
+    "entries": [
+      {
+        "id": "capabilities",
+        "title": "宿主能力示例",
+        "pageId": "overview",
+        "icon": "activity",
+        "order": 30
+      }
+    ],
+    "tasks": [
+      {
+        "id": "remember",
+        "title": "保存一条示例笔记"
+      }
+    ]
+  },
+  "network": [
+    {
+      "origin": "https://example.test",
+      "pathPrefix": "/plugin-demo",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "purposes": [
+        "query",
+        "auth",
+        "mutation"
+      ]
+    }
+  ],
+  "files": {
+    "index.js": "bef9e35db7093442dc680f8ab4d6758c05258a18eab3b645ad3ed72d8b17d189"
+  }
+}

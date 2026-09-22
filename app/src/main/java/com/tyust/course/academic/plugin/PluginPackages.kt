@@ -26,16 +26,23 @@ import java.util.zip.ZipInputStream
 data class PluginPackage(val manifest: PluginManifest, val source: String, val digest: String, val official: Boolean)
 
 object PluginPackageVerifier {
+    // Some API 24 providers support EC keys and signatures but expose no EC
+    // AlgorithmParameters service. Derive the named curve once through keygen.
+    private val p256Params by lazy {
+        val generator = java.security.KeyPairGenerator.getInstance("EC").apply {
+            initialize(java.security.spec.ECGenParameterSpec("secp256r1"))
+        }
+        (generator.generateKeyPair().public as java.security.interfaces.ECPublicKey).params
+    }
     fun publicKey(spkiBase64: String): PublicKey = KeyFactory.getInstance("EC").generatePublic(
         X509EncodedKeySpec(spkiBase64.decodeBase64()?.toByteArray() ?: badSignature()))
 
     fun verifySignature(payload: JSONObject, signature: JSONObject, keys: Map<String, PublicKey>) {
         val key = keys[signature.optString("keyId")] ?: badSignature()
         val ec = key as? java.security.interfaces.ECPublicKey ?: badSignature()
-        val parameters = java.security.AlgorithmParameters.getInstance("EC").apply {
-            init(java.security.spec.ECGenParameterSpec("secp256r1"))
-        }.getParameterSpec(java.security.spec.ECParameterSpec::class.java)
-        if (ec.params.order != parameters.order || ec.params.generator != parameters.generator) badSignature()
+        val parameters = p256Params
+        if (ec.params.order != parameters.order || ec.params.generator != parameters.generator ||
+            ec.params.curve != parameters.curve || ec.params.cofactor != parameters.cofactor) badSignature()
         val bytes = signature.optString("signature").decodeBase64()?.toByteArray() ?: badSignature()
         val valid = runCatching { Signature.getInstance("SHA256withECDSA").run {
             initVerify(key); update(PluginJson.canonical(payload).toByteArray()); verify(bytes)
@@ -90,7 +97,7 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
     suspend fun install(bytes: ByteArray, allowDevelopment: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
         val candidate = PluginPackageVerifier.read(bytes, schema, trustedKeys, allowDevelopment)
         if (candidate.source.isNotEmpty()) {
-            val session = AcademicSessionStore().session(candidate.manifest.school.getString("id"), "package-inspection", "https://invalid.example")
+            val session = AcademicSessionStore().session(candidate.manifest.json.optJSONObject("school")?.optString("id") ?: candidate.manifest.id, "package-inspection", "https://invalid.example")
             val op = PluginOperation(session, candidate.manifest, "__inspect", development = true)
             val actual = PluginSandboxClient(context).execute(candidate.source, JSONObject(), op, PluginHost(op, File(context.cacheDir, "plugin-inspection")))
             if (PluginJson.strings(actual.getJSONArray("data")).toSet() != candidate.manifest.capabilities)
@@ -135,7 +142,26 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         candidate
     }
     fun deactivate(id: String) = synchronized(lock) { val state = state(); state.remove(id); save(state) }
-    private fun readDigest(digest: String): PluginPackage {
+    fun rememberCatalog(catalog: JSONObject) = synchronized(lock) {
+        val payload = catalog.getJSONObject("payload")
+        PluginPackageVerifier.verifySignature(payload, catalog, trustedKeys)
+        val version = payload.getInt("apiVersion")
+        require(version in 1..PluginLimits.API_VERSION)
+        root.mkdirs()
+        val file = AtomicFile(File(root, "catalog-api$version.json")); val output = file.startWrite()
+        try { output.write(catalog.toString().toByteArray()); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
+    }
+    private fun catalogs(): List<JSONObject> = (1..PluginLimits.API_VERSION).mapNotNull { version -> runCatching {
+        val envelope = PluginJson.parse(String(AtomicFile(File(root, "catalog-api$version.json")).readFully()))
+        envelope.getJSONObject("payload").also { PluginPackageVerifier.verifySignature(it, envelope, trustedKeys) }
+    }.getOrNull() }
+    fun metadata(id: String): JSONObject? = synchronized(lock) { catalogs().asReversed().firstNotNullOfOrNull { payload ->
+        PluginJson.objects(payload.getJSONArray("entries")).firstOrNull { it.getString("id") == id }
+    } }
+    fun author(id: String): JSONObject? = synchronized(lock) { catalogs().asReversed().firstNotNullOfOrNull { payload ->
+        payload.optJSONObject("authors")?.optJSONObject(id) ?: payload.optJSONArray("authors")?.let(PluginJson::objects)?.firstOrNull { it.optString("id") == id }
+    } }
+    fun readDigest(digest: String): PluginPackage {
         if (!digest.matches(Regex("[a-f0-9]{64}"))) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "没有上一可用版本")
         val bytes = File(root, "$digest.zfplugin").readBytes()
         if (PluginJson.sha256(bytes) != digest) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "已安装包已损坏")

@@ -12,6 +12,7 @@ app/build/
 
 # Cursor / agent plan scratch
 /.zcode/
+/.local/
 
 # Android
 /local.properties

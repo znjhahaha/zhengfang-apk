@@ -35,8 +35,11 @@ data class SurveyLocalState(
     val lastViewedAt: Long? = null,
     val completedAt: Long? = null,
     val seen: Boolean = false,
-    val reminded: Boolean = false
+    val reminded: Boolean = false,
+    val remindedOn: String? = null
 )
+
+internal fun surveyReminderDay(now: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(java.util.Date(now))
 
 data class SurveySavedData(
     val schoolHost: String = "",

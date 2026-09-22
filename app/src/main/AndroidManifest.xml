@@ -31,6 +31,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CourseSelector"
         tools:targetApi="31">
+        <activity android:name=".academic.plugin.NativePluginActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".academic.plugin.NativePluginJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
 
         <provider
             android:name=".manager.AppearanceThemeProvider"
@@ -81,6 +83,9 @@
             android:windowSoftInputMode="adjustResize" />
         
         <activity android:name=".academic.plugin.PluginCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.PluginDeveloperActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.CampusServiceCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.ServicePluginActivity" android:exported="false" android:configChanges="uiMode" />
         <!-- Background grab service -->
         <service
             android:name=".academic.plugin.runtime.PluginSandboxService"

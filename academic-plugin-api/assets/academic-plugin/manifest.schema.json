@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zfplugin.local/api/1/manifest.schema.json",
+  "$id": "https://zfplugin.local/api/3/manifest.schema.json",
   "type": "object",
   "properties": {
     "id": {
@@ -17,14 +17,20 @@
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "apiVersion": {
-      "const": 1
+      "enum": [
+        1,
+        2,
+        3
+      ]
     },
     "kind": {
       "type": "string",
       "enum": [
         "configuration",
         "extension",
-        "independent"
+        "independent",
+        "service",
+        "native"
       ]
     },
     "extends": {
@@ -60,11 +66,274 @@
           "selection.sections",
           "selection.enrolled",
           "selection.select",
-          "selection.drop"
+          "selection.drop",
+          "service.page",
+          "service.action",
+          "ui.init",
+          "ui.reduce",
+          "task.run",
+          "data.query"
+        ]
+      },
+      "maxItems": 30,
+      "uniqueItems": true
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "network",
+          "storage",
+          "credentials",
+          "session",
+          "files",
+          "device.clipboard",
+          "device.haptics",
+          "tasks",
+          "notifications",
+          "navigation",
+          "auth",
+          "runtime"
         ]
       },
       "maxItems": 16,
       "uniqueItems": true
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9.]{2,80}$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ]
+          },
+          "pathPrefix": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "host",
+          "pathPrefix"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    },
+    "contributes": {
+      "type": "object",
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 30
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "pageId": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "school",
+                  "book",
+                  "chart",
+                  "calendar",
+                  "wallet",
+                  "activity"
+                ]
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "pageId"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 30
+        },
+        "menuActions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "event": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "pageId": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "event"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        },
+        "dataProviders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 20
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 20
+        },
+        "academic": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pages",
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "authorRef": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "maxItems": 30
+    },
+    "releaseNotes": {
+      "type": "string",
+      "maxLength": 2000
     },
     "network": {
       "type": "array",
@@ -176,6 +445,175 @@
       ],
       "additionalProperties": false
     },
+    "service": {
+      "type": "object",
+      "properties": {
+        "schoolIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "academicHosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9.-]+$"
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "authentication": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "none",
+                "password"
+              ]
+            },
+            "usernameLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "passwordLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "help": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12,
+          "minItems": 1
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "pageId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "school",
+                  "book",
+                  "chart",
+                  "calendar",
+                  "wallet",
+                  "activity"
+                ]
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "pageId",
+              "icon",
+              "order"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12,
+          "minItems": 1
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "query",
+                  "mutation"
+                ]
+              },
+              "confirmation": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 40
+        }
+      },
+      "required": [
+        "schoolIds",
+        "authentication",
+        "pages",
+        "entries",
+        "actions"
+      ],
+      "additionalProperties": false
+    },
     "description": {
       "type": "string",
       "maxLength": 2000
@@ -196,7 +634,6 @@
     "kind",
     "capabilities",
     "network",
-    "school",
     "files"
   ],
   "additionalProperties": false

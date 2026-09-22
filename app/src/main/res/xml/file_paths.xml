@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <files-path name="native_plugin_files" path="native-plugin-files/" />
     <cache-path name="cache_root" path="." />
     <cache-path name="logs" path="logs/" />
     <external-cache-path name="ext_logs" path="logs/" />

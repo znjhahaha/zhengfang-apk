@@ -1,286 +1,233 @@
 package com.tyust.course.academic.plugin
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.tyust.course.academic.AcademicException
-import com.tyust.course.academic.AcademicSessionStore
 import com.tyust.course.manager.UserManager
 import com.tyust.course.ui.system.*
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import org.json.JSONArray
-import java.util.UUID
 
 class PluginCenterActivity : ComponentActivity() {
+    private var generation by mutableIntStateOf(0)
+    override fun onResume() { super.onResume(); generation++ }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { CourseSelectorTheme { Center() } }
     }
+
     @Composable private fun Center() {
         val scope = rememberCoroutineScope()
         var packages by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
+        var catalog by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
         var selected by remember { mutableStateOf<PluginPackage?>(null) }
-        var developer by remember { mutableStateOf(false) }
+        var uninstall by remember { mutableStateOf<PluginPackage?>(null) }
+        var installedView by remember { mutableStateOf(false) }
+        var chooseProvider by remember { mutableStateOf(false) }
+        var menu by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
-        var feedback by remember { mutableStateOf("") }
-        var report by remember { mutableStateOf("{}") }
-        var operation by remember { mutableStateOf("study.terms") }
-        var args by remember { mutableStateOf("{}") }
-        var showMethods by remember { mutableStateOf(false) }
-        var confirmWrite by remember { mutableStateOf(false) }
-        var catalogUrl by remember { mutableStateOf("http://127.0.0.1:8787/catalog.json") }
-        var catalogKey by remember { mutableStateOf("") }
-        var catalogEntries by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-        var bindCandidate by remember { mutableStateOf<PluginPackage?>(null) }
-        val sessions = remember { AcademicSessionStore() }
-        val sessionId = remember { "dev:${UUID.randomUUID()}" }
-        val adapter = remember(selected?.digest) { selected?.let { pkg -> PluginAcademicAdapter(this, pkg,
-            sessions.session(pkg.manifest.school.getString("id"), sessionId, "${pkg.manifest.school.getString("protocol")}://${pkg.manifest.school.getString("domain")}${pkg.manifest.school.getString("basePath")}")) } }
-        DisposableEffect(Unit) { onDispose { sessions.clear() } }
-        suspend fun refresh() { packages = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().list() } }
-        LaunchedEffect(Unit) { refresh() }
-        fun runOperation(confirmed: Boolean) {
-            val current = adapter ?: return
+        var message by remember { mutableStateOf("") }
+        val school = UserManager.getInstance().currentSchool
+        val candidates = remember(packages, generation, school) { school?.let(AcademicProviderRegistry::candidates).orEmpty() }
+        val choice = remember(generation, school) { school?.let(AcademicProviderRegistry::manualChoice).orEmpty() }
+        val resolved = remember(packages, generation, school) { school?.let { runCatching { AcademicProviderRegistry.resolve(it) } } }
+        val current = resolved?.getOrNull()
+
+        suspend fun refresh() {
+            packages = withContext(Dispatchers.IO) { AcademicProviderRegistry.reload(); AcademicProviderRegistry.packages().list() }
+        }
+        fun run(block: suspend () -> Unit) {
+            if (busy) return
             scope.launch {
-                busy = true
-                val result = try { withContext(Dispatchers.IO) { PluginJson.success(current.invoke(operation, PluginJson.parse(args), confirmed)) } }
-                catch (e: CancellationException) { throw e }
-                catch (e: Exception) { JSONObject().put("ok", false).put("error", JSONObject().put("code", (e as? AcademicException)?.status?.name ?: "VALIDATION_FAILED").put("message", e.message.orEmpty())) }
-                finally { busy = false }
-                report = JSONObject().put("provider", current.pinned.manifest.id).put("version", current.version).put("operation", operation)
-                    .put("result", result).put("trace", JSONArray(current.lastTrace)).toString(2)
-                feedback = if (result.optBoolean("ok")) "调用完成" else "调用未成功，请查看结果"
-            }
-        }
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) scope.launch {
-                busy = true
-                try {
-                    selected = withContext(Dispatchers.IO) {
-                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytesBounded(PluginLimits.PACKAGE_BYTES) }
-                            ?: throw IllegalArgumentException("无法读取文件")
-                        AcademicProviderRegistry.packages().install(bytes, developer)
-                    }
-                    AcademicProviderRegistry.reload(); refresh(); feedback = "导入完成"
-                    operation = selected?.manifest?.capabilities?.firstOrNull() ?: "study.terms"
-                } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { feedback = e.message ?: "导入失败" }
+                busy = true; message = ""
+                try { block() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { message = error.message ?: "操作暂时未完成，请重试" }
                 finally { busy = false }
             }
         }
-        val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-            if (uri != null) scope.launch(Dispatchers.IO) { contentResolver.openOutputStream(uri)?.use { it.write(report.toByteArray()) } }
+        LaunchedEffect(generation) { refresh() }
+        fun select(id: String?) {
+            school?.let { AcademicProviderRegistry.choose(it, id) }
+            chooseProvider = false; generation++
+            message = "已保存本校选择，正在运行的任务继续使用原适配"
         }
-        fun loadCatalog() { scope.launch {
-            busy = true
-            try {
-                val entries = AcademicProviderRegistry.catalog()?.check()
-                catalogEntries = entries.orEmpty()
-                feedback = when { entries == null -> "当前版本未配置适配目录"; entries.isEmpty() -> "目录中暂时没有适配"; else -> "目录已更新，可选择适配进行安装" }
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { feedback = e.message.orEmpty() }
-            finally { busy = false }
-        } }
-        fun installFromCatalog(id: String, addSchool: Boolean) { scope.launch {
-            busy = true
-            try {
-                val pkg = AcademicProviderRegistry.catalog()?.update(id) ?: throw IllegalStateException("尚未配置适配目录")
-                AcademicProviderRegistry.reload(); refresh(); selected = pkg
-                operation = pkg.manifest.capabilities.firstOrNull() ?: "study.terms"
-                args = defaultArgs(operation)
-                feedback = "${pkg.manifest.name} 安装完成"
-                if (addSchool) bindCandidate = pkg
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { feedback = e.message ?: "安装失败，请重试" }
-            finally { busy = false }
-        } }
-        GlassPageScaffold(title = "教务适配", subtitle = "管理学校的教务连接", onBack = { finish() }) { padding ->
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(
-                    start = 20.dp, end = 20.dp, top = padding.calculateTopPadding() + 8.dp,
-                    bottom = padding.calculateBottomPadding() + 24.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp)
-            ) {
-                val school = UserManager.getInstance().currentSchool
-                val current = school?.let { runCatching { AcademicProviderRegistry.resolve(it) }.getOrNull() }
-                InsetGroupedSection(header = "当前学校") {
-                    InsetGroupedRow(title = school?.name ?: "尚未选择学校", icon = Icons.Outlined.School,
-                        subtitle = current?.let { "${it.manifest.name} · ${it.manifest.version}" } ?: "内置适配 · 无需额外安装",
-                        showDivider = false)
-                }
-                InsetGroupedSection(header = "获取适配", footer = "内置学校可直接使用。正式线上目录尚未启用。") {
-                    InsetGroupedRow(title = "浏览适配目录", subtitle = "查看可用学校，下载或更新适配", icon = Icons.Outlined.CloudDownload,
-                        enabled = !busy, onClick = ::loadCatalog, trailing = { ForwardIcon() })
-                    InsetGroupedRow(title = "导入适配包", subtitle = "从设备选择教务适配包，也支持重新导入", icon = Icons.Outlined.FileOpen,
-                        enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) }, showDivider = false,
-                        modifier = Modifier.testTag("plugin-import"), trailing = { ForwardIcon() })
+
+        GlassPageScaffold(title = "插件中心", subtitle = school?.name ?: "学校适配与通用服务", onBack = { finish() }, actions = {
+            SystemIconButton(Icons.Outlined.MoreHoriz, "更多", { menu = true })
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(text = { Text("导入、回滚与开发工具") }, onClick = {
+                    menu = false; startActivity(Intent(this@PluginCenterActivity, PluginDeveloperActivity::class.java))
+                })
+                DropdownMenuItem(text = { Text("开发文档与交流群") }, onClick = { menu = false; web("/developers") })
+            }
+        }) { padding ->
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(
+                start = 20.dp, end = 20.dp, top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LiquidButton({ installedView = false }, modifier = Modifier.weight(1f),
+                        style = if (!installedView) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface) { Text("本校") }
+                    LiquidButton({ installedView = true }, modifier = Modifier.weight(1f),
+                        style = if (installedView) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface) { Text("已安装") }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (feedback.isNotBlank()) Text(feedback, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp))
-                if (catalogEntries.isNotEmpty()) {
-                    InsetGroupedSection(header = "目录中的适配", footer = "安装前会验证来源和包内容，安装后可添加学校并登录。") {
-                        catalogEntries.forEachIndexed { index, entry ->
-                            val id = entry.getString("id")
-                            val installed = packages.firstOrNull { it.manifest.id == id }
-                            val upToDate = installed?.manifest?.version == entry.getString("version") && installed.official
-                            InsetGroupedRow(title = entry.optString("name", id), subtitle = "版本 ${entry.getString("version")}",
-                                icon = Icons.Outlined.CloudDownload, showDivider = index < catalogEntries.lastIndex,
-                                trailing = {
-                                    LiquidButton(onClick = { installFromCatalog(id, installed == null) }, enabled = !busy && !upToDate,
-                                        modifier = Modifier.testTag("catalog-install-$id"), style = LiquidButtonStyle.Tinted,
-                                        minHeight = 40.dp, horizontalPadding = 16.dp) {
-                                        Text(if (upToDate) "已安装" else if (installed != null) "更新" else "安装", style = MaterialTheme.typography.labelLarge)
-                                    }
-                                })
+                if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp))
+                if (!installedView) {
+                    InsetGroupedSection(header = "当前教务适配", footer = if (choice.isBlank()) "按学校域名、端口和路径自动匹配已安装插件。" else "已保存手动选择，可随时恢复自动匹配。") {
+                        InsetGroupedRow(title = when {
+                            school == null -> "尚未选择学校"
+                            resolved?.isFailure == true -> "需要选择本校适配"
+                            current != null -> current.manifest.name
+                            else -> "内置适配"
+                        }, subtitle = when {
+                            resolved?.isFailure == true -> resolved.exceptionOrNull()?.message
+                            current != null -> "正在生效 · ${current.manifest.version}"
+                            else -> "没有匹配插件时使用 App 内置适配"
+                        }, icon = Icons.Outlined.School, onClick = { if (school != null) chooseProvider = true }, showDivider = false,
+                            trailing = { Icon(Icons.Outlined.ChevronRight, null) })
+                    }
+                }
+                val shown = if (installedView) packages else packages.filter { pkg ->
+                    school?.let { AcademicProviderRegistry.matches(pkg, it) } ?: (pkg.manifest.isNative && pkg.manifest.json.optJSONArray("matches")?.length().let { it == null || it == 0 })
+                }
+                InsetGroupedSection(header = if (installedView) "已安装 · ${shown.size}" else "本校插件 · ${shown.size}") {
+                    if (shown.isEmpty()) InsetGroupedRow(title = "还没有可用插件", subtitle = "从插件商店获取学校适配或通用服务", icon = Icons.Outlined.Extension, showDivider = false)
+                    shown.sortedBy { it.manifest.name }.forEachIndexed { index, pkg ->
+                        val enabled = school?.let { AcademicProviderRegistry.isEnabled(pkg.manifest.id, it) } ?: true
+                        val state = when {
+                            !enabled -> "本校已停用"
+                            current?.digest == pkg.digest -> "教务适配生效中"
+                            pkg.manifest.isAcademic -> if (school != null && AcademicProviderRegistry.matches(pkg, school)) "可选教务适配" else "适用于其他学校"
+                            school != null && !AcademicProviderRegistry.matches(pkg, school) -> "适用于其他学校"
+                            else -> "服务已启用"
                         }
+                        InsetGroupedRow(title = pkg.manifest.name, subtitle = "$state · ${pkg.manifest.version}", icon = Icons.Outlined.Extension,
+                            onClick = { selected = pkg }, showDivider = index < shown.lastIndex, modifier = Modifier.testTag("plugin-${pkg.manifest.id}"),
+                            trailing = { Icon(Icons.Outlined.ChevronRight, "插件详情") })
                     }
                 }
-                InsetGroupedSection(header = "已安装 · ${packages.size} 项") {
-                    if (packages.isEmpty()) InsetGroupedRow(title = "还没有安装适配", subtitle = "可以浏览目录，或导入本地适配包",
-                        icon = Icons.Outlined.Extension, showDivider = false)
-                    packages.forEachIndexed { index, pkg ->
-                        val chosen = selected?.digest == pkg.digest
-                        InsetGroupedRow(title = pkg.manifest.name,
-                            subtitle = "${packageKind(pkg)} · ${pkg.manifest.version} · ${if (pkg.official) "已验签" else "本地开发"}",
-                            icon = packageIcon(pkg), enabled = !busy, showDivider = index < packages.lastIndex,
-                            iconTint = if (pkg.official) androidx.compose.ui.graphics.Color(0xFF18796B) else MaterialTheme.colorScheme.primary,
-                            onClick = {
-                                selected = pkg; operation = pkg.manifest.capabilities.firstOrNull() ?: "study.terms"
-                                args = defaultArgs(operation); report = "{}"
-                            }, trailing = { Icon(if (chosen) Icons.Outlined.CheckCircle else Icons.Outlined.ChevronRight,
-                                if (chosen) "已选中" else "查看详情", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) })
+                InsetGroupedSection(header = "获取插件") {
+                    InsetGroupedRow(title = "浏览并安装插件", subtitle = "下载前自动验证签名与兼容性", icon = Icons.Outlined.CloudDownload,
+                        enabled = !busy, onClick = { run { catalog = AcademicProviderRegistry.catalog().check(); if (catalog.isEmpty()) message = "目录暂时没有可用插件" } },
+                        trailing = { Icon(Icons.Outlined.ChevronRight, null) })
+                    InsetGroupedRow(title = "打开插件商店", subtitle = "搜索学校、查看介绍与作者", icon = Icons.Outlined.Language,
+                        onClick = { web("/") }, showDivider = false, trailing = { Icon(Icons.Outlined.OpenInNew, null) })
+                }
+                if (catalog.isNotEmpty()) InsetGroupedSection(header = "可安装插件") {
+                    catalog.forEachIndexed { index, entry ->
+                        val id = entry.getString("id")
+                        val installed = packages.firstOrNull { it.manifest.id == id }
+                        val latest = installed?.official == true && installed.manifest.version == entry.getString("version")
+                        InsetGroupedRow(title = entry.optString("name", id), subtitle = entry.optString("description").ifBlank { "版本 ${entry.getString("version")}" },
+                            showDivider = index < catalog.lastIndex, trailing = {
+                                LiquidButton(onClick = { run {
+                                    selected = AcademicProviderRegistry.catalog().update(id); refresh()
+                                    message = "安装完成，匹配当前学校的插件会自动生效"
+                                } }, enabled = !busy && !latest, minHeight = 44.dp, horizontalPadding = 16.dp, style = LiquidButtonStyle.Tinted,
+                                    modifier = Modifier.testTag("catalog-install-$id")) { Text(if (latest) "已安装" else if (installed == null) "安装" else "更新") }
+                            })
                     }
                 }
-                selected?.let { pkg ->
-                    InsetGroupedSection(header = pkg.manifest.name) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("支持能力", style = MaterialTheme.typography.titleSmall)
-                            Text(pkg.manifest.capabilities.joinToString(" · ") { capabilityName(it) }.ifBlank { "复用内置适配能力" },
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            pkg.manifest.json.optString("description").takeIf { it.isNotBlank() }?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        InsetGroupedRow(title = "用于此学校", icon = Icons.Outlined.School, enabled = !busy,
-                            onClick = { bindCandidate = pkg }, trailing = { ForwardIcon() })
-                        InsetGroupedRow(title = "检查并更新适配", icon = Icons.Outlined.SystemUpdate, enabled = !busy,
-                            onClick = { installFromCatalog(pkg.manifest.id, false) }, trailing = { ForwardIcon() })
-                        InsetGroupedRow(title = "恢复上一版本", icon = Icons.Outlined.History, enabled = !busy,
-                            onClick = { scope.launch {
-                                busy = true
-                                try {
-                                    selected = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().rollback(pkg.manifest.id) }
-                                    AcademicProviderRegistry.reload(); refresh(); feedback = "已恢复上一版本"
-                                } catch (e: CancellationException) { throw e }
-                                catch (e: Exception) { feedback = e.message.orEmpty() }
-                                finally { busy = false }
-                            } }, trailing = { ForwardIcon() })
-                        InsetGroupedRow(title = "恢复内置适配", icon = Icons.Outlined.Restore, enabled = !busy, showDivider = false,
-                            onClick = {
-                                val boundSchool = UserManager.getInstance().getSchoolById(pkg.manifest.school.getString("id"))
-                                if (boundSchool != null && pkg.manifest.baseProvider != null) {
-                                    boundSchool.academicProvider = pkg.manifest.baseProvider
-                                    UserManager.getInstance().updateSchoolConfig(boundSchool)
-                                    feedback = "已恢复内置适配，请重新登录"
-                                } else feedback = "此学校暂无内置适配"
-                            }, trailing = { ForwardIcon() })
-                    }
-                }
-                InsetGroupedSection(header = "开发者工具", footer = if (developer) "开发模式允许导入未签名的本地包，请仅使用可信来源。" else null) {
-                    InsetGroupedRow(title = "开发者模式", subtitle = "本地包导入与独立会话调试", icon = Icons.Outlined.Code,
-                        showDivider = false, enabled = !busy,
-                        trailing = { LiquidSwitch(checked = developer, onCheckedChange = { developer = it }, enabled = !busy,
-                            modifier = Modifier.testTag("plugin-developer-toggle")) })
-                }
-                if (developer && com.tyust.course.BuildConfig.DEBUG) {
-                    InsetGroupedSection(header = "本地目录调试") {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(catalogUrl, { catalogUrl = it }, label = { Text("本地验收目录 URL") }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                            OutlinedTextField(catalogKey, { catalogKey = it }, label = { Text("测试公钥 JSON") }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                            LiquidButton(onClick = {
-                                try { AcademicProviderRegistry.configureLocalCatalog(catalogUrl, catalogKey); feedback = "本地目录已配置" }
-                                catch (e: Exception) { feedback = e.message.orEmpty() }
-                            }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("应用本地目录") }
-                        }
-                    }
-                }
-                val debugPackage = selected
-                if (developer && debugPackage != null && debugPackage.manifest.capabilities.isNotEmpty()) {
-                    InsetGroupedSection(header = "独立测试会话", footer = "测试会话与当前账号隔离，选退课调用仍需确认。") {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("${debugPackage.manifest.id} · ${debugPackage.manifest.version}", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Box {
-                                LiquidButton({ showMethods = true }, enabled = !busy) { Text(operation, style = MaterialTheme.typography.bodyMedium); Icon(Icons.Outlined.ExpandMore, null) }
-                                DropdownMenu(showMethods, { showMethods = false }) {
-                                    debugPackage.manifest.capabilities.forEach { method -> DropdownMenuItem(text = { Text(method) }, onClick = {
-                                        operation = method; showMethods = false; args = defaultArgs(method)
-                                    }) }
-                                }
-                            }
-                            OutlinedTextField(args, { args = it }, label = { Text("JSON 参数") }, modifier = Modifier.fillMaxWidth(), minLines = 3, enabled = !busy)
-                            LiquidButton({ if (operation in setOf("selection.select", "selection.drop")) confirmWrite = true else runOperation(false) },
-                                enabled = !busy, modifier = Modifier.fillMaxWidth(), style = LiquidButtonStyle.Tinted) {
-                                Icon(Icons.Outlined.PlayArrow, null, Modifier.size(20.dp)); Text("运行测试")
-                            }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                LiquidButton({ adapter?.clearDevelopmentData(); report = "{}"; feedback = "已清除开发会话与数据" }, enabled = !busy,
-                                    modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text("清除数据", style = MaterialTheme.typography.labelLarge) }
-                                LiquidButton({ exporter.launch("plugin-validation.json") }, enabled = !busy,
-                                    modifier = Modifier.weight(1f), horizontalPadding = 8.dp) { Text("导出报告", style = MaterialTheme.typography.labelLarge) }
-                            }
-                            SelectionContainer { Text(report, style = MaterialTheme.typography.bodySmall) }
-                        }
-                    }
+                InsetGroupedSection(header = "一起适配更多学校") {
+                    InsetGroupedRow(title = "招募校园插件开发者", subtitle = "欢迎有能力的同学为自己的学校开发独立适配。开发文档、示例与工具已集中提供。QQ群 1074017033",
+                        icon = Icons.Outlined.Code, onClick = { web("/developers") }, showDivider = false, trailing = { Icon(Icons.Outlined.OpenInNew, null) })
                 }
             }
         }
-        if (confirmWrite) AlertDialog(onDismissRequest = { confirmWrite = false }, title = { Text("确认测试选退课") },
-            text = { Text("此操作会执行所选适配的写入接口。模拟学校只修改模拟数据，真实学校可能改变选课记录。") },
-            confirmButton = { TextButton({ confirmWrite = false; runOperation(true) }) { Text("确认执行") } },
-            dismissButton = { TextButton({ confirmWrite = false }) { Text("取消") } })
-        bindCandidate?.let { pkg -> AlertDialog(onDismissRequest = { bindCandidate = null }, title = { Text("使用 ${pkg.manifest.name}") },
-            text = { Text("将此适配添加到学校列表，之后可在登录页选择。已有学校和账号 ID 保持不变。") },
-            confirmButton = { TextButton({
-                val school = AcademicProviderRegistry.school(pkg)
-                val user = UserManager.getInstance()
-                if (user.getSchoolById(school.id) != null) user.updateSchoolConfig(school) else user.addCustomSchool(school)
-                feedback = "已添加学校，请从学校列表选择并登录"; bindCandidate = null
-            }) { Text("使用适配") } }, dismissButton = { TextButton({ bindCandidate = null }) { Text("取消") } }) }
+        if (chooseProvider && school != null) SystemDialog(onDismissRequest = { chooseProvider = false }, title = { Text("本校教务适配") },
+            confirmButton = { TextButton(onClick = { chooseProvider = false }) { Text("完成") } }) {
+            Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { select(null) }) { Text(if (choice.isBlank()) "自动匹配（当前）" else "自动匹配") }
+                TextButton(onClick = { select("builtin.auto") }) { Text(if (choice.startsWith("builtin.")) "内置适配（当前）" else "内置适配") }
+                candidates.forEach { pkg ->
+                    TextButton(onClick = { select(pkg.manifest.id) }) { Text(pkg.manifest.name + if (choice == pkg.manifest.id) "（当前）" else "") }
+                }
+                if (candidates.size > 1) Text("本校有多个适配，请选择一个；选择会为本校记忆。", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        selected?.let { pkg ->
+            val metadata = if (pkg.official) AcademicProviderRegistry.packages().metadata(pkg.manifest.id) else null
+            val authorRef = metadata?.optString("authorRef")?.ifBlank { null } ?: pkg.manifest.json.optString("authorRef")
+            val author = authorRef.takeIf { it.isNotBlank() }?.let { AcademicProviderRegistry.packages().author(it) }
+            val features = (metadata?.optJSONArray("features") ?: pkg.manifest.json.optJSONArray("features"))?.let(PluginJson::strings)
+                ?: pkg.manifest.capabilities.map(::capabilityName)
+            val enabled = school?.let { AcademicProviderRegistry.isEnabled(pkg.manifest.id, it) } ?: true
+            SystemDialog(onDismissRequest = { selected = null }, title = { Text(pkg.manifest.name) },
+                confirmButton = { TextButton(onClick = { selected = null }) { Text("完成") } }) {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(metadata?.optString("description")?.ifBlank { null } ?: pkg.manifest.json.optString("description").ifBlank { "作者尚未提供介绍" })
+                    Detail("声明支持", features.joinToString("、").ifBlank { "未声明功能" })
+                    val verification = metadata?.optJSONObject("verification")
+                    Detail("实际验证", verification?.let { item ->
+                        listOfNotNull(item.optString("summary").takeIf { it.isNotBlank() },
+                            listOf(item.optString("date"), item.optString("environment")).filter { it.isNotBlank() }.joinToString(" · ").takeIf { it.isNotBlank() },
+                            item.optJSONArray("checks")?.let(PluginJson::strings)?.joinToString("、"),
+                            item.optJSONArray("limitations")?.let(PluginJson::strings)?.joinToString("\n")).filter { it.isNotBlank() }.joinToString("\n").ifBlank { null }
+                    } ?: "尚无公开验收记录")
+                    Detail("作者", author?.optString("name")?.ifBlank { null } ?: pkg.manifest.json.optString("author").ifBlank { "作者未公开" })
+                    author?.optString("bio")?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    if (authorRef.isNotBlank()) TextButton(onClick = { web("/authors/" + Uri.encode(authorRef)) }) { Text("作者主页") }
+                    Detail("版本与兼容", "${pkg.manifest.version} · API ${pkg.manifest.apiVersion}" + if (pkg.official) " · 已验证签名" else " · 开发包")
+                    Detail("权限", pkg.manifest.permissions.joinToString("、") { permissionName(it) }.ifBlank { "无额外权限" })
+                    Detail("网络范围", pkg.manifest.network.toString())
+                    val matchRules = metadata?.optJSONArray("matches") ?: pkg.manifest.json.optJSONArray("matches")
+                    Detail("适用范围", matchRules?.let(PluginJson::objects)?.joinToString("\n") { it.getString("host") + (if (it.has("port")) ":${it.getInt("port")}" else "") + it.optString("pathPrefix", "/") }
+                        ?.ifBlank { null } ?: pkg.manifest.json.optJSONObject("school")?.optString("name") ?: "通用服务")
+                    Detail("版本说明", metadata?.optString("releaseNotes")?.ifBlank { null } ?: pkg.manifest.json.optString("releaseNotes").ifBlank { "暂无版本说明" })
+                    val releases = (metadata?.optJSONArray("releases") ?: metadata?.optJSONArray("versions"))?.let(PluginJson::objects).orEmpty()
+                    releases.forEach { Detail(it.getString("version"), it.optString("notes").ifBlank { "未提供说明" }) }
+                    if ((pkg.manifest.isService || pkg.manifest.isNative && pkg.manifest.contributes.getJSONArray("pages").length() > 0) && enabled && (school == null || AcademicProviderRegistry.matches(pkg, school))) {
+                        LiquidButton(onClick = { selected = null; if (pkg.manifest.isNative) NativePluginActivity.open(this@PluginCenterActivity, pkg) else ServicePluginActivity.open(this@PluginCenterActivity, pkg) },
+                            modifier = Modifier.fillMaxWidth(), style = LiquidButtonStyle.Tinted) { Text("打开插件") }
+                    }
+                    if (pkg.manifest.isAcademic && school != null && AcademicProviderRegistry.matches(pkg, school)) {
+                        TextButton(onClick = { AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, true); select(pkg.manifest.id); selected = null }) { Text("用作本校教务适配") }
+                    }
+                    if (pkg.manifest.isAcademic && UserManager.getInstance().getSchoolById(pkg.manifest.school.getString("id")) == null) {
+                        TextButton(onClick = {
+                            UserManager.getInstance().addCustomSchool(AcademicProviderRegistry.school(pkg))
+                            message = "已添加学校，可在学校列表选择并登录"; selected = null
+                        }) { Text("添加到学校列表") }
+                    }
+                    if (school != null && AcademicProviderRegistry.matches(pkg, school)) TextButton(onClick = {
+                        AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, !enabled)
+                        generation++; selected = null
+                    }) { Text(if (enabled) "本校停用" else "本校启用") }
+                    TextButton(onClick = { PluginFeedback.open(this@PluginCenterActivity, pkg) }) { Text("快捷反馈") }
+                    TextButton(onClick = { selected = null; uninstall = pkg }) { Text("卸载插件", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+        uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, title = { Text("卸载 ${pkg.manifest.name}？") },
+            confirmButton = { TextButton(onClick = { run { withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().deactivate(pkg.manifest.id) }; refresh(); generation++ }; uninstall = null }) { Text("卸载") } },
+            dismissButton = { TextButton(onClick = { uninstall = null }) { Text("取消") } }) {
+            Text("将从所有学校的可用插件中移除。已开始的后台任务仍使用原来的包版本。仅想在当前学校关闭时，请使用“本校停用”。")
+        } }
     }
-    @Composable private fun ForwardIcon() = Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    private fun packageKind(pkg: PluginPackage) = when (pkg.manifest.kind) {
-        "configuration" -> "学校配置"; "extension" -> "内置扩展"; else -> "独立适配"
+    @Composable private fun Detail(label: String, value: String) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(value, style = MaterialTheme.typography.bodySmall)
     }
-    private fun packageIcon(pkg: PluginPackage) = when (pkg.manifest.kind) {
-        "configuration" -> Icons.Outlined.Tune; "extension" -> Icons.Outlined.Extension; else -> Icons.Outlined.School
-    }
-    private fun defaultArgs(method: String) = when (method) {
-        "auth.start" -> "{\"username\":\"demo\",\"password\":\"demo\"}"
-        "study.schedule", "study.exams", "study.calendar" -> "{\"termId\":\"autumn:2026\"}"
-        else -> "{}"
-    }
-    private fun capabilityName(method: String) = when (method) {
-        "auth.start" -> "账号登录"; "auth.resume" -> "继续验证"; "auth.refreshCaptcha" -> "刷新验证码"; "auth.validate" -> "登录校验"
-        "study.terms" -> "学期"; "study.schedule" -> "课表"; "study.calendar" -> "校历与作息"; "study.grades" -> "成绩"; "study.gradeDetails" -> "成绩明细"; "study.exams" -> "考试"
-        "selection.catalog" -> "选课轮次"; "selection.courses" -> "可选课程"; "selection.sections" -> "教学班"; "selection.enrolled" -> "已选课程"; "selection.select" -> "选课"; "selection.drop" -> "退课"
-        else -> method
-    }
+    private fun web(path: String) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AcademicProviderRegistry.OFFICIAL_WEBSITE + path))) }
+    private fun permissionName(name: String) = mapOf("network" to "网络", "storage" to "隔离存储", "credentials" to "加密凭据", "session" to "会话",
+        "files" to "文件", "device.clipboard" to "剪贴板", "device.haptics" to "触感", "tasks" to "后台任务", "notifications" to "通知",
+        "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制")[name] ?: name
+    private fun capabilityName(name: String) = mapOf("ui.init" to "原生页面", "ui.reduce" to "交互与状态", "task.run" to "后台流程", "data.query" to "数据提供者",
+        "auth.start" to "登录", "auth.resume" to "继续认证", "auth.validate" to "会话校验", "auth.refreshCaptcha" to "验证码",
+        "study.terms" to "学期", "study.schedule" to "课表", "study.grades" to "成绩", "study.gradeDetails" to "成绩明细", "study.exams" to "考试",
+        "study.calendar" to "校历与作息", "selection.select" to "选课", "selection.drop" to "退课", "service.page" to "服务页面", "service.action" to "服务操作")[name] ?: name
 }

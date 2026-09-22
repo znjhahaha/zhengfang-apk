@@ -1,5 +1,10 @@
 package com.tyust.course.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +18,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,6 +101,7 @@ fun WeekHeaderCompact(
     val density = LocalDensity.current
     val fontScale = density.fontScale
     val lift = collapseFraction.coerceIn(0f, 1f)
+    val collapsedControls = lift >= 0.5f
     val headerBackdrop = if (sampleBackdrop != null) rememberLayerBackdrop() else null
     val controlBackdrop = if (sampleBackdrop != null && headerBackdrop != null)
         rememberCombinedBackdrop(sampleBackdrop, headerBackdrop) else null
@@ -140,8 +148,13 @@ fun WeekHeaderCompact(
                 }
                 Row(Modifier.testTag("schedule-header-actions"), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    ScheduleViewToggle(dayView, onDayView, controlBackdrop)
-                    SystemActionMenu("更多课表操作", listOf(
+                    AnimatedVisibility(!collapsedControls, enter = fadeIn() + expandHorizontally(expandFrom = Alignment.End), exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.End)) {
+                        ScheduleViewToggle(dayView, { if (!collapsedControls) onDayView(it) }, controlBackdrop)
+                    }
+                    SystemActionMenu("更多课表操作", (if (collapsedControls) listOf(
+                        SystemMenuAction(if (dayView) "切换为周视图" else "切换为日视图", Icons.Outlined.CalendarMonth, { onDayView(!dayView) }),
+                        SystemMenuAction("回到今天", Icons.Outlined.Today, onTodayClick)
+                    ) else emptyList()) + listOf(
                         SystemMenuAction("同步课表", Icons.Outlined.Refresh, onSyncClick),
                         SystemMenuAction("导出课表", Icons.Outlined.Share, onExportClick),
                         SystemMenuAction("添加课程", Icons.Outlined.Add, onAddClick),
@@ -161,10 +174,12 @@ fun WeekHeaderCompact(
             Row(Modifier.fillMaxWidth().height(height - actionHeight).padding(horizontal = scheduleGridPadding()),
                 verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(scheduleTimeColumnWidth() + ScheduleTimeColumnShadowWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    if (showToday) LiquidButton(onTodayClick, backdrop = controlBackdrop,
+                    androidx.compose.animation.AnimatedVisibility(showToday && !collapsedControls, enter = fadeIn(), exit = fadeOut()) {
+                    LiquidButton({ if (!collapsedControls) onTodayClick() }, backdrop = controlBackdrop,
                         modifier = Modifier.size(40.dp).testTag("schedule-today")
                             .semantics { contentDescription = "回到今天" }, minHeight = 40.dp, horizontalPadding = 0.dp) {
                         Text("今天", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.primary)
+                    }
                     }
                 }
                 ScheduleDateStrip(anchor, currentWeek, selectedDay ?: 1, if (showWeekend) 7 else 5,

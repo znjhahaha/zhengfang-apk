@@ -47,7 +47,7 @@ class ScheduleAdaptationDeviceTest {
                 CourseSelectorTheme {
                     Column(Modifier.requiredSize(width.intValue.dp, 720.dp).background(MaterialTheme.colorScheme.background)
                         .testTag("schedule-viewport")) {
-                        WeekHeaderCompact(24, {}, {}, collapseFraction = collapse.floatValue, firstWeekDate = "2026-03-02")
+                        WeekHeaderCompact(24, {}, {}, collapseFraction = collapse.floatValue, firstWeekDate = "2026-03-02", showToday = true)
                         Box(Modifier.weight(1f)) { ScheduleGrid(courses, 25, periodCount = 4, onCourseClick = {}) }
                     }
                 }
@@ -63,8 +63,13 @@ class ScheduleAdaptationDeviceTest {
                 assertTrue("Title overlaps actions at $w/$f/$p", title.right <= actions.left + 1f || title.bottom <= actions.top + 1f)
                 assertTrue(actions.left >= viewport.left && actions.right <= viewport.right + 1f)
                 assertTrue("Date and controls share the first row", title.right <= actions.left + 1f)
-                val actionBounds = listOf("日视图", "周视图", "更多课表操作").map {
+                val actionBounds = (if (p < 0.5f) listOf("日视图", "周视图", "更多课表操作") else listOf("更多课表操作")).map {
                     compose.onNodeWithContentDescription(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                }
+                if (p >= 0.5f) {
+                    compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertDoesNotExist()
+                    compose.onNodeWithContentDescription("周视图", useUnmergedTree = true).assertDoesNotExist()
+                    compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertDoesNotExist()
                 }
                 actionBounds.forEach { assertEquals(actionBounds.first().center.y, it.center.y, 1f) }
                 for (day in 1..7) {
@@ -85,6 +90,47 @@ class ScheduleAdaptationDeviceTest {
             compose.runOnIdle { collapse.floatValue = 0f }
             capture("header-${w}-font$f")
         }
+    }
+
+    @Test fun collapsedActionsRemainReachableAndControlsRestoreAfterReversingDrag() {
+        val collapse = mutableFloatStateOf(0f)
+        val day = mutableStateOf(false)
+        var todayClicks = 0
+        var pixelsPerDp = 1f
+        compose.setContent {
+            val density = minOf(LocalDensity.current.density, LocalWindowInfo.current.containerSize.width.toFloat() / 320)
+            pixelsPerDp = density
+            CompositionLocalProvider(LocalDensity provides Density(density, 1.6f)) {
+                CourseSelectorTheme {
+                    Column(Modifier.requiredSize(320.dp, 720.dp).testTag("schedule-viewport")) {
+                        WeekHeaderCompact(24, {}, {}, collapseFraction = collapse.floatValue, firstWeekDate = "2026-03-02",
+                            showToday = true, dayView = day.value, onDayView = { day.value = it }, onTodayClick = { todayClicks++ })
+                    }
+                }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { collapse.floatValue = 0.75f }
+        compose.mainClock.advanceTimeBy(80)
+        compose.runOnIdle { collapse.floatValue = 0.2f }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnIdle { collapse.floatValue = 1f }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertDoesNotExist()
+        val bounds = compose.onNodeWithTag("schedule-more").fetchSemanticsNode().boundsInRoot
+        assertTrue("More menu must retain a 48 dp target", bounds.width >= 48 * pixelsPerDp - 1 && bounds.height >= 48 * pixelsPerDp - 1)
+        compose.onNodeWithTag("schedule-more").performTouchInput { click(androidx.compose.ui.geometry.Offset(center.x, 1f)) }
+        compose.onNodeWithText("切换为日视图").performClick()
+        compose.runOnIdle { assertTrue(day.value) }
+        compose.onNodeWithContentDescription("更多课表操作", useUnmergedTree = true).performTouchInput { click() }
+        compose.onNodeWithText("回到今天").performClick()
+        compose.runOnIdle { assertEquals(1, todayClicks); collapse.floatValue = 0f }
+        compose.onNodeWithContentDescription("周视图", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun longClassroomsFitWithoutEllipsisEvenInSinglePeriodCards() {
@@ -127,8 +173,13 @@ class ScheduleAdaptationDeviceTest {
     }
 
     private fun capture(name: String) {
-        val bitmap = compose.onNodeWithTag("schedule-viewport").captureToImage().asAndroidBitmap()
         val directory = File(compose.activity.getExternalFilesDir(null), "light-glass-validation").apply { mkdirs() }
+        if (android.os.Build.VERSION.SDK_INT < 26) {
+            androidx.test.uiautomator.UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation())
+                .takeScreenshot(File(directory, "$name.png"))
+            return
+        }
+        val bitmap = compose.onNodeWithTag("schedule-viewport").captureToImage().asAndroidBitmap()
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

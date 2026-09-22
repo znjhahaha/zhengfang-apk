@@ -40,7 +40,7 @@ async function host(method,payload={}) {
   return result.data;
 }
 const store=area=>Object.freeze({get:key=>host(`${area}.get`,{key}),set:(key,value)=>host(`${area}.set`,{key,value}),remove:key=>host(`${area}.remove`,{key})});
-const sdk=Object.freeze({html,http:request=>host('http',request),state:store('state'),storage:store('storage'),
+const sdk=Object.freeze({html,http:request=>host('http',request),state:store('state'),storage:store('storage'),capabilities:Object.freeze({list:()=>host('capabilities.list')}),
  crypto:Object.freeze({digest:(algorithm,text)=>host('crypto.digest',{algorithm,text}),hmacSha256:(key,text)=>host('crypto.hmacSha256',{key,text}),aesCbcEncrypt:(keyBase64,ivBase64,text)=>host('crypto.aesCbcEncrypt',{keyBase64,ivBase64,text}),rsaEncrypt:(publicKeySpkiBase64,text)=>host('crypto.rsaEncrypt',{publicKeySpkiBase64,text}),base64:text=>host('crypto.base64',{text})}),
  log:(level,message,fields={})=>host('log',{level,message,fields})
 });
@@ -49,7 +49,7 @@ Object.defineProperty(globalThis,'__zfInvoke',{value:async function(request) {
     const plugin=globalThis.plugin;
     if(request.operation==='__inspect') {
       const capabilities=[];
-      for(const group of ['auth','study','selection']) if(plugin?.[group]) for(const method of Object.keys(plugin[group])) {
+      for(const group of ['auth','study','selection','service','ui','task','data']) if(plugin?.[group]) for(const method of Object.keys(plugin[group])) {
         if(typeof plugin[group][method]!=='function') throw new Error('Capability must be a function');
         capabilities.push(`${group}.${method}`);
       }
@@ -59,7 +59,7 @@ Object.defineProperty(globalThis,'__zfInvoke',{value:async function(request) {
     const handler=plugin?.[group]?.[method];
     if(typeof handler!=='function') return JSON.stringify({ok:false,error:{code:'UNSUPPORTED',message:'该学校尚未适配此功能'}});
     const result=await handler(request.args??{},Object.freeze(request.context),sdk);
-    return JSON.stringify(result);
+    return JSON.stringify(['ui','task','data'].includes(group) && result?.ok === undefined ? {ok:true,data:result} : result);
   } catch(error) {
     return JSON.stringify({ok:false,error:{code:error?.code??'PAGE_CHANGED',message:String(error?.message??error).slice(0,2000)}});
   }

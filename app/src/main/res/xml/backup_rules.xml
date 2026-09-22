@@ -2,4 +2,7 @@
 <full-backup-content>
     <include domain="sharedpref" path="."/>
     <include domain="database" path="."/>
+    <exclude domain="file" path="native-plugin-files/"/>
+    <exclude domain="file" path="academic-plugin-storage/"/>
+    <exclude domain="sharedpref" path="native-plugin-permissions.xml"/>
 </full-backup-content>

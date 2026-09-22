@@ -32,6 +32,7 @@ class AcademicCookieJar : CookieJar {
     }
 
     fun clear() = synchronized(lock) { cookies.clear() }
+    internal fun snapshot(): List<Cookie> = synchronized(lock) { cookies.filter { it.expiresAt > System.currentTimeMillis() }.toList() }
     fun retire() = synchronized(lock) { retired = true; cookies.clear() }
 }
 

@@ -12,7 +12,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 class PluginAcademicAdapter(
     private val app: Context, val pinned: PluginPackage, val session: AcademicSession,
     private val base: AcademicProtocolAdapter? = null, private val study: AcademicStudyAdapter? = null,
-    private val baseSchool: com.tyust.course.model.SchoolConfig? = null
+    private val baseSchool: com.tyust.course.model.SchoolConfig? = null,
+    private val scopeStillActive: () -> Boolean = { true }
 ) : AcademicProtocolAdapter, AcademicStudyAdapter, AcademicCaptchaLogin, SessionBackedAdapter {
     private val schema = PluginSchema(PluginJson.parse(app.assets.open("academic-plugin/contract.schema.json").bufferedReader().use { it.readText() }))
     private var continuation: String? = null
@@ -21,7 +22,7 @@ class PluginAcademicAdapter(
     val version: String get() = pinned.manifest.version
     fun rebind(newSession: AcademicSession) = PluginAcademicAdapter(app, pinned, newSession,
         baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, newSession) },
-        baseSchool?.let { AcademicStudyReader(it, newSession, AcademicHttpTransport(it, newSession)) }, baseSchool)
+        baseSchool?.let { AcademicStudyReader(it, newSession, AcademicHttpTransport(it, newSession)) }, baseSchool, scopeStillActive)
     @Volatile var lastTrace: List<JSONObject> = emptyList()
         private set
     private val storageRoot = File(app.filesDir, if (session.key.accountKey.startsWith("dev:")) "academic-plugin-development/${pinned.digest}" else "academic-plugin-storage")
@@ -33,11 +34,22 @@ class PluginAcademicAdapter(
 
     suspend fun invoke(method: String, args: JSONObject = JSONObject(), confirmed: Boolean = false): JSONObject = session.withProtocolLock {
         if (method !in pinned.manifest.capabilities) unsupported(method)
-        val op = PluginOperation(session, pinned.manifest, method, development = !pinned.official, confirmed = confirmed)
+        ServicePluginContract.requireRequest(pinned.manifest, method, args, confirmed)
+        val op = PluginOperation(session, pinned.manifest, method, development = !pinned.official, confirmed = confirmed,
+            actionId = if (method == "service.action") args.getString("actionId") else null, scopeStillActive = scopeStillActive)
         val host = PluginHost(op, storageRoot)
         try {
             val result = PluginSandboxClient(app).execute(pinned.source, args, op, host)
-            schema.response(method, result)
+            schema.response(method, result).also { data ->
+                if (method == "service.page") {
+                    if (data.getString("pageId") != args.getString("pageId")) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "服务返回了其他页面")
+                    ServicePluginContract.validatePage(pinned.manifest, data)
+                }
+                if (method == "service.action") {
+                    if (data.getString("actionId") != args.getString("actionId")) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "服务操作结果身份不匹配")
+                    data.optJSONObject("page")?.let { ServicePluginContract.validatePage(pinned.manifest, it) }
+                }
+            }
         } catch (e: PluginException) { val failure = op.failure(e.code, e.message.orEmpty()); throw AcademicException(status(failure.code), failure.message.orEmpty(), e) }
         finally { lastTrace = host.report() }
     }

@@ -81,6 +81,7 @@ internal class HostedDialog(
 class DialogHostState {
     private val portalCount = androidx.compose.runtime.mutableIntStateOf(0)
     val hasBlockingSurface: Boolean get() = dialogs.isNotEmpty() || portalCount.intValue > 0
+    fun hasBlockingSurfaceExcept(ownerKey: String): Boolean = dialogs.any { it.handle.key != ownerKey } || portalCount.intValue > 0
     internal fun beginPortal() { portalCount.intValue++ }
     internal fun endPortal() { portalCount.intValue = (portalCount.intValue - 1).coerceAtLeast(0) }
     internal val dialogs = mutableStateListOf<HostedDialog>()

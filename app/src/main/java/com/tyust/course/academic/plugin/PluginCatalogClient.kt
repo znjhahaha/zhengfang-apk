@@ -15,7 +15,7 @@ import org.json.JSONObject
 import java.security.PublicKey
 import java.util.concurrent.TimeUnit
 
-/** Distribution is opt-in: the app ships with no catalog endpoint or production trust key. */
+/** Catalog and downloads are verified using the app's pinned signing key. */
 class PluginCatalogClient(private val endpoint: String, private val keys: Map<String, PublicKey>, private val store: PluginPackageStore) {
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).callTimeout(45, TimeUnit.SECONDS).build()
@@ -25,10 +25,11 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
         val catalog = PluginJson.parse(download(origin, origin, PluginLimits.PACKAGE_BYTES).toString(Charsets.UTF_8))
         val payload = catalog.getJSONObject("payload")
         PluginPackageVerifier.verifySignature(payload, catalog, keys)
-        if (payload.getInt("apiVersion") != PluginLimits.API_VERSION) throw PluginException(PluginErrorCode.UNSUPPORTED, "目录版本不受支持")
+        if (payload.getInt("apiVersion") !in 1..PluginLimits.API_VERSION) throw PluginException(PluginErrorCode.UNSUPPORTED, "目录版本不受支持")
         PluginJson.objects(payload.getJSONArray("entries")).also { entries ->
             if (entries.size > 1000 || entries.map { it.getString("id") }.distinct().size != entries.size)
                 throw PluginException(PluginErrorCode.VALIDATION_FAILED, "目录数量超限或标识重复")
+            store.rememberCatalog(catalog)
         }
     }
     suspend fun update(id: String): PluginPackage = withContext(Dispatchers.IO) {

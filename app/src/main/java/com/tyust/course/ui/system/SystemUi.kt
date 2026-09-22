@@ -1036,6 +1036,7 @@ fun SystemDialog(
     icon: @Composable (() -> Unit)? = null,
     title: @Composable (() -> Unit)? = null,
     presentation: DialogPresentation = DialogPresentation.Center,
+    ownerKey: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val dialogHost = LocalDialogHost.current
@@ -1060,8 +1061,8 @@ fun SystemDialog(
         // 内容会整块定格。这里让 Host 读一个 State，闭包换新它就重组。
         val currentBody by androidx.compose.runtime.rememberUpdatedState(dialogBody)
         val currentDismiss by androidx.compose.runtime.rememberUpdatedState(onDismissRequest)
-        androidx.compose.runtime.DisposableEffect(dialogHost) {
-            val handle = dialogHost.show(onDismiss = { currentDismiss() }, presentation = presentation) { currentBody() }
+        androidx.compose.runtime.DisposableEffect(dialogHost, ownerKey) {
+            val handle = dialogHost.show(onDismiss = { currentDismiss() }, presentation = presentation, saveableKey = ownerKey) { currentBody() }
             onDispose { dialogHost.dismiss(handle, notify = false) }
         }
     } else {

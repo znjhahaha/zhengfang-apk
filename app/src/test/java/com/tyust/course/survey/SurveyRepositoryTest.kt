@@ -70,7 +70,7 @@ class SurveyRepositoryTest {
         assertEquals(1, repo.state.value.saved.surveys.size); assertNotNull(repo.state.value.error)
         api.offline = false; repo.refresh(force = true); assertEquals(4, api.calls); assertNull(repo.state.value.error)
     }
-    @Test fun remindersAreOncePerSurveyAndVisitAndCanBeDisabledIndependentlyOfUnread() = runTest {
+    @Test fun remindersAggregateUnfinishedSurveysOncePerDayAndIgnoreSeenState() = runTest {
         val one = survey("one", true); val two = survey("two", true)
         val store = MemorySurveyStore(); val api = FakeSurveyTransport(SurveyFeedResult(listOf(one, two), now))
         val repo = SurveyRepository(store, api, "", backgroundScope, { now }); repo.refresh()
@@ -80,9 +80,36 @@ class SurveyRepositoryTest {
         budget.beginVisit(); assertTrue(budget.claim()); repo.setRemindersEnabled(false)
         assertNull(repo.reminderCandidate()); assertEquals(2, repo.state.value.unreadCount(now))
         repo.setRemindersEnabled(true); repo.markSeen(listOf(two.id))
-        assertNull(repo.reminderCandidate()); assertEquals(1, repo.state.value.unreadCount(now))
+        assertEquals("two", repo.reminderCandidate()?.id); assertEquals(1, repo.state.value.unreadCount(now))
+        repo.markReminded(repo.reminderCandidates())
         val restored = SurveyRepository(store, api, "", backgroundScope, { now }).also { it.refresh() }
         assertNull(restored.reminderCandidate())
+    }
+    @Test fun dailyReminderIncludesOrdinarySurveysAndStopsForCompletedExpiredOrFutureOnes() = runTest {
+        var clock = now
+        val ordinary = survey("ordinary")
+        val complete = survey("complete", true)
+        val expiring = survey("expires").copy(endsAt = now + 60_000)
+        val future = survey("future").copy(startsAt = now + 172_800_000)
+        val api = FakeSurveyTransport(SurveyFeedResult(listOf(ordinary, complete, expiring, future), now))
+        val repo = SurveyRepository(MemorySurveyStore(), api, "", backgroundScope, { clock })
+        repo.refresh(); repo.setCompleted(complete, true); repo.viewed(ordinary)
+        assertEquals(setOf("ordinary", "expires"), repo.reminderCandidates().map { it.id }.toSet())
+        repo.markReminded(repo.reminderCandidates()); assertTrue(repo.reminderCandidates().isEmpty())
+        clock += 86_400_000
+        assertEquals(listOf("ordinary"), repo.reminderCandidates().map { it.id })
+        repo.setCompleted(ordinary, true); assertTrue(repo.reminderCandidates().isEmpty())
+    }
+    @Test fun oldReminderFlagsMigrateToTheMigrationDayWithoutLosingCompletionOrPreferences() {
+        val original = SurveySavedData(remindersEnabled = false, local = mapOf("one" to SurveyLocalState(favorite = true, reminded = true, completedAt = now)))
+        val json = org.json.JSONObject(SurveyJson.encode(original)).put("version", 1)
+        json.getJSONObject("local").getJSONObject("one").remove("remindedOn")
+        val migrated = SurveyJson.decode(json.toString(), now)
+        assertFalse(migrated.remindersEnabled)
+        assertEquals(surveyReminderDay(now), migrated.local.getValue("one").remindedOn)
+        assertEquals(now, migrated.local.getValue("one").completedAt)
+        assertTrue(migrated.local.getValue("one").favorite)
+        assertEquals(migrated, SurveyJson.decode(SurveyJson.encode(migrated), now + 86_400_000))
     }
     @Test fun cacheAndFailedRefreshDoNotTriggerReminders() = runTest {
         val store = MemorySurveyStore(SurveySavedData(surveys = listOf(survey(important = true)), fetchedAt = now, serverTime = now))

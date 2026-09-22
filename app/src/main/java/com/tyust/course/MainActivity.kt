@@ -641,11 +641,10 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             com.tyust.course.ui.screen.SurveyReminder(
                 repository = surveyRepository,
                 canPresent = startupOverlaysReady && !session.expired && !showStarDialog && !updateState.showDialog() &&
-                    !dialogHostState.hasBlockingSurface && !showSurveyCenter && selectedTab != 2 &&
+                    !dialogHostState.hasBlockingSurfaceExcept("survey-reminder") && !showSurveyCenter && selectedTab != 2 &&
                     (surveyUsagePreferences.noticeSeen || isDemoMode),
                 foreground = foreground,
-                onOpen = { id -> initialSurveyId = id; showSurveyCenter = true },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 20.dp).padding(bottom = navBarContentInset + 12.dp)
+                onOpen = { id -> initialSurveyId = id; showSurveyCenter = true }
             )
 
             if (!session.expired && updateState.showDialog() && updateInfo != null) {

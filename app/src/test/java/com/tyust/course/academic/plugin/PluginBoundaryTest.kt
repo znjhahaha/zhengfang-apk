@@ -9,7 +9,7 @@ import java.io.File
 
 class PluginBoundaryTest {
     private fun rule() = JSONObject("""{"origin":"https://school.test","pathPrefix":"/api","methods":["GET","POST"],"purposes":["query"],"requiredQuery":{"action":"list"}}""")
-    private fun manifest() = PluginManifest(JSONObject("""{"id":"school.test","version":"1.0.0","network":[]}"""))
+    private fun manifest() = PluginManifest(JSONObject("""{"id":"school.test","kind":"independent","version":"1.0.0","network":[]}"""))
     private fun fails(code: PluginErrorCode, block: () -> Unit) {
         try { block(); fail("Expected $code") } catch (e: PluginException) { assertEquals(code, e.code) }
     }

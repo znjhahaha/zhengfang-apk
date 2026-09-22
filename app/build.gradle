@@ -143,6 +143,8 @@ android {
     }
 
     sourceSets.main.assets.srcDir rootProject.file('academic-plugin-api/assets')
+    sourceSets.test.java.srcDir 'src/sharedTest/java'
+    sourceSets.androidTest.java.srcDir 'src/sharedTest/java'
 
     testOptions {
         // CourseParser 等被测类内部调用 android.util.Log，JVM 单测返回默认值而非抛异常
