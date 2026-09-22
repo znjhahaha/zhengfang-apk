@@ -185,6 +185,80 @@ class AcademicPasswordLoginTest {
         assertEquals(1, server.requestCount)
     }
 
+    @Test fun oldQzUsesActiveBase64HandlerInsteadOfAnUnusedShiftLogin() = withGateway(AcademicSystem.QZ_OLD) { server, gateway, events ->
+        val page = qzForm("sanya").replace("</form>", "<a onclick=\"submitForm1()\">登录</a></form>") +
+            """<script>function login() { var url = '/jsxsd/Logon.do?method=logon&flag=sess'; }</script>"""
+        server.enqueue(html(page).addHeader("Set-Cookie", "sid=active; Path=/jsxsd"))
+        server.enqueue(captcha(1))
+        gateway.login(AcademicCoreTest.testSchool(server, AcademicSystem.QZ_OLD), "student", "secret", events)
+        events.next("captcha")
+        server.next(); server.next()
+        server.enqueue(html(home()))
+        server.enqueue(html(home()))
+        gateway.submitCaptcha("aB12", events)
+        events.next("success")
+        val login = server.next()
+        assertEquals("/jsxsd/xk/LoginToXk", login.path)
+        assertEquals("sid=active", login.getHeader("Cookie"))
+        assertEquals("c3R1ZGVudA==%%%c2VjcmV0", fields(login)["encoded"])
+        assertEquals("", fields(login)["userPassword"])
+        assertEquals("aB12", fields(login)["RANDOMCODE"])
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test fun oldQzUsesThePagesLogonEndpointAndUserAccountFields() = withGateway(AcademicSystem.QZ_OLD) { server, gateway, events ->
+        server.enqueue(html(sanyaForm("/jsxsd/Logon.do?method=logon&flag=sess"))
+            .addHeader("Set-Cookie", "sid=sanya; Path=/jsxsd"))
+        server.enqueue(captcha(1))
+        gateway.login(AcademicCoreTest.testSchool(server, AcademicSystem.QZ_OLD), "u", "p", events)
+        events.next("captcha")
+        server.next(); server.next()
+        server.enqueue(MockResponse().setBody("ABCD#22000"))
+        server.enqueue(html(home()))
+        server.enqueue(html(home()))
+        gateway.submitCaptcha("aB12", events)
+        events.next("success")
+        val handshake = server.next()
+        assertEquals("/jsxsd/Logon.do?method=logon&flag=sess", handshake.path)
+        assertEquals("POST", handshake.method)
+        assertEquals("XMLHttpRequest", handshake.getHeader("X-Requested-With"))
+        assertEquals("sid=sanya", handshake.getHeader("Cookie"))
+        assertEquals(0L, handshake.bodySize)
+        val login = server.next()
+        assertEquals("/jsxsd/xk/LoginToXk", login.path)
+        assertEquals(mapOf("loginMethod" to "LoginToXk", "userAccount" to "u", "userPassword" to "",
+            "encoded" to "uAB%CD%%p", "RANDOMCODE" to "aB12"), fields(login))
+    }
+
+    @Test fun oldQzRejectsACrossOriginEncodingEndpointBeforeSendingTheHandshake() = withGateway(AcademicSystem.QZ_OLD) { server, gateway, events ->
+        server.enqueue(html(sanyaForm("https://untrusted.invalid/Logon.do?method=logon&flag=sess")))
+        server.enqueue(captcha(1))
+        gateway.login(AcademicCoreTest.testSchool(server, AcademicSystem.QZ_OLD), "student", "secret", events)
+        events.next("captcha")
+        gateway.submitCaptcha("aB12", events)
+        events.next("error")
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun oldQzRejectsMalformedEncodingParametersWithoutSubmittingCredentials() = withGateway(AcademicSystem.QZ_OLD) { server, gateway, events ->
+        server.enqueue(html(sanyaForm("Logon.do?method=logon&flag=sess")))
+        server.enqueue(captcha(1))
+        gateway.login(AcademicCoreTest.testSchool(server, AcademicSystem.QZ_OLD), "student", "secret", events)
+        events.next("captcha")
+        server.enqueue(MockResponse().setBody("ABCD#invalid"))
+        gateway.submitCaptcha("aB12", events)
+        events.next("error")
+        assertEquals(3, server.requestCount)
+        server.next(); server.next()
+        assertEquals(0L, server.next().bodySize)
+    }
+
+    private fun sanyaForm(endpoint: String) = """<form id="loginForm" action="/jsxsd/xk/LoginToXk" method="post">
+        <input name="loginMethod" value="LoginToXk" type="hidden">
+        <input id="userAccount" name="userAccount"><input id="userPassword" name="userPassword" type="password">
+        <input name="RANDOMCODE"><img src="verifycode.servlet"><input name="encoded" type="hidden"></form>
+        <script>var strUrl = '$endpoint'; document.getElementById("userPassword").value="";</script>"""
+
     @Test fun beginningANewLoginDiscardsThePreviousCaptchaAndUsesFreshCookies() = withGateway(AcademicSystem.QZ_OLD) { server, gateway, events ->
         server.enqueue(html(qzForm("previous")).addHeader("Set-Cookie", "sid=previous; Path=/jsxsd"))
         server.enqueue(captcha(1))

@@ -240,6 +240,9 @@ private fun cleanIdentityText(raw: String, stripRoleSuffix: Boolean): String {
 }
 
 internal suspend fun <T> AcademicProtocolAdapter.inSession(block: suspend () -> T): T =
-    if (this is BaseAcademicAdapter) inSession(block) else block()
+    if (this is BaseAcademicAdapter) inSession(block)
+    else if (this is BuiltinAcademicProvider) inSession(block)
+    else if (this is com.tyust.course.academic.plugin.PluginAcademicAdapter) session.withProtocolLock(block)
+    else block()
 
 internal fun String.withCharset(name: String): String = runCatching { toByteArray(Charsets.UTF_8).toString(Charset.forName(name)) }.getOrDefault(this)

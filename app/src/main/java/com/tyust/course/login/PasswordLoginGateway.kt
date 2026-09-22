@@ -19,7 +19,8 @@ interface PasswordLoginGateway {
 
 object PasswordLoginGatewayFactory {
     fun create(school: SchoolConfig): PasswordLoginGateway =
-        if (school.id == TYUST_SCHOOL_ID) TyustSsoLoginManager()
+        if (com.tyust.course.academic.plugin.AcademicProviderRegistry.overrides(school, "auth.start")) com.tyust.course.academic.AcademicPasswordLoginGateway(school)
+        else if (school.id == TYUST_SCHOOL_ID) TyustSsoLoginManager()
         else if (school.id == ZJUT_SCHOOL_ID) ZjutSsoLoginManager()
         else if (com.tyust.course.academic.AcademicGatewayFactory.supports(school)) com.tyust.course.academic.AcademicPasswordLoginGateway(school)
         else PasswordLoginManager()

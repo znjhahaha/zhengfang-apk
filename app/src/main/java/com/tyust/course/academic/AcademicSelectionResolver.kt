@@ -30,8 +30,7 @@ internal suspend fun AcademicProtocolAdapter.resolveCandidates(
     for (page in 0 until 20) {
         val rows = listCourses(context, CourseQuery(courseName, start = page * pageSize,
             pageSize = pageSize, scopeId = scopeId))
-        val fresh = rows.filter { seen.add(listOf(it.scopeId, it.stableId,
-            it.raw["jxb_id"].orEmpty(), it.raw["jx0404id"].orEmpty(), it.raw["sectionId"].orEmpty())) }
+        val fresh = rows.filter { seen.add(listOf(it.scopeId, it.stableId, it.identity.sectionId)) }
         offers += fresh.filter {
             (scopeId.isBlank() || it.scopeId == scopeId) &&
                 if (courseId.isNotBlank()) it.stableId == courseId else normalized(it.name) == normalized(courseName)
@@ -46,8 +45,8 @@ internal suspend fun AcademicProtocolAdapter.resolveCandidates(
     val matches = mutableListOf<ResolvedAcademicSelection>()
     val legacy = mutableListOf<ResolvedAcademicSelection>()
     for (offer in offers) {
-        val rowSection = offer.raw["jx0404id"].orEmpty().ifBlank { offer.raw["sectionId"].orEmpty() }
-        if (sectionId.isNotBlank() && rowSection.isNotBlank() && rowSection != sectionId && offer.raw["popupUrl"].isNullOrBlank()) continue
+        val rowSection = offer.identity.sectionId
+        if (sectionId.isNotBlank() && rowSection.isNotBlank() && rowSection != sectionId && !offer.identity.flexibleSection) continue
         for (section in listSections(offer)) {
             if (section.stableId.isBlank()) continue
             val exact = if (sectionId.isNotBlank()) section.stableId == sectionId || section.selectionId == sectionId

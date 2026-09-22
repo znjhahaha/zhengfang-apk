@@ -1,0 +1,16 @@
+{
+  "version": "3.0.0",
+  "apiVersion": 3,
+  "supportedApiVersions": [
+    1,
+    2,
+    3
+  ],
+  "sha256": {
+    "index.d.ts": "1569faa23ebaebd16d1b3f23e2521c4a304bfb3c50dc506b6c3eaeac6b7e17ea",
+    "crypto-vectors.json": "4712a4d8e9fee00386bc5e6cb45487bff6a163711e026c65c984f609da4fdad6",
+    "assets/academic-plugin/contract.schema.json": "01df9928c49959cdaad8f29aabad6beb47813ef899e38d4f03a649c8f1c2d25a",
+    "assets/academic-plugin/manifest.schema.json": "d0ade2375da04fa5d25741b155057c04c39432760efd7427d167987844292d68",
+    "assets/academic-plugin/host-sdk.js": "09a45d4407f3b611fdd1ae097e6494bc0c63c0ac31e78bbefb75f8c3cac32e7a"
+  }
+}

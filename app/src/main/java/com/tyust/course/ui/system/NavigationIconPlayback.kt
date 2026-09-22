@@ -8,47 +8,56 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlin.math.ceil
-import kotlin.math.floor
 
 /** One clock per tab, shared by the visible glyph, optical copy and minimized capsule. */
 @Stable
 class NavigationIconPlayback(count: Int, private val scope: CoroutineScope) {
-    private val clocks = List(count) { Animatable(0f) }
+    private val clocks = List(count) { Animatable(1f) }
     private val jobs = arrayOfNulls<Job>(count)
+    private val pending = BooleanArray(count)
     private var selected = -1
     private var reduced = false
 
-    fun phase(index: Int): Float = clocks[index].value.let { it - floor(it) }
+    fun phase(index: Int): Float = clocks[index].value
+
+    fun isRunning(index: Int): Boolean = jobs[index]?.isActive == true
 
     fun select(index: Int, reduceMotion: Boolean) {
         if (reduced != reduceMotion) {
             reduced = reduceMotion
-            if (reduced) clocks.indices.forEach { settle(it, immediately = true) }
+            if (reduced) clocks.indices.forEach { stop(it) }
         }
         if (selected == index) return
-        if (selected >= 0) settle(selected, immediately = reduced)
+        // Finish the current gesture at its original speed. Interrupting only discards
+        // queued feedback, so both the pose and its velocity remain continuous.
+        if (selected >= 0) pending[selected] = false
         selected = index
         replay(index)
     }
 
     fun replay(index: Int) {
         if (reduced) return
+        if (isRunning(index)) {
+            pending[index] = true
+            return
+        }
         val clock = clocks[index]
-        jobs[index]?.cancel()
-        // Retarget an unfinished cycle from its current frame; never snap back to zero.
-        val end = floor(clock.value) + if (clock.value % 1f > 0.001f) 2f else 1f
         jobs[index] = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            clock.animateTo(end, tween(((end - clock.value) * 480).toInt(), easing = LinearEasing))
+            do {
+                pending[index] = false
+                // The renderer has identical poses and zero velocity at 0 and 1.
+                // Only a completed gesture can enter a new cycle.
+                clock.snapTo(0f)
+                clock.animateTo(1f, tween(480, easing = LinearEasing))
+            } while (pending[index] && !reduced)
         }
     }
 
-    private fun settle(index: Int, immediately: Boolean) {
+    private fun stop(index: Int) {
+        pending[index] = false
         jobs[index]?.cancel()
-        val clock = clocks[index]
         jobs[index] = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            val end = ceil(clock.value)
-            if (immediately) clock.snapTo(end) else clock.animateTo(end, tween(160))
+            clocks[index].snapTo(1f)
         }
     }
 

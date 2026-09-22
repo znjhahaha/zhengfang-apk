@@ -259,7 +259,7 @@ fun ScheduleRoute() {
             val generation = ++studyGeneration
             val account = UserManager.getInstance().currentAccountStorageKey
             val currentTerm = scheduleCache.currentTerm(account, school.id)
-            val requestedTerm = if (isNextSemester) currentTerm.next() else currentTerm
+            val requestedTerm = if (isNextSemester) runCatching { currentTerm.next() }.getOrDefault(currentTerm) else currentTerm
             val cached = scheduleCache.selected(account, school.id, isNextSemester)
             loadError = ""
             if (!forceRefresh && cached != null) {
@@ -287,6 +287,7 @@ fun ScheduleRoute() {
                         }
                         if (!requests.isCurrent(ticket) || studyGeneration != generation) return@launch
                         scheduleCache.save(account, school.id, loaded)
+                        loaded.calendar?.let { settingsManager.applyProviderCalendar(account, it) }
                         courses = reloadCustomCourses(requireNotNull(parseSchedule(loaded.json)))
                         resolvedTermId = loaded.term.id
                         reminderScheduler.updateSnapshot(routeAccountKey, loaded.term.id, courses.map { it.record() })

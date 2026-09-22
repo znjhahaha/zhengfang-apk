@@ -80,6 +80,24 @@ class LoginActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             val cookie = result.data?.getStringExtra(CookieWebViewActivity.EXTRA_COOKIE_RESULT)
+            val gateway = activePasswordLoginGateway as? AcademicPasswordLoginGateway
+            if (gateway?.webLogin != null) {
+                val school = pendingPasswordSchool ?: return@registerForActivityResult
+                val page = result.data?.getStringExtra(AcademicWebViewActivity.EXTRA_PAGE_URL).orEmpty()
+                isLoading = true
+                lifecycleScope.launch {
+                    try {
+                        val identity = withContext(Dispatchers.IO) { gateway.resumeWebLogin(cookie.orEmpty(), page) }
+                        if (selectedLoginSchool?.id != school.id) return@launch
+                        if (identity.status != com.tyust.course.academic.AcademicStatus.SUCCESS) throw IllegalStateException(identity.message.ifBlank { "学校尚未确认登录" })
+                        pendingPasswordLogin = true
+                        finishAcademicLogin(school, cookie.orEmpty(), identity.studentName, identity.studentId)
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) { errorMessage = e.message ?: "网页登录未完成" }
+                    finally { isLoading = false }
+                }
+                return@registerForActivityResult
+            }
             if (!cookie.isNullOrBlank()) {
                 cookieFromWebView = cookie
                 academicWebPageUrl = result.data?.getStringExtra(AcademicWebViewActivity.EXTRA_PAGE_URL).orEmpty()
@@ -262,9 +280,10 @@ class LoginActivity : ComponentActivity() {
                 addAll(currentSchool.allowedAcademicHosts)
             }
             val intent = Intent(this, AcademicWebViewActivity::class.java).apply {
-                putExtra(AcademicWebViewActivity.EXTRA_START_URL, AcademicGatewayFactory.loginUrl(currentSchool))
+                val challenge = (activePasswordLoginGateway as? AcademicPasswordLoginGateway)?.webLogin
+                putExtra(AcademicWebViewActivity.EXTRA_START_URL, challenge?.getString("url") ?: AcademicGatewayFactory.loginUrl(currentSchool))
                 putExtra(AcademicWebViewActivity.EXTRA_COOKIE_URL, currentSchool.fullBasePath.trimEnd('/') + "/")
-                putExtra(AcademicWebViewActivity.EXTRA_SEARCH_KEYWORD, "${currentSchool.name} 教务系统 登录")
+                if (challenge == null) putExtra(AcademicWebViewActivity.EXTRA_SEARCH_KEYWORD, "${currentSchool.name} 教务系统 登录")
                 putStringArrayListExtra(AcademicWebViewActivity.EXTRA_ALLOWED_HOSTS, hosts)
             }
             webViewLauncher.launch(intent)
@@ -336,13 +355,15 @@ class LoginActivity : ComponentActivity() {
             val username = pendingPasswordUsername.ifBlank {
                 runCatching { android.net.Uri.parse(academicWebPageUrl).getQueryParameter("xh") }.getOrNull().orEmpty()
             }
-            val key = validationKey
+            val pluginAuth = com.tyust.course.academic.plugin.AcademicProviderRegistry.overrides(currentSchool, "auth.start")
+            val key = if (pluginAuth && pendingPasswordLogin) AcademicGatewayFactory.accountKey(currentSchool, username) else validationKey
             validationJob = lifecycleScope.launch {
                 val result = runCatching { withContext(Dispatchers.IO) {
-                    if (currentSchool.academicSystem == "auto" && AcademicGatewayFactory.detect(currentSchool, key) == null)
+                    if (currentSchool.academicSystem == "auto" && !com.tyust.course.academic.plugin.AcademicProviderRegistry.hasBinding(currentSchool) && AcademicGatewayFactory.detect(currentSchool, key) == null)
                         throw IllegalStateException("无法识别教务系统，请在学校配置中手动选择")
-                    AcademicGatewayFactory.importCookie(currentSchool, key, cookieStr, username = username)
-                    AcademicGatewayFactory.create(currentSchool, key).validateSession()
+                    if (!pluginAuth || !pendingPasswordLogin) AcademicGatewayFactory.importCookie(currentSchool, key, cookieStr, username = username)
+                    (academicGateway?.completedPlugin?.takeIf { pluginAuth && pendingPasswordLogin }
+                        ?: AcademicGatewayFactory.create(currentSchool, key)).validateSession()
                 } }
                 if (generation != academicValidationGeneration || selectedLoginSchool?.id != currentSchool.id) return@launch
                 result.onSuccess { identity ->
@@ -618,7 +639,7 @@ class LoginActivity : ComponentActivity() {
                     isLoading = false
                     errorMessage = message
                     UserManager.getInstance().updateSchoolConfig(school)
-                    discardPendingPasswordLogin()
+                    if ((activePasswordLoginGateway as? AcademicPasswordLoginGateway)?.webLogin == null) discardPendingPasswordLogin()
                     openWebView()
                 }
             }

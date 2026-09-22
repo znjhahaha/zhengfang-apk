@@ -1201,13 +1201,27 @@ private fun RowScope.NavTab(
                     translationY = -2.dp.toPx() * weight + 1.dp.toPx() * pressProgress
                 }
         )
-        Text(
-            text = item.label,
-            color = labelColor,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (weight > 0.55f || forceAccent) FontWeight.Bold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        // Both faces reserve their measured size throughout the transition.
+        // This also keeps the optical sampling copy aligned with the visible label.
+        val boldWeight = if (forceAccent) 1f else weight
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = item.label,
+                color = labelColor.copy(alpha = labelColor.alpha * (1f - boldWeight)),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = item.label,
+                color = labelColor.copy(alpha = labelColor.alpha * boldWeight),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics { }
+            )
+        }
     }
 }

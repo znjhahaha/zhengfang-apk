@@ -67,8 +67,9 @@ data class CourseOffer(
     val capacity: Int? = null,
     val selected: Int? = null,
     val scopeId: String,
-    val raw: Map<String, String> = emptyMap()
-)
+    val raw: Map<String, String> = emptyMap(),
+    val publicIdentity: AcademicCourseIdentity? = null
+) { val identity: AcademicCourseIdentity get() = publicIdentity ?: BuiltinCourseData.identity(stableId, raw) }
 
 data class CourseSection(
     val stableId: String,
@@ -81,8 +82,9 @@ data class CourseSection(
     val selected: Int? = null,
     val raw: Map<String, String> = emptyMap(),
     /** A request token (e.g. do_jxb_id) can change while the teaching class stays the same. */
-    val selectionId: String = stableId
-)
+    val selectionId: String = stableId,
+    val identityKnown: Boolean? = null
+) { val knownIdentity: Boolean get() = identityKnown ?: if (raw.containsKey("do_jxb_id")) raw["jxb_id"] == stableId else stableId.isNotBlank() }
 
 data class SelectionTarget(
     val course: CourseOffer,
@@ -96,8 +98,13 @@ data class SelectedCourse(
     val teacher: String = "",
     val courseId: String = "",
     val sectionId: String = "",
-    val raw: Map<String, String> = emptyMap()
-)
+    val raw: Map<String, String> = emptyMap(),
+    val publicPresentation: AcademicEnrollmentPresentation? = null
+) { val presentation: AcademicEnrollmentPresentation get() = publicPresentation ?: BuiltinCourseData.enrollment(raw) }
+
+data class AcademicCourseIdentity(val courseId: String, val sectionId: String = "", val selectionId: String = sectionId,
+    val sectionName: String = "", val sectionKnown: Boolean = false, val selected: Boolean = false, val flexibleSection: Boolean = false)
+data class AcademicEnrollmentPresentation(val time: String = "", val location: String = "", val credit: String = "", val sectionName: String = "", val selectionId: String = "")
 
 data class OperationResult(val status: AcademicStatus, val message: String = "", val confirmed: Boolean = false)
 data class SelectionResult(val status: AcademicStatus, val message: String = "", val selected: SelectedCourse? = null)
@@ -109,6 +116,7 @@ class AcademicException(val status: AcademicStatus, message: String, cause: Thro
 data class AcademicSessionKey(val schoolId: String, val accountKey: String)
 
 interface AcademicProtocolAdapter {
+    fun restoreOffer(snapshot: Map<String, String>): CourseOffer? = null
     suspend fun login(credentials: Credentials): LoginResult
     suspend fun validateSession(): LoginResult
     suspend fun loadCourseContext(): CourseContext

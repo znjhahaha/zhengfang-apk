@@ -17,6 +17,7 @@ import com.tyust.course.ui.system.GlassToaster
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -29,7 +30,14 @@ fun AcademicGradesRoute(school: SchoolConfig) {
     val sessions = UserManager.getInstance().sessionState
     val session by sessions.state.collectAsState()
     val expectedSession = session.token
+    val detailScope = rememberCoroutineScope()
+    val detailRequests = remember(account, session.token) { mutableSetOf<String>() }
     var tab by rememberSaveable(account) { mutableIntStateOf(0) }
+    val supportedTabs = buildSet {
+        if (com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.grades")) { add(0); add(1) }
+        if (com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.exams")) add(2)
+    }
+    LaunchedEffect(account, supportedTabs) { if (tab !in supportedTabs && supportedTabs.isNotEmpty()) tab = supportedTabs.first() }
     var report by rememberPageData("academic.grades") { AcademicGradeReport(emptyList()) }
     var reportLoaded by rememberPageData("academic.grades.loaded") { false }
     var semester by rememberSaveable(account) { mutableStateOf("") }
@@ -42,11 +50,23 @@ fun AcademicGradesRoute(school: SchoolConfig) {
     var examError by remember(account) { mutableStateOf("") }
     var examRevision by remember(account) { mutableIntStateOf(0) }
     val semesters = remember(report) { AcademicStudyBridge.semesters(report.grades).ifEmpty { listOf(AcademicStudyReader.calendarTerm().id) } }
-    val semesterGrades = remember(report, semester) { report.grades.filter { it.term == semester }.map(AcademicStudyBridge::grade) }
-    val overallGrades = remember(report) { report.grades.map(AcademicStudyBridge::grade) }
+    fun gradeUi(grade: AcademicGrade): GradeItemUi = AcademicStudyBridge.grade(grade).copy(onDetailRequest =
+        if (grade.id.isNotBlank() && grade.detail.isBlank() && com.tyust.course.academic.plugin.AcademicProviderRegistry.overrides(school, "study.gradeDetails")) ({
+            if (detailRequests.add(grade.id)) detailScope.launch {
+                try {
+                    val details = withContext(Dispatchers.IO) { AcademicStudyBridge.reader(school, account, expectedSession).gradeDetails(grade) }
+                    if (sessions.isCurrent(expectedSession)) report = report.copy(grades = report.grades.map { if (it.id == grade.id) it.copy(detail = details) else it })
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { detailRequests.remove(grade.id); if (sessions.isCurrent(expectedSession)) GlassToaster.show(e.message ?: "成绩明细加载失败") }
+            }
+            Unit
+        }) else null)
+    val semesterGrades = report.grades.filter { it.term == semester }.map(::gradeUi)
+    val overallGrades = report.grades.map(::gradeUi)
     val overallStats = remember(report) { AcademicStudyBridge.stats(report) }
 
     LaunchedEffect(account, revision, session.token) {
+        if (0 !in supportedTabs) { loading = false; error = "该学校尚未适配成绩查询"; return@LaunchedEffect }
         val expected = expectedSession
         if (revision == 0 && reportLoaded) { loading = false; return@LaunchedEffect }
         loading = true; error = ""
@@ -68,7 +88,7 @@ fun AcademicGradesRoute(school: SchoolConfig) {
     }
     LaunchedEffect(account, tab, examRevision, session.token) {
         val expected = expectedSession
-        if (tab != 2 || examsLoaded) return@LaunchedEffect
+        if (tab != 2 || examsLoaded || 2 !in supportedTabs) return@LaunchedEffect
         examLoading = true; examError = ""
         try {
             val loaded = withContext(Dispatchers.IO) {
@@ -95,7 +115,7 @@ fun AcademicGradesRoute(school: SchoolConfig) {
         examList = exams, examIsLoading = examLoading,
         onRefresh = { if (tab == 2) { examsLoaded = false; examRevision++ } else revision++ },
         semesterError = error, overallError = error, examError = examError,
-        onExportGrades = { exportAcademicGrades(context, it) })
+        onExportGrades = { exportAcademicGrades(context, it) }, supportedTabs = supportedTabs)
 }
 
 private fun exportAcademicGrades(context: Context, grades: List<GradeItemUi>) {

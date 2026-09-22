@@ -3,17 +3,18 @@ package com.tyust.course.academic
 import com.tyust.course.model.SchoolConfig
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import com.tyust.course.academic.plugin.AcademicProviderRegistry
 
 object AcademicGatewayFactory {
     private val sessions = AcademicSessionStore()
 
     /** True when the school opts into the adapter flow, including auto-detection. */
     fun supports(school: SchoolConfig): Boolean {
-        return school.academicSystem != AcademicSystem.LEGACY_ZF.id
+        return AcademicProviderRegistry.hasBinding(school) || school.academicSystem != AcademicSystem.LEGACY_ZF.id
     }
 
     /** Auto-detection opts into this flow but cannot create an adapter yet. */
-    fun hasSelectedAdapter(school: SchoolConfig): Boolean = when (AcademicSystem.fromId(school.academicSystem)) {
+    fun hasSelectedAdapter(school: SchoolConfig): Boolean = AcademicProviderRegistry.hasBinding(school) || when (AcademicSystem.fromId(school.academicSystem)) {
         AcademicSystem.ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD -> true
         else -> false
     }
@@ -31,22 +32,29 @@ object AcademicGatewayFactory {
     }
 
     fun create(school: SchoolConfig, accountStorageKey: String): AcademicProtocolAdapter {
+        val session = sessions.session(school.id, accountStorageKey, school.getFullBasePath())
+        AcademicProviderRegistry.adapter(school, session)?.let { return it }
+        return createBuiltin(school, session)
+    }
+
+    internal fun createBuiltin(school: SchoolConfig, session: AcademicSession): AcademicProtocolAdapter {
         val system = school.academicType()
         require(system != AcademicSystem.LEGACY_ZF && system != AcademicSystem.AUTO) { "School has no selected academic adapter" }
-        val session = sessions.session(school.id, accountStorageKey, school.getFullBasePath())
         val transport = AcademicHttpTransport(school, session)
-        return when (system) {
+        val adapter = when (system) {
             AcademicSystem.ZF -> ZfAcademicAdapter(school, session, transport)
             AcademicSystem.ZF_OLD -> ZfOldAcademicAdapter(school, session, transport)
             AcademicSystem.QZ -> QzAcademicAdapter(school, session, transport)
             AcademicSystem.QZ_OLD -> QzOldAcademicAdapter(school, session, transport)
             AcademicSystem.LEGACY_ZF, AcademicSystem.AUTO -> error("Academic adapter is not selected")
         }
+        return BuiltinAcademicProvider(adapter, session, system)
     }
 
     fun createStudy(school: SchoolConfig, accountStorageKey: String): AcademicStudyAdapter {
-        require(school.academicType() !in setOf(AcademicSystem.AUTO, AcademicSystem.LEGACY_ZF))
         val session = sessions.session(school.id, accountStorageKey, school.fullBasePath)
+        AcademicProviderRegistry.adapter(school, session)?.let { return it }
+        require(school.academicType() !in setOf(AcademicSystem.AUTO, AcademicSystem.LEGACY_ZF))
         return AcademicStudyReader(school, session, AcademicHttpTransport(school, session))
     }
 
@@ -56,7 +64,7 @@ object AcademicGatewayFactory {
 
     /** Import the configured school's Cookie header from the login browser. */
     fun importCookie(school: SchoolConfig, accountStorageKey: String, header: String, replace: Boolean = true, username: String = "") {
-        val session = if (replace) sessions.replace(school.id, accountStorageKey, school.fullBasePath)
+        val session = if (replace && !AcademicProviderRegistry.overrides(school, "auth.start")) sessions.replace(school.id, accountStorageKey, school.fullBasePath)
             else sessions.session(school.id, accountStorageKey, school.fullBasePath)
         if (username.isNotBlank()) session.username = username
         if (!replace && session.cookieHeader().isNotBlank()) return

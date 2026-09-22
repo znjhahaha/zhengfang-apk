@@ -1,0 +1,4 @@
+# Contract hashes must survive Windows checkouts without newline conversion.
+academic-plugin-api/** text eol=lf
+*.zfplugin binary
+*.eduplugin binary

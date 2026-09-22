@@ -9,15 +9,22 @@ class CourseApplication : Application() {
     private var mainProcess = false
     override fun onCreate() {
         super.onCreate()
-        GlassRuntimeGuard.initialize(this)
-        AppearanceSettingsManager.initialize(this)
-        AppThemeCoordinator.initialize(this)
+        // Isolated UIDs cannot query ActivityManager on API 24-27. Exit before
+        // process discovery or any singleton that reads application storage.
+        if (android.os.Process.myUid() != applicationInfo.uid) return
         val processName = if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName() else {
-            getSystemService(android.app.ActivityManager::class.java).runningAppProcesses
-                ?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
+            runCatching { java.io.File("/proc/self/cmdline").inputStream().use {
+                val bytes = ByteArray(256)
+                val count = it.read(bytes)
+                String(bytes, 0, count.coerceAtLeast(0)).substringBefore('\u0000')
+            } }.getOrNull()
         }
         if (processName == packageName) {
             mainProcess = true
+            com.tyust.course.academic.plugin.AcademicProviderRegistry.initialize(this)
+            GlassRuntimeGuard.initialize(this)
+            AppearanceSettingsManager.initialize(this)
+            AppThemeCoordinator.initialize(this)
             com.tyust.course.schedule.ScheduleReminderScheduler.get(this).start(this)
             com.tyust.course.schedule.ScheduleWidgetUpdater.start(this)
             com.tyust.course.usage.UsageStatsManager.initialize(this)
@@ -27,7 +34,9 @@ class CourseApplication : Application() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        AppThemeCoordinator.configurationChanged()
-        if (mainProcess) com.tyust.course.schedule.ScheduleWidgetUpdater.update(this)
+        if (mainProcess) {
+            AppThemeCoordinator.configurationChanged()
+            com.tyust.course.schedule.ScheduleWidgetUpdater.update(this)
+        }
     }
 }

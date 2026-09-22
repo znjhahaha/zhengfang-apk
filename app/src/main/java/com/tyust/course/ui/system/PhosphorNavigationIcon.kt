@@ -12,8 +12,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.graphics.vector.PathParser
-import kotlin.math.PI
-import kotlin.math.sin
+import com.tyust.course.ui.system.NavigationIconMotion.flourish
 
 /**
  * Phosphor Icons duotone geometry, split into native drawing layers for motion.
@@ -58,20 +57,16 @@ private object PhosphorPaths {
     val bolt = path("M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z")
 }
 
-/** A positive gesture followed by a smaller recoil, with exactly neutral endpoints. */
-private fun flourish(t: Float): Float = sin(PI * t).toFloat() * (1f - 0.8f * t) +
-    sin(3.0 * PI * t).toFloat() * 0.18f
-
 private fun DrawScope.drawBooks(t: Float, tint: Color, fill: Color) {
     val move = flourish(t)
-    rotate(-16f * move, Offset(80f, 216f)) {
-        translate(-6f * move, -28f * move) {
+    rotate(-10f * move, Offset(80f, 216f)) {
+        translate(-3f * move - 4f, -18f * move) {
             drawPath(PhosphorPaths.bookFill, fill)
             drawPath(PhosphorPaths.book, tint)
         }
     }
-    rotate(24f * move, Offset(184f, 212f)) {
-        translate(8f * move, -16f * move) {
+    rotate(14f * move, Offset(184f, 212f)) {
+        translate(4f * move - 4f, -12f * move) {
             drawPath(PhosphorPaths.leaningFill, fill)
             drawPath(PhosphorPaths.leaningBook, tint)
         }
@@ -84,25 +79,25 @@ private fun DrawScope.drawCalendar(t: Float, tint: Color, fill: Color) {
     drawLine(tint, Offset(40f, 88f), Offset(216f, 88f), 16f)
     for ((i, x) in listOf(80f, 176f).withIndex()) {
         val ringT = ((t - i * 0.06f) / (1f - i * 0.06f)).coerceIn(0f, 1f)
-        val bounce = -28f * flourish(ringT)
+        val bounce = -16f * flourish(ringT)
         drawLine(tint, Offset(x, 24f + bounce), Offset(x, 56f + bounce), 16f, StrokeCap.Round)
     }
     val dots = listOf(Offset(128f, 132f), Offset(172f, 132f), Offset(84f, 172f), Offset(128f, 172f), Offset(172f, 172f))
     dots.forEachIndexed { index, point ->
         val dotT = ((t - index * 0.09f) / 0.48f).coerceIn(0f, 1f)
-        val light = sin(2.0 * PI * dotT).toFloat() * sin(PI * dotT).toFloat()
+        val light = NavigationIconMotion.charge(dotT)
         drawCircle(tint.copy(alpha = tint.alpha * (1f - 0.68f * light.coerceAtLeast(0f))), 12f - 9f * light, point)
     }
 }
 
 private fun DrawScope.drawLightning(t: Float, tint: Color, fill: Color) {
-    val charge = sin(2.0 * PI * t).toFloat() * sin(PI * t).toFloat()
-    val scale = 1f - 0.17f * charge
+    val charge = NavigationIconMotion.charge(t)
+    val scale = 0.92f * (1f - 0.10f * charge)
     rotate(-8f * charge, Offset(128f, 128f)) {
     scale(scale, scale, Offset(128f, 128f)) {
         drawPath(PhosphorPaths.boltFill, fill)
         clipRect(0f, 0f, 256f, 16f + 224f * (t / 0.70f).coerceIn(0f, 1f)) {
-            drawPath(PhosphorPaths.boltFill, tint.copy(alpha = tint.alpha * 0.90f * sin(PI * t).toFloat()))
+            drawPath(PhosphorPaths.boltFill, tint.copy(alpha = tint.alpha * 0.72f * NavigationIconMotion.envelope(t)))
         }
         drawPath(PhosphorPaths.bolt, tint)
     }
@@ -113,23 +108,17 @@ private fun DrawScope.drawChart(t: Float, tint: Color, fill: Color) {
     val bars = listOf(Triple(48f, 136f, 48f), Triple(96f, 88f, 56f), Triple(152f, 40f, 56f))
     bars.forEachIndexed { index, (x, top, width) ->
         val p = ((t - index * 0.07f) / (1f - index * 0.07f)).coerceIn(0f, 1f)
-        // Brief compression prepares a staggered rise; both endpoints retain the full glyph.
-        val heightScale = when {
-            p < 0.16f -> 1f - 0.90f * sin(PI * p / 0.32f).toFloat()
-            else -> 1f - 0.90f * kotlin.math.exp(-5f * (p - 0.16f)) *
-                kotlin.math.cos(7f * (p - 0.16f)) * ((1f - p) / 0.84f)
-        }
-        scale(1f, heightScale, Offset(x, 208f)) {
-            drawRect(if (index == 2) fill else fill.copy(alpha = fill.alpha * 0.5f), Offset(x, top), Size(width, 208f - top))
-            val bar = Path().apply { moveTo(x, 208f); lineTo(x, top); lineTo(x + width, top); lineTo(x + width, 208f) }
-            drawPath(bar, tint, style = outlineStroke)
-        }
+        // Move geometry rather than the canvas, keeping the 16-unit stroke uniform.
+        val movingTop = 208f - (208f - top) * NavigationIconMotion.barScale(p)
+        drawRect(if (index == 2) fill else fill.copy(alpha = fill.alpha * 0.5f), Offset(x, movingTop), Size(width, 208f - movingTop))
+        val bar = Path().apply { moveTo(x, 208f); lineTo(x, movingTop); lineTo(x + width, movingTop); lineTo(x + width, 208f) }
+        drawPath(bar, tint, style = outlineStroke)
     }
     drawLine(tint, Offset(32f, 208f), Offset(224f, 208f), 16f, StrokeCap.Round)
 }
 
 private fun DrawScope.drawSliders(t: Float, tint: Color, fill: Color) {
-    val shift = 54f * flourish(t)
+    val shift = 42f * flourish(t)
     for ((x, y) in listOf(104f + shift to 80f, 168f - shift to 176f)) {
         drawLine(tint, Offset(40f, y), Offset(x - 24f, y), 16f, StrokeCap.Round)
         drawLine(tint, Offset(x + 24f, y), Offset(216f, y), 16f, StrokeCap.Round)

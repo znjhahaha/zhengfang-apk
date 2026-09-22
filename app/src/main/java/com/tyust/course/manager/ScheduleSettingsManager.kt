@@ -94,8 +94,11 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
     var semesterStartDate: Long
         get() = getSemesterStartDate()
         set(value) {
-            if (semesterStartDate == value) return
-            prefs?.edit()?.putLong(scopedKey(KEY_SEMESTER_START), value)?.remove(KEY_SEMESTER_START)?.apply()
+            if (semesterStartDate == value) {
+                prefs?.edit()?.remove(scopedKey(KEY_SEMESTER_START) + "_provider")?.apply()
+                return
+            }
+            prefs?.edit()?.putLong(scopedKey(KEY_SEMESTER_START), value)?.remove(scopedKey(KEY_SEMESTER_START) + "_provider")?.remove(KEY_SEMESTER_START)?.apply()
             revision++
         }
 
@@ -175,8 +178,32 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         }
         prefs?.edit()
             ?.putString(scopedKey(KEY_PERIOD_TIMES), array.toString())
+            ?.remove(scopedKey(KEY_PERIOD_TIMES) + "_provider")
             ?.remove(KEY_PERIOD_TIMES)
             ?.apply()
+        revision++
+    }
+
+    /** Existing saved values (including migrated legacy values) are user choices. */
+    fun applyProviderCalendar(accountKey: String, calendar: JSONObject) {
+        val p = prefs ?: return
+        val edit = p.edit()
+        val timesKey = "${KEY_PERIOD_TIMES}_$accountKey"
+        if ((!p.contains(timesKey) || p.getBoolean(timesKey + "_provider", false)) && !p.contains(KEY_PERIOD_TIMES)) {
+            val times = JSONArray()
+            val source = calendar.getJSONArray("periods")
+            for (i in 0 until source.length()) {
+                val period = source.getJSONObject(i)
+                times.put(JSONObject().put("period", period.getInt("number")).put("start", period.getString("start")).put("end", period.getString("end")))
+            }
+            if (times.length() > 0) edit.putString(timesKey, times.toString()).putBoolean(timesKey + "_provider", true)
+        }
+        val startKey = "${KEY_SEMESTER_START}_$accountKey"
+        if ((!p.contains(startKey) || p.getBoolean(startKey + "_provider", false)) && !p.contains(KEY_SEMESTER_START)) {
+            runCatching { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).apply { isLenient = false }.parse(calendar.getString("startDate"))?.time }
+                .getOrNull()?.let { edit.putLong(startKey, it).putBoolean(startKey + "_provider", true) }
+        }
+        edit.apply()
         revision++
     }
     

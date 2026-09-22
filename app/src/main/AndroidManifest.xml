@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     
     <!-- 后台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -80,7 +82,15 @@
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize" />
         
+        <activity android:name=".academic.plugin.PluginCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.CampusServiceCenterActivity" android:exported="false" android:configChanges="uiMode" />
+        <activity android:name=".academic.plugin.ServicePluginActivity" android:exported="false" android:configChanges="uiMode" />
         <!-- Background grab service -->
+        <service
+            android:name=".academic.plugin.runtime.PluginSandboxService"
+            android:process=":academic_plugin"
+            android:isolatedProcess="true"
+            android:exported="false" />
         <service
             android:name=".service.GrabService"
             android:exported="false"
@@ -137,4 +147,3 @@
     </application>
 
 </manifest>
-

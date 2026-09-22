@@ -105,6 +105,14 @@ public class UserManager {
     public void init(Context context) {
         this.appContext = context.getApplicationContext();
         loadCustomSchools();
+        SharedPreferences schoolPrefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        for (int i = 0; i < defaultSchools.size(); i++) {
+            String saved = schoolPrefs.getString("school_config_" + defaultSchools.get(i).id, null);
+            if (saved != null) try {
+                SchoolConfig restored = SchoolConfig.fromJson(new JSONObject(saved));
+                if (restored != null && restored.id.equals(defaultSchools.get(i).id)) defaultSchools.set(i, restored);
+            } catch (Exception ignored) { }
+        }
         if (!isDemoMode) {
             loadLoginState(); // 演示会话只存活在当前进程，不允许持久化状态覆盖它
         }
@@ -141,7 +149,7 @@ public class UserManager {
     public void addCustomSchool(SchoolConfig school) {
         // 检查是否已存在
         for (SchoolConfig s : getSupportedSchools()) {
-            if (s.domain.equals(school.domain)) {
+            if (s.id.equals(school.id) || (s.domain.equals(school.domain) && s.academicProvider.isEmpty() && school.academicProvider.isEmpty())) {
                 return; // 已存在，不添加
             }
         }
@@ -174,6 +182,8 @@ public class UserManager {
         for (int i = 0; i < defaultSchools.size(); i++) {
             if (defaultSchools.get(i).id.equals(updatedSchool.id)) {
                 defaultSchools.set(i, updatedSchool);
+                if (appContext != null) appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                        .putString("school_config_" + updatedSchool.id, updatedSchool.toJson().toString()).apply();
                 // 同时更新 currentSchool
                 if (currentSchool != null && currentSchool.id.equals(updatedSchool.id)) {
                     currentSchool = updatedSchool;
@@ -326,7 +336,7 @@ public class UserManager {
     public com.tyust.course.manager.SessionToken saveCookieIfCurrent(
             com.tyust.course.manager.SessionToken expected, String cookie) {
         synchronized (sessionState) {
-            if (!sessionState.isCurrent(expected) || cookie == null || cookie.isEmpty()) return null;
+            if (!sessionState.isCurrent(expected) || cookie == null || (cookie.isEmpty() && !hasPluginAuthentication())) return null;
             saveCookie(cookie);
             com.tyust.course.manager.SessionToken installed = sessionState.getToken();
             return installed.equals(expected) ? null : installed;
@@ -335,7 +345,7 @@ public class UserManager {
 
     public void saveCookie(String cookie) {
         this.savedCookie = cookie != null ? cookie : "";
-        this.isLoggedIn = !this.savedCookie.isEmpty();
+        this.isLoggedIn = !this.savedCookie.isEmpty() || hasPluginAuthentication();
         saveLoginState();
         installSession(true);
     }
@@ -358,7 +368,7 @@ public class UserManager {
 
     public void savePasswordLogin(String username, String cookie, String password) {
         this.savedCookie = cookie != null ? cookie : "";
-        this.isLoggedIn = !this.savedCookie.isEmpty();
+        this.isLoggedIn = !this.savedCookie.isEmpty() || hasPluginAuthentication();
         this.sessionPassword = password != null ? password : "";
         String key = buildAccountKey(currentSchool, username, studentId, studentName);
         if (!key.isEmpty()) {
@@ -380,6 +390,10 @@ public class UserManager {
         }
         saveLoginState();
         installSession(true);
+    }
+
+    private boolean hasPluginAuthentication() {
+        return currentSchool != null && com.tyust.course.academic.plugin.AcademicProviderRegistry.INSTANCE.overrides(currentSchool, "auth.start");
     }
 
     /**

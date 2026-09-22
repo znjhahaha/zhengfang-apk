@@ -11,6 +11,7 @@ public class SchoolConfig {
 
     // Optional protocol adapter. legacy_zf preserves the historical CourseApiClient path.
     public String academicSystem = "legacy_zf";
+    public String academicProvider = "";
     public String detectionSource = "legacy";
     public String pageCharset = "UTF-8";
     public java.util.ArrayList<String> allowedAcademicHosts = new java.util.ArrayList<>();
@@ -152,6 +153,7 @@ public class SchoolConfig {
             json.put("domain", domain);
             json.put("protocol", protocol);
             json.put("academicSystem", academicSystem);
+            json.put("academicProvider", academicProvider);
             json.put("detectionSource", detectionSource);
             json.put("pageCharset", pageCharset);
             org.json.JSONArray academicHosts = new org.json.JSONArray();
@@ -191,6 +193,7 @@ public class SchoolConfig {
                     json.optString("domain", ""),
                     json.optString("protocol", "https"));
             config.academicSystem = json.optString("academicSystem", "legacy_zf");
+            config.academicProvider = json.optString("academicProvider", "");
             config.detectionSource = json.optString("detectionSource", "legacy");
             config.pageCharset = json.optString("pageCharset", "UTF-8");
             config.academicConfigVersion = json.optInt("academicConfigVersion", 1);

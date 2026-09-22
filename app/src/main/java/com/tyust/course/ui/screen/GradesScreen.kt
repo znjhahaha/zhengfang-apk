@@ -98,7 +98,8 @@ data class GradeItemUi(
     val courseCode: String = "",
     val teachingClass: String = "",
     val jxbId: String = "",
-    val detail: String = ""
+    val detail: String = "",
+    val onDetailRequest: (() -> Unit)? = null
 )
 
 data class ExamItemUi(
@@ -164,9 +165,11 @@ fun GradesScreen(
     onExportGrades: (List<GradeItemUi>) -> Unit = {},
     semesterError: String = "",
     overallError: String = "",
-    examError: String = ""
+    examError: String = "",
+    supportedTabs: Set<Int> = setOf(0, 1, 2)
 ) {
-    val tabTitles = listOf("学期", "总体", "考试")
+    val availableTabs = listOf(0, 1, 2).filter { it in supportedTabs }.ifEmpty { listOf(0, 1, 2) }
+    val tabTitles = availableTabs.map { listOf("学期", "总体", "考试")[it] + if (it in supportedTabs) "" else " · 未适配" }
     val isRefreshing = semesterIsLoading || overallIsLoading || examIsLoading
     val subtitle = when (currentTab) {
         0 -> "${semesterGrades.size} 门课程"
@@ -226,8 +229,8 @@ fun GradesScreen(
                 GradesHeader(
                     subtitle = subtitle,
                     tabTitles = tabTitles,
-                    currentTab = currentTab,
-                    onTabChange = onTabChange,
+                    currentTab = availableTabs.indexOf(currentTab).coerceAtLeast(0),
+                    onTabChange = { index -> availableTabs.getOrNull(index)?.takeIf { it in supportedTabs }?.let(onTabChange) },
                     collapseFraction = headerCollapse,
                     metrics = metrics,
                     sampleBackdrop = headerSampleBackdrop,
@@ -570,11 +573,11 @@ private fun GradeItemRow(
     }
     val gradeColor = getGradeColor(item.grade)
     val reduced = com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion
-    val hasDetail = item.detail.isNotEmpty() || item.courseCode.isNotEmpty()
+    val hasDetail = item.detail.isNotEmpty() || item.courseCode.isNotEmpty() || item.onDetailRequest != null
     SystemCard(
         modifier = Modifier.fillMaxWidth().moduleEntrance(2),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-        onClick = if (hasDetail) ({ expanded = !expanded }) else null
+        onClick = if (hasDetail) ({ expanded = !expanded; if (expanded && item.detail.isBlank()) item.onDetailRequest?.invoke() }) else null
     ) {
         Column {
             Row(
