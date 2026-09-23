@@ -305,7 +305,8 @@ private fun PickerLensLayer(
     motionVelocity: Float,
     pressProgress: Float,
     enabled: Boolean,
-    forceBlurFallback: Boolean = false
+    forceBlurFallback: Boolean = false,
+    popupSurface: Boolean = false
 ) {
     val accessibility = rememberGlassAccessibilityMode()
     val isLightTheme = LocalWallpaperAppearanceColors.current.usesDarkForeground
@@ -337,6 +338,10 @@ private fun PickerLensLayer(
     val enabledScale = if (enabled) 1f else GlassRecipe.ChipDisabledSurfaceScale
     val surfaceAlpha = material.surfaceAlpha * enabledScale *
         if (isLightTheme) 1f else 0.72f
+    val surfaceColor = if (popupSurface) LocalWallpaperAppearanceColors.current.surface.copy(
+        alpha = maxOf(LocalWallpaperAppearanceColors.current.surface.alpha,
+            modalSurfaceAlpha(!isLightTheme, accessibility.highContrast))
+    ) else Color.White.copy(alpha = surfaceAlpha)
 
     Box(
         modifier = modifier
@@ -406,7 +411,7 @@ private fun PickerLensLayer(
                 if (lensAnchor == null) drawBackdrop()
             },
             onDrawSurface = {
-                drawRect(Color.White.copy(alpha = surfaceAlpha))
+                drawRect(surfaceColor)
             }
         )
     )
@@ -1431,7 +1436,8 @@ fun LiquidPicker(
                 enabled = contentEnabled,
                 // The runtime lens is rounded-rectangular. The transient implicit outline uses a
                 // backdrop blur so it remains one sampled glass surface without an internal seam.
-                forceBlurFallback = true
+                forceBlurFallback = true,
+                popupSurface = true
             )
             PickerLensLayer(
                 modifier = Modifier
@@ -1465,7 +1471,8 @@ fun LiquidPicker(
                     cornerRadius = PickerCornerRadius,
                     motionVelocity = extentVelocity,
                     pressProgress = layerPolicy.perimeterInteractionProgress,
-                    enabled = contentEnabled
+                    enabled = contentEnabled,
+                    popupSurface = true
                 )
             }
         }

@@ -80,90 +80,113 @@ internal data class ScheduleWidgetState(
 }
 
 internal object ScheduleWidgetRenderer {
-    fun views(context: Context, state: ScheduleWidgetState, width: Int = 280, height: Int = 160,
+    /** Use the launcher's actual size alternatives, including both legacy orientations. */
+    fun responsiveViews(context: Context, state: ScheduleWidgetState, options: android.os.Bundle,
+                        style: ScheduleWidgetStyle): RemoteViews {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            @Suppress("DEPRECATION")
+            val sizes = options.getParcelableArrayList<android.util.SizeF>(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                .orEmpty().filter { it.width.isFinite() && it.height.isFinite() && it.width > 0 && it.height > 0 }.distinct().take(16)
+            if (sizes.isNotEmpty()) return RemoteViews(sizes.associateWith {
+                views(context, state, it.width.toInt(), it.height.toInt(), style)
+            })
+        }
+        val minW = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, if (style == ScheduleWidgetStyle.Single) 56 else 130).coerceAtLeast(1)
+        val minH = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, if (style == ScheduleWidgetStyle.Timeline) 130 else 56).coerceAtLeast(1)
+        val maxW = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, minW).coerceAtLeast(minW)
+        val maxH = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minH).coerceAtLeast(minH)
+        return RemoteViews(views(context, state, maxW, minH, style), views(context, state, minW, maxH, style))
+    }
+
+    fun views(context: Context, state: ScheduleWidgetState, width: Int = 176, height: Int = 88,
               style: ScheduleWidgetStyle = ScheduleWidgetStyle.Double): RemoteViews {
         val config = AppThemeCoordinator.wrapContext(context).resources.configuration
         val dark = config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        val primaryColor = if (dark) 0xFFF5F5FA.toInt() else 0xFF1D2433.toInt()
-        val secondaryColor = if (dark) 0xFFBFC7D9.toInt() else 0xFF536078.toInt()
-        val accentColor = if (dark) 0xFF9CB8FF.toInt() else 0xFF345DC4.toInt()
+        val primaryColor = if (dark) 0xFFF1F4F8.toInt() else 0xFF1D2433.toInt()
+        val secondaryColor = if (dark) 0xFFB8C2D0.toInt() else 0xFF536078.toInt()
+        val accentColor = if (dark) 0xFF88BFFF.toInt() else 0xFF0069D9.toInt()
         val scale = config.fontScale.coerceAtLeast(1f)
-        if (style == ScheduleWidgetStyle.Timeline && height >= 170 * scale && width >= 200)
+        if (style == ScheduleWidgetStyle.Timeline)
             return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor)
         val views = RemoteViews(context.packageName, if (style == ScheduleWidgetStyle.Single) R.layout.schedule_widget_single else R.layout.schedule_widget)
-        val two = style == ScheduleWidgetStyle.Double && state.secondary != null && width >= 250 && height >= 110 * scale
-        val compactSingle = !two && height < 128 * scale
-        val tall = height >= 180 * scale
-        val showHeader = height >= 94 * scale
+        val two = style == ScheduleWidgetStyle.Double
+        val padding = if (height < 80 || width < 90) 6 else 10
         val density = context.resources.displayMetrics.density
-        val horizontalPadding = (8 * density).toInt()
-        val verticalPadding = ((if (compactSingle) 4 else 6) * density).toInt()
-        // Reserve the compact card's height for its name, room and time, including
-        // large system fonts, before spending that space on decorative padding.
-        views.setViewPadding(R.id.widget_root, horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
-        views.setInt(R.id.widget_root, "setBackgroundResource", when {
-            style == ScheduleWidgetStyle.Single && dark -> R.drawable.schedule_widget_single_dark
-            style == ScheduleWidgetStyle.Single -> R.drawable.schedule_widget_single_light
-            dark -> R.drawable.schedule_widget_dark
-            else -> R.drawable.schedule_widget_light
-        })
+        views.setViewPadding(R.id.widget_root, (padding * density).toInt(), (padding * density).toInt(),
+            (padding * density).toInt(), (padding * density).toInt())
+        views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
+        val columnWidth = (width - padding * 2 - if (two) 13 else 0) / if (two) 2f else 1f
+        val showHeader = height >= 154 * scale && width >= 150 * scale
+        val showFooter = state.primary != null && height >= 232 * scale && width >= 160 * scale
+        val bodyHeight = (height - padding * 2) / scale - (if (showHeader) 22 else 0) - (if (showFooter) 22 else 0)
+        val separateTargets = two && columnWidth >= 48 && bodyHeight * scale >= 48
         views.setTextViewText(R.id.widget_heading, state.heading)
         views.setTextViewText(R.id.widget_date, state.date)
-        views.setViewVisibility(R.id.widget_header, if (showHeader) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_date, if (width >= 250) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_courses, if (state.primary != null) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_empty, if (state.primary == null) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_next, if (two) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_separator, if (two) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_footer, if (state.primary != null && height >= 224 * scale) View.VISIBLE else View.GONE)
+        views.visible(R.id.widget_header, showHeader)
+        views.visible(R.id.widget_date, width >= 260 * scale)
+        views.visible(R.id.widget_courses, state.primary != null)
+        views.visible(R.id.widget_empty, state.primary == null)
+        views.visible(R.id.widget_next, two)
+        views.visible(R.id.widget_separator, two)
+        views.visible(R.id.widget_footer, showFooter)
         views.setTextViewText(R.id.widget_footer, state.summary)
         views.setTextViewText(R.id.widget_message, state.message)
         views.setTextViewText(R.id.widget_action, state.actionLabel)
+        views.setInt(R.id.widget_message, "setMaxLines", if (bodyHeight >= 60) 2 else 1)
+        views.visible(R.id.widget_action, bodyHeight >= 44)
         listOf(R.id.widget_heading, R.id.widget_message, R.id.widget_name, R.id.widget_next_name).forEach { views.setTextColor(it, primaryColor) }
-        listOf(R.id.widget_date, R.id.widget_location, R.id.widget_time, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_footer)
+        listOf(R.id.widget_date, R.id.widget_location, R.id.widget_next_location, R.id.widget_footer)
             .forEach { views.setTextColor(it, secondaryColor) }
-        listOf(R.id.widget_status, R.id.widget_next_status, R.id.widget_action).forEach { views.setTextColor(it, accentColor) }
-        fun row(item: ScheduleWidgetCourse?, name: Int, room: Int, time: Int, status: Int) {
-            if (item == null) return
-            views.setTextViewText(name, item.name)
-            views.setTextViewText(room, item.location)
-            views.setTextViewText(time, listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" "))
-            views.setTextViewText(status, item.status)
-            views.setInt(name, "setMaxLines", if (tall) 2 else 1)
-            views.setInt(room, "setMaxLines", if (height >= 220 * scale) 2 else 1)
-            val nameSize = when {
-                two -> 15f
-                compactSingle -> 14f
-                else -> 16f
+        listOf(R.id.widget_status, R.id.widget_next_status, R.id.widget_action, R.id.widget_time, R.id.widget_next_time)
+            .forEach { views.setTextColor(it, accentColor) }
+        fun row(item: ScheduleWidgetCourse?, container: Int, name: Int, room: Int, time: Int, status: Int) {
+            val compactTime = columnWidth < 116 * scale
+            val datedTime = compactTime && !item?.dateLabel.isNullOrBlank() && bodyHeight >= 52
+            val timeLines = if (datedTime) 2 else 1
+            val titleLines = if (bodyHeight >= 60 + (timeLines - 1) * 16) 2 else 1
+            val remaining = bodyHeight - titleLines * 18 - timeLines * 16 - 3
+            val showRoom = item != null && remaining >= 18
+            val showStatus = item != null && remaining >= 36
+            views.setTextViewText(name, item?.name ?: "暂无后续")
+            views.setTextViewText(room, item?.location.orEmpty())
+            val timeText = when {
+                item == null -> "查看课表"
+                datedTime -> item.dateLabel + "\n" + item.time.substringBefore('–')
+                compactTime -> item.time.substringBefore('–')
+                else -> listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" ")
             }
-            views.setTextViewTextSize(name, android.util.TypedValue.COMPLEX_UNIT_SP, nameSize)
-            views.setViewVisibility(status, if (two || height >= 128 * scale) View.VISIBLE else View.GONE)
+            views.setTextViewText(time, timeText)
+            views.setTextViewText(status, item?.status.orEmpty())
+            views.setInt(name, "setMaxLines", titleLines)
+            views.visible(name, bodyHeight >= 34)
+            views.setInt(time, "setMaxLines", timeLines)
+            views.setTextViewTextSize(name, android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+            views.visible(room, showRoom)
+            views.visible(status, showStatus)
+            views.setContentDescription(container, item?.let { "${it.dateLabel} ${it.status}，${it.name}，${it.time}，${it.location}" } ?: "暂无后续课程，查看完整课表")
         }
-        row(state.primary, R.id.widget_name, R.id.widget_location, R.id.widget_time, R.id.widget_status)
-        row(state.secondary, R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
-        if (style == ScheduleWidgetStyle.Single && !compactSingle) {
-            views.setTextViewTextSize(R.id.widget_time, android.util.TypedValue.COMPLEX_UNIT_SP, if (height >= 180 * scale) 23f else 18f)
-            views.setTextColor(R.id.widget_time, accentColor)
-        }
-        fun click(id: Int, item: ScheduleWidgetCourse? = null, action: ScheduleWidgetAction = ScheduleWidgetAction.Today) {
-            val snapshot = state.snapshot
-            val intent = ScheduleWidgetNavigation.intent(context, snapshot?.account.orEmpty(), snapshot?.school.orEmpty(), snapshot?.term.orEmpty(),
-                item?.course?.id, if (item != null) ScheduleWidgetAction.Course else action, item?.occurrence?.startsAt)
-            views.setOnClickPendingIntent(id, PendingIntent.getActivity(context, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        }
-        click(R.id.widget_root)
-        click(R.id.widget_header)
-        click(R.id.widget_course, state.primary)
-        click(R.id.widget_next, state.secondary)
-        click(R.id.widget_empty, action = state.action)
-        click(R.id.widget_action, action = state.action)
+        row(state.primary, R.id.widget_course, R.id.widget_name, R.id.widget_location, R.id.widget_time, R.id.widget_status)
+        row(state.secondary, R.id.widget_next, R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
+        val rootIntent = pending(context, state, if (style == ScheduleWidgetStyle.Single) state.primary?.occurrence else null,
+            if (state.primary == null) state.action else ScheduleWidgetAction.Today)
+        views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_header, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_course, if (style == ScheduleWidgetStyle.Single || separateTargets) pending(context, state, state.primary?.occurrence) else rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_next, if (separateTargets) pending(context, state, state.secondary?.occurrence) else rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_empty, pending(context, state, action = state.action))
+        views.setOnClickPendingIntent(R.id.widget_action, pending(context, state, action = state.action))
+        // The entire empty panel performs the same action as its label.
+        views.setContentDescription(R.id.widget_empty, "${state.message}，${state.actionLabel}")
         return views
     }
 
-    internal fun timelineItems(state: ScheduleWidgetState, height: Int, fontScale: Float): List<ScheduleOccurrence> {
+    internal fun timelineItems(state: ScheduleWidgetState, height: Int, fontScale: Float,
+                               showLocation: Boolean = true): List<ScheduleOccurrence> {
         val today = state.agenda?.today.orEmpty()
-        val limit = ((height - 58 * fontScale) / (54 * fontScale)).toInt().coerceIn(1, 6)
+        val header = if (height >= 100 * fontScale) 22 * fontScale else 0f
+        val footer = if (height >= 232 * fontScale) 22 * fontScale else 0f
+        val rowHeight = maxOf(48f, (if (showLocation) 52 else 36) * fontScale + 8)
+        val limit = ((height - 16 - header - footer) / rowHeight).toInt().coerceIn(1, 6)
         if (today.size <= limit) return today
         val nextIndex = today.indexOfFirst { it.endsAt > state.now }.takeIf { it >= 0 } ?: today.lastIndex
         return today.drop(nextIndex.coerceAtMost((today.size - limit).coerceAtLeast(0))).take(limit)
@@ -175,46 +198,64 @@ internal object ScheduleWidgetRenderer {
         views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
         views.setTextViewText(R.id.widget_heading, "今日时间轴")
         views.setTextViewText(R.id.widget_date, state.date)
-        views.setViewVisibility(R.id.widget_date, if (width >= 280) View.VISIBLE else View.GONE)
+        views.visible(R.id.widget_header, height >= 100 * scale)
+        views.visible(R.id.widget_date, width >= 280 * scale)
+        views.visible(R.id.widget_footer, height >= 232 * scale)
         views.setTextColor(R.id.widget_heading, primary)
         views.setTextColor(R.id.widget_date, secondary)
         views.setTextColor(R.id.widget_footer, secondary)
         views.removeAllViews(R.id.widget_timeline_rows)
-        val rows = timelineItems(state, height, scale)
-        val snapshot = state.snapshot
-        fun intent(item: ScheduleOccurrence? = null, action: ScheduleWidgetAction = ScheduleWidgetAction.Today): PendingIntent = PendingIntent.getActivity(context, 0,
-            ScheduleWidgetNavigation.intent(context, snapshot?.account.orEmpty(), snapshot?.school.orEmpty(), snapshot?.term.orEmpty(),
-                item?.course?.id, if (item != null) ScheduleWidgetAction.Course else action, item?.startsAt),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        views.setOnClickPendingIntent(R.id.widget_root, intent())
-        views.setOnClickPendingIntent(R.id.widget_header, intent())
+        val showLocation = width >= 190 * scale && height >= 170 * scale
+        val rows = timelineItems(state, height, scale, showLocation)
+        val rowHeight = maxOf(48f, (if (showLocation) 52 else 36) * scale + 8)
+        val next = state.agenda?.upcoming?.firstOrNull()
+        views.setOnClickPendingIntent(R.id.widget_root, pending(context, state, action = if (rows.isEmpty()) state.action else ScheduleWidgetAction.Today))
+        views.setOnClickPendingIntent(R.id.widget_header, pending(context, state))
         for (item in rows) {
             val row = RemoteViews(context.packageName, R.layout.schedule_widget_timeline_row)
             val past = item.endsAt <= state.now
             val current = state.now in item.startsAt until item.endsAt
+            val upcoming = next != null && item.course.id == next.course.id && item.startsAt == next.startsAt
+            val highlighted = current || upcoming
             val time = SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.startsAt))
             row.setTextViewText(R.id.widget_timeline_time, time)
             row.setTextViewText(R.id.widget_name, item.course.name)
             row.setTextViewText(R.id.widget_location, item.course.location.ifBlank { "教室待定" })
-            row.setTextViewText(R.id.widget_status, when { current -> "进行中"; past -> "已结束"; else -> "待上课" })
-            row.setTextColor(R.id.widget_timeline_time, if (current) accent else secondary)
+            row.setTextViewText(R.id.widget_status, when { current -> "进行中"; upcoming -> "下一节"; past -> "已结束"; else -> "待上课" })
+            row.setTextColor(R.id.widget_timeline_time, if (highlighted) accent else secondary)
             row.setTextColor(R.id.widget_name, if (past) secondary else primary)
             row.setTextColor(R.id.widget_location, secondary)
-            row.setTextColor(R.id.widget_status, if (current) accent else secondary)
-            row.setInt(R.id.widget_timeline_dot, "setBackgroundColor", if (current) accent else secondary)
-            row.setViewVisibility(R.id.widget_status, if (width >= 320 && scale <= 1.3f) View.VISIBLE else View.GONE)
-            row.setOnClickPendingIntent(R.id.widget_course, intent(item))
+            row.setTextColor(R.id.widget_status, if (highlighted) accent else secondary)
+            row.setInt(R.id.widget_timeline_dot, "setBackgroundColor", if (highlighted) accent else secondary)
+            row.setInt(R.id.widget_course, "setMinimumHeight", (rowHeight * context.resources.displayMetrics.density).toInt())
+            row.visible(R.id.widget_location, showLocation)
+            row.visible(R.id.widget_status, width >= 180 * scale)
+            row.setContentDescription(R.id.widget_course, "$time，${item.course.name}，${item.course.location}，" + if (current) "进行中" else if (upcoming) "下一节" else if (past) "已结束" else "待上课")
+            row.setOnClickPendingIntent(R.id.widget_course, if (width >= 64 && height >= 64) pending(context, state, item) else pending(context, state))
             views.addView(R.id.widget_timeline_rows, row)
         }
-        views.setViewVisibility(R.id.widget_empty, if (rows.isEmpty()) View.VISIBLE else View.GONE)
+        views.visible(R.id.widget_timeline_rows, rows.isNotEmpty())
+        views.visible(R.id.widget_empty, rows.isEmpty())
         views.setTextViewText(R.id.widget_message, state.message ?: "今天没有课程")
         views.setTextViewText(R.id.widget_action, state.actionLabel)
+        views.visible(R.id.widget_action, height >= 82 * scale)
         views.setTextColor(R.id.widget_message, primary)
         views.setTextColor(R.id.widget_action, accent)
-        views.setOnClickPendingIntent(R.id.widget_empty, intent(action = state.action))
-        views.setOnClickPendingIntent(R.id.widget_action, intent(action = state.action))
+        views.setOnClickPendingIntent(R.id.widget_empty, pending(context, state, action = state.action))
+        views.setOnClickPendingIntent(R.id.widget_action, pending(context, state, action = state.action))
+        views.setContentDescription(R.id.widget_empty, "${state.message ?: "今天没有课程"}，${state.actionLabel}")
         val total = state.agenda?.today?.size ?: 0
         views.setTextViewText(R.id.widget_footer, if (total > rows.size) "今日 $total 堂 · 点按查看全部" else state.summary.ifBlank { "点按查看课表" })
         return views
+    }
+
+    private fun RemoteViews.visible(id: Int, show: Boolean) = setViewVisibility(id, if (show) View.VISIBLE else View.GONE)
+    private fun pending(context: Context, state: ScheduleWidgetState, item: ScheduleOccurrence? = null,
+                        action: ScheduleWidgetAction = ScheduleWidgetAction.Today): PendingIntent {
+        val snapshot = state.snapshot
+        return PendingIntent.getActivity(context, 0, ScheduleWidgetNavigation.intent(context,
+            snapshot?.account.orEmpty(), snapshot?.school.orEmpty(), snapshot?.term.orEmpty(), item?.course?.id,
+            if (item != null) ScheduleWidgetAction.Course else action, item?.startsAt),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 }

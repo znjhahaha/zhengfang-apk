@@ -62,11 +62,7 @@ internal fun Modifier.scheduleDetailGlass(): Modifier {
     val material = GlassMaterials.resolve(GlassMaterialRole.Modal, accessibility)
     val anchor = LocalGlassLensModalAnchor.current
     val dark = rememberGlassDarkTheme()
-    val surface = MaterialTheme.colorScheme.surface.copy(alpha = when {
-        accessibility.highContrast -> 0.96f
-        dark -> 0.72f
-        else -> 0.52f
-    })
+    val surface = MaterialTheme.colorScheme.surface.copy(alpha = modalSurfaceAlpha(dark, accessibility.highContrast))
     return glassLens(anchor, optics = { width, height ->
         glassLensOpticsFrom(material, density, cornerRadiusPx = with(density) { 28.dp.toPx() },
             minDimensionPx = minOf(width, height), pressScalesRefraction = false, chromaticAberrationAtRest = false)

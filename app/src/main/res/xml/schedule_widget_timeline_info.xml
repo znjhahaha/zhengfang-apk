@@ -1,7 +1,7 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="250dp" android:minHeight="220dp"
-    android:minResizeWidth="150dp" android:minResizeHeight="110dp"
-    android:targetCellWidth="4" android:targetCellHeight="3"
+    android:minWidth="130dp" android:minHeight="130dp"
+    android:minResizeWidth="130dp" android:minResizeHeight="130dp"
+    android:targetCellWidth="2" android:targetCellHeight="2"
     android:initialLayout="@layout/schedule_widget_timeline" android:previewLayout="@layout/schedule_widget_timeline"
     android:description="@string/schedule_widget_timeline_description"
     android:resizeMode="horizontal|vertical" android:updatePeriodMillis="1800000" android:widgetCategory="home_screen" />

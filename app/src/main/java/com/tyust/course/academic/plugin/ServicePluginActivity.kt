@@ -33,7 +33,7 @@ class ServicePluginActivity : ComponentActivity() {
     private var preview = false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { CourseSelectorTheme { Screen() } }
+        setContent { CourseSelectorTheme { GlassWindowHost { Screen() } } }
     }
     override fun onResume() {
         super.onResume()
@@ -220,8 +220,8 @@ class ServicePluginActivity : ComponentActivity() {
         }
         pendingAction?.let { action ->
             val declaration = ServicePluginContract.action(pkg.manifest, action.getString("actionId"))
-            AlertDialog(onDismissRequest = { pendingAction = null }, title = { Text(declaration.getString("title")) },
-                text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SystemDialog(onDismissRequest = { pendingAction = null }, title = { Text(declaration.getString("title")) },
+                content = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(declaration.getString("confirmation"))
                     val params = action.optJSONObject("params")
                     val fields = page?.optJSONArray("blocks")?.let(PluginJson::objects).orEmpty()

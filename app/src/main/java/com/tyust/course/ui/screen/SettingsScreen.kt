@@ -80,6 +80,7 @@ fun SettingsScreen(
     onQuotaClick: () -> Unit = {},
     onRefreshCookieClick: () -> Unit = {},
     onLogExport: () -> Unit = {},
+    onErrorReport: () -> Unit = {},
     onSchoolAdaptation: () -> Unit = {},
     onSurveyCenter: () -> Unit = {},
     surveyUnreadCount: Int = 0,
@@ -277,6 +278,13 @@ fun SettingsScreen(
                     title = "导出日志",
                     subtitle = "导出本地运行日志",
                     onClick = onLogExport
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.ContentPasteSearch,
+                    iconTint = Color(0xFF64D2FF),
+                    title = "最近错误",
+                    subtitle = "查看、复制错误报告并反馈",
+                    onClick = onErrorReport
                 )
                 SettingsRow(
                     icon = Icons.Outlined.School,

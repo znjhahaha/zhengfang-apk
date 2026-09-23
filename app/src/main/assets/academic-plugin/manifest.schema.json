@@ -382,6 +382,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "userAgent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[!-~](?:[ -~]*[!-~])?(?![\\s\\S])"
           }
         },
         "required": [
@@ -434,6 +440,12 @@
         },
         "pageCharset": {
           "type": "string"
+        },
+        "userAgent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[!-~](?:[ -~]*[!-~])?(?![\\s\\S])"
         }
       },
       "required": [

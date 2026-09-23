@@ -2,6 +2,8 @@ package com.tyust.course.academic
 
 import com.tyust.course.model.SchoolConfig
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jsoup.Jsoup
 
@@ -10,7 +12,8 @@ enum class AcademicDetectionStatus { SUCCESS, INVALID_ADDRESS, NETWORK_ERROR, UN
 data class AcademicDetectionResult(
     val status: AcademicDetectionStatus,
     val address: AcademicAddress? = null,
-    val system: AcademicSystem? = null
+    val system: AcademicSystem? = null,
+    val failure: Throwable? = null
 ) {
     val message: String get() = when (status) {
         AcademicDetectionStatus.SUCCESS -> "已识别为${AcademicCapabilities.selectionLabel(requireNotNull(system))}"
@@ -22,11 +25,14 @@ data class AcademicDetectionResult(
 
 /** Detection owns a temporary, credential-free session and never changes the saved school. */
 object AcademicDetection {
-    suspend fun detect(input: String, template: SchoolConfig? = null, timeoutMillis: Long = 20_000): AcademicDetectionResult {
+    suspend fun detect(input: String, template: SchoolConfig? = null, timeoutMillis: Long = 20_000): AcademicDetectionResult = withContext(Dispatchers.IO) {
+        // OkHttp delivers headers asynchronously, but the response body and HTML parser
+        // still perform blocking work. A Compose caller must never resume that on Main.
         val address = AcademicAddress.parse(input)
-            ?: return AcademicDetectionResult(AcademicDetectionStatus.INVALID_ADDRESS)
+            ?: return@withContext AcademicDetectionResult(AcademicDetectionStatus.INVALID_ADDRESS)
         val initial = input.trim().let { if (it.contains("://")) it else "https://$it" }
         var reachable = false
+        var lastFailure: Throwable? = null
         val result = withTimeoutOrNull(timeoutMillis) {
             val roots = listOf(address.basePath, "", "/jsxsd", "/jwglxt").distinct()
             val urls = linkedSetOf(initial)
@@ -44,7 +50,7 @@ object AcademicDetection {
                 for (url in urls) {
                     val page = try { withTimeoutOrNull(5_000) { transport.get(url) } }
                         catch (e: CancellationException) { throw e }
-                        catch (_: AcademicException) { null }
+                        catch (e: AcademicException) { lastFailure = e; null }
                         ?: continue
                     reachable = true
                     if (page.code !in 200..299) continue
@@ -59,7 +65,8 @@ object AcademicDetection {
                 null
             } finally { session.retire() }
         }
-        return result ?: AcademicDetectionResult(
-            if (reachable) AcademicDetectionStatus.UNKNOWN_SYSTEM else AcademicDetectionStatus.NETWORK_ERROR, address)
+        result ?: AcademicDetectionResult(
+            if (reachable) AcademicDetectionStatus.UNKNOWN_SYSTEM else AcademicDetectionStatus.NETWORK_ERROR,
+            address, failure = lastFailure)
     }
 }

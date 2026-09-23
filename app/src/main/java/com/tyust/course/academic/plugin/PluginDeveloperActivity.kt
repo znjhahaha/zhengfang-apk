@@ -30,7 +30,7 @@ import java.util.UUID
 class PluginDeveloperActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { CourseSelectorTheme { Center() } }
+        setContent { CourseSelectorTheme { GlassWindowHost { Center() } } }
     }
     @Composable private fun Center() {
         val scope = rememberCoroutineScope()
@@ -117,7 +117,9 @@ class PluginDeveloperActivity : ComponentActivity() {
                     bottom = padding.calculateBottomPadding() + 24.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp)
             ) {
-                val school = UserManager.getInstance().currentSchool
+                val school = if (intent.hasExtra(PluginCenterActivity.EXTRA_TARGET_SCHOOL))
+                    intent.getStringExtra(PluginCenterActivity.EXTRA_TARGET_SCHOOL)?.let { UserManager.getInstance().getSchoolById(it) }
+                else UserManager.getInstance().currentSchool
                 val current = school?.let { runCatching { AcademicProviderRegistry.resolve(it) }.getOrNull() }
                 InsetGroupedSection(header = "当前学校") {
                     InsetGroupedRow(title = school?.name ?: "尚未选择学校", icon = Icons.Outlined.School,
@@ -260,16 +262,18 @@ class PluginDeveloperActivity : ComponentActivity() {
                 }
             }
         }
-        if (confirmWrite) AlertDialog(onDismissRequest = { confirmWrite = false }, title = { Text("确认测试操作") },
-            text = { Text("此操作会执行所选插件接口。模拟插件只修改模拟数据，真实服务可能改变账号记录。") },
+        if (confirmWrite) SystemDialog(onDismissRequest = { confirmWrite = false }, title = { Text("确认测试操作") },
+            content = { Text("此操作会执行所选插件接口。模拟插件只修改模拟数据，真实服务可能改变账号记录。") },
             confirmButton = { TextButton({ confirmWrite = false; runOperation(true) }) { Text("确认执行") } },
             dismissButton = { TextButton({ confirmWrite = false }) { Text("取消") } })
-        bindCandidate?.let { pkg -> AlertDialog(onDismissRequest = { bindCandidate = null }, title = { Text("使用 ${pkg.manifest.name}") },
-            text = { Text("将此适配添加到学校列表，之后可在登录页选择。已有学校和账号 ID 保持不变。") },
+        bindCandidate?.let { pkg -> SystemDialog(onDismissRequest = { bindCandidate = null }, title = { Text("使用 ${pkg.manifest.name}") },
+            content = { Text("将此适配添加到学校列表，之后可在登录页选择。已有学校和账号 ID 保持不变。") },
             confirmButton = { TextButton({
                 val school = AcademicProviderRegistry.school(pkg)
                 val user = UserManager.getInstance()
                 if (user.getSchoolById(school.id) != null) user.updateSchoolConfig(school) else user.addCustomSchool(school)
+                setResult(RESULT_OK, android.content.Intent().putExtra(PluginCenterActivity.EXTRA_CHANGED, true)
+                    .putExtra(PluginCenterActivity.EXTRA_TARGET_SCHOOL, school.id))
                 feedback = "已添加学校，请从学校列表选择并登录"; bindCandidate = null
             }) { Text("使用适配") } }, dismissButton = { TextButton({ bindCandidate = null }) { Text("取消") } }) }
     }

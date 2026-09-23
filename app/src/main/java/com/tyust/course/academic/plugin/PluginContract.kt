@@ -183,6 +183,7 @@ data class PluginManifest(val json: JSONObject) {
             if (actual.isNotEmpty() && actual != expected) invalid("$group 必须完整覆盖能力组")
         }
         network.forEach { PluginNetworkPolicy.validateRule(it) }
+        json.optJSONObject("school")?.takeIf { it.has("userAgent") }?.let { PluginNetworkPolicy.validateUserAgent(it.getString("userAgent")) }
     }
 
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)

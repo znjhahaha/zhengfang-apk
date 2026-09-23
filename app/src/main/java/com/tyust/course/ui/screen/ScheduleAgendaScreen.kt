@@ -93,18 +93,33 @@ fun ScheduleScreen(
     val latestWeekChange by rememberUpdatedState(onWeekChange)
     val latestDayChange by rememberUpdatedState(onDayChange)
     val sync = remember(pager) { ScheduleWeekPagerSync(requestedUnit, requestKey, firstPageUnit, lastPageUnit) }
-    val gridScroll = rememberSaveable(positionKey, positionCalendar, stateSaver = ScrollState.Saver) {
-        mutableStateOf(ScrollState(restoredPosition?.takeIf { it.calendar == positionCalendar }?.weekScroll ?: 0))
-    }.value
-    val dayScroll = rememberSaveable(positionKey, positionCalendar, stateSaver = ScrollState.Saver) {
-        mutableStateOf(ScrollState(restoredPosition?.takeIf { it.calendar == positionCalendar }?.dayScroll ?: 0))
-    }.value
-    RestoreScheduleScroll(gridScroll)
-    RestoreScheduleScroll(dayScroll)
+    var weekOffset by rememberSaveable(positionKey, positionCalendar) {
+        mutableIntStateOf(restoredPosition?.takeIf { it.calendar == positionCalendar }?.weekScroll ?: 0)
+    }
+    var dayOffset by rememberSaveable(positionKey, positionCalendar) {
+        mutableIntStateOf(restoredPosition?.takeIf { it.calendar == positionCalendar }?.dayScroll ?: 0)
+    }
+    // A ScrollState belongs to exactly one scroll container. Pager neighbours may be
+    // measured together and must never clamp the visible page's scroll range.
+    val pageScrolls = remember(positionKey, positionCalendar) { mutableMapOf<Pair<Boolean, Int>, ScrollState>() }
+    val enteredPages = remember(pager) { mutableSetOf<Int>() }
+    val activeUnit = pager.settledPage + firstPageUnit
+    val activeScroll = pageScrolls.getOrPut(dayView to activeUnit) { ScrollState(if (dayView) dayOffset else weekOffset) }
+    val restoreTarget = remember(pager, activeUnit) {
+        val firstEntry = enteredPages.isEmpty()
+        enteredPages += activeUnit
+        if (dayView) { if (firstEntry) dayOffset else 0 } else weekOffset
+    }
+    val restored = RestoreScheduleScroll(activeScroll, restoreTarget, pager)
+    LaunchedEffect(activeScroll, restored) {
+        if (restored) snapshotFlow { activeScroll.value }.collect {
+            if (dayView) dayOffset = it else weekOffset = it
+        }
+    }
     val headerLiftDistance = with(LocalDensity.current) { 64.dp.toPx() }
-    val headerLift by remember(dayView, gridScroll, dayScroll, headerLiftDistance) {
+    val headerLift by remember(activeScroll, headerLiftDistance) {
         derivedStateOf {
-            ((if (dayView) dayScroll.value else gridScroll.value) / headerLiftDistance).coerceIn(0f, 1f)
+            (activeScroll.value / headerLiftDistance).coerceIn(0f, 1f)
         }
     }
     LaunchedEffect(pager) {
@@ -119,13 +134,13 @@ fun ScheduleScreen(
                         val day = Math.floorMod(unit - 1, 7) + 1
                         latestWeekChange(Math.floorDiv(unit - 1, 7) + 1)
                         latestDayChange(day)
-                        dayScroll.scrollTo(0)
+                        dayOffset = 0
                     } else latestWeekChange(unit)
                 }
             }
     }
     val latestPosition by rememberUpdatedState(ScheduleViewPosition(currentWeek, selectedDay,
-        gridScroll.value, dayScroll.value, positionCalendar))
+        weekOffset, dayOffset, positionCalendar))
     val savePosition by rememberUpdatedState(onPositionChange)
     LaunchedEffect(positionKey) { snapshotFlow { latestPosition }.collect { savePosition(it) } }
     DisposableEffect(positionKey) { onDispose { onPositionChange(latestPosition) } }
@@ -134,10 +149,12 @@ fun ScheduleScreen(
     val shownDay = if (dayView) Math.floorMod(shownUnit - 1, 7) + 1 else selectedDay
     fun selectWeek(week: Int) {
         onWeekChange(week); dateRequest++
-        if (dayView) scope.launch { dayScroll.scrollTo(0) }
+        if (dayView) { dayOffset = 0; scope.launch { activeScroll.scrollTo(0) } }
     }
     fun today() {
-        scope.launch { gridScroll.scrollTo(0); dayScroll.scrollTo(0) }
+        weekOffset = 0; dayOffset = 0
+        val scrolls = pageScrolls.values.toList()
+        scope.launch { scrolls.forEach { it.scrollTo(0) } }
         onTodayClick()
     }
     val contentAlpha = remember { Animatable(1f) }
@@ -160,7 +177,7 @@ fun ScheduleScreen(
                 sampleBackdrop = sample, firstWeekDate = firstWeekDate, actualWeek = actualWeek,
                 showWeekend = dayView || displayPreferences.showWeekend, selectedDay = shownDay,
                 onDayClick = { onWeekChange(shownWeek); onDayChange(it); dateRequest++
-                    scope.launch { dayScroll.scrollTo(0) }
+                    dayOffset = 0
                     onDisplayPreferences(displayPreferences.copy(dayView = true)) },
                 dayView = dayView, onDayView = { if (it != dayView) onDisplayPreferences(displayPreferences.copy(dayView = it)) },
                 onWeekSelect = ::selectWeek, onTodayClick = ::today,
@@ -183,6 +200,7 @@ fun ScheduleScreen(
                 val unit = page + firstPageUnit
                 val week = if (dayView) Math.floorDiv(unit - 1, 7) + 1 else unit
                 val day = if (dayView) Math.floorMod(unit - 1, 7) + 1 else selectedDay
+                val pageScroll = pageScrolls.getOrPut(dayView to unit) { ScrollState(if (dayView) 0 else weekOffset) }
                 val visible = remember(courses, week) { courses.filter { isInWeek(it.weeks, week) } }
                 val conflicts = remember(visible) { scheduleOverlapGroups(visible.map { it.record() })
                     .filter { it.courses.size > 1 }.flatMap { it.courses }.map { it.id }.toSet() }
@@ -194,12 +212,12 @@ fun ScheduleScreen(
                         isNext = !isNextSemester && week == actualWeek && it.id == nextId) }
                 }
                 if (dayView) ScheduleDayList(displayed, week, day, firstWeekDate, periodTimes,
-                    displayPreferences.compact, dayScroll, topInset, onCourseClick,
+                    displayPreferences.compact, pageScroll, topInset, onCourseClick,
                     onCourseLongClick = onCourseLongClick, agenda = agenda, now = clock,
                     isToday = !isNextSemester && week == actualWeek && day == actualDay,
                     onCalendar = onSettingsClick)
                 else ScheduleGrid(displayed, week, periodTimes, periodCount, onCourseClick,
-                    scrollState = gridScroll, topInset = topInset, showWeekend = displayPreferences.showWeekend,
+                    scrollState = pageScroll, topInset = topInset, showWeekend = displayPreferences.showWeekend,
                     compact = displayPreferences.compact, onCourseLongClick = onCourseLongClick,
                     beforeGrid = { if (agenda.needsCalendar) ScheduleNotice("设置开学日期，让课程对应实际日期", "设置开学日期", onSettingsClick) })
             }
@@ -207,20 +225,15 @@ fun ScheduleScreen(
     }
 }
 
-/** Insets and cached courses can arrive after the first measurement on recreation. */
+/** Restore only the active page, once it has a real viewport. Gestures take precedence. */
 @Composable
-private fun RestoreScheduleScroll(scroll: ScrollState) {
-    val target = remember(scroll) { scroll.value }
-    LaunchedEffect(scroll) {
-        if (target <= 0) return@LaunchedEffect
+private fun RestoreScheduleScroll(scroll: ScrollState, target: Int, owner: Any): Boolean {
+    var restored by remember(scroll, owner) { mutableStateOf(false) }
+    LaunchedEffect(scroll, owner) {
         coroutineScope {
             val restore = launch {
-                snapshotFlow { scroll.maxValue }.first { maximum ->
-                    if (maximum == Int.MAX_VALUE) false else {
-                        scroll.scrollTo(target)
-                        maximum >= target
-                    }
-                }
+                val maximum = snapshotFlow { scroll.maxValue }.first { it != Int.MAX_VALUE }
+                scroll.scrollTo(target.coerceIn(0, maximum))
             }
             // A user gesture always takes precedence over pending restoration.
             val interaction = launch {
@@ -229,6 +242,8 @@ private fun RestoreScheduleScroll(scroll: ScrollState) {
             }
             restore.join()
             interaction.cancel()
+            restored = true
         }
     }
+    return restored
 }

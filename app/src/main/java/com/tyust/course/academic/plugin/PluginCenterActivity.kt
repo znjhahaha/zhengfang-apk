@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,17 +18,49 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.tyust.course.manager.UserManager
+import com.tyust.course.model.SchoolConfig
 import com.tyust.course.ui.system.*
 import com.tyust.course.ui.theme.CourseSelectorTheme
 import kotlinx.coroutines.*
 import org.json.JSONObject
 
 class PluginCenterActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_TARGET_SCHOOL = "plugin_target_school"
+        const val EXTRA_FROM_LOGIN = "plugin_from_login"
+        const val EXTRA_PROVIDER = "plugin_provider"
+        const val EXTRA_CHANGED = "plugin_changed"
+        fun intent(context: android.content.Context, school: SchoolConfig?, fromLogin: Boolean = false) =
+            Intent(context, PluginCenterActivity::class.java).putExtra(EXTRA_TARGET_SCHOOL, school?.id)
+                .putExtra(EXTRA_FROM_LOGIN, fromLogin)
+    }
     private var generation by mutableIntStateOf(0)
+    private var targetSchoolId by mutableStateOf<String?>(null)
+    private var changed = false
+    private var packageSnapshot: String? = null
+    private val fromLogin get() = intent.getBooleanExtra(EXTRA_FROM_LOGIN, false)
     override fun onResume() { super.onResume(); generation++ }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { CourseSelectorTheme { Center() } }
+        targetSchoolId = if (savedInstanceState != null) savedInstanceState.getString(EXTRA_TARGET_SCHOOL)
+            else if (intent.hasExtra(EXTRA_TARGET_SCHOOL)) intent.getStringExtra(EXTRA_TARGET_SCHOOL)
+            else UserManager.getInstance().currentSchool?.id
+        targetSchoolId = targetSchoolId?.takeIf { UserManager.getInstance().getSchoolById(it) != null }
+        changed = savedInstanceState?.getBoolean(EXTRA_CHANGED) ?: false
+        packageSnapshot = savedInstanceState?.getString("packages")
+        setContent { CourseSelectorTheme { GlassWindowHost { Center() } } }
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(EXTRA_TARGET_SCHOOL, targetSchoolId)
+        outState.putBoolean(EXTRA_CHANGED, changed)
+        outState.putString("packages", packageSnapshot)
+        super.onSaveInstanceState(outState)
+    }
+    override fun finish() {
+        val school = targetSchoolId?.let { UserManager.getInstance().getSchoolById(it) }
+        setResult(RESULT_OK, Intent().putExtra(EXTRA_TARGET_SCHOOL, school?.id).putExtra(EXTRA_CHANGED, changed)
+            .putExtra(EXTRA_PROVIDER, school?.let { runCatching { AcademicProviderRegistry.resolve(it)?.manifest?.id ?: "builtin.auto" }.getOrNull() }))
+        super.finish()
     }
 
     @Composable private fun Center() {
@@ -37,10 +71,11 @@ class PluginCenterActivity : ComponentActivity() {
         var uninstall by remember { mutableStateOf<PluginPackage?>(null) }
         var installedView by remember { mutableStateOf(false) }
         var chooseProvider by remember { mutableStateOf(false) }
+        var chooseSchool by remember { mutableStateOf(false) }
         var menu by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         var message by remember { mutableStateOf("") }
-        val school = UserManager.getInstance().currentSchool
+        val school = remember(targetSchoolId, generation) { targetSchoolId?.let { UserManager.getInstance().getSchoolById(it) } }
         val candidates = remember(packages, generation, school) { school?.let(AcademicProviderRegistry::candidates).orEmpty() }
         val choice = remember(generation, school) { school?.let(AcademicProviderRegistry::manualChoice).orEmpty() }
         val resolved = remember(packages, generation, school) { school?.let { runCatching { AcademicProviderRegistry.resolve(it) } } }
@@ -48,6 +83,9 @@ class PluginCenterActivity : ComponentActivity() {
 
         suspend fun refresh() {
             packages = withContext(Dispatchers.IO) { AcademicProviderRegistry.reload(); AcademicProviderRegistry.packages().list() }
+            val snapshot = packages.sortedBy { it.manifest.id }.joinToString { it.digest }
+            if (packageSnapshot != null && packageSnapshot != snapshot) changed = true
+            packageSnapshot = snapshot
         }
         fun run(block: suspend () -> Unit) {
             if (busy) return
@@ -62,15 +100,40 @@ class PluginCenterActivity : ComponentActivity() {
         LaunchedEffect(generation) { refresh() }
         fun select(id: String?) {
             school?.let { AcademicProviderRegistry.choose(it, id) }
+            changed = true
             chooseProvider = false; generation++
             message = "已保存本校选择，正在运行的任务继续使用原适配"
+        }
+        val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) run {
+                selected = withContext(Dispatchers.IO) {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytesBounded(PluginLimits.PACKAGE_BYTES) }
+                        ?: error("无法读取插件文件")
+                    AcademicProviderRegistry.packages().install(bytes, allowDevelopment = false)
+                }
+                changed = true; refresh(); generation++
+                message = "导入完成，签名与兼容性已验证"
+            }
+        }
+        val developerTools = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.data?.getBooleanExtra(EXTRA_CHANGED, false) == true) changed = true
+            result.data?.getStringExtra(EXTRA_TARGET_SCHOOL)?.takeIf { UserManager.getInstance().getSchoolById(it) != null }?.let { targetSchoolId = it }
+            generation++
+        }
+        fun bind(pkg: PluginPackage, returnToLogin: Boolean) {
+            val target = school ?: return
+            AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, target, true)
+            select(pkg.manifest.id)
+            selected = null
+            if (returnToLogin) finish()
         }
 
         GlassPageScaffold(title = "插件中心", subtitle = school?.name ?: "学校适配与通用服务", onBack = { finish() }, actions = {
             SystemIconButton(Icons.Outlined.MoreHoriz, "更多", { menu = true })
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(text = { Text("导入、回滚与开发工具") }, onClick = {
-                    menu = false; startActivity(Intent(this@PluginCenterActivity, PluginDeveloperActivity::class.java))
+                    menu = false; developerTools.launch(Intent(this@PluginCenterActivity, PluginDeveloperActivity::class.java)
+                        .putExtra(EXTRA_TARGET_SCHOOL, targetSchoolId))
                 })
                 DropdownMenuItem(text = { Text("开发文档与交流群") }, onClick = { menu = false; web("/developers") })
             }
@@ -80,9 +143,17 @@ class PluginCenterActivity : ComponentActivity() {
                 bottom = padding.calculateBottomPadding() + 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     LiquidButton({ installedView = false }, modifier = Modifier.weight(1f),
-                        style = if (!installedView) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface) { Text("本校") }
+                        style = if (!installedView) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface) { Text(if (school == null) "全部" else "本校") }
                     LiquidButton({ installedView = true }, modifier = Modifier.weight(1f),
                         style = if (installedView) LiquidButtonStyle.Tinted else LiquidButtonStyle.Surface) { Text("已安装") }
+                }
+                InsetGroupedRow(title = school?.name ?: "选择学校", subtitle = if (fromLogin) "安装与选择适配后，返回登录页继续" else "按学校管理插件",
+                    icon = Icons.Outlined.School, onClick = { chooseSchool = true }, showDivider = false,
+                    trailing = { Icon(Icons.Outlined.ChevronRight, "选择学校") })
+                if (fromLogin) LiquidButton(onClick = {
+                    if (school == null) chooseSchool = true else if (resolved?.isFailure == true) chooseProvider = true else finish()
+                }, modifier = Modifier.fillMaxWidth(), enabled = !busy, style = LiquidButtonStyle.Tinted) {
+                    Text(if (resolved?.isFailure == true) "选择适配后返回登录" else "返回登录")
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp))
@@ -97,14 +168,14 @@ class PluginCenterActivity : ComponentActivity() {
                             resolved?.isFailure == true -> resolved.exceptionOrNull()?.message
                             current != null -> "正在生效 · ${current.manifest.version}"
                             else -> "没有匹配插件时使用 App 内置适配"
-                        }, icon = Icons.Outlined.School, onClick = { if (school != null) chooseProvider = true }, showDivider = false,
+                        }, icon = Icons.Outlined.School, onClick = { if (school != null) chooseProvider = true else chooseSchool = true }, showDivider = false,
                             trailing = { Icon(Icons.Outlined.ChevronRight, null) })
                     }
                 }
                 val shown = if (installedView) packages else packages.filter { pkg ->
-                    school?.let { AcademicProviderRegistry.matches(pkg, it) } ?: (pkg.manifest.isNative && pkg.manifest.json.optJSONArray("matches")?.length().let { it == null || it == 0 })
+                    school?.let { AcademicProviderRegistry.matches(pkg, it) } ?: true
                 }
-                InsetGroupedSection(header = if (installedView) "已安装 · ${shown.size}" else "本校插件 · ${shown.size}") {
+                InsetGroupedSection(header = if (installedView || school == null) "已安装 · ${shown.size}" else "本校插件 · ${shown.size}") {
                     if (shown.isEmpty()) InsetGroupedRow(title = "还没有可用插件", subtitle = "从插件商店获取学校适配或通用服务", icon = Icons.Outlined.Extension, showDivider = false)
                     shown.sortedBy { it.manifest.name }.forEachIndexed { index, pkg ->
                         val enabled = school?.let { AcademicProviderRegistry.isEnabled(pkg.manifest.id, it) } ?: true
@@ -124,6 +195,8 @@ class PluginCenterActivity : ComponentActivity() {
                     InsetGroupedRow(title = "浏览并安装插件", subtitle = "下载前自动验证签名与兼容性", icon = Icons.Outlined.CloudDownload,
                         enabled = !busy, onClick = { run { catalog = AcademicProviderRegistry.catalog().check(); if (catalog.isEmpty()) message = "目录暂时没有可用插件" } },
                         trailing = { Icon(Icons.Outlined.ChevronRight, null) })
+                    InsetGroupedRow(title = "从文件安装", subtitle = "导入已签名的插件包", icon = Icons.Outlined.FileOpen,
+                        enabled = !busy, onClick = { importer.launch(arrayOf("*/*")) }, trailing = { Icon(Icons.Outlined.ChevronRight, null) })
                     InsetGroupedRow(title = "打开插件商店", subtitle = "搜索学校、查看介绍与作者", icon = Icons.Outlined.Language,
                         onClick = { web("/") }, showDivider = false, trailing = { Icon(Icons.Outlined.OpenInNew, null) })
                 }
@@ -136,7 +209,8 @@ class PluginCenterActivity : ComponentActivity() {
                             showDivider = index < catalog.lastIndex, trailing = {
                                 LiquidButton(onClick = { run {
                                     selected = AcademicProviderRegistry.catalog().update(id); refresh()
-                                    message = "安装完成，匹配当前学校的插件会自动生效"
+                                    changed = true; generation++
+                                    message = "安装完成，可在详情中选择本校适配；已有手动选择保持不变"
                                 } }, enabled = !busy && !latest, minHeight = 44.dp, horizontalPadding = 16.dp, style = LiquidButtonStyle.Tinted,
                                     modifier = Modifier.testTag("catalog-install-$id")) { Text(if (latest) "已安装" else if (installed == null) "安装" else "更新") }
                             })
@@ -148,6 +222,12 @@ class PluginCenterActivity : ComponentActivity() {
                 }
             }
         }
+        if (chooseSchool) com.tyust.course.ui.screen.SchoolManagementDialog(
+            selectedSchoolId = targetSchoolId, onDismiss = { chooseSchool = false },
+            onSelect = { targetSchoolId = it.id; generation++ }, onChanged = {
+                if (targetSchoolId?.let { UserManager.getInstance().getSchoolById(it) } == null) targetSchoolId = null
+                changed = true; generation++
+            })
         if (chooseProvider && school != null) SystemDialog(onDismissRequest = { chooseProvider = false }, title = { Text("本校教务适配") },
             confirmButton = { TextButton(onClick = { chooseProvider = false }) { Text("完成") } }) {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -166,8 +246,12 @@ class PluginCenterActivity : ComponentActivity() {
             val features = (metadata?.optJSONArray("features") ?: pkg.manifest.json.optJSONArray("features"))?.let(PluginJson::strings)
                 ?: pkg.manifest.capabilities.map(::capabilityName)
             val enabled = school?.let { AcademicProviderRegistry.isEnabled(pkg.manifest.id, it) } ?: true
+            val canBind = pkg.manifest.isAcademic && school != null && AcademicProviderRegistry.matches(pkg, school)
             SystemDialog(onDismissRequest = { selected = null }, title = { Text(pkg.manifest.name) },
-                confirmButton = { TextButton(onClick = { selected = null }) { Text("完成") } }) {
+                confirmButton = {
+                    if (fromLogin && canBind) TextButton(onClick = { bind(pkg, true) }) { Text("使用此适配并返回登录") }
+                    else TextButton(onClick = { selected = null }) { Text("完成") }
+                }) {
                 Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(metadata?.optString("description")?.ifBlank { null } ?: pkg.manifest.json.optString("description").ifBlank { "作者尚未提供介绍" })
                     Detail("声明支持", features.joinToString("、").ifBlank { "未声明功能" })
@@ -190,22 +274,24 @@ class PluginCenterActivity : ComponentActivity() {
                     Detail("版本说明", metadata?.optString("releaseNotes")?.ifBlank { null } ?: pkg.manifest.json.optString("releaseNotes").ifBlank { "暂无版本说明" })
                     val releases = (metadata?.optJSONArray("releases") ?: metadata?.optJSONArray("versions"))?.let(PluginJson::objects).orEmpty()
                     releases.forEach { Detail(it.getString("version"), it.optString("notes").ifBlank { "未提供说明" }) }
-                    if ((pkg.manifest.isService || pkg.manifest.isNative && pkg.manifest.contributes.getJSONArray("pages").length() > 0) && enabled && (school == null || AcademicProviderRegistry.matches(pkg, school))) {
+                    if (!fromLogin && school?.id == UserManager.getInstance().currentSchool?.id && (pkg.manifest.isService || pkg.manifest.isNative && pkg.manifest.contributes.getJSONArray("pages").length() > 0) && enabled && (school == null || AcademicProviderRegistry.matches(pkg, school))) {
                         LiquidButton(onClick = { selected = null; if (pkg.manifest.isNative) NativePluginActivity.open(this@PluginCenterActivity, pkg) else ServicePluginActivity.open(this@PluginCenterActivity, pkg) },
                             modifier = Modifier.fillMaxWidth(), style = LiquidButtonStyle.Tinted) { Text("打开插件") }
                     }
                     if (pkg.manifest.isAcademic && school != null && AcademicProviderRegistry.matches(pkg, school)) {
-                        TextButton(onClick = { AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, true); select(pkg.manifest.id); selected = null }) { Text("用作本校教务适配") }
+                        TextButton(onClick = { bind(pkg, false) }) { Text("用作本校教务适配") }
                     }
                     if (pkg.manifest.isAcademic && UserManager.getInstance().getSchoolById(pkg.manifest.school.getString("id")) == null) {
                         TextButton(onClick = {
-                            UserManager.getInstance().addCustomSchool(AcademicProviderRegistry.school(pkg))
-                            message = "已添加学校，可在学校列表选择并登录"; selected = null
+                            val added = AcademicProviderRegistry.school(pkg)
+                            UserManager.getInstance().addCustomSchool(added)
+                            targetSchoolId = added.id; changed = true; generation++
+                            message = "已添加学校，可使用此适配返回登录"
                         }) { Text("添加到学校列表") }
                     }
                     if (school != null && AcademicProviderRegistry.matches(pkg, school)) TextButton(onClick = {
                         AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, !enabled)
-                        generation++; selected = null
+                        changed = true; generation++; selected = null
                     }) { Text(if (enabled) "本校停用" else "本校启用") }
                     TextButton(onClick = { PluginFeedback.open(this@PluginCenterActivity, pkg) }) { Text("快捷反馈") }
                     TextButton(onClick = { selected = null; uninstall = pkg }) { Text("卸载插件", color = MaterialTheme.colorScheme.error) }

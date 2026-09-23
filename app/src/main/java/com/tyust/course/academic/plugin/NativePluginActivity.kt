@@ -55,7 +55,7 @@ class NativePluginActivity : ComponentActivity(), NativePluginInteraction {
     private val requestNotification = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> permission?.complete(granted); permission = null }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { CourseSelectorTheme { Screen() } }
+        setContent { CourseSelectorTheme { GlassWindowHost { Screen() } } }
         lifecycleScope.launch {
             try {
                 val pkg = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().active(intent.getStringExtra("pluginId").orEmpty()) } ?: error("插件尚未安装")

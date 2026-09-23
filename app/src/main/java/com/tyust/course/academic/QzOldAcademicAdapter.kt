@@ -3,7 +3,6 @@ package com.tyust.course.academic
 import com.tyust.course.model.SchoolConfig
 import org.jsoup.Jsoup
 import org.json.JSONObject
-import java.net.URI
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSession, transport: AcademicHttpTransport) :
@@ -147,18 +146,20 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
         val page = transport.get(transport.appUrl("framework/xsMain.jsp"))
         if (AcademicHtml.isLoginPage(page.text) || page.code !in 200..299) return@serial LoginResult(AcademicStatus.SESSION_EXPIRED)
         val document = Jsoup.parse(page.text, page.url)
-        var identity = parseName(document)
+        var identity = parseQzOldIdentity(document)
         val valid = identity.first.isNotBlank() || identity.second.isNotBlank() ||
             listOf("学生个人中心", "退出登录", "xsxk/xklc_list", "学生选课").any(page.text::contains)
         if (!valid) return@serial LoginResult(AcademicStatus.SESSION_EXPIRED, message = "无法验证学校登录状态")
         if (identity.first.isBlank()) {
             val profile = document.select("iframe[src]").firstOrNull {
-                URI(it.absUrl("src")).path.endsWith("/framework/xsMain_new.jsp")
+                it.absUrl("src").toHttpUrlOrNull()?.encodedPath?.let { path ->
+                    path.endsWith("/framework/xsMain_new.jsp") || path.endsWith("/framework/xsMain_new.htmlx")
+                } == true
             }
             if (profile != null) {
                 val details = transport.get(profile.absUrl("src"), page.url)
                 requirePage(details)
-                val found = parseName(Jsoup.parse(details.text, details.url))
+                val found = parseQzOldIdentity(Jsoup.parse(details.text, details.url))
                 identity = found.first.ifBlank { identity.first } to found.second.ifBlank { identity.second }
             }
         }
@@ -199,4 +200,15 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
         check(context)
         selectedInRounds(context) ?: selectedFromMenu("framework/xsMain.jsp")
     }
+}
+
+/** Old QZ also renders a name paragraph beside a separate student/teacher label. */
+internal fun parseQzOldIdentity(document: org.jsoup.nodes.Document): Pair<String, String> {
+    val identity = parseName(document)
+    if (identity.first.isNotBlank() || AcademicHtml.isLoginPage(document.html())) return identity
+    // The header paragraph is the full name; the adjacent span is a role label.
+    // Do not concatenate or trim a surname using role words from another node.
+    val name = document.select(".userInfo > div > p").singleOrNull()
+        ?.text()?.replace('\u00a0', ' ')?.trim().orEmpty()
+    return name to identity.second
 }

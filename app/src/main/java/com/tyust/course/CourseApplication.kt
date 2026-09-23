@@ -21,6 +21,7 @@ class CourseApplication : Application() {
         }
         if (processName == packageName) {
             mainProcess = true
+            com.tyust.course.diagnostics.AppDiagnostics.install(this)
             com.tyust.course.academic.plugin.AcademicProviderRegistry.initialize(this)
             GlassRuntimeGuard.initialize(this)
             AppearanceSettingsManager.initialize(this)

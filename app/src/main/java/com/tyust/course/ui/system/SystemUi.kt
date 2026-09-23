@@ -1029,7 +1029,7 @@ fun DisablePlatformDialogDim() {
 @Composable
 fun SystemDialog(
     onDismissRequest: () -> Unit,
-    backdrop: Backdrop? = LocalAppBackdrop.current ?: LocalModalBackdrop.current ?: LocalControlBackdrop.current,
+    backdrop: Backdrop? = LocalModalBackdrop.current ?: LocalAppBackdrop.current ?: LocalControlBackdrop.current,
     useVisualEffects: Boolean = true,
     confirmButton: @Composable (() -> Unit)? = null,
     dismissButton: @Composable (() -> Unit)? = null,
@@ -1116,9 +1116,9 @@ private fun SystemDialogContent(
     val regionState = rememberWallpaperRegionState()
     val appearance = rememberWallpaperRegionAppearance(regionState)
     val isLightTheme = appearance.usesDarkForeground
-    // 模态卡片是玻璃而不是实色板：只保留一层弱中性表面，让身后画面经 blur/lens 透出。
+    // Keep the optics, but give text a sufficiently opaque surface on busy wallpapers.
     val dialogSurfaceColor = appearance.surface.copy(
-        alpha = maxOf(appearance.surface.alpha, 0.30f)
+        alpha = maxOf(appearance.surface.alpha, modalSurfaceAlpha(!isLightTheme, accessibility.highContrast))
     )
     val dialogBorderColor = appearance.border
     val dialogShadowColor = Color.Black.copy(alpha = dialogMaterial.shadowAlpha)

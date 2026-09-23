@@ -368,6 +368,11 @@ fun SettingsRoute(
         onQuotaClick = { showQuotaDialog = true },
         onRefreshCookieClick = { refreshCookieManually() },
         onLogExport = { com.tyust.course.utils.LogUtils.exportLogs(context) },
+        onErrorReport = {
+            val report = com.tyust.course.diagnostics.AppDiagnostics.latest(context)
+            if (report != null) com.tyust.course.diagnostics.AppDiagnostics.showReport(context, report)
+            else android.widget.Toast.makeText(context, "暂未记录错误", android.widget.Toast.LENGTH_SHORT).show()
+        },
         onSchoolAdaptation = {
             if (isDemoMode) GlassToaster.show("本地演示模式不连接学校适配服务") else showSchoolAdaptation = true
         },
@@ -1129,5 +1134,3 @@ fun SimpleConfirmDialog(
         showCancel = showCancel
     )
 }
-
-

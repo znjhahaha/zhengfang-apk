@@ -27,6 +27,8 @@ import com.tyust.course.login.PasswordLoginGateway
 import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.academic.AcademicGatewayFactory
 import com.tyust.course.academic.AcademicPasswordLoginGateway
+import com.tyust.course.academic.plugin.PluginCenterActivity
+import com.tyust.course.academic.plugin.AcademicProviderRegistry
 import com.tyust.course.AcademicWebViewActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,7 +54,10 @@ class LoginActivity : ComponentActivity() {
     private var academicWebPageUrl = ""
     private var academicValidationGeneration = 0
     private var isAutoValidating by mutableStateOf(false)
-    private var selectedLoginSchool: SchoolConfig? = null
+    private var selectedLoginSchool by mutableStateOf<SchoolConfig?>(null)
+    private var schoolRevision by mutableStateOf(0)
+    private var loginContextRevision by mutableStateOf(0)
+    private var manualLoginInteraction = false
     private var validationCall: Call? = null
     private val validationAccounts = mutableMapOf<String, SchoolConfig>()
     private var validationJob: kotlinx.coroutines.Job? = null
@@ -74,6 +79,38 @@ class LoginActivity : ComponentActivity() {
     private var pendingPasswordValue = ""
     private var captchaImageBytes by mutableStateOf<ByteArray?>(null)
 
+    private val pluginCenterLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        invalidateLoginAttempt()
+        AcademicProviderRegistry.reload()
+        val id = result.data?.getStringExtra(PluginCenterActivity.EXTRA_TARGET_SCHOOL) ?: selectedLoginSchool?.id
+        selectedLoginSchool = id?.let { UserManager.getInstance().getSchoolById(it) }
+        schoolRevision++
+        errorMessage = if (result.data?.getBooleanExtra(PluginCenterActivity.EXTRA_CHANGED, false) == true)
+            "学校插件已更新，请重新点击登录" else null
+    }
+
+    private fun openSchoolPlugins() {
+        manualLoginInteraction = true
+        invalidateLoginAttempt()
+        pluginCenterLauncher.launch(PluginCenterActivity.intent(this, selectedLoginSchool, fromLogin = true))
+    }
+
+    private fun invalidateLoginAttempt() {
+        loginContextRevision++
+        academicValidationGeneration++
+        validationCall?.cancel(); validationCall = null
+        validationJob?.cancel(); validationJob = null
+        clearValidationSessions()
+        discardPendingPasswordLogin()
+        captchaImageBytes = null
+        showBindingDialog = false
+        pendingCookie = ""
+        cookieFromWebView = ""
+        academicWebPageUrl = ""
+        isLoading = false
+        isAutoValidating = false
+    }
+
     // WebView result launcher
     private val webViewLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -88,13 +125,13 @@ class LoginActivity : ComponentActivity() {
                 lifecycleScope.launch {
                     try {
                         val identity = withContext(Dispatchers.IO) { gateway.resumeWebLogin(cookie.orEmpty(), page) }
-                        if (selectedLoginSchool?.id != school.id) return@launch
+                        if (activePasswordLoginGateway !== gateway || selectedLoginSchool?.id != school.id) return@launch
                         if (identity.status != com.tyust.course.academic.AcademicStatus.SUCCESS) throw IllegalStateException(identity.message.ifBlank { "学校尚未确认登录" })
                         pendingPasswordLogin = true
                         finishAcademicLogin(school, cookie.orEmpty(), identity.studentName, identity.studentId)
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                    catch (e: Exception) { errorMessage = e.message ?: "网页登录未完成" }
-                    finally { isLoading = false }
+                    catch (e: Exception) { if (activePasswordLoginGateway === gateway) errorMessage = e.message ?: "网页登录未完成" }
+                    finally { if (activePasswordLoginGateway === gateway) isLoading = false }
                 }
                 return@registerForActivityResult
             }
@@ -112,7 +149,9 @@ class LoginActivity : ComponentActivity() {
         
         // Initialize UserManager with context for SharedPreferences
         UserManager.getInstance().init(this)
-        selectedLoginSchool = UserManager.getInstance().currentSchool
+        selectedLoginSchool = savedInstanceState?.getString("login_school")?.let { UserManager.getInstance().getSchoolById(it) }
+            ?: UserManager.getInstance().currentSchool
+        manualLoginInteraction = savedInstanceState?.getBoolean("manual_login") ?: false
         
             // 🔄 每次启动 App 都同步云端激活配置（获取最新的 max_students）
         lifecycleScope.launch {
@@ -129,7 +168,7 @@ class LoginActivity : ComponentActivity() {
             val forceRelogin = intent.getBooleanExtra("force_relogin", false)
             if (forceRelogin) {
                 errorMessage = "请重新登录以继续使用"
-            } else {
+            } else if (!manualLoginInteraction) {
                 // 检查是否有保存的有效登录状态
                 checkSavedLoginState()
             }
@@ -138,7 +177,7 @@ class LoginActivity : ComponentActivity() {
         setContent {
             CourseSelectorTheme {
                 // Use mutableStateOf for reactive schools list
-                var schools by remember { mutableStateOf(UserManager.getInstance().supportedSchools) }
+                var schools by remember(schoolRevision) { mutableStateOf(UserManager.getInstance().supportedSchools) }
                 var showSchoolAdaptation by remember { mutableStateOf(false) }
                 
                 // 🔧 强化版学校选择记忆逻辑
@@ -167,14 +206,14 @@ class LoginActivity : ComponentActivity() {
                         { onBackPressedDispatcher.onBackPressed() }
                     } else null,
                     schools = schools,
+                    selectedSchoolId = selectedLoginSchool?.id,
+                    pluginRevision = schoolRevision,
+                    loginContextRevision = loginContextRevision,
+                    onSchoolPlugins = ::openSchoolPlugins,
                     onSchoolSelected = { school ->
                         selectedLoginSchool = school
-                        academicValidationGeneration++
-                        validationCall?.cancel()
-                        validationJob?.cancel()
-                        clearValidationSessions()
-                        discardPendingPasswordLogin()
-                        isLoading = false
+                        manualLoginInteraction = true
+                        invalidateLoginAttempt()
                     },
                     onLoginClick = { cookie ->
                         handleLogin(cookie)
@@ -243,6 +282,12 @@ class LoginActivity : ComponentActivity() {
                 com.tyust.course.ui.screen.UsageNotice()
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("login_school", selectedLoginSchool?.id)
+        outState.putBoolean("manual_login", manualLoginInteraction)
+        super.onSaveInstanceState(outState)
     }
 
     // 检查保存的登录状态，有 Cookie 直接进入主页面
@@ -326,6 +371,7 @@ class LoginActivity : ComponentActivity() {
         errorMessage = null
         pendingPasswordLogin = false
 
+        val attempt = ++academicValidationGeneration
         // 🔄 先同步云端激活配置（获取最新的 max_students）
         lifecycleScope.launch {
             try {
@@ -337,6 +383,7 @@ class LoginActivity : ComponentActivity() {
                 Log.w(TAG, "激活配置同步失败: ${e.message}")
             }
             
+            if (attempt != academicValidationGeneration || selectedLoginSchool?.id != currentSchool.id || isFinishing || isDestroyed) return@launch
             // 同步完成后继续登录流程
             pendingPasswordLogin = false
             performLoginValidation(currentSchool, cookieStr)
@@ -572,12 +619,18 @@ class LoginActivity : ComponentActivity() {
         pendingPasswordValue = password
         pendingPasswordSchool = school
         activePasswordLoginGateway?.clearSensitiveState()
-        val gateway = PasswordLoginGatewayFactory.create(school)
+        val gateway = try { PasswordLoginGatewayFactory.create(school) } catch (error: Exception) {
+            isLoading = false
+            errorMessage = error.message ?: "无法加载学校适配，请检查学校插件"
+            discardPendingPasswordLogin()
+            return
+        }
         activePasswordLoginGateway = gateway
 
         gateway.login(school, username, password, object : PasswordLoginCallback {
             override fun onSuccess(cookie: String) {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     if (selectedLoginSchool?.id != school.id) {
                         isLoading = false
                         errorMessage = "学校已切换，请重新登录"
@@ -595,13 +648,14 @@ class LoginActivity : ComponentActivity() {
                                 com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
                             }
                         } catch (_: Exception) {}
-                        performLoginValidation(school, cookie)
+                        if (activePasswordLoginGateway === gateway && !isFinishing && !isDestroyed) performLoginValidation(school, cookie)
                     }
                 }
             }
 
             override fun onCaptchaRequired(imageBytes: ByteArray) {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     captchaImageBytes = imageBytes
                     Log.d(TAG, "Captcha received: ${imageBytes.size} bytes, dialog should show")
@@ -610,6 +664,7 @@ class LoginActivity : ComponentActivity() {
 
             override fun onCaptchaInvalid() {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = "验证码错误，请重新输入"
                     refreshCaptcha()
@@ -618,6 +673,7 @@ class LoginActivity : ComponentActivity() {
 
             override fun onInvalidCredentials() {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = "用户名或密码不正确"
                     discardPendingPasswordLogin()
@@ -627,6 +683,7 @@ class LoginActivity : ComponentActivity() {
 
             override fun onError(message: String) {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = message
                     discardPendingPasswordLogin()
@@ -636,6 +693,7 @@ class LoginActivity : ComponentActivity() {
 
             override fun onWebLoginRequired(message: String) {
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = message
                     UserManager.getInstance().updateSchoolConfig(school)
@@ -661,6 +719,7 @@ class LoginActivity : ComponentActivity() {
             override fun onSuccess(cookie: String) {
                 Log.d(TAG, "Captcha submit: login SUCCESS")
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     gateway.clearSensitiveState()
                     isLoading = false
                     captchaImageBytes = null  // 成功时清除
@@ -677,7 +736,7 @@ class LoginActivity : ComponentActivity() {
                                 com.tyust.course.activation.ActivationManager.checkActivation(this@LoginActivity)
                             }
                         } catch (_: Exception) {}
-                        performLoginValidation(school, cookie)
+                        if (activePasswordLoginGateway === gateway && !isFinishing && !isDestroyed) performLoginValidation(school, cookie)
                     }
                 }
             }
@@ -685,6 +744,7 @@ class LoginActivity : ComponentActivity() {
             override fun onCaptchaRequired(imageBytes: ByteArray) {
                 Log.d(TAG, "Captcha submit: server returned new captcha, size=${imageBytes.size}")
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     captchaImageBytes = imageBytes  // 刷新图片
                 }
@@ -693,6 +753,7 @@ class LoginActivity : ComponentActivity() {
             override fun onCaptchaInvalid() {
                 Log.d(TAG, "Captcha submit: captcha INVALID")
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = "验证码错误，请重新输入"
                     refreshCaptcha()
@@ -702,6 +763,7 @@ class LoginActivity : ComponentActivity() {
             override fun onInvalidCredentials() {
                 Log.d(TAG, "Captcha submit: INVALID credentials")
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     errorMessage = "用户名或密码不正确"
                     captchaImageBytes = null
@@ -712,6 +774,7 @@ class LoginActivity : ComponentActivity() {
             override fun onError(message: String) {
                 Log.e(TAG, "Captcha submit error: $message")
                 runOnUiThread {
+                    if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                     isLoading = false
                     captchaImageBytes = null
                     errorMessage = message
@@ -722,8 +785,10 @@ class LoginActivity : ComponentActivity() {
     }
 
     private fun refreshCaptcha() {
-        activePasswordLoginGateway?.refreshCaptcha { bytes ->
+        val gateway = activePasswordLoginGateway ?: return
+        gateway.refreshCaptcha { bytes ->
             runOnUiThread {
+                if (activePasswordLoginGateway !== gateway || isFinishing || isDestroyed) return@runOnUiThread
                 if (bytes != null) captchaImageBytes = bytes
             }
         }

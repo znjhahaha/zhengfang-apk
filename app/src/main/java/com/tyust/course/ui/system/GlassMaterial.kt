@@ -64,6 +64,13 @@ data class GlassAccessibilityMode(
     val highContrast: Boolean
 )
 
+/** Popup-only opacity floor. Permanent Modal-role panels keep their existing material. */
+internal fun modalSurfaceAlpha(dark: Boolean, highContrast: Boolean): Float = when {
+    highContrast -> 0.96f
+    dark -> 0.84f
+    else -> 0.78f
+}
+
 @Composable
 fun rememberGlassAccessibilityMode(): GlassAccessibilityMode {
     val application = LocalContext.current.applicationContext as Application

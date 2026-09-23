@@ -12,6 +12,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Extension
+import com.tyust.course.ui.system.InsetGroupedRow
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.School
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -70,6 +74,10 @@ fun LoginScreen(
     schools: List<SchoolConfig>,
     onSchoolSelected: (SchoolConfig) -> Unit,
     onLoginClick: (cookie: String) -> Unit,
+    selectedSchoolId: String? = null,
+    pluginRevision: Int = 0,
+    loginContextRevision: Int = 0,
+    onSchoolPlugins: (() -> Unit)? = null,
     onOpenWebView: () -> Unit = {},
     onSchoolAdded: () -> Unit = {},
     onDemoMode: () -> Unit = {},
@@ -93,13 +101,19 @@ fun LoginScreen(
     onCancelBinding: () -> Unit = {}
 ) {
     var cookie by remember { mutableStateOf(cookieValue) }
-    var loginTab by remember { mutableStateOf(if (onPasswordLogin != null) 0 else 1) }
-    var username by remember { mutableStateOf("") }
+    var loginTab by rememberSaveable { mutableStateOf(if (onPasswordLogin != null) 0 else 1) }
+    var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showCaptchaDialog by remember { mutableStateOf(false) }
     var captchaInput by remember { mutableStateOf("") }
     var captchaSubmitting by remember { mutableStateOf(false) }
     var captchaDismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(loginContextRevision) {
+        cookie = cookieValue
+        captchaInput = ""
+        captchaSubmitting = false
+        showCaptchaDialog = false
+    }
     
     // Update cookie when external value changes
     LaunchedEffect(cookieValue) {
@@ -256,13 +270,13 @@ fun LoginScreen(
                         var showAddSchoolDialog by remember { mutableStateOf(false) }
                         
                         // Keep the user's current choice when the list refreshes after add/edit.
-                        LaunchedEffect(schools) {
-                            val chosenId = selectedSchool?.id
+                        LaunchedEffect(schools, selectedSchoolId) {
+                            val chosenId = selectedSchoolId ?: selectedSchool?.id
                                 ?: UserManager.getInstance().currentSchool?.id
                             val school = schools.firstOrNull { it.id == chosenId } ?: schools.firstOrNull()
                             if (school != null) {
                                 selectedSchool = school
-                                onSchoolSelected(school)
+                                if (selectedSchoolId != school.id) onSchoolSelected(school)
                             }
                         }
 
@@ -278,7 +292,7 @@ fun LoginScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = "请选择学校",
-                            actionLabel = "添加学校",
+                            actionLabel = "添加／管理学校",
                             onAction = { showAddSchoolDialog = true },
                             backdrop = backdrop,
                             maxLabelLines = 2
@@ -290,19 +304,26 @@ fun LoginScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         )
+                        if (onSchoolPlugins != null) {
+                            val providerLabel = remember(selectedSchool, pluginRevision) {
+                                selectedSchool?.let { school ->
+                                    runCatching { com.tyust.course.academic.plugin.AcademicProviderRegistry.resolve(school)?.manifest?.name ?: "内置适配" }
+                                        .getOrDefault("需要选择适配")
+                                } ?: "选择学校后可安装独立适配"
+                            }
+                            InsetGroupedRow(title = "学校插件", subtitle = "$providerLabel · 无需登录即可安装",
+                                icon = Icons.Default.Extension, onClick = onSchoolPlugins, showDivider = false,
+                                modifier = Modifier.fillMaxWidth().testTag("login-school-plugins"),
+                                trailing = { Icon(Icons.Default.ChevronRight, "管理学校插件") })
+                        }
                         
                         // Add School Dialog
                         if (showAddSchoolDialog) {
-                            AddSchoolDialog(
+                            SchoolManagementDialog(
+                                selectedSchoolId = selectedSchool?.id,
                                 onDismiss = { showAddSchoolDialog = false },
-                                onConfirm = { draft ->
-                                    val newSchool = draft.toSchoolConfig()
-                                    com.tyust.course.manager.UserManager.getInstance().addCustomSchool(newSchool)
-                                    selectedSchool = newSchool
-                                    onSchoolSelected(newSchool)
-                                    onSchoolAdded()
-                                    showAddSchoolDialog = false
-                                }
+                                onSelect = { school -> selectedSchool = school; onSchoolSelected(school) },
+                                onChanged = onSchoolAdded
                             )
                         }
                         
@@ -442,6 +463,9 @@ fun LoginScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = SemanticDanger
                                 )
+                                if (onSchoolPlugins != null && !isLoading) TextButton(onClick = onSchoolPlugins) {
+                                    Text("检查学校插件")
+                                }
                             }
                         }
                         

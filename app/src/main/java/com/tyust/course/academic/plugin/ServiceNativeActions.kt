@@ -24,6 +24,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.academic.AcademicSession
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -141,8 +142,8 @@ internal fun rememberServiceNativeActions(runtime: ServicePluginSession, onResul
     }
     if (controller.confirming) controller.active?.let { ticket ->
         val kind = ticket.operation.getString("kind")
-        AlertDialog(onDismissRequest = { finish(ticket, "cancelled") }, title = { Text(ticket.operation.getString("title")) },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SystemDialog(onDismissRequest = { finish(ticket, "cancelled") }, title = { Text(ticket.operation.getString("title")) },
+            content = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${runtime.pkg.manifest.name} 请求使用此能力。")
                 Text(ticket.operation.getString("reason"))
                 Text(when (kind) {

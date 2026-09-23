@@ -149,7 +149,9 @@ public class UserManager {
     public void addCustomSchool(SchoolConfig school) {
         // 检查是否已存在
         for (SchoolConfig s : getSupportedSchools()) {
-            if (s.id.equals(school.id) || (s.domain.equals(school.domain) && s.academicProvider.isEmpty() && school.academicProvider.isEmpty())) {
+            boolean sameAddress = s.protocol.equalsIgnoreCase(school.protocol) && s.domain.equalsIgnoreCase(school.domain)
+                    && s.basePath.replaceAll("/+$", "").equals(school.basePath.replaceAll("/+$", ""));
+            if (s.id.equals(school.id) || (sameAddress && s.academicProvider.isEmpty() && school.academicProvider.isEmpty())) {
                 return; // 已存在，不添加
             }
         }
@@ -158,8 +160,23 @@ public class UserManager {
     }
 
     // 删除自定义学校
+    public boolean isCustomSchool(String schoolId) {
+        return customSchools.stream().anyMatch(s -> s.id.equals(schoolId));
+    }
+
+    public boolean canRemoveCustomSchool(String schoolId) {
+        return isCustomSchool(schoolId) && !(isLoggedIn && currentSchool != null && currentSchool.id.equals(schoolId));
+    }
+
     public void removeCustomSchool(String schoolId) {
+        // Removing a picker entry must not invalidate a live account or delete its data.
+        if (!canRemoveCustomSchool(schoolId)) return;
         customSchools.removeIf(s -> s.id.equals(schoolId));
+        if (currentSchool != null && currentSchool.id.equals(schoolId)) {
+            currentSchool = null;
+            if (appContext != null) appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                    .remove(KEY_CURRENT_SCHOOL_ID).apply();
+        }
         saveCustomSchools();
     }
 

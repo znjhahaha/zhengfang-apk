@@ -42,9 +42,9 @@ class ScheduleSingleWidgetProvider : ScheduleWidgetProvider()
 class ScheduleTimelineWidgetProvider : ScheduleWidgetProvider()
 
 enum class ScheduleWidgetStyle(val title: String, val description: String, val provider: Class<out AppWidgetProvider>) {
-    Single("简洁单课", "突出当前或下一节课，适合小块桌面空间", ScheduleSingleWidgetProvider::class.java),
-    Double("双课程", "并排查看当前与下一节的时间、教室", ScheduleWidgetProvider::class.java),
-    Timeline("今日时间轴", "按时间排列今日课程，突出尚未结束的课程", ScheduleTimelineWidgetProvider::class.java)
+    Single("简洁单课", "1×1 · 当前或下一节课程，保留名称与时间", ScheduleSingleWidgetProvider::class.java),
+    Double("双课程", "2×1 · 两门课程并排，拉大后显示教室", ScheduleWidgetProvider::class.java),
+    Timeline("今日时间轴", "2×2 · 今日课程时间轴，拉大可查看更多", ScheduleTimelineWidgetProvider::class.java)
 }
 
 /** Only local cache reads and an inexact, non-wakeup boundary alarm; never performs authentication. */
@@ -99,9 +99,7 @@ object ScheduleWidgetUpdater {
         val state = ScheduleWidgetState.from(activeSnapshot(context), now)
         ids.forEach { (id, style) ->
             val options = manager.getAppWidgetOptions(id)
-            manager.updateAppWidget(id, ScheduleWidgetRenderer.views(context, state,
-                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 280),
-                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160), style))
+            manager.updateAppWidget(id, ScheduleWidgetRenderer.responsiveViews(context, state, options, style))
         }
         cancel(context)
         state.agenda?.let { agenda ->

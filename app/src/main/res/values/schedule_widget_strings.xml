@@ -2,9 +2,9 @@
     <string name="schedule_widget_name">双课程</string>
     <string name="schedule_widget_single_name">简洁单课</string>
     <string name="schedule_widget_timeline_name">今日时间轴</string>
-    <string name="schedule_widget_single_description">突出当前或下一节课程的时间和教室，小尺寸也清晰。</string>
-    <string name="schedule_widget_timeline_description">按时间排列今天的课程，点按课程即可查看详情。</string>
-    <string name="schedule_widget_description">显示当前账号的今日课程、下一节时间和地点，支持离线查看。</string>
+    <string name="schedule_widget_single_description">1×1 单课卡片，显示当前或下一节的名称和时间，拉大后显示教室。</string>
+    <string name="schedule_widget_timeline_description">2×2 今日时间轴，突出当前与下一节，拉大可查看更多课程。</string>
+    <string name="schedule_widget_description">2×1 双课卡片，并排显示两门课程，点按查看详情，支持离线使用。</string>
     <string name="schedule_widget_heading">今日课表</string>
     <string name="schedule_widget_status">正在上课</string>
     <string name="schedule_widget_preview">高等数学</string>
@@ -16,4 +16,5 @@
     <string name="schedule_widget_next_time">10:00–11:40</string>
     <string name="schedule_widget_detail">课程时间与上课地点</string>
     <string name="schedule_widget_footer">点按进入完整课表</string>
+    <string name="schedule_widget_preview_start">08:00</string>
 </resources>

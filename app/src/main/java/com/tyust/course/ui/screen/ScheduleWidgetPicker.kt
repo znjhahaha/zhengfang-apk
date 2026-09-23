@@ -6,14 +6,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tyust.course.schedule.*
 import com.tyust.course.ui.system.SystemDialog
-import com.tyust.course.ui.system.SystemPrimaryButton
 import java.util.Calendar
 
 @Composable
@@ -36,15 +37,20 @@ fun ScheduleWidgetPicker(onDismiss: () -> Unit) {
             Text("样式预览 · 示例课程。添加后显示当前账号的本地课表，随浅深色切换。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             for (style in ScheduleWidgetStyle.entries) {
-                Text(style.title, style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(style.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { ScheduleWidgetUpdater.requestPin(context, style); onDismiss() }) { Text("添加") }
+                }
                 Text(style.description, style = MaterialTheme.typography.bodySmall)
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val width = maxWidth.value.toInt()
-                    val height = if (style == ScheduleWidgetStyle.Timeline) 240 else 150
-                    AndroidView(factory = { ctx -> FrameLayout(ctx) }, modifier = Modifier.fillMaxWidth().height(height.dp),
+                    val width = minOf(maxWidth.value.toInt(), if (style == ScheduleWidgetStyle.Single) 88 else 176)
+                    val height = if (style == ScheduleWidgetStyle.Double) width / 2 else width
+                    AndroidView(factory = { ctx -> FrameLayout(ctx) }, modifier = Modifier.width(width.dp).height(height.dp),
                         update = { host ->
                             host.removeAllViews()
-                            host.addView(ScheduleWidgetRenderer.views(host.context, preview, width, height, style).apply(host.context, host))
+                            val themed = com.tyust.course.manager.AppThemeCoordinator.wrapContext(host.context)
+                            host.addView(ScheduleWidgetRenderer.views(themed, preview, width, height, style).apply(themed, host),
+                                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
                             // Preview cards have no navigation; only the explicit add button acts.
                             fun disable(view: android.view.View) {
                                 view.isClickable = false
@@ -53,8 +59,9 @@ fun ScheduleWidgetPicker(onDismiss: () -> Unit) {
                             disable(host)
                         })
                 }
-                SystemPrimaryButton("添加${style.title}", { ScheduleWidgetUpdater.requestPin(context, style); onDismiss() }, Modifier.fillMaxWidth())
             }
+            Text("实际格数由桌面决定。长按组件可调整尺寸；更大尺寸会显示教室和更多课程。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

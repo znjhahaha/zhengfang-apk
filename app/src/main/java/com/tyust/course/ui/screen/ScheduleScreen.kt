@@ -209,8 +209,7 @@ fun ScheduleGrid(
     periodCount: Int = 12,
     onCourseClick: (ScheduleCourseUi) -> Unit,
     /**
-     * scrollState 由调用方持有：顶栏的玻璃浓度要跟着它推导，而且所有 pager 页
-     * 共用一个，左右切周时纵向位置不会跳回顶部。
+     * 每个 pager 页独立持有；调用方在切周时传递位置，避免相邻页测量相互夹取滚动范围。
      */
     scrollState: ScrollState = rememberScrollState(),
     /**
@@ -430,11 +429,12 @@ private fun rememberCoursePeriodHeight(courses: List<ScheduleCourseUi>, columnWi
             for (course in courses) {
                 val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
                 val name = measurer.measure(course.name, courseNameStyle(style, duration), constraints = Constraints(maxWidth = contentWidth))
-                val hasStatus = course.hasCardStatus()
                 val locationHeight = if (course.location.isNotBlank()) measurer.measure(
                     course.location, courseLocationStyle(style, duration), constraints = Constraints(maxWidth = contentWidth)
                 ).size.height else 0
-                val informationHeight = locationHeight + if (hasStatus) 11.dp.roundToPx() else 0
+                // Reserve the badge lane even when no badge is currently visible.
+                // Minute ticks must not resize the entire grid beneath a scrolling user.
+                val informationHeight = locationHeight + 11.dp.roundToPx()
                 // Includes card insets, content padding, inter-line gap and rounding slack.
                 val required = name.size.height + informationHeight + 9.dp.toPx()
                 rowHeight = maxOf(rowHeight, ceil(required / duration))

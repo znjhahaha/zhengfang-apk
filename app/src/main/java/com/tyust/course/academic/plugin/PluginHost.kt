@@ -86,8 +86,11 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         var redirected = 0
         while (true) {
             operation.requireActive()
-            policy.requireAllowed(url, method, purpose, form)
-            val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
+            val rule = policy.requireAllowed(url, method, purpose, form)
+            val userAgent = rule.optString("userAgent").ifBlank {
+                operation.manifest.json.optJSONObject("school")?.optString("userAgent").orEmpty()
+            }.ifBlank { "ZhengfangAcademicPlugin/1" }
+            val builder = Request.Builder().url(url).header("User-Agent", userAgent)
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
             if (method == "POST") {
                 val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {
