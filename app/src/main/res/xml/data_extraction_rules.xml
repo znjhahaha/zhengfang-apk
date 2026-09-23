@@ -1,17 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
     <data-extraction-rules>
         <cloud-backup>
+            <!-- The file domain, including plugin files and storage, is not included. -->
             <include domain="sharedpref" path="."/>
             <include domain="database" path="."/>
-            <exclude domain="file" path="native-plugin-files/"/>
-            <exclude domain="file" path="academic-plugin-storage/"/>
             <exclude domain="sharedpref" path="native-plugin-permissions.xml"/>
         </cloud-backup>
         <device-transfer>
+            <!-- Keep the same allowlist for device transfers as for cloud backups. -->
             <include domain="sharedpref" path="."/>
             <include domain="database" path="."/>
-            <exclude domain="file" path="native-plugin-files/"/>
-            <exclude domain="file" path="academic-plugin-storage/"/>
             <exclude domain="sharedpref" path="native-plugin-permissions.xml"/>
         </device-transfer>
     </data-extraction-rules>
