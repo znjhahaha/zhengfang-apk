@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -436,6 +437,9 @@ fun LiquidSwitch(
     val animationScope = rememberCoroutineScope()
     val latestChecked by androidx.compose.runtime.rememberUpdatedState(checked)
     val latestOnCheckedChange by androidx.compose.runtime.rememberUpdatedState(onCheckedChange)
+    val latestEnabled by androidx.compose.runtime.rememberUpdatedState(enabled)
+    val latestDragWidth by androidx.compose.runtime.rememberUpdatedState(dragWidth)
+    val latestIsLtr by androidx.compose.runtime.rememberUpdatedState(isLtr)
     var didDrag by remember { mutableStateOf(false) }
     var fraction by remember { mutableFloatStateOf(if (checked) 1f else 0f) }
     val dragAnimation = remember(animationScope) {
@@ -446,23 +450,28 @@ fun LiquidSwitch(
             visibilityThreshold = 0.001f,
             initialScale = 1f,
             pressedScale = 1.5f,
-            onDragStarted = { didDrag = false; fraction = if (latestChecked) 1f else 0f },
+            onDragStarted = { didDrag = false; fraction = value.coerceIn(0f, 1f) },
             onDragStopped = {
-                if (!enabled) return@DampedDragAnimation
+                if (!latestEnabled) {
+                    updateTarget(if (latestChecked) 1f else 0f)
+                    return@DampedDragAnimation
+                }
                 fraction = if (didDrag) {
                     didDrag = false
                     if (targetValue >= 0.5f) 1f else 0f
                 } else {
                     if (latestChecked) 0f else 1f
                 }
-                updateValue(fraction)
+                // release() owns the spring. Snapping the drag value here would
+                // erase the entire tap animation before that spring can start.
+                updateTarget(fraction)
                 latestOnCheckedChange(fraction == 1f)
             },
             onDrag = { _, dragAmount ->
-                if (!enabled) return@DampedDragAnimation
+                if (!latestEnabled) return@DampedDragAnimation
                 if (!didDrag) didDrag = dragAmount.x != 0f
-                val delta = dragAmount.x / dragWidth
-                fraction = if (isLtr) {
+                val delta = dragAmount.x / latestDragWidth
+                fraction = if (latestIsLtr) {
                     (fraction + delta).fastCoerceIn(0f, 1f)
                 } else {
                     (fraction - delta).fastCoerceIn(0f, 1f)
@@ -595,6 +604,7 @@ fun LiquidSwitch(
             .width(64.dp)
             .height(48.dp)
             .glassLensAnchor(switchLensAnchor)
+            .then(if (enabled) dragAnimation.modifier else Modifier)
             .semantics {
                 role = Role.Switch
                 stateDescription = if (checked) "已开启" else "已关闭"
@@ -640,7 +650,7 @@ fun LiquidSwitch(
                     lerp(-padding, -(padding + dragWidth), dragAnimation.value)
                 }
             }
-            .then(if (enabled) dragAnimation.modifier else Modifier)
+            .testTag("liquid-switch-thumb")
 
         if (thumbBackdrop != null) {
             Box(

@@ -17,9 +17,11 @@
             <TextView android:visibility="gone" android:id="@+id/widget_status" style="@style/ScheduleWidgetMetadata" android:textColor="#345DC4"
                 android:layout_marginBottom="2dp" android:text="@string/schedule_widget_status" />
             <TextView android:id="@+id/widget_name" style="@style/ScheduleWidgetCourseName" android:text="@string/schedule_widget_preview" />
+            <TextView android:id="@+id/widget_teacher" style="@style/ScheduleWidgetFullText" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_preview_teacher" />
             <TextView android:id="@+id/widget_time" style="@style/ScheduleWidgetMetadata" android:textColor="#0069D9" android:layout_marginTop="3dp"
                 android:text="@string/schedule_widget_preview_time" />
-            <TextView android:visibility="gone" android:id="@+id/widget_location" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+            <TextView android:visibility="gone" android:id="@+id/widget_location" style="@style/ScheduleWidgetFullText" android:layout_marginTop="2dp"
                 android:text="@string/schedule_widget_preview_room" />
         </LinearLayout>
         <ImageView android:id="@+id/widget_separator" android:visibility="gone" android:layout_width="1dp" android:layout_height="match_parent" android:contentDescription="@null"
@@ -29,9 +31,11 @@
             <TextView android:visibility="gone" android:id="@+id/widget_next_status" style="@style/ScheduleWidgetMetadata" android:textColor="#345DC4"
                 android:layout_marginBottom="2dp" android:text="@string/schedule_widget_next_status" />
             <TextView android:id="@+id/widget_next_name" style="@style/ScheduleWidgetCourseName" android:text="@string/schedule_widget_next_preview" />
+            <TextView android:id="@+id/widget_next_teacher" style="@style/ScheduleWidgetFullText" android:layout_marginTop="2dp"
+                android:text="@string/schedule_widget_next_teacher" />
             <TextView android:id="@+id/widget_next_time" style="@style/ScheduleWidgetMetadata" android:textColor="#0069D9" android:layout_marginTop="3dp"
                 android:text="@string/schedule_widget_next_time" />
-            <TextView android:visibility="gone" android:id="@+id/widget_next_location" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="2dp"
+            <TextView android:visibility="gone" android:id="@+id/widget_next_location" style="@style/ScheduleWidgetFullText" android:layout_marginTop="2dp"
                 android:text="@string/schedule_widget_next_room" />
         </LinearLayout>
     </LinearLayout>

@@ -110,16 +110,43 @@ internal object ScheduleWidgetRenderer {
             return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor)
         val views = RemoteViews(context.packageName, if (style == ScheduleWidgetStyle.Single) R.layout.schedule_widget_single else R.layout.schedule_widget)
         val two = style == ScheduleWidgetStyle.Double
-        val padding = if (height < 80 || width < 90) 6 else 10
+        val padding = if (height < 100 || width < 100) 6 else 10
         val density = context.resources.displayMetrics.density
         views.setViewPadding(R.id.widget_root, (padding * density).toInt(), (padding * density).toInt(),
             (padding * density).toInt(), (padding * density).toInt())
         views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
         val columnWidth = (width - padding * 2 - if (two) 13 else 0) / if (two) 2f else 1f
-        val showHeader = height >= 154 * scale && width >= 150 * scale
-        val showFooter = state.primary != null && height >= 232 * scale && width >= 160 * scale
-        val bodyHeight = (height - padding * 2) / scale - (if (showHeader) 22 else 0) - (if (showFooter) 22 else 0)
-        val separateTargets = two && columnWidth >= 48 && bodyHeight * scale >= 48
+        val fitter = ScheduleWidgetTextFitter(context, columnWidth * density)
+        val headerHeight = fitter.height(listOf(ScheduleWidgetText(state.heading, 12f, bold = true))) + fitter.dp(2f)
+        val footerHeight = fitter.height(listOf(ScheduleWidgetText(state.summary, 12f))) + fitter.dp(6f)
+        val compactTime = columnWidth < 116 * scale
+        fun fields(item: ScheduleWidgetCourse?): List<ScheduleWidgetText> {
+            val time = when {
+                item == null -> "查看课表"
+                compactTime -> listOf(item.dateLabel, item.time.substringBefore('–')).filter(String::isNotBlank).joinToString(" ")
+                else -> listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" ")
+            }
+            val room = item?.let {
+                if (compactTime) ScheduleLocation.room(it.location) ?: ScheduleLocation.compact(it.location)
+                else ScheduleLocation.compact(it.location)
+            }.orEmpty()
+            return listOf(
+                ScheduleWidgetText(item?.name ?: "暂无后续", 14f, bold = true),
+                ScheduleWidgetText(item?.course?.teacher?.ifBlank { "教师待定" }.orEmpty(), 11f, margin = 2f),
+                ScheduleWidgetText(time, 11f, margin = 3f, singleLine = true),
+                ScheduleWidgetText(room, 11f, margin = 2f)
+            )
+        }
+        val required = listOfNotNull(state.primary, state.secondary.takeIf { two }).map(::fields)
+        var showHeader = height >= 154 * scale && width >= 150 * scale
+        var showFooter = state.primary != null && height >= 232 * scale && width >= 160 * scale
+        fun bodyPixels() = fitter.dp((height - padding * 2).toFloat()) -
+            (if (showHeader) headerHeight else 0) - (if (showFooter) footerHeight else 0)
+        // Optional labels yield their space before any required text is made smaller.
+        if (required.any { !fitter.fits(it, bodyPixels()) }) showFooter = false
+        if (required.any { !fitter.fits(it, bodyPixels()) }) showHeader = false
+        val bodyHeight = bodyPixels()
+        val separateTargets = two
         views.setTextViewText(R.id.widget_heading, state.heading)
         views.setTextViewText(R.id.widget_date, state.date)
         views.visible(R.id.widget_header, showHeader)
@@ -132,41 +159,40 @@ internal object ScheduleWidgetRenderer {
         views.setTextViewText(R.id.widget_footer, state.summary)
         views.setTextViewText(R.id.widget_message, state.message)
         views.setTextViewText(R.id.widget_action, state.actionLabel)
-        views.setInt(R.id.widget_message, "setMaxLines", if (bodyHeight >= 60) 2 else 1)
-        views.visible(R.id.widget_action, bodyHeight >= 44)
+        val showAction = bodyHeight >= fitter.dp(44f)
+        val emptyFields = listOf(ScheduleWidgetText(state.message.orEmpty(), 14f, bold = true),
+            ScheduleWidgetText(if (showAction) state.actionLabel else "", 12f, margin = 4f))
+        val emptyScale = ScheduleWidgetTextFitter(context, (width - padding * 2) * density).scale(emptyFields, bodyHeight)
+        views.setInt(R.id.widget_message, "setMaxLines", Int.MAX_VALUE)
+        views.setTextViewTextSize(R.id.widget_message, android.util.TypedValue.COMPLEX_UNIT_SP, 14f * emptyScale)
+        views.setTextViewTextSize(R.id.widget_action, android.util.TypedValue.COMPLEX_UNIT_SP, 12f * emptyScale)
+        views.visible(R.id.widget_action, showAction)
         listOf(R.id.widget_heading, R.id.widget_message, R.id.widget_name, R.id.widget_next_name).forEach { views.setTextColor(it, primaryColor) }
-        listOf(R.id.widget_date, R.id.widget_location, R.id.widget_next_location, R.id.widget_footer)
+        listOf(R.id.widget_date, R.id.widget_location, R.id.widget_next_location, R.id.widget_footer,
+            R.id.widget_teacher, R.id.widget_next_teacher)
             .forEach { views.setTextColor(it, secondaryColor) }
         listOf(R.id.widget_status, R.id.widget_next_status, R.id.widget_action, R.id.widget_time, R.id.widget_next_time)
             .forEach { views.setTextColor(it, accentColor) }
-        fun row(item: ScheduleWidgetCourse?, container: Int, name: Int, room: Int, time: Int, status: Int) {
-            val compactTime = columnWidth < 116 * scale
-            val datedTime = compactTime && !item?.dateLabel.isNullOrBlank() && bodyHeight >= 52
-            val timeLines = if (datedTime) 2 else 1
-            val titleLines = if (bodyHeight >= 60 + (timeLines - 1) * 16) 2 else 1
-            val remaining = bodyHeight - titleLines * 18 - timeLines * 16 - 3
-            val showRoom = item != null && remaining >= 18
-            val showStatus = item != null && remaining >= 36
-            views.setTextViewText(name, item?.name ?: "暂无后续")
-            views.setTextViewText(room, item?.location.orEmpty())
-            val timeText = when {
-                item == null -> "查看课表"
-                datedTime -> item.dateLabel + "\n" + item.time.substringBefore('–')
-                compactTime -> item.time.substringBefore('–')
-                else -> listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" ")
+        fun row(item: ScheduleWidgetCourse?, container: Int, name: Int, teacher: Int, room: Int, time: Int, status: Int) {
+            val fields = fields(item)
+            val withStatus = listOf(ScheduleWidgetText(item?.status.orEmpty(), 11f, margin = 2f, singleLine = true)) + fields
+            val showStatus = item != null && bodyHeight >= fitter.dp(96f * scale) && fitter.fits(withStatus, bodyHeight)
+            val fit = fitter.scale(if (showStatus) withStatus else fields, bodyHeight)
+            listOf(name, teacher, time, room).zip(fields).forEach { (id, field) ->
+                views.setTextViewText(id, field.text)
+                views.setTextViewTextSize(id, android.util.TypedValue.COMPLEX_UNIT_SP, field.size * fit)
             }
-            views.setTextViewText(time, timeText)
             views.setTextViewText(status, item?.status.orEmpty())
-            views.setInt(name, "setMaxLines", titleLines)
-            views.visible(name, bodyHeight >= 34)
-            views.setInt(time, "setMaxLines", timeLines)
-            views.setTextViewTextSize(name, android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
-            views.visible(room, showRoom)
+            views.setTextViewTextSize(status, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
+            views.visible(name, true)
+            views.visible(teacher, item != null)
+            views.visible(room, item != null)
             views.visible(status, showStatus)
-            views.setContentDescription(container, item?.let { "${it.dateLabel} ${it.status}，${it.name}，${it.time}，${it.location}" } ?: "暂无后续课程，查看完整课表")
+            views.setContentDescription(container, item?.let { "${it.dateLabel} ${it.status}，${it.name}，${it.course.teacher.ifBlank { "教师待定" }}，${it.time}，${it.location}" }
+                ?: "暂无后续课程，查看完整课表")
         }
-        row(state.primary, R.id.widget_course, R.id.widget_name, R.id.widget_location, R.id.widget_time, R.id.widget_status)
-        row(state.secondary, R.id.widget_next, R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
+        row(state.primary, R.id.widget_course, R.id.widget_name, R.id.widget_teacher, R.id.widget_location, R.id.widget_time, R.id.widget_status)
+        row(state.secondary, R.id.widget_next, R.id.widget_next_name, R.id.widget_next_teacher, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
         val rootIntent = pending(context, state, if (style == ScheduleWidgetStyle.Single) state.primary?.occurrence else null,
             if (state.primary == null) state.action else ScheduleWidgetAction.Today)
         views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
@@ -180,13 +206,13 @@ internal object ScheduleWidgetRenderer {
         return views
     }
 
-    internal fun timelineItems(state: ScheduleWidgetState, height: Int, fontScale: Float,
-                               showLocation: Boolean = true): List<ScheduleOccurrence> {
-        val today = state.agenda?.today.orEmpty()
-        val header = if (height >= 100 * fontScale) 22 * fontScale else 0f
-        val footer = if (height >= 232 * fontScale) 22 * fontScale else 0f
-        val rowHeight = maxOf(48f, (if (showLocation) 52 else 36) * fontScale + 8)
-        val limit = ((height - 16 - header - footer) / rowHeight).toInt().coerceIn(1, 6)
+    internal fun timelineItems(state: ScheduleWidgetState, limit: Int): List<ScheduleOccurrence> {
+        val date = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+        val upcoming = state.agenda?.upcoming.orEmpty()
+        val nextDate = upcoming.firstOrNull()?.let { date.format(Date(it.startsAt)) }
+        val today = state.agenda?.today.orEmpty().ifEmpty {
+            upcoming.takeWhile { date.format(Date(it.startsAt)) == nextDate }
+        }
         if (today.size <= limit) return today
         val nextIndex = today.indexOfFirst { it.endsAt > state.now }.takeIf { it >= 0 } ?: today.lastIndex
         return today.drop(nextIndex.coerceAtMost((today.size - limit).coerceAtLeast(0))).take(limit)
@@ -198,39 +224,91 @@ internal object ScheduleWidgetRenderer {
         views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
         views.setTextViewText(R.id.widget_heading, "今日时间轴")
         views.setTextViewText(R.id.widget_date, state.date)
-        views.visible(R.id.widget_header, height >= 100 * scale)
         views.visible(R.id.widget_date, width >= 280 * scale)
-        views.visible(R.id.widget_footer, height >= 232 * scale)
         views.setTextColor(R.id.widget_heading, primary)
         views.setTextColor(R.id.widget_date, secondary)
         views.setTextColor(R.id.widget_footer, secondary)
         views.removeAllViews(R.id.widget_timeline_rows)
-        val showLocation = width >= 190 * scale && height >= 170 * scale
-        val rows = timelineItems(state, height, scale, showLocation)
-        val rowHeight = maxOf(48f, (if (showLocation) 52 else 36) * scale + 8)
+        val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(state.now))
         val next = state.agenda?.upcoming?.firstOrNull()
+        val fitter = ScheduleWidgetTextFitter(context, (width - 34) * context.resources.displayMetrics.density)
+        val headerHeight = fitter.height(listOf(ScheduleWidgetText("今日时间轴", 12f, bold = true))) + fitter.dp(6f)
+        val footerHeight = fitter.height(listOf(ScheduleWidgetText("课表", 12f))) + fitter.dp(6f)
+        var showHeader = height >= 100 * scale
+        var showFooter = height >= 232 * scale
+        val showStatus = width >= 320 * scale
+        fun status(item: ScheduleOccurrence) = when {
+            state.now in item.startsAt until item.endsAt -> "进行中"
+            next != null && item.course.id == next.course.id && item.startsAt == next.startsAt -> "下一节"
+            item.endsAt <= state.now -> "已结束"
+            else -> "待上课"
+        }
+        fun fields(item: ScheduleOccurrence): List<ScheduleWidgetText> {
+            val itemDate = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(item.startsAt))
+            val tomorrow = Calendar.getInstance().apply { timeInMillis = state.now; add(Calendar.DATE, 1) }.time
+            val dateLabel = when (itemDate) {
+                todayDate -> ""
+                SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(tomorrow) -> "明天 "
+                else -> SimpleDateFormat("M/d ", Locale.CHINA).format(Date(item.startsAt))
+            }
+            val time = dateLabel + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.startsAt)) +
+                if (width >= 250 * scale) "–" + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.endsAt)) else ""
+            val room = if (width < 250 * scale) ScheduleLocation.room(item.course.location) ?: ScheduleLocation.compact(item.course.location)
+                else ScheduleLocation.compact(item.course.location)
+            return listOf(ScheduleWidgetText(time, 12f, singleLine = true),
+                ScheduleWidgetText(item.course.name, 14f, bold = true, margin = 2f),
+                ScheduleWidgetText(item.course.teacher.ifBlank { "教师待定" }, 12f, margin = 2f),
+                ScheduleWidgetText(room, 12f, margin = 2f))
+        }
+        fun measuredFields(item: ScheduleOccurrence) = fields(item).mapIndexed { index, field ->
+            if (index == 0 && showStatus) field.copy(text = "${field.text}  ${status(item)}") else field
+        }
+        fun available() = fitter.dp((height - 16).toFloat()) - (if (showHeader) headerHeight else 0) -
+            (if (showFooter) footerHeight else 0)
+        fun rowHeight(item: ScheduleOccurrence) = maxOf(fitter.dp(48f), fitter.height(measuredFields(item)) + fitter.dp(8f))
+        fun fittingRows(): List<ScheduleOccurrence>? {
+            for (limit in 6 downTo 1) {
+                val candidates = timelineItems(state, limit)
+                if (candidates.sumOf(::rowHeight) <= available() &&
+                    candidates.all { fitter.fits(measuredFields(it), Int.MAX_VALUE) }) return candidates
+            }
+            return null
+        }
+        // Keep normal typography by showing fewer complete rows; only the smallest
+        // single-row layout needs type fitting after the optional chrome is removed.
+        var fitting = fittingRows()
+        if (fitting == null) { showFooter = false; fitting = fittingRows() }
+        if (fitting == null) { showHeader = false; fitting = fittingRows() }
+        val rows = fitting ?: timelineItems(state, 1)
+        views.visible(R.id.widget_header, showHeader)
+        views.visible(R.id.widget_footer, showFooter)
+        if (rows.firstOrNull()?.let { SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(it.startsAt)) != todayDate } == true)
+            views.setTextViewText(R.id.widget_heading, "接下来的课程")
         views.setOnClickPendingIntent(R.id.widget_root, pending(context, state, action = if (rows.isEmpty()) state.action else ScheduleWidgetAction.Today))
         views.setOnClickPendingIntent(R.id.widget_header, pending(context, state))
         for (item in rows) {
             val row = RemoteViews(context.packageName, R.layout.schedule_widget_timeline_row)
             val past = item.endsAt <= state.now
-            val current = state.now in item.startsAt until item.endsAt
-            val upcoming = next != null && item.course.id == next.course.id && item.startsAt == next.startsAt
-            val highlighted = current || upcoming
-            val time = SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.startsAt))
-            row.setTextViewText(R.id.widget_timeline_time, time)
-            row.setTextViewText(R.id.widget_name, item.course.name)
-            row.setTextViewText(R.id.widget_location, item.course.location.ifBlank { "教室待定" })
-            row.setTextViewText(R.id.widget_status, when { current -> "进行中"; upcoming -> "下一节"; past -> "已结束"; else -> "待上课" })
+            val highlighted = status(item) in listOf("进行中", "下一节")
+            val fields = fields(item)
+            val rowPixels = if (fitting != null) rowHeight(item) else available()
+            val typeFit = fitter.scale(measuredFields(item), rowPixels - fitter.dp(8f))
+            listOf(R.id.widget_timeline_time, R.id.widget_name, R.id.widget_teacher, R.id.widget_location).zip(fields).forEach { (id, field) ->
+                row.setTextViewText(id, field.text)
+                row.setTextViewTextSize(id, android.util.TypedValue.COMPLEX_UNIT_SP, field.size * typeFit)
+            }
+            row.setTextViewTextSize(R.id.widget_status, android.util.TypedValue.COMPLEX_UNIT_SP, 12f * typeFit)
+            row.setTextViewText(R.id.widget_status, status(item))
             row.setTextColor(R.id.widget_timeline_time, if (highlighted) accent else secondary)
             row.setTextColor(R.id.widget_name, if (past) secondary else primary)
             row.setTextColor(R.id.widget_location, secondary)
+            row.setTextColor(R.id.widget_teacher, secondary)
             row.setTextColor(R.id.widget_status, if (highlighted) accent else secondary)
             row.setInt(R.id.widget_timeline_dot, "setBackgroundColor", if (highlighted) accent else secondary)
-            row.setInt(R.id.widget_course, "setMinimumHeight", (rowHeight * context.resources.displayMetrics.density).toInt())
-            row.visible(R.id.widget_location, showLocation)
-            row.visible(R.id.widget_status, width >= 180 * scale)
-            row.setContentDescription(R.id.widget_course, "$time，${item.course.name}，${item.course.location}，" + if (current) "进行中" else if (upcoming) "下一节" else if (past) "已结束" else "待上课")
+            row.setInt(R.id.widget_course, "setMinimumHeight", rowPixels.coerceAtLeast(0))
+            row.visible(R.id.widget_location, true)
+            row.visible(R.id.widget_status, showStatus)
+            row.setContentDescription(R.id.widget_course, "${fields[0].text}，${item.course.name}，${item.course.teacher.ifBlank { "教师待定" }}，${item.course.location}，${status(item)}")
             row.setOnClickPendingIntent(R.id.widget_course, if (width >= 64 && height >= 64) pending(context, state, item) else pending(context, state))
             views.addView(R.id.widget_timeline_rows, row)
         }

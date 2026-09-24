@@ -21,6 +21,7 @@ import android.content.Context;
 import com.tyust.course.model.SchoolConfig;
 import com.tyust.course.manager.UserManager;
 import com.tyust.course.manager.SessionToken;
+import com.tyust.course.manager.RequestFeedback;
 import com.tyust.course.manager.SessionStateStore;
 
 public class CourseApiClient {
@@ -80,6 +81,7 @@ public class CourseApiClient {
                                         Request request = chain.request();
                                         String requestAccountStorageKey = getRequestAccountStorageKey(request);
                                         SessionToken requestSession = request.tag(SessionToken.class);
+                                        RequestFeedback requestFeedback = request.tag(RequestFeedback.class);
                                         request = request.newBuilder()
                                                         .removeHeader(INTERNAL_ACCOUNT_HEADER)
                                                         .build();
@@ -125,7 +127,7 @@ public class CourseApiClient {
                                         if (!isOriginalLogin && isFinalLogin) {
                                                 Log.e(TAG, "🚨 [检测到重定向登录] Cookie 已过期! 原URL: " + originalUrl + " -> 最终URL: " + finalUrl);
                                                 if (appContext != null) {
-                                                        notifyCookieExpired(requestSession);
+                                                        notifyCookieExpired(requestSession, requestFeedback);
                                                 }
                                         }
 
@@ -166,7 +168,7 @@ public class CourseApiClient {
                                                                         Log.e(TAG, "🚨 [确认失效] 拦截器确认 Cookie 已过期! URL: "
                                                                                         + currentUrl);
                                                                         if (appContext != null) {
-                                                                                notifyCookieExpired(requestSession);
+                                                                                notifyCookieExpired(requestSession, requestFeedback);
                                                                         }
                                                                 } else {
                                                                         Log.d(TAG, "🔍 [拦截误报] 虽然包含登录特征，但成功解析到姓名 ["
@@ -191,7 +193,7 @@ public class CourseApiClient {
                                                                         || (_jb.contains("\"code\"") && _jb.contains("\"401\""))) {
                                                                         Log.e(TAG, "[Cookie\u8fc7\u671f] JSON\u68c0\u6d4b\u5230\u672a\u767b\u5f55: " + response.request().url());
                                                                         if (appContext != null) {
-                                                                                notifyCookieExpired(requestSession);
+                                                                                notifyCookieExpired(requestSession, requestFeedback);
                                                                         }
                                                                 }
                                                         }
@@ -287,10 +289,15 @@ public class CourseApiClient {
         }
 
         public void notifyCookieExpired(SessionToken token) {
+                notifyCookieExpired(token, RequestFeedback.Interactive);
+        }
+
+        public void notifyCookieExpired(SessionToken token, RequestFeedback feedback) {
                 if (appContext == null || token == null) return;
+                final RequestFeedback policy = feedback == null ? RequestFeedback.Interactive : feedback;
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                         UserManager user = UserManager.getInstance();
-                        if (!user.getSessionState().expire(token)) return;
+                        if (!user.getSessionState().expire(token, policy)) return;
                         user.setLoggedIn(false);
                         Intent intent = new Intent(ACTION_COOKIE_EXPIRED).setPackage(appContext.getPackageName());
                         intent.putExtra(EXTRA_ACCOUNT_STORAGE_KEY, token.getAccountStorageKey());
@@ -755,19 +762,30 @@ public class CourseApiClient {
         }
 
         // 获取课表 (POST with xnm/xqm params)
-        public void fetchSchedule(SchoolConfig school, String postBody, Callback callback) {
+        public Call fetchSchedule(SchoolConfig school, String postBody, Callback callback) {
+                return fetchSchedule(school, postBody, UserManager.getInstance().getSessionState().getToken(),
+                        RequestFeedback.Interactive, callback);
+        }
+
+        public Call fetchSchedule(SchoolConfig school, String postBody, SessionToken expected,
+                                  RequestFeedback feedback, Callback callback) {
                 String url = school.getScheduleUrl();
                 Log.d(TAG, "Fetching schedule from: " + url);
                 Log.d(TAG, "Schedule POST body: " + postBody);
 
                 Request request = createRequestBuilder(school)
                                 .url(url)
+                                .header(INTERNAL_ACCOUNT_HEADER, expected.getAccountStorageKey())
+                                .tag(SessionToken.class, expected)
+                                .tag(RequestFeedback.class, feedback)
                                 .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                                 .header("X-Requested-With", "XMLHttpRequest")
                                 .post(okhttp3.RequestBody.create(com.tyust.course.academic.ZfRequestParams.filterBody(postBody, url),
                                                 okhttp3.MediaType.parse("application/x-www-form-urlencoded")))
                                 .build();
-                client.newCall(request).enqueue(sessionBound(callback));
+                Call call = client.newCall(request);
+                call.enqueue(sessionBound(callback));
+                return call;
         }
 
         // 获取成绩 (单学期)

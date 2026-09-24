@@ -16,7 +16,7 @@ internal data class CachedSchedule(
     val calendar: JSONObject? = null
 )
 
-/** Account/term data survives login sessions; only an explicit sync bypasses a valid cache. */
+/** Account/term data survives login sessions. Entry refreshes and manual sync both bypass it. */
 internal class ScheduleCacheStore(
     private val preferences: SharedPreferences,
     private val calendarTerm: () -> AcademicTerm = { AcademicStudyReader.calendarTerm() }

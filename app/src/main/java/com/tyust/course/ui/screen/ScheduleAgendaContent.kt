@@ -51,7 +51,7 @@ internal fun ScheduleDayList(
     val daily = remember(courses, week, day) { courses.filter { it.day == day && isInWeek(it.weeks, week) }
         .sortedWith(compareBy<ScheduleCourseUi> { it.startPeriod }.thenBy { it.name }) }
     val unknown = daily.count { !ScheduleWeeks.parse(it.weeks).valid }
-    Column(Modifier.fillMaxSize().testTag("schedule-day-list").verticalScroll(scrollState)
+    Column(Modifier.fillMaxSize().testTag("schedule-day-list").verticalScroll(scrollState, overscrollEffect = null)
         .padding(start = 16.dp, end = 16.dp, top = topInset + 12.dp, bottom = LocalAppOverlayBottomInset.current + 24.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
         when {
@@ -66,7 +66,7 @@ internal fun ScheduleDayList(
                         else -> " · 还剩 ${agenda.remaining(now)} 堂"
                     }
                 } else "当日 ${daily.size} 堂" + if (unknown > 0) " · $unknown 堂周次待核对" else ""
-                Text(summary, Modifier.testTag("schedule-day-summary").padding(start = 4.dp, bottom = 2.dp),
+                AnimatedNumberText(summary, Modifier.testTag("schedule-day-summary").padding(start = 4.dp, bottom = 2.dp),
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (daily.isEmpty()) ScheduleNotice(if (isToday) "今天没有课程" else "当天没有课程")
                 daily.forEach { course -> key(course.id) {
@@ -91,7 +91,7 @@ internal fun ScheduleDayCourse(course: ScheduleCourseUi, times: List<PeriodTimeU
     val pressed by interaction.collectIsPressedAsState()
     val reduced = rememberGlassAccessibilityMode().reduceMotion
     val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed && !reduced) 0.985f else 1f,
-        androidx.compose.animation.core.tween(if (reduced) 0 else 140), label = "schedule-card-press")
+        androidx.compose.animation.core.tween(if (reduced) 0 else com.tyust.course.ui.theme.MotionDuration.Fast), label = "schedule-card-press")
     val status = when {
         unknown -> "周次待核对"
         course.isCurrent -> "正在上课"
@@ -126,6 +126,8 @@ internal fun ScheduleDayCourse(course: ScheduleCourseUi, times: List<PeriodTimeU
             Box(Modifier.width(3.dp).fillMaxHeight().background(course.color.copy(alpha = 0.78f), RoundedCornerShape(2.dp)))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(course.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(course.teacher.ifBlank { "教师待定" }, Modifier.fillMaxWidth().testTag("schedule-day-teacher-${course.id}"),
+                    style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                 Text(course.location.ifBlank { "教室待定" }, Modifier.fillMaxWidth().testTag("schedule-day-location-${course.id}"),
                     style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                 if (status.isNotEmpty()) Text(status, Modifier.testTag("schedule-day-status-${course.id}"),

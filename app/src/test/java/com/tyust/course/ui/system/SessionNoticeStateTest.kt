@@ -5,6 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionNoticeStateTest {
+    @Test fun silentExpirationKeepsRealStateAndCanBePromotedByAnActiveOperation() {
+        val sessions = SessionStateStore(); val notice = SessionNoticeState()
+        val token = sessions.replace("A")
+        assertTrue(sessions.expire(token, com.tyust.course.manager.RequestFeedback.Silent))
+        notice.update(sessions.state.value, true, true)
+        assertTrue(sessions.state.value.expired)
+        assertFalse(notice.state.value.visible)
+        assertFalse(notice.state.value.shown)
+        assertTrue(sessions.expire(token))
+        notice.update(sessions.state.value, true, true)
+        assertTrue(notice.state.value.visible)
+        assertFalse(sessions.expire(token, com.tyust.course.manager.RequestFeedback.Silent))
+        notice.update(sessions.state.value, true, true)
+        assertTrue(notice.state.value.visible)
+    }
     @Test fun cookieUpdateRemovesTheVisibleAndPendingExpirationNotice() {
         val sessions = SessionStateStore(); val notice = SessionNoticeState()
         val old = sessions.replace("A"); sessions.expire(old)

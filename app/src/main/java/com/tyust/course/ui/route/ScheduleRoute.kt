@@ -98,13 +98,14 @@ private object ScheduleRouteMemoryCache {
 }
 
 @Composable
-fun ScheduleRoute() {
+fun ScheduleRoute(isActive: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val routeAccountKey = remember { UserManager.getInstance().currentAccountStorageKey }
     val browsingSession = rememberSaveable(routeAccountKey) { java.util.UUID.randomUUID().toString() }
     val sessions = UserManager.getInstance().sessionState
+    val syncModel: ScheduleSyncViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val session by sessions.state.collectAsState()
     val requests = remember { com.tyust.course.manager.SessionRequestGate(sessions) }
     DisposableEffect(requests) { onDispose { requests.cancelAll() } }
@@ -114,9 +115,7 @@ fun ScheduleRoute() {
     var hasInitializedRoute by remember(routeAccountKey) {
         mutableStateOf(restoredSnapshot != null)
     }
-    var skipFirstSemesterLoad by remember(routeAccountKey) {
-        mutableStateOf(restoredSnapshot != null)
-    }
+    var hasLocalSchedule by remember(routeAccountKey) { mutableStateOf(restoredSnapshot != null) }
     
     // State
     var currentWeek by rememberSaveable(routeAccountKey) {
@@ -126,6 +125,7 @@ fun ScheduleRoute() {
         mutableStateOf(restoredSnapshot?.courses ?: emptyList())
     }
     var isLoading by remember { mutableStateOf(false) }
+    var backgroundRefreshing by remember { mutableStateOf(false) }
     var loadError by remember(routeAccountKey) { mutableStateOf("") }
     var studyLoadJob by remember(routeAccountKey) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var studyGeneration by remember(routeAccountKey) { mutableIntStateOf(0) }
@@ -243,117 +243,94 @@ fun ScheduleRoute() {
         }
     }
 
-    // Load Schedule Function
+    // Paint local data first. Network work lives in the Activity ViewModel across tab transitions.
     val loadSchedule = remember(isNextSemester, session.token) {
-        fun(forceRefresh: Boolean) {
+        fun(manual: Boolean) {
             if (isDemoMode) {
                 resolvedTermId = (if (isNextSemester) DemoData.currentTerm.next() else DemoData.currentTerm).id
                 courses = reloadCustomCourses(DemoData.scheduleCourses())
+                hasLocalSchedule = true
                 isLoading = false
                 return
             }
-            val school = UserManager.getInstance().currentSchool
-            if (school == null) return
+            val user = UserManager.getInstance()
+            val school = user.currentSchool ?: return
             val ticket = requests.begin("schedule")
             studyLoadJob?.cancel()
             val generation = ++studyGeneration
-            val account = UserManager.getInstance().currentAccountStorageKey
+            val account = user.currentAccountStorageKey
             val currentTerm = scheduleCache.currentTerm(account, school.id)
             val requestedTerm = if (isNextSemester) runCatching { currentTerm.next() }.getOrDefault(currentTerm) else currentTerm
             val cached = scheduleCache.selected(account, school.id, isNextSemester)
             loadError = ""
-            if (!forceRefresh && cached != null) {
-                courses = reloadCustomCourses(requireNotNull(parseSchedule(cached.json)))
-                resolvedTermId = cached.term.id
-                isLoading = false
-                reminderScheduler.updateSnapshot(routeAccountKey, cached.term.id, courses.map { it.record() })
-                return
-            }
-            // Refresh in place. Only a different semester must discard the previous rows.
             if (resolvedTermId != requestedTerm.id) {
                 courses = reloadCustomCourses(emptyList())
+                hasLocalSchedule = false
                 resolvedTermId = requestedTerm.id
             }
-            val hasRetainedSchedule = cached != null || courses.isNotEmpty()
-            isLoading = true
-
-            if (AcademicGatewayFactory.supports(school)) {
-                studyLoadJob = scope.launch {
-                    try {
-                        val loaded = withContext(Dispatchers.IO) {
-                            scheduleCache.load(account, school.id, isNextSemester, forceRefresh) {
-                                AcademicStudyBridge.reader(school, account, ticket.session)
-                            }
-                        }
-                        if (!requests.isCurrent(ticket) || studyGeneration != generation) return@launch
-                        scheduleCache.save(account, school.id, loaded)
-                        loaded.calendar?.let { settingsManager.applyProviderCalendar(account, it) }
-                        courses = reloadCustomCourses(requireNotNull(parseSchedule(loaded.json)))
-                        resolvedTermId = loaded.term.id
-                        reminderScheduler.updateSnapshot(routeAccountKey, loaded.term.id, courses.map { it.record() })
-                        if (forceRefresh) GlassToaster.show("已同步课表")
-                    } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) {
-                        if (requests.isCurrent(ticket) && studyGeneration == generation) {
-                            val message = e.message ?: "课表同步失败，请重试"
-                            if (hasRetainedSchedule) GlassToaster.show("同步失败，已保留本地课表：$message")
-                            else loadError = message
-                        }
-                    } finally {
-                        if (requests.isCurrent(ticket) && studyGeneration == generation) isLoading = false
-                    }
-                }
-                return
+            if (cached != null) {
+                courses = reloadCustomCourses(requireNotNull(parseSchedule(cached.json)))
+                resolvedTermId = cached.term.id
+                hasLocalSchedule = true
+                reminderScheduler.updateSnapshot(account, cached.term.id, courses.map { it.record() })
             }
-            
-            val xnm = requestedTerm.year.toString()
-            val xqm = if (requestedTerm.semester == 1) "3" else "12"
-            fun isRequestAccountActive(): Boolean {
-                return requests.isCurrent(ticket)
-            }
-            val requestTermId = requestedTerm.id
-            resolvedTermId = requestTermId
-            CourseApiClient.getInstance().fetchSchedule(school, "xnm=$xnm&xqm=$xqm", object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    scope.launch(Dispatchers.Main) {
-                        if (!isRequestAccountActive()) return@launch
-                        isLoading = false
-                        if (hasRetainedSchedule) GlassToaster.show("同步失败，已保留本地课表")
-                        else loadError = "加载失败：${e.message}"
-                    }
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    val json = response.body?.string() ?: ""
-                    if (json.contains("用户登录")) {
-                         scope.launch(Dispatchers.Main) { 
-                             if (!isRequestAccountActive()) return@launch
-                             isLoading = false
-                             if (!hasRetainedSchedule) loadError = "请先登录"
-                             GlassToaster.show("请先登录") 
-                         }
-                        return
-                    }
-                    val parsed = if (response.isSuccessful) parseSchedule(json) else null
-                    scope.launch(Dispatchers.Main) {
-                        if (!isRequestAccountActive()) return@launch
-                        isLoading = false
-                        if (parsed != null) {
-                            scheduleCache.save(account, school.id, CachedSchedule(currentTerm, requestedTerm, json, false))
-                            courses = reloadCustomCourses(parsed)
-                            reminderScheduler.updateSnapshot(routeAccountKey, requestTermId, courses.map { it.record() })
-                            if (forceRefresh) GlassToaster.show("已刷新")
-                        } else {
-                            val message = "课表响应无效，请重试"
-                            if (!hasRetainedSchedule) loadError = message
-                            GlassToaster.show(message)
+            val retained = hasLocalSchedule || courses.isNotEmpty()
+            isLoading = !retained
+            backgroundRefreshing = retained
+            val mode = if (manual) ScheduleLoadMode.Manual else ScheduleLoadMode.Automatic
+            val feedback = if (manual) com.tyust.course.manager.RequestFeedback.Interactive else com.tyust.course.manager.RequestFeedback.Silent
+            val nextSemester = isNextSemester
+            studyLoadJob = scope.launch {
+                try {
+                    val loaded = syncModel.refresh.load(ScheduleRefreshKey(ticket.session, school.id, requestedTerm.id), mode) {
+                        try {
+                            val fresh = if (AcademicGatewayFactory.supports(school)) withContext(Dispatchers.IO) {
+                                scheduleCache.load(account, school.id, nextSemester, true) {
+                                    AcademicStudyBridge.reader(school, account, ticket.session)
+                                }
+                            } else fetchLegacySchedule(school, currentTerm, requestedTerm, ticket.session, feedback)
+                            if (!sessions.isCurrent(ticket.session) || user.currentSchool?.id != school.id)
+                                throw CancellationException("Session replaced")
+                            scheduleCache.save(account, school.id, fresh)
+                            fresh.calendar?.let { settingsManager.applyProviderCalendar(account, it) }
+                            // Widgets and reminders receive fresh data even if the user already left this tab.
+                            val merged = ScheduleRepository.mergeCustom(requireNotNull(ScheduleJson.parse(fresh.json)).map { it.course },
+                                settingsManager.getCustomCourses(account))
+                            reminderScheduler.updateSnapshot(account, fresh.term.id, merged)
+                            fresh
+                        } catch (e: com.tyust.course.academic.AcademicException) {
+                            if (e.status == com.tyust.course.academic.AcademicStatus.SESSION_EXPIRED)
+                                CourseApiClient.getInstance().notifyCookieExpired(ticket.session, feedback)
+                            throw e
                         }
                     }
+                    if (!requests.isCurrent(ticket) || studyGeneration != generation) return@launch
+                    courses = reloadCustomCourses(requireNotNull(parseSchedule(loaded.json)))
+                    resolvedTermId = loaded.term.id
+                    hasLocalSchedule = true
+                    if (manual) GlassToaster.show("已同步课表")
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    if (requests.isCurrent(ticket) && studyGeneration == generation) {
+                        val message = e.message ?: "课表同步失败，请重试"
+                        if (!retained) loadError = message
+                        if (manual) {
+                            if (e is com.tyust.course.academic.AcademicException &&
+                                e.status == com.tyust.course.academic.AcademicStatus.SESSION_EXPIRED)
+                                CourseApiClient.getInstance().notifyCookieExpired(ticket.session,
+                                    com.tyust.course.manager.RequestFeedback.Interactive)
+                            GlassToaster.show(if (retained) "同步失败，已保留本地课表" else message)
+                        }
+                    }
+                } finally {
+                    if (requests.isCurrent(ticket) && studyGeneration == generation) {
+                        isLoading = false
+                        backgroundRefreshing = false
+                    }
                 }
-            })
+            }
         }
     }
-
     // Init Effect
     LaunchedEffect(routeAccountKey) {
         if (restoredSnapshot == null) {
@@ -365,11 +342,8 @@ fun ScheduleRoute() {
     }
     
     // 监听学期切换并重新加载
-    LaunchedEffect(isNextSemester, session.token) {
-        if (skipFirstSemesterLoad) {
-            skipFirstSemesterLoad = false
-            return@LaunchedEffect
-        }
+    LaunchedEffect(isActive, isNextSemester, session.token) {
+        if (!isActive) return@LaunchedEffect
         hasInitializedRoute = true
         loadSchedule(false)
     }
@@ -402,9 +376,15 @@ fun ScheduleRoute() {
             pendingToday = false
         } else if (appliedCalendar != calendar) {
             val position = displayStore.position(routeAccountKey, resolvedTermId)?.takeIf { it.calendar == calendar }
+            val previous = appliedCalendar?.split('|', limit = 2)
+            val browsedDate = previous?.takeIf { it.first() == resolvedTermId }?.getOrNull(1)?.let {
+                ScheduleDates.date(it, currentWeek, selectedDay)?.timeInMillis
+            }
             appliedCalendar = calendar
-            currentWeek = position?.week ?: if (isNextSemester) 1 else ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, System.currentTimeMillis()) ?: 1
-            selectedDay = position?.day ?: (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
+            // Provider calendar corrections keep the civil date the user is browsing.
+            currentWeek = browsedDate?.let { ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, it) }
+                ?: position?.week ?: if (isNextSemester) 1 else ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, System.currentTimeMillis()) ?: 1
+            selectedDay = browsedDate?.let(ScheduleDates::dayAt) ?: position?.day ?: ScheduleDates.dayAt(System.currentTimeMillis())
         }
     }
     LaunchedEffect(undoDeadline) {
@@ -541,6 +521,7 @@ fun ScheduleRoute() {
                     runCatching { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).parse(it)?.time }.getOrNull()
                 } ?: 0L,
                 onSemesterStartChange = { millis ->
+                    if (!isNextSemester && settingsTerm == resolvedTermId) pendingToday = true
                     if (!isNextSemester && settingsTermOverride == null) settingsManager.semesterStartDate = millis
                     val times = periodTimesFor(termTimeBase)
                     reminderScheduler.updateTimeBase(routeAccountKey, settingsTerm, ScheduleTimeBase(

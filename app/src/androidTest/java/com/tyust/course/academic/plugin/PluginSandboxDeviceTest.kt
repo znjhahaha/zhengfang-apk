@@ -97,12 +97,13 @@ class PluginSandboxDeviceTest {
                 val source = """globalThis.plugin={${method.substringBefore('.') }:{${method.substringAfter('.')}:async(a,c,s)=>({ok:true,data:await s.http({url:'$origin/wait',purpose:'$purpose'})})}};"""
                 val task = async(Dispatchers.IO) { runCatching { run(source, op) } }
                 assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(10, TimeUnit.SECONDS) })
-                // Android appends the isolated service component to the process name.
+                // Kill only this package's plugin process. A synthetic Java crash can
+                // wait in Android's crash dialog instead of actually terminating it.
                 val pids = device.executeShellCommand("ps -A").lineSequence().map { it.trim().split(Regex("\\s+")) }
                     .filter { it.size > 2 && it.last().startsWith("${context.packageName}:academic_plugin") }
                     .map { it[1] }.filter { it.matches(Regex("[0-9]+")) }.toList()
-                assertTrue("isolated service must exist in ps", pids.isNotEmpty())
-                pids.forEach { device.executeShellCommand("am crash $it") }
+                assertTrue("private plugin process must exist in ps", pids.isNotEmpty())
+                pids.forEach { android.os.Process.killProcess(it.toInt()) }
                 val error = withTimeout(10_000) { task.await().exceptionOrNull() }
                 assertTrue("$error", error is PluginException)
                 assertEquals(if (mutation) PluginErrorCode.RESULT_UNKNOWN else PluginErrorCode.RUNTIME_EXITED, (error as PluginException).code)

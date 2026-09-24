@@ -1,6 +1,7 @@
 package com.tyust.course.ui.screen
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.DragInteraction
@@ -76,93 +77,35 @@ fun ScheduleScreen(
     val agenda = remember(courses, base, clock) { ScheduleAgenda.calculate(courses.map { it.record() }, base, clock) }
     val actualWeek = ScheduleDates.weekIndexAt(firstWeekDate, clock) ?: 1
     val actualDay = ScheduleDates.dayAt(clock)
-    val firstWeek = minOf(1, actualWeek)
-    val lastWeek = maxOf(ScheduleMaxWeeks, actualWeek)
     val dayView = displayPreferences.dayView
-    val firstPageUnit = if (dayView) (firstWeek - 1) * 7 + 1 else firstWeek
-    val lastPageUnit = if (dayView) lastWeek * 7 else lastWeek
-    val requestedUnit = if (dayView) (currentWeek - 1) * 7 + selectedDay else currentWeek
-    val pager = key(positionKey, firstWeekDate, dayView, firstWeek, lastWeek) {
-        rememberPagerState(initialPage = (requestedUnit - firstPageUnit).coerceIn(0, lastPageUnit - firstPageUnit),
-            pageCount = { lastPageUnit - firstPageUnit + 1 })
-    }
     var dateRequest by remember { mutableIntStateOf(0) }
-    val requestKey = if (weekRequestKey == null && dateRequest == 0) null else "$weekRequestKey|date:$dateRequest"
-    val latestUnit by rememberUpdatedState(requestedUnit)
-    val latestKey by rememberUpdatedState(requestKey)
-    val latestWeekChange by rememberUpdatedState(onWeekChange)
-    val latestDayChange by rememberUpdatedState(onDayChange)
-    val sync = remember(pager) { ScheduleWeekPagerSync(requestedUnit, requestKey, firstPageUnit, lastPageUnit) }
-    var weekOffset by rememberSaveable(positionKey, positionCalendar) {
+    var weekOffset by rememberSaveable(positionKey) {
         mutableIntStateOf(restoredPosition?.takeIf { it.calendar == positionCalendar }?.weekScroll ?: 0)
     }
-    var dayOffset by rememberSaveable(positionKey, positionCalendar) {
+    var dayOffset by rememberSaveable(positionKey) {
         mutableIntStateOf(restoredPosition?.takeIf { it.calendar == positionCalendar }?.dayScroll ?: 0)
     }
-    // A ScrollState belongs to exactly one scroll container. Pager neighbours may be
-    // measured together and must never clamp the visible page's scroll range.
-    val pageScrolls = remember(positionKey, positionCalendar) { mutableMapOf<Pair<Boolean, Int>, ScrollState>() }
-    val enteredPages = remember(pager) { mutableSetOf<Int>() }
-    val activeUnit = pager.settledPage + firstPageUnit
-    val activeScroll = pageScrolls.getOrPut(dayView to activeUnit) { ScrollState(if (dayView) dayOffset else weekOffset) }
-    val restoreTarget = remember(pager, activeUnit) {
-        val firstEntry = enteredPages.isEmpty()
-        enteredPages += activeUnit
-        if (dayView) { if (firstEntry) dayOffset else 0 } else weekOffset
-    }
-    val restored = RestoreScheduleScroll(activeScroll, restoreTarget, pager)
-    LaunchedEffect(activeScroll, restored) {
-        if (restored) snapshotFlow { activeScroll.value }.collect {
-            if (dayView) dayOffset = it else weekOffset = it
-        }
-    }
-    val headerLiftDistance = with(LocalDensity.current) { 64.dp.toPx() }
-    val headerLift by remember(activeScroll, headerLiftDistance) {
-        derivedStateOf {
-            (activeScroll.value / headerLiftDistance).coerceIn(0f, 1f)
-        }
-    }
-    LaunchedEffect(pager) {
-        snapshotFlow { Triple(latestUnit to latestKey, pager.isScrollInProgress, pager.settledPage) }
-            .collect { (request, scrolling, page) ->
-                val target = sync.requestPage(request.first, request.second)
-                if (target != null) {
-                    pager.scrollToPage(target)
-                    sync.settledWeek(target)
-                } else if (!scrolling) sync.settledWeek(page)?.let { unit ->
-                    if (dayView) {
-                        val day = Math.floorMod(unit - 1, 7) + 1
-                        latestWeekChange(Math.floorDiv(unit - 1, 7) + 1)
-                        latestDayChange(day)
-                        dayOffset = 0
-                    } else latestWeekChange(unit)
-                }
-            }
-    }
-    val latestPosition by rememberUpdatedState(ScheduleViewPosition(currentWeek, selectedDay,
-        weekOffset, dayOffset, positionCalendar))
+    // A mode/page owns exactly one scroll container, including during a crossfade.
+    val pageScrolls = remember(positionKey) { mutableMapOf<Pair<Boolean, Int>, ScrollState>() }
+    val restoredScrolls = remember(positionKey) { mutableSetOf<ScrollState>() }
+    var activeScroll by remember(positionKey) { mutableStateOf<ScrollState?>(null) }
+    var shownWeek by remember(positionKey) { mutableIntStateOf(currentWeek) }
+    var shownDay by remember(positionKey) { mutableIntStateOf(selectedDay) }
+    val latestPosition by rememberUpdatedState(ScheduleViewPosition(currentWeek, selectedDay, weekOffset, dayOffset, positionCalendar))
     val savePosition by rememberUpdatedState(onPositionChange)
     LaunchedEffect(positionKey) { snapshotFlow { latestPosition }.collect { savePosition(it) } }
-    DisposableEffect(positionKey) { onDispose { onPositionChange(latestPosition) } }
-    val shownUnit = pager.currentPage + firstPageUnit
-    val shownWeek = if (dayView) Math.floorDiv(shownUnit - 1, 7) + 1 else shownUnit
-    val shownDay = if (dayView) Math.floorMod(shownUnit - 1, 7) + 1 else selectedDay
-    fun selectWeek(week: Int) {
-        onWeekChange(week); dateRequest++
-        if (dayView) { dayOffset = 0; scope.launch { activeScroll.scrollTo(0) } }
+    DisposableEffect(positionKey) { onDispose { savePosition(latestPosition) } }
+    val headerLiftDistance = with(LocalDensity.current) { 64.dp.toPx() }
+    val headerLift by remember(activeScroll, headerLiftDistance) {
+        derivedStateOf { ((activeScroll?.value ?: 0) / headerLiftDistance).coerceIn(0f, 1f) }
     }
+    fun selectWeek(week: Int) { onWeekChange(week); dateRequest++ }
     fun today() {
         weekOffset = 0; dayOffset = 0
         val scrolls = pageScrolls.values.toList()
+        restoredScrolls += scrolls
         scope.launch { scrolls.forEach { it.scrollTo(0) } }
         onTodayClick()
-    }
-    val contentAlpha = remember { Animatable(1f) }
-    LaunchedEffect(dayView, reduced) {
-        if (reduced) contentAlpha.snapTo(1f) else {
-            contentAlpha.snapTo(0.65f)
-            contentAlpha.animateTo(1f, tween(200))
-        }
     }
     val wallpaper = LocalAppBackdrop.current
     val contentBackdrop = if (wallpaper != null && isBackdropSupported()) rememberLayerBackdrop() else null
@@ -173,13 +116,19 @@ fun ScheduleScreen(
             WeekHeaderCompact(shownWeek, { selectWeek((shownWeek - 1).coerceAtLeast(1)) },
                 { selectWeek((shownWeek + 1).coerceAtMost(ScheduleMaxWeeks)) },
                 onSettingsClick, onExportClick, isNextSemester, onToggleSemester,
-                collapseFraction = headerLift,
-                sampleBackdrop = sample, firstWeekDate = firstWeekDate, actualWeek = actualWeek,
-                showWeekend = dayView || displayPreferences.showWeekend, selectedDay = shownDay,
-                onDayClick = { onWeekChange(shownWeek); onDayChange(it); dateRequest++
-                    dayOffset = 0
-                    onDisplayPreferences(displayPreferences.copy(dayView = true)) },
-                dayView = dayView, onDayView = { if (it != dayView) onDisplayPreferences(displayPreferences.copy(dayView = it)) },
+                collapseFraction = headerLift, sampleBackdrop = sample, firstWeekDate = firstWeekDate,
+                actualWeek = actualWeek, showWeekend = dayView || displayPreferences.showWeekend, selectedDay = shownDay,
+                onDayClick = {
+                    onWeekChange(shownWeek); onDayChange(it); dateRequest++
+                    onDisplayPreferences(displayPreferences.copy(dayView = true))
+                },
+                dayView = dayView, onDayView = {
+                    if (it != dayView) {
+                        // Switching the presentation keeps the date the user is looking at.
+                        onWeekChange(shownWeek); onDayChange(shownDay)
+                        onDisplayPreferences(displayPreferences.copy(dayView = it))
+                    }
+                },
                 onWeekSelect = ::selectWeek, onTodayClick = ::today,
                 showToday = isNextSemester || shownWeek != actualWeek || shownDay != actualDay,
                 onSyncClick = onRetry, onAddClick = onAddClick, onWidgetClick = onWidgetClick, now = clock)
@@ -192,58 +141,148 @@ fun ScheduleScreen(
             errorMessage.isNotBlank() && courses.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
                 ScheduleNotice(errorMessage, "重新同步", onRetry)
             }
-            else -> HorizontalPager(pager, modifier = Modifier.fillMaxSize().testTag("schedule-pager")
-                .graphicsLayer { alpha = contentAlpha.value }
-                .then(if (contentBackdrop != null) Modifier.layerBackdrop(contentBackdrop) else Modifier),
-                flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(if (reduced) 0 else 200)),
-                beyondViewportPageCount = 0) { page ->
-                val unit = page + firstPageUnit
-                val week = if (dayView) Math.floorDiv(unit - 1, 7) + 1 else unit
-                val day = if (dayView) Math.floorMod(unit - 1, 7) + 1 else selectedDay
-                val pageScroll = pageScrolls.getOrPut(dayView to unit) { ScrollState(if (dayView) 0 else weekOffset) }
-                val visible = remember(courses, week) { courses.filter { isInWeek(it.weeks, week) } }
-                val conflicts = remember(visible) { scheduleOverlapGroups(visible.map { it.record() })
-                    .filter { it.courses.size > 1 }.flatMap { it.courses }.map { it.id }.toSet() }
-                val displayed = remember(courses, conflicts, agenda, week, actualWeek, isNextSemester) {
-                    val liveIds = agenda.current.map { it.course.id }.toSet()
-                    val nextId = agenda.next?.takeIf { next -> agenda.today.any { it.startsAt == next.startsAt && it.course.id == next.course.id } }?.course?.id
-                    courses.map { it.copy(hasConflict = it.id in conflicts,
-                        isCurrent = !isNextSemester && week == actualWeek && it.id in liveIds,
-                        isNext = !isNextSemester && week == actualWeek && it.id == nextId) }
+            else -> Box(Modifier.fillMaxSize().then(
+                if (contentBackdrop != null) Modifier.layerBackdrop(contentBackdrop) else Modifier)) {
+                androidx.compose.animation.AnimatedContent(dayView, modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        if (reduced) (androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None)
+                        else ((androidx.compose.animation.fadeIn(tween(com.tyust.course.ui.theme.MotionDuration.Medium)) +
+                            androidx.compose.animation.slideInVertically(tween(com.tyust.course.ui.theme.MotionDuration.Medium)) { if (targetState) it / 40 else -it / 40 }) togetherWith
+                            (androidx.compose.animation.fadeOut(tween(com.tyust.course.ui.theme.MotionDuration.Fast)) +
+                                androidx.compose.animation.slideOutVertically(tween(com.tyust.course.ui.theme.MotionDuration.Medium)) { if (targetState) -it / 40 else it / 40 }))
+                            .using(null)
+                    }, label = "schedule-view") { mode ->
+                    SchedulePages(mode, mode == dayView, currentWeek, selectedDay,
+                        "$weekRequestKey|$dateRequest", firstWeekDate, actualWeek, isNextSemester,
+                        courses, periodTimes, periodCount, displayPreferences, agenda, clock, topInset,
+                        pageScrolls, restoredScrolls, if (mode) dayOffset else weekOffset, reduced,
+                        onWeekChange, onDayChange, onCourseClick, onCourseLongClick, onSettingsClick,
+                        onShown = { week, day, scroll -> shownWeek = week; shownDay = day; activeScroll = scroll },
+                        onScroll = { if (mode) dayOffset = it else weekOffset = it })
                 }
-                if (dayView) ScheduleDayList(displayed, week, day, firstWeekDate, periodTimes,
-                    displayPreferences.compact, pageScroll, topInset, onCourseClick,
-                    onCourseLongClick = onCourseLongClick, agenda = agenda, now = clock,
-                    isToday = !isNextSemester && week == actualWeek && day == actualDay,
-                    onCalendar = onSettingsClick)
-                else ScheduleGrid(displayed, week, periodTimes, periodCount, onCourseClick,
-                    scrollState = pageScroll, topInset = topInset, showWeekend = displayPreferences.showWeekend,
-                    compact = displayPreferences.compact, onCourseLongClick = onCourseLongClick,
-                    beforeGrid = { if (agenda.needsCalendar) ScheduleNotice("设置开学日期，让课程对应实际日期", "设置开学日期", onSettingsClick) })
             }
         }
     }
 }
 
-/** Restore only the active page, once it has a real viewport. Gestures take precedence. */
+/** The outgoing presentation cannot write the incoming presentation's date or scroll state. */
 @Composable
-private fun RestoreScheduleScroll(scroll: ScrollState, target: Int, owner: Any): Boolean {
-    var restored by remember(scroll, owner) { mutableStateOf(false) }
-    LaunchedEffect(scroll, owner) {
+private fun SchedulePages(
+    dayView: Boolean, active: Boolean, requestedWeek: Int, requestedDay: Int, requestKey: String,
+    firstWeekDate: String?, actualWeek: Int, nextSemester: Boolean,
+    courses: List<ScheduleCourseUi>, times: List<PeriodTimeUi>, periodCount: Int,
+    preferences: ScheduleDisplayPreferences, agenda: ScheduleAgenda, now: Long, topInset: androidx.compose.ui.unit.Dp,
+    scrolls: MutableMap<Pair<Boolean, Int>, ScrollState>, restored: MutableSet<ScrollState>, initialOffset: Int,
+    reduced: Boolean, onWeek: (Int) -> Unit, onDay: (Int) -> Unit,
+    onCourse: (ScheduleCourseUi) -> Unit, onLongClick: (ScheduleCourseUi) -> Unit, onCalendar: () -> Unit,
+    onShown: (Int, Int, ScrollState) -> Unit, onScroll: (Int) -> Unit
+) {
+    val firstWeek = minOf(1, actualWeek, requestedWeek)
+    val lastWeek = maxOf(ScheduleMaxWeeks, actualWeek, requestedWeek)
+    val firstUnit = if (dayView) (firstWeek - 1) * 7 + 1 else firstWeek
+    val lastUnit = if (dayView) lastWeek * 7 else lastWeek
+    val requestedUnit = if (dayView) (requestedWeek - 1) * 7 + requestedDay else requestedWeek
+    val pager = key(firstUnit, lastUnit, firstWeekDate) {
+        rememberPagerState(initialPage = (requestedUnit - firstUnit).coerceIn(0, lastUnit - firstUnit),
+            pageCount = { lastUnit - firstUnit + 1 })
+    }
+    var navigating by remember(pager) { mutableStateOf(false) }
+    val latestActive by rememberUpdatedState(active)
+    val latestWeek by rememberUpdatedState(onWeek)
+    val latestDay by rememberUpdatedState(onDay)
+    val latestShown by rememberUpdatedState(onShown)
+    val latestScroll by rememberUpdatedState(onScroll)
+    val selectedDay by rememberUpdatedState(requestedDay)
+    val initialUnit = remember(pager) { requestedUnit }
+    fun pageScroll(unit: Int) = scrolls.getOrPut(dayView to unit) {
+        ScrollState(if (!dayView || unit == initialUnit) initialOffset else 0)
+    }
+    LaunchedEffect(pager, requestedUnit, requestKey, active) {
+        if (!active) return@LaunchedEffect
+        val target = (requestedUnit - firstUnit).coerceIn(0, pager.pageCount - 1)
+        if (pager.currentPage == target && pager.currentPageOffsetFraction == 0f) return@LaunchedEffect
+        navigating = true
+        try {
+            if (reduced) pager.scrollToPage(target)
+            else pager.animateScrollToPage(target, animationSpec = tween(com.tyust.course.ui.theme.MotionDuration.Medium,
+                easing = com.tyust.course.ui.theme.MotionEasing.Standard))
+        } finally { navigating = false }
+    }
+    LaunchedEffect(pager) {
+        var userScrolling = false
+        snapshotFlow { Triple(pager.isScrollInProgress, navigating, pager.settledPage) }.collect { (scrolling, programmed, page) ->
+            // Initial/restored pager positions are observations, not a new date
+            // request. Only a user scroll may write a settled date back upstream.
+            if (!latestActive || programmed) userScrolling = false
+            else if (scrolling) userScrolling = true
+            else if (userScrolling) {
+                userScrolling = false
+                val unit = page + firstUnit
+                if (dayView) {
+                    latestWeek(Math.floorDiv(unit - 1, 7) + 1)
+                    latestDay(Math.floorMod(unit - 1, 7) + 1)
+                } else latestWeek(unit)
+            }
+        }
+    }
+    val shownUnit = pager.currentPage + firstUnit
+    val shownWeek = if (dayView) Math.floorDiv(shownUnit - 1, 7) + 1 else shownUnit
+    val shownDay = if (dayView) Math.floorMod(shownUnit - 1, 7) + 1 else requestedDay
+    val activeScroll = pageScroll(pager.settledPage + firstUnit)
+    LaunchedEffect(active, activeScroll, shownWeek, shownDay) {
+        if (active) latestShown(shownWeek, shownDay, activeScroll)
+    }
+    LaunchedEffect(active, activeScroll) {
+        if (active) snapshotFlow { activeScroll.value }.collect { latestScroll(it) }
+    }
+    HorizontalPager(pager, modifier = Modifier.fillMaxSize().testTag("schedule-pager"),
+        overscrollEffect = null,
+        flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(if (reduced) 0 else com.tyust.course.ui.theme.MotionDuration.Medium)),
+        beyondViewportPageCount = 0) { page ->
+        val unit = page + firstUnit
+        val week = if (dayView) Math.floorDiv(unit - 1, 7) + 1 else unit
+        val day = if (dayView) Math.floorMod(unit - 1, 7) + 1 else requestedDay
+        val scroll = pageScroll(unit)
+        RestoreScheduleScroll(scroll, restored)
+        val visible = remember(courses, week) { courses.filter { isInWeek(it.weeks, week) } }
+        val conflicts = remember(visible) { scheduleOverlapGroups(visible.map { it.record() })
+            .filter { it.courses.size > 1 }.flatMap { it.courses }.map { it.id }.toSet() }
+        val displayed = remember(courses, conflicts, agenda, week, actualWeek, nextSemester) {
+            val current = agenda.current.map { it.course.id }.toSet()
+            val next = agenda.next?.takeIf { next -> agenda.today.any { it.startsAt == next.startsAt && it.course.id == next.course.id } }?.course?.id
+            courses.map { it.copy(hasConflict = it.id in conflicts,
+                isCurrent = !nextSemester && week == actualWeek && it.id in current,
+                isNext = !nextSemester && week == actualWeek && it.id == next) }
+        }
+        if (dayView) ScheduleDayList(displayed, week, day, firstWeekDate, times,
+            preferences.compact, scroll, topInset, onCourse, onCourseLongClick = onLongClick,
+            agenda = agenda, now = now, isToday = !nextSemester && week == actualWeek && day == ScheduleDates.dayAt(now), onCalendar = onCalendar)
+        else ScheduleGrid(displayed, week, times, periodCount, onCourse, scrollState = scroll,
+            topInset = topInset, showWeekend = preferences.showWeekend, compact = preferences.compact,
+            onCourseLongClick = onLongClick)
+    }
+}
+
+/** One initial restoration per container; after a drag starts there is no later compensation. */
+@Composable
+private fun RestoreScheduleScroll(scroll: ScrollState, restored: MutableSet<ScrollState>) {
+    val target = remember(scroll) { scroll.value }
+    LaunchedEffect(scroll) {
+        if (scroll in restored) return@LaunchedEffect
         coroutineScope {
             val restore = launch {
-                val maximum = snapshotFlow { scroll.maxValue }.first { it != Int.MAX_VALUE }
-                scroll.scrollTo(target.coerceIn(0, maximum))
+                snapshotFlow { scroll.viewportSize > 0 && scroll.maxValue != Int.MAX_VALUE && scroll.maxValue >= target }.first { it }
+                withFrameNanos { }
+                if (scroll !in restored) scroll.scrollTo(target.coerceIn(0, scroll.maxValue))
             }
-            // A user gesture always takes precedence over pending restoration.
             val interaction = launch {
                 scroll.interactionSource.interactions.first { it is DragInteraction.Start }
                 restore.cancel()
             }
-            restore.join()
-            interaction.cancel()
-            restored = true
+            try { restore.join() } finally {
+                interaction.cancel()
+                restored += scroll
+            }
         }
     }
-    return restored
 }

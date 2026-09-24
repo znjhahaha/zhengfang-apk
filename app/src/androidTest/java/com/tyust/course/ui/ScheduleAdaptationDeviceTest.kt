@@ -63,29 +63,19 @@ class ScheduleAdaptationDeviceTest {
                 assertTrue("Title overlaps actions at $w/$f/$p", title.right <= actions.left + 1f || title.bottom <= actions.top + 1f)
                 assertTrue(actions.left >= viewport.left && actions.right <= viewport.right + 1f)
                 assertTrue("Date and controls share the first row", title.right <= actions.left + 1f)
-                val actionBounds = (if (p < 0.5f) listOf("日视图", "周视图", "更多课表操作") else listOf("更多课表操作")).map {
+                val actionBounds = listOf("日视图", "周视图", "更多课表操作").map {
                     compose.onNodeWithContentDescription(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
                 }
-                if (p >= 0.5f) {
-                    compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertDoesNotExist()
-                    compose.onNodeWithContentDescription("周视图", useUnmergedTree = true).assertDoesNotExist()
-                    compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertDoesNotExist()
-                }
+                compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertIsDisplayed()
                 actionBounds.forEach { assertEquals(actionBounds.first().center.y, it.center.y, 1f) }
                 for (day in 1..7) {
                     val label = compose.onNodeWithTag("schedule-weekday-$day", true).fetchSemanticsNode().boundsInRoot
                     val card = compose.onNodeWithTag("schedule-course-day-$day", true).fetchSemanticsNode().boundsInRoot
                     assertTrue("Weekday $day is shifted at $w/$f/$p", abs(label.center.x - card.center.x) <= 2f)
                 }
-                val results = mutableListOf<TextLayoutResult>()
-                compose.onNodeWithText("第 24 周", useUnmergedTree = true)
-                    .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
-                val titleResult = results.single()
-                // A wrap-content Text may retain a wider paragraph after intrinsic
-                // measurement. Check the actual glyphs, not that empty paragraph area.
-                assertFalse("Week title height clipped at $w/$f/$p", titleResult.didOverflowHeight)
-                assertTrue("Week title width clipped at $w/$f/$p", titleResult.getLineRight(0) <= titleResult.size.width + 1f)
-                assertEquals("第 24 周".length, titleResult.getLineEnd(0))
+                val weekLabel = compose.onNodeWithText("第 24 周", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                assertTrue("Week label clipped at $w/$f/$p", weekLabel.left >= title.left && weekLabel.right <= title.right + 1f)
+
             }
             compose.runOnIdle { collapse.floatValue = 0f }
             capture("header-${w}-font$f")
@@ -119,28 +109,24 @@ class ScheduleAdaptationDeviceTest {
         compose.runOnIdle { collapse.floatValue = 1f }
         compose.mainClock.advanceTimeBy(1000)
         compose.mainClock.autoAdvance = true
-        compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertDoesNotExist()
-        compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertDoesNotExist()
-        val bounds = compose.onNodeWithTag("schedule-more").fetchSemanticsNode().boundsInRoot
-        assertTrue("More menu must retain a 48 dp target", bounds.width >= 48 * pixelsPerDp - 1 && bounds.height >= 48 * pixelsPerDp - 1)
-        compose.onNodeWithTag("schedule-more").performTouchInput { click(androidx.compose.ui.geometry.Offset(center.x, 1f)) }
-        compose.onNodeWithText("切换为日视图").performClick()
+        compose.onNodeWithContentDescription("日视图", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(day.value) }
-        compose.onNodeWithContentDescription("更多课表操作", useUnmergedTree = true).performTouchInput { click() }
-        compose.onNodeWithText("回到今天").performClick()
+        val bounds = compose.onNodeWithTag("schedule-today").fetchSemanticsNode().boundsInRoot
+        assertTrue("Today must retain a 48 dp target", bounds.width >= 48 * pixelsPerDp - 1 && bounds.height >= 48 * pixelsPerDp - 1)
+        compose.onNodeWithTag("schedule-today").performClick()
         compose.runOnIdle { assertEquals(1, todayClicks); collapse.floatValue = 0f }
         compose.onNodeWithContentDescription("周视图", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("schedule-today", useUnmergedTree = true).assertIsDisplayed()
     }
 
-    @Test fun longClassroomsFitWithoutEllipsisEvenInSinglePeriodCards() {
+    @Test fun fullNamesAndTeachersKeepRoomNumbersAtEveryWidthAndFontSize() {
         val width = mutableIntStateOf(360)
         val height = mutableIntStateOf(720)
         val font = mutableFloatStateOf(1f)
         val courses = listOf(
-            ScheduleCourseUi("思想道德与法治", "教师", "五象校区 敦行教学楼东区 A1208 多媒体教室", 2, 1, 1,
+            ScheduleCourseUi("思想道德与法治", "张文博、李思远", "五象校区 敦行教学楼东区 A1208 多媒体教室", 2, 1, 1,
                 "1-25周", Color(0xFF63ADEC), id = "long-one"),
-            ScheduleCourseUi("跨学科联合研讨与实验课程", "教师", "五象校区 敦行教学楼东区三层 302 研讨教室（从东侧走廊进入）", 4, 1, 2,
+            ScheduleCourseUi("跨学科联合研讨与实验课程", "王若宁、陈建明", "五象校区 敦行教学楼东区三层 302 研讨教室（从东侧走廊进入）", 4, 1, 2,
                 "1-25周", Color(0xFFE8B553), isCustom = true, customId = "long-two", id = "long-two")
         )
         compose.setContent {
@@ -157,6 +143,15 @@ class ScheduleAdaptationDeviceTest {
         for (landscape in listOf(false, true)) for (w in listOf(320, 360, 412)) for (f in listOf(1f, 1.3f, 1.6f)) {
             compose.runOnIdle { width.intValue = if (landscape) 640 else w; height.intValue = if (landscape) w else 720; font.floatValue = f }
             courses.forEach { course ->
+                for ((tag, text) in listOf("schedule-name-${course.id}" to course.name, "schedule-teacher-${course.id}" to course.teacher)) {
+                    val layouts = mutableListOf<TextLayoutResult>()
+                    compose.onNodeWithTag(tag, true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                    val layout = layouts.single()
+                    assertEquals(text, layout.layoutInput.text.text)
+                    assertFalse("Full text clipped at $w/$f/$landscape: $text", layout.hasVisualOverflow)
+                    assertEquals(text.length, layout.getLineEnd(layout.lineCount - 1))
+                    assertFalse(layout.isLineEllipsized(layout.lineCount - 1))
+                }
                 val results = mutableListOf<TextLayoutResult>()
                 compose.onNodeWithTag("schedule-location-${course.id}", true)
                     .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
@@ -164,8 +159,10 @@ class ScheduleAdaptationDeviceTest {
                 if (result.hasVisualOverflow) capture("classroom-overflow-${w}-font$f")
                 assertFalse("Location clipped at $w/$f/$landscape: ${course.location}; size=${result.size}, " +
                     "widthOverflow=${result.didOverflowWidth}, heightOverflow=${result.didOverflowHeight}, " +
-                    "paragraph=${result.multiParagraph.width}x${result.multiParagraph.height}, constraints=${result.layoutInput.constraints}", result.hasVisualOverflow)
-                assertEquals(course.location.length, result.getLineEnd(result.lineCount - 1))
+                    "paragraph=${result.multiParagraph.width}x${result.multiParagraph.height}, label=${result.layoutInput.text}, constraints=${result.layoutInput.constraints}", result.hasVisualOverflow)
+                val room = requireNotNull(com.tyust.course.schedule.ScheduleLocation.room(course.location))
+                assertTrue("Room number was lost", result.layoutInput.text.text.endsWith(room))
+                assertEquals(result.layoutInput.text.length, result.getLineEnd(result.lineCount - 1))
                 assertFalse(result.isLineEllipsized(result.lineCount - 1))
             }
             if (!landscape && (f == 1f || w == 320)) capture("classroom-${w}-font$f")

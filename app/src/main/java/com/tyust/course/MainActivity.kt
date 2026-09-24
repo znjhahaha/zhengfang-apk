@@ -301,8 +301,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     val pageTravelPx = with(density) { 8.dp.roundToPx() }
     val updateState = rememberUpdateState()
     val recovery by SessionRenewer.state.collectAsState()
-    val isTokenExpired = session.expired && recovery.token == session.token && recovery.phase == RecoveryPhase.NeedsLogin
-    val isRecovering = session.expired && !isTokenExpired
+    val sessionFeedback = session.expiryFeedback == com.tyust.course.manager.RequestFeedback.Interactive
+    val isTokenExpired = sessionFeedback && session.expired && recovery.token == session.token && recovery.phase == RecoveryPhase.NeedsLogin
+    val isRecovering = sessionFeedback && session.expired && !isTokenExpired
     val noticeModel: SessionNoticeViewModel = viewModel()
     val sessionNotice by noticeModel.notices.state.collectAsState()
     var foreground by remember { mutableStateOf(fragmentActivity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
@@ -581,7 +582,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                 com.tyust.course.academic.plugin.ServiceExtensionHost(when (page) { 0 -> "home"; 1 -> "schedule"; 3 -> "grades"; else -> null }) {
                                 when (page) {
                                     0 -> com.tyust.course.ui.route.CourseListRoute()
-                                    1 -> com.tyust.course.ui.route.ScheduleRoute()
+                                    1 -> com.tyust.course.ui.route.ScheduleRoute(isActive = selectedTab == 1)
                                     2 -> com.tyust.course.ui.route.GrabProRoute()
                                     3 -> com.tyust.course.ui.route.GradesRoute()
                                     4 -> com.tyust.course.ui.route.SettingsRoute(

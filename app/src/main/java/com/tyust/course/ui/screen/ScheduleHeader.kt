@@ -133,28 +133,27 @@ fun WeekHeaderCompact(
                     .semantics { contentDescription = "选择日期与学期" }.padding(start = 4.dp),
                     verticalArrangement = Arrangement.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("${date.get(Calendar.MONTH) + 1}月${date.get(Calendar.DAY_OF_MONTH)}日",
-                            modifier = Modifier.weight(1f, fill = false),
-                            fontSize = when { fontScale > 1.3f -> 15.sp; fontScale > 1.1f -> 20.sp; else -> 22.sp },
-                            lineHeight = if (fontScale > 1.3f) 18.sp else 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        AnimatedNumberText("${date.get(Calendar.MONTH) + 1}月${date.get(Calendar.DAY_OF_MONTH)}日",
+                            modifier = Modifier.weight(1f, fill = false).testTag("schedule-header-date"),
+                            directionKey = date.timeInMillis,
+                            padLeadingNumber = false,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = when { fontScale > 1.3f -> 14.sp; fontScale > 1.1f -> 18.sp; else -> 21.sp },
+                                lineHeight = if (fontScale > 1.3f) 18.sp else 24.sp, fontWeight = FontWeight.Bold))
                         AnimatedLineIcon(AnimatedIconSpec.Chevron, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
                     }
-                    Text(when {
+                    AnimatedNumberText(when {
                         ScheduleDates.firstMonday(firstWeekDate) == null -> "开学日期待设置"
                         currentWeek < 1 -> "尚未开学"
                         currentWeek > ScheduleMaxWeeks -> "本学期已结束"
                         else -> (if (isNextSemester) "下学期 · " else "") + "第 $currentWeek 周"
-                    }, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, color = colors.onSurfaceVariant)
+                    }, modifier = Modifier.testTag("schedule-header-week"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 14.sp), color = colors.onSurfaceVariant)
                 }
                 Row(Modifier.testTag("schedule-header-actions"), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    AnimatedVisibility(!collapsedControls, enter = fadeIn() + expandHorizontally(expandFrom = Alignment.End), exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.End)) {
-                        ScheduleViewToggle(dayView, { if (!collapsedControls) onDayView(it) }, controlBackdrop)
-                    }
-                    SystemActionMenu("更多课表操作", (if (collapsedControls) listOf(
-                        SystemMenuAction(if (dayView) "切换为周视图" else "切换为日视图", Icons.Outlined.CalendarMonth, { onDayView(!dayView) }),
-                        SystemMenuAction("回到今天", Icons.Outlined.Today, onTodayClick)
-                    ) else emptyList()) + listOf(
+                    ScheduleViewToggle(dayView, onDayView, controlBackdrop)
+                    SystemActionMenu("更多课表操作", listOf(
                         SystemMenuAction("同步课表", Icons.Outlined.Refresh, onSyncClick),
                         SystemMenuAction("导出课表", Icons.Outlined.Share, onExportClick),
                         SystemMenuAction("添加课程", Icons.Outlined.Add, onAddClick),
@@ -174,12 +173,12 @@ fun WeekHeaderCompact(
             Row(Modifier.fillMaxWidth().height(height - actionHeight).padding(horizontal = scheduleGridPadding()),
                 verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(scheduleTimeColumnWidth() + ScheduleTimeColumnShadowWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    androidx.compose.animation.AnimatedVisibility(showToday && !collapsedControls, enter = fadeIn(), exit = fadeOut()) {
-                    LiquidButton({ if (!collapsedControls) onTodayClick() }, backdrop = controlBackdrop,
-                        modifier = Modifier.size(40.dp).testTag("schedule-today")
-                            .semantics { contentDescription = "回到今天" }, minHeight = 40.dp, horizontalPadding = 0.dp) {
-                        Text("今天", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.primary)
-                    }
+                    if (showToday) {
+                        TextButton(onTodayClick, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("schedule-today").semantics { contentDescription = "回到今天" },
+                            contentPadding = PaddingValues(0.dp)) {
+                            Text("今天", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.primary)
+                        }
                     }
                 }
                 ScheduleDateStrip(anchor, currentWeek, selectedDay ?: 1, if (showWeekend) 7 else 5,
@@ -213,14 +212,18 @@ private fun ScheduleDateStrip(anchor: String, week: Int, selectedDay: Int, dayCo
     // date centered on its timetable column, including narrow and large-font layouts.
     LiquidSegmentedControl(labels, selectedDay - 1, { onDayClick(it + 1) }, modifier,
         backdrop = backdrop, height = height, edgePadding = 0.dp,
-        verticalInset = 2.dp, restingRefraction = 0f, showTrack = false) { index, selection, color ->
+        verticalInset = 2.dp, restingRefraction = 0f, showTrack = false,
+        refractLabels = false) { index, selection, color ->
         val day = index + 1
-        val date = requireNotNull(ScheduleDates.date(anchor, week, day)).get(Calendar.DAY_OF_MONTH)
+        val civilDate = requireNotNull(ScheduleDates.date(anchor, week, day))
+        val date = civilDate.get(Calendar.DAY_OF_MONTH)
         Column(Modifier.fillMaxSize().testTag("schedule-weekday-$day").semantics {
             if (today == day) stateDescription = "今天"
         }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("一二三四五六日"[index].toString(), fontSize = 11.sp, lineHeight = 15.sp, color = color)
-            Text(date.toString(), fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold,
+            AnimatedNumberText(date.toString(), modifier = Modifier.testTag("schedule-weekday-date-$day"),
+                directionKey = civilDate.timeInMillis,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
                 color = if (today == day || selection >= 0.5f) colors.primary else colors.onSurface)
             Box(Modifier.padding(top = 2.dp).size(3.dp)
                 .background(if (today == day) colors.primary else Color.Transparent, RoundedCornerShape(2.dp)))

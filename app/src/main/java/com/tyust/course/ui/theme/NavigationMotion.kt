@@ -26,7 +26,7 @@ data class PageTransitionSpec(val enterDistance: Float = 8f, val exitDistance: F
 object MotionProfile {
     val Navigation = PageTransitionSpec()
     const val IconMillis = 280
-    const val PressMillis = 150
+    const val PressMillis = MotionDuration.Fast
     const val DetailStaggerMillis = 35L
     const val HierarchyEnterDp = 22f
     const val HierarchyBehindDp = 6f

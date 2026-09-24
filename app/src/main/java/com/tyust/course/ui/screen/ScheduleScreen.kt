@@ -150,12 +150,12 @@ import com.tyust.course.schedule.ScheduleDisplayPreferences
 import com.tyust.course.schedule.ScheduleTimeBase
 import com.tyust.course.schedule.ScheduleViewPosition
 
-private val ScheduleTimeColumnWidth = 36.dp
+private val ScheduleTimeColumnWidth = 40.dp
 internal val ScheduleTimeColumnShadowWidth = 8.dp
 private val SchedulePeriodHeight = 84.dp
 
 /** 窄屏收窄的时间列与网格左右留白，把省下的宽度全给七个日列。 */
-private val ScheduleTimeColumnWidthTight = 28.dp
+private val ScheduleTimeColumnWidthTight = 40.dp
 private val SchedulePeriodHeightTight = 68.dp
 private val ScheduleGridPaddingTight = 10.dp
 
@@ -230,15 +230,21 @@ fun ScheduleGrid(
     }
     val days = if (showWeekend) 7 else 5
     val visibleCourses = remember(weeklyCourses, days) { weeklyCourses.filter { it.day in 1..days } }
-    val displayCourses = remember(visibleCourses) { timetableEntries(visibleCourses).map { it.display } }
     val timeColumnWidth = scheduleTimeColumnWidth()
     val gridPadding = scheduleGridPadding()
-    val dayColumnWidthPx = with(LocalDensity.current) {
+    val density = LocalDensity.current
+    val columnWidth = with(density) {
         ((constraints.maxWidth - gridPadding.roundToPx() * 2 - timeColumnWidth.roundToPx() -
             ScheduleTimeColumnShadowWidth.roundToPx()) / days.toFloat()).roundToInt()
     }
-    val periodHeight = rememberCoursePeriodHeight(displayCourses, dayColumnWidthPx,
-        schedulePeriodHeight() * if (compact) 0.78f else 1f)
+    // Measure the whole timetable, not just this week's cards. Paging and live
+    // status changes keep one geometry while names and teachers remain complete.
+    val periodHeight = rememberFullCoursePeriodHeight(courses, columnWidth,
+        maxOf(schedulePeriodHeight() * if (compact) 0.85f else 1f,
+            (if (compact) 70.dp else 76.dp) * density.fontScale.coerceAtLeast(1f)))
+    val anchor = remember(scrollState) { GridScrollAnchor() }
+    val periodPixels = with(density) { periodHeight.toPx() }
+    val contentTop = with(density) { (topInset + 8.dp).toPx() }
     val totalHeight = periodHeight * periodCount
     val darkGrid = com.tyust.course.ui.system.rememberGlassDarkTheme()
     val gridTint = MaterialTheme.colorScheme.surface.copy(alpha =
@@ -249,7 +255,19 @@ fun ScheduleGrid(
         modifier = Modifier
             .testTag("schedule-grid-$currentWeek")
             .fillMaxSize()
-            .verticalScroll(scrollState)
+            .verticalScroll(scrollState, overscrollEffect = null)
+            .onGloballyPositioned {
+                // A genuine metadata/font change may need more room. Preserve the
+                // visible teaching period (or bottom edge) during the layout pass.
+                if (anchor.period > 0f && kotlin.math.abs(anchor.period - periodPixels) > 0.5f) {
+                    val target = if (anchor.maximum > 0 && anchor.offset >= anchor.maximum - 2) scrollState.maxValue.toFloat()
+                        else if (anchor.offset <= anchor.top) anchor.offset.toFloat()
+                        else contentTop + (anchor.offset - anchor.top) / anchor.period * periodPixels
+                    scrollState.dispatchRawDelta(target.coerceIn(0f, scrollState.maxValue.toFloat()) - scrollState.value)
+                }
+                anchor.period = periodPixels; anchor.top = contentTop
+                anchor.maximum = scrollState.maxValue; anchor.offset = scrollState.value
+            }
             .padding(
                 start = gridPadding,
                 end = gridPadding,
@@ -376,15 +394,13 @@ fun ScheduleGrid(
             }
         }
 
-        if (weeklyCourses.isNotEmpty()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(32.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SystemStatusBadge(
-                    text = "本周 ${weeklyCourses.size} 门课程",
-                    tone = SystemTone.Info
-                )
+                com.tyust.course.ui.system.AnimatedNumberText("本周 ${weeklyCourses.size} 门课程",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
                 if (weeklyCourses.any { it.isCustom }) {
                     SystemStatusBadge(
                         text = "含自定义课程",
@@ -392,10 +408,12 @@ fun ScheduleGrid(
                     )
                 }
             }
+        if (!showWeekend) Box(Modifier.fillMaxWidth().height(24.dp * LocalDensity.current.fontScale)) {
+            if (weeklyCourses.any { it.day > 5 }) Text(
+                "另有 ${weeklyCourses.count { it.day > 5 }} 节周末课程，可在日视图查看",
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (!showWeekend && weeklyCourses.any { it.day > 5 }) Text(
-            "另有 ${weeklyCourses.count { it.day > 5 }} 节周末课程，可在日视图查看",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     }
 }
@@ -413,36 +431,39 @@ private fun courseLocationStyle(base: TextStyle, duration: Int): TextStyle = bas
     lineHeight = if (duration <= 2) 10.5.sp else 11.sp
 )
 
-private fun ScheduleCourseUi.hasCardStatus() = hasConflict || isCurrent || isNext ||
-    !com.tyust.course.schedule.ScheduleWeeks.parse(weeks).valid
+private class GridScrollAnchor {
+    var period = 0f
+    var top = 0f
+    var maximum = 0
+    var offset = 0
+}
 
-/** The same measured row height drives the time rail, grid lines and course spans. */
 @Composable
-private fun rememberCoursePeriodHeight(courses: List<ScheduleCourseUi>, columnWidthPx: Int, minimum: Dp): Dp {
+private fun rememberFullCoursePeriodHeight(courses: List<ScheduleCourseUi>, columnWidth: Int, minimum: Dp): Dp {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer(cacheSize = 128)
-    val style = MaterialTheme.typography.labelSmall
-    return remember(courses, columnWidthPx, minimum, density, measurer, style) {
+    val base = androidx.compose.material3.LocalTextStyle.current.merge(MaterialTheme.typography.labelSmall)
+    return remember(courses, columnWidth, minimum, density, measurer, base) {
         with(density) {
-            val contentWidth = (columnWidthPx - 2 * 1.dp.roundToPx() - 5.dp.roundToPx() - 2.dp.roundToPx()).coerceAtLeast(1)
-            var rowHeight = minimum.toPx()
-            for (course in courses) {
+            val textWidth = (columnWidth - 2 * 1.dp.roundToPx() - 5.dp.roundToPx() - 2.dp.roundToPx() - 2).coerceAtLeast(1)
+            var height = minimum.toPx()
+            courses.forEach { course ->
                 val duration = (course.endPeriod - course.startPeriod + 1).coerceAtLeast(1)
-                val name = measurer.measure(course.name, courseNameStyle(style, duration), constraints = Constraints(maxWidth = contentWidth))
-                val locationHeight = if (course.location.isNotBlank()) measurer.measure(
-                    course.location, courseLocationStyle(style, duration), constraints = Constraints(maxWidth = contentWidth)
-                ).size.height else 0
-                // Reserve the badge lane even when no badge is currently visible.
-                // Minute ticks must not resize the entire grid beneath a scrolling user.
-                val informationHeight = locationHeight + 11.dp.roundToPx()
-                // Includes card insets, content padding, inter-line gap and rounding slack.
-                val required = name.size.height + informationHeight + 9.dp.toPx()
-                rowHeight = maxOf(rowHeight, ceil(required / duration))
+                val name = measurer.measure(course.name, courseNameStyle(base, duration), constraints = Constraints(maxWidth = textWidth)).size.height
+                val metadata = courseLocationStyle(base, duration)
+                val teacher = measurer.measure(course.teacher.ifBlank { "教师待定" }, metadata, constraints = Constraints(maxWidth = textWidth)).size.height
+                val room = measurer.measure("教室\nA1208", metadata).size.height
+                // Keep the optional status lane allocated, including on minute ticks.
+                val required = name + teacher + room + 25.dp.toPx()
+                height = maxOf(height, kotlin.math.ceil(required / duration))
             }
-            ceil(rowHeight).toDp()
+            kotlin.math.ceil(height).toDp()
         }
     }
 }
+
+private fun ScheduleCourseUi.hasCardStatus() = hasConflict || isCurrent || isNext ||
+    !com.tyust.course.schedule.ScheduleWeeks.parse(weeks).valid
 
 @Composable
 private fun TimetableBackground(
@@ -598,13 +619,13 @@ fun CourseCard(course: ScheduleCourseUi, onLongClick: () -> Unit = {}, onClick: 
     val containerColor = scheduleCardColor(course.color, if (course.isCurrent) 0.20f else 0.10f)
     val accentColor = course.color.copy(alpha = 0.85f)
 
-    val displayLocation = course.location
+    val displayLocation = com.tyust.course.schedule.ScheduleLocation.compact(course.location)
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && !com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion) 0.97f else 1f,
-        animationSpec = androidx.compose.animation.core.tween(140),
+        animationSpec = androidx.compose.animation.core.tween(com.tyust.course.ui.theme.MotionDuration.Fast),
         label = "courseCardScale"
     )
 
@@ -675,26 +696,57 @@ fun CourseCard(course: ScheduleCourseUi, onLongClick: () -> Unit = {}, onClick: 
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(start = 5.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp)
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text(
                     text = course.name,
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-name-${course.id}"),
                     style = courseNameStyle(MaterialTheme.typography.labelSmall, duration),
                     color = MaterialTheme.colorScheme.onSurface,
                     softWrap = true,
                 )
 
+                Text(course.teacher.ifBlank { "教师待定" },
+                    Modifier.fillMaxWidth().testTag("schedule-teacher-${course.id}"),
+                    style = courseLocationStyle(MaterialTheme.typography.labelSmall, duration),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, softWrap = true)
+
                 if (displayLocation.isNotBlank()) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                    val baseStyle = courseLocationStyle(MaterialTheme.typography.labelSmall, duration)
+                    val room = com.tyust.course.schedule.ScheduleLocation.room(course.location).orEmpty()
+                    val density = LocalDensity.current
+                    // Leave a pixel rounding margin, and remeasure after scaling: modern
+                    // Android font scaling is nonlinear, so a width ratio alone can wrap the room.
+                    val availableWidth = (constraints.maxWidth - 2).coerceAtLeast(1).toFloat()
+                    val locationStyle = remember(room, baseStyle, availableWidth, density) {
+                        val roomWidth = measurer.measure(room, baseStyle, softWrap = false).size.width
+                        var fitted = baseStyle.copy(fontSize = baseStyle.fontSize * minOf(1f, availableWidth / roomWidth.coerceAtLeast(1)))
+                        repeat(8) {
+                            if (measurer.measure(room, fitted, softWrap = false).size.width <= availableWidth) return@remember fitted
+                            fitted = fitted.copy(fontSize = fitted.fontSize * 0.92f)
+                        }
+                        fitted
+                    }
+                    val label = remember(displayLocation, availableWidth, locationStyle, density) {
+                        com.tyust.course.schedule.ScheduleLocation.fit(course.location, availableWidth, 2) {
+                            measurer.measure(it, locationStyle, softWrap = false).size.width.toFloat()
+                        }
+                    }
                     Text(
-                        text = displayLocation,
+                        text = label,
                         modifier = Modifier.fillMaxWidth().testTag("schedule-location-${course.id}"),
-                        style = courseLocationStyle(MaterialTheme.typography.labelSmall, duration),
+                        style = locationStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         softWrap = true
                     )
+                    }
                 }
                 // A status symbol must not reserve a column beside every line of a long address.
-                if (course.hasCardStatus()) com.tyust.course.ui.system.AnimatedLineIcon(
+                if (duration > 1 && course.hasCardStatus()) com.tyust.course.ui.system.AnimatedLineIcon(
                     spec = if (course.hasConflict || unknownWeeks) com.tyust.course.ui.system.AnimatedIconSpec.Warning else com.tyust.course.ui.system.AnimatedIconSpec.Clock,
                     description = when { unknownWeeks -> "周次待核对"; course.isCurrent -> "正在上课"; course.isNext -> "下一节"; else -> "重叠课程" },
                     modifier = Modifier.size(10.dp), tint = if (unknownWeeks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)

@@ -45,7 +45,7 @@ class ScheduleAgendaFlowDeviceTest {
             ui.screenshot("widget-picker-single")
             ui.scrollTo("添加双课程")
             ui.screenshot("widget-picker-double")
-            ui.scrollTo("添加今日时间轴")
+            ui.scrollTo("添加课程时间轴")
             ui.screenshot("widget-picker-timeline")
             ui.back()
             ui.waitText("选择日期与学期")

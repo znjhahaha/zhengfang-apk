@@ -20,6 +20,8 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).callTimeout(45, TimeUnit.SECONDS).build()
 
+    suspend fun cached(): List<JSONObject> = withContext(Dispatchers.IO) { store.cachedCatalog(endpoint) }
+
     suspend fun check(): List<JSONObject> = withContext(Dispatchers.IO) {
         val origin = endpoint.toHttpUrlOrNull() ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效目录地址")
         val catalog = PluginJson.parse(download(origin, origin, PluginLimits.PACKAGE_BYTES).toString(Charsets.UTF_8))
@@ -29,7 +31,7 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
         PluginJson.objects(payload.getJSONArray("entries")).also { entries ->
             if (entries.size > 1000 || entries.map { it.getString("id") }.distinct().size != entries.size)
                 throw PluginException(PluginErrorCode.VALIDATION_FAILED, "目录数量超限或标识重复")
-            store.rememberCatalog(catalog)
+            store.rememberCatalog(catalog, endpoint)
         }
     }
     suspend fun update(id: String): PluginPackage = withContext(Dispatchers.IO) {

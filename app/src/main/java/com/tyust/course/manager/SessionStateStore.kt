@@ -5,7 +5,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 data class SessionToken(val accountStorageKey: String, val generation: Long)
-data class SessionState(val token: SessionToken, val expired: Boolean = false)
+enum class RequestFeedback { Interactive, Silent }
+data class SessionState(val token: SessionToken, val expired: Boolean = false,
+                        val expiryFeedback: RequestFeedback = RequestFeedback.Interactive)
 
 /** A successful login or account switch invalidates every callback from the preceding session. */
 class SessionStateStore {
@@ -23,9 +25,12 @@ class SessionStateStore {
     fun isCurrent(expected: SessionToken?): Boolean = expected != null && token == expected
 
     @Synchronized
-    fun expire(expected: SessionToken): Boolean {
-        if (!isCurrent(expected) || state.value.expired) return false
-        mutableState.value = SessionState(expected, expired = true)
+    @JvmOverloads
+    fun expire(expected: SessionToken, feedback: RequestFeedback = RequestFeedback.Interactive): Boolean {
+        if (!isCurrent(expected)) return false
+        val previous = state.value
+        if (previous.expired && (previous.expiryFeedback == RequestFeedback.Interactive || feedback == RequestFeedback.Silent)) return false
+        mutableState.value = SessionState(expected, expired = true, expiryFeedback = feedback)
         return true
     }
 }

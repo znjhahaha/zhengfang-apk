@@ -142,7 +142,7 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         candidate
     }
     fun deactivate(id: String) = synchronized(lock) { val state = state(); state.remove(id); save(state) }
-    fun rememberCatalog(catalog: JSONObject) = synchronized(lock) {
+    fun rememberCatalog(catalog: JSONObject, source: String? = null) = synchronized(lock) {
         val payload = catalog.getJSONObject("payload")
         PluginPackageVerifier.verifySignature(payload, catalog, trustedKeys)
         val version = payload.getInt("apiVersion")
@@ -150,6 +150,25 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         root.mkdirs()
         val file = AtomicFile(File(root, "catalog-api$version.json")); val output = file.startWrite()
         try { output.write(catalog.toString().toByteArray()); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
+        if (source != null) {
+            val discovery = AtomicFile(File(root, "catalog-source-${PluginJson.sha256(source.toByteArray())}.json"))
+            val stream = discovery.startWrite()
+            try { stream.write(catalog.toString().toByteArray()); discovery.finishWrite(stream) }
+            catch (e: Exception) { discovery.failWrite(stream); throw e }
+        }
+    }
+    /** A discovery cache is scoped to its source and reverified against the current key set. */
+    fun cachedCatalog(source: String): List<JSONObject> = synchronized(lock) {
+        runCatching {
+            val file = AtomicFile(File(root, "catalog-source-${PluginJson.sha256(source.toByteArray())}.json"))
+            val envelope = PluginJson.parse(String(file.readFully(), Charsets.UTF_8))
+            val payload = envelope.getJSONObject("payload")
+            PluginPackageVerifier.verifySignature(payload, envelope, trustedKeys)
+            require(payload.getInt("apiVersion") in 1..PluginLimits.API_VERSION)
+            PluginJson.objects(payload.getJSONArray("entries")).also { entries ->
+                require(entries.size <= 1000 && entries.map { it.getString("id") }.distinct().size == entries.size)
+            }
+        }.getOrDefault(emptyList())
     }
     private fun catalogs(): List<JSONObject> = (1..PluginLimits.API_VERSION).mapNotNull { version -> runCatching {
         val envelope = PluginJson.parse(String(AtomicFile(File(root, "catalog-api$version.json")).readFully()))

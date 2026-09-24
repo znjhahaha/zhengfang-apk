@@ -101,7 +101,7 @@ class ScheduleDayInteractionDeviceTest {
         val width = mutableIntStateOf(412)
         val font = mutableFloatStateOf(1f)
         val dark = mutableStateOf(false)
-        val course = courses.first().copy(name = "数据结构与算法基础", location = "南校区综合教学楼 A 区 1205（实验室）")
+        val course = courses.first().copy(name = "数据结构与算法基础", teacher = "张文博、李思远", location = "南校区综合教学楼 A 区 1205（实验室）")
         compose.setContent {
             val density = minOf(LocalDensity.current.density, LocalWindowInfo.current.containerSize.width.toFloat() / width.intValue)
             CompositionLocalProvider(LocalDensity provides Density(density, font.floatValue)) {
@@ -114,7 +114,7 @@ class ScheduleDayInteractionDeviceTest {
         }
         for (w in listOf(320, 360, 412)) for (f in listOf(1f, 1.6f)) for (night in listOf(false, true)) {
             compose.runOnIdle { width.intValue = w; font.floatValue = f; dark.value = night }
-            for (text in listOf(course.name, course.location, "08:00", "08:45")) {
+            for (text in listOf(course.name, course.teacher, course.location, "08:00", "08:45")) {
                 val results = mutableListOf<TextLayoutResult>()
                 compose.onNodeWithText(text, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
                 val layout = results.single()

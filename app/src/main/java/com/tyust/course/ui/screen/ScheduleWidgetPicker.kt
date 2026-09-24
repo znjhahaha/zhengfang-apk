@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tyust.course.schedule.*
@@ -26,9 +28,9 @@ fun ScheduleWidgetPicker(onDismiss: () -> Unit) {
         val base = ScheduleTimeBase(ScheduleTimeBase.dateFromMillis(monday.timeInMillis),
             mapOf(1 to "08:00", 2 to "10:00", 3 to "14:00"), mapOf(1 to "09:40", 2 to "11:40", 3 to "15:40"))
         val courses = listOf(
-            ScheduleCourseRecord("sample-1", "高等数学", "", "博学楼 A205", 1, 1, 1, "1-16周"),
-            ScheduleCourseRecord("sample-2", "计算机网络", "", "明理楼 B302", 1, 2, 2, "1-16周"),
-            ScheduleCourseRecord("sample-3", "大学英语", "", "博学楼 A102", 1, 3, 3, "1-16周"))
+            ScheduleCourseRecord("sample-1", "高等数学", "张老师", "博学楼 A205", 1, 1, 1, "1-16周"),
+            ScheduleCourseRecord("sample-2", "计算机网络", "李老师", "明理楼 B302", 1, 2, 2, "1-16周"),
+            ScheduleCourseRecord("sample-3", "大学英语", "陈老师", "博学楼 A102", 1, 3, 3, "1-16周"))
         ScheduleWidgetState.from(ScheduleSnapshot("", "", "", courses, base, now, true), now)
     }
     SystemDialog(onDismissRequest = onDismiss, title = { Text("选择桌面组件") }) {
@@ -39,7 +41,8 @@ fun ScheduleWidgetPicker(onDismiss: () -> Unit) {
             for (style in ScheduleWidgetStyle.entries) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(style.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { ScheduleWidgetUpdater.requestPin(context, style); onDismiss() }) { Text("添加") }
+                    TextButton(onClick = { ScheduleWidgetUpdater.requestPin(context, style); onDismiss() },
+                        modifier = Modifier.semantics { contentDescription = "添加${style.title}" }) { Text("添加到桌面") }
                 }
                 Text(style.description, style = MaterialTheme.typography.bodySmall)
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -60,7 +63,7 @@ fun ScheduleWidgetPicker(onDismiss: () -> Unit) {
                         })
                 }
             }
-            Text("实际格数由桌面决定。长按组件可调整尺寸；更大尺寸会显示教室和更多课程。",
+            Text("三种样式均完整显示课名与教师，并保留时间和地点。长按组件调大尺寸，文字更舒展，还可显示结束时间和更多课程。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

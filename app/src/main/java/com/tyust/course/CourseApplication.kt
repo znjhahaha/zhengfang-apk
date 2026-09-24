@@ -9,8 +9,8 @@ class CourseApplication : Application() {
     private var mainProcess = false
     override fun onCreate() {
         super.onCreate()
-        // Isolated UIDs cannot query ActivityManager on API 24-27. Exit before
-        // process discovery or any singleton that reads application storage.
+        // Keep the UID guard for isolated instrumentation. The plugin service uses
+        // a normal private process; only the main process below initializes app data.
         if (android.os.Process.myUid() != applicationInfo.uid) return
         val processName = if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName() else {
             runCatching { java.io.File("/proc/self/cmdline").inputStream().use {

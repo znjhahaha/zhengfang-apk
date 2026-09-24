@@ -47,10 +47,9 @@ class ScheduleWidgetTest {
             val roomVisible: Boolean = true, val statusVisible: Boolean = false,
             val courseTargets: Boolean = true
         )
-        // Compact cards keep both courses and start times; larger cards add details.
-        // At the minimum height, the whole card opens today's schedule for a usable touch target.
+        // Even the minimum size keeps each course's name, start time, room and own click target.
         val cases = listOf(
-            SizeCase(130, 56, "08:00", "10:00", roomVisible = false, courseTargets = false),
+            SizeCase(130, 56, "08:00", "10:00"),
             SizeCase(150, 110, "08:00", "10:00"),
             SizeCase(250, 110, "08:00", "10:00"),
             SizeCase(280, 110, "08:00–08:45", "10:00–10:45"),
@@ -188,14 +187,68 @@ class ScheduleWidgetTest {
         assertEquals("", repo.snapshot("a", "school", term.next().id).timeBase.firstWeekDate)
     }
 
-    @Test fun threeWidgetStylesKeepIndependentProvidersAndOnlyShowTodayOnTheTimeline() {
+    @Test fun threeWidgetStylesKeepIndependentProvidersAndLabelUpcomingCoursesWhenTodayIsEmpty() {
         assertEquals(3, ScheduleWidgetStyle.entries.map { it.provider }.distinct().size)
         val today = course.copy(id = "today", startPeriod = 2, endPeriod = 2)
         val tomorrow = today.copy(id = "tomorrow", day = 2)
         val state = ScheduleWidgetState.from(snapshot().copy(courses = listOf(course, today, tomorrow)), now)
-        assertEquals(listOf(course.id, today.id), ScheduleWidgetRenderer.timelineItems(state, 240, 1f).map { it.course.id })
+        assertEquals(listOf(course.id, today.id), ScheduleWidgetRenderer.timelineItems(state, 6).map { it.course.id })
         val noClassesToday = ScheduleWidgetState.from(snapshot().copy(courses = listOf(tomorrow)), now)
-        assertTrue(ScheduleWidgetRenderer.timelineItems(noClassesToday, 240, 1f).isEmpty())
+        assertEquals(listOf("tomorrow"), ScheduleWidgetRenderer.timelineItems(noClassesToday, 6).map { it.course.id })
+        assertEquals("明天", noClassesToday.primary?.dateLabel)
+    }
+
+    @Test @Config(sdk = [33]) @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyMinimumSizeKeepsFullNameTeacherTimeAndRoomVisibleWithLargeFontsAndBothThemes() {
+        val longCourse = course.copy(name = "跨学科联合研讨与实验课程", teacher = "张文博、李思远",
+            location = "主校区 明理教学楼 B302（实验机房）")
+        val state = ScheduleWidgetState.from(snapshot().copy(courses = listOf(longCourse,
+            longCourse.copy(id = "next", startPeriod = 2, endPeriod = 2))), now)
+        val fields = setOf(R.id.widget_name, R.id.widget_time, R.id.widget_location, R.id.widget_next_name,
+            R.id.widget_next_time, R.id.widget_next_location, R.id.widget_timeline_time, R.id.widget_teacher, R.id.widget_next_teacher)
+        for (font in listOf(1f, 1.3f, 1.6f, 2f)) for (theme in listOf("light", "dark")) {
+            context.getSharedPreferences(AppThemeCoordinator.PREFS, 0).edit().putString(AppThemeCoordinator.KEY, theme).apply()
+            val config = android.content.res.Configuration(context.resources.configuration).apply { fontScale = font }
+            val sized = context.createConfigurationContext(config)
+            for ((style, sizes) in listOf(
+                ScheduleWidgetStyle.Single to listOf(56 to 56, 88 to 88, 176 to 176),
+                ScheduleWidgetStyle.Double to listOf(130 to 56, 176 to 88, 280 to 128),
+                ScheduleWidgetStyle.Timeline to listOf(130 to 130, 176 to 176, 360 to 240))) {
+                for ((width, height) in sizes) {
+                    val root = ScheduleWidgetRenderer.views(sized, state, width, height, style).apply(sized, FrameLayout(sized)) as android.view.ViewGroup
+                    val density = sized.resources.displayMetrics.density
+                    root.measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec((height * density).toInt(), View.MeasureSpec.EXACTLY))
+                    root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+                    val visible = mutableListOf<TextView>()
+                    fun collect(view: View) {
+                        if (view.visibility != View.VISIBLE) return
+                        if (view is TextView && view.id in fields) visible += view
+                        if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collect(view.getChildAt(i))
+                    }
+                    collect(root)
+                    assertTrue("$style $width/$height font=$font $theme lost required fields", visible.size >= if (style == ScheduleWidgetStyle.Double) 8 else 4)
+                    for (text in visible) {
+                        val rect = android.graphics.Rect(0, 0, text.width, text.height)
+                        root.offsetDescendantRectToMyCoords(text, rect)
+                        assertTrue("$style $width/$height font=$font clips ${sized.resources.getResourceEntryName(text.id)}: $rect",
+                            text.height >= text.lineHeight && rect.top >= 0 && rect.bottom <= root.height && rect.left >= 0 && rect.right <= root.width)
+                        assertTrue(text.text.isNotBlank())
+                        val layout = requireNotNull(text.layout)
+                        assertTrue("$style $width/$height font=$font clipped ${text.text}", text.height >= layout.height)
+                        assertEquals(text.text.length, layout.getLineEnd(layout.lineCount - 1))
+                        for (line in 0 until layout.lineCount) {
+                            assertEquals("$style ellipsized ${text.text}", 0, layout.getEllipsisCount(line))
+                            assertTrue("$style line exceeds width: ${text.text}", layout.getLineWidth(line) <= text.width + 1)
+                        }
+                        if (text.id in setOf(R.id.widget_name, R.id.widget_next_name)) assertEquals(longCourse.name, text.text.toString())
+                        if (text.id in setOf(R.id.widget_teacher, R.id.widget_next_teacher)) assertEquals(longCourse.teacher, text.text.toString())
+                        if (text.id in setOf(R.id.widget_location, R.id.widget_next_location)) assertTrue(text.text.contains("B302"))
+                    }
+                }
+            }
+        }
+        assertEquals("主校区 明理教学楼 B302（实验机房）", longCourse.location)
     }
 
     @Test @Config(sdk = [33]) @GraphicsMode(GraphicsMode.Mode.NATIVE)

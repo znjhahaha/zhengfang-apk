@@ -142,6 +142,11 @@ class DampedDragAnimation(
         settleTo(targetValue, animatePress = false)
     }
 
+    /** Choose a release destination without replacing the currently drawn position. */
+    fun updateTarget(value: Float) {
+        requestedValue = value.coerceIn(valueRange)
+    }
+
     /** The finger owns position. Springs are only used after release or for a tap. */
     fun updateValue(value: Float, uptimeMillis: Long = pointerUptimeMillis ?: SystemClock.uptimeMillis()) {
         val targetValue = value.coerceIn(valueRange)

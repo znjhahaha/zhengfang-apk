@@ -23,7 +23,7 @@ class PluginCenterDeviceTest {
         val previous = appearance.themeMode
         try {
             compose.runOnIdle { appearance.updateThemeMode(com.tyust.course.manager.AppThemeMode.Light) }
-            compose.onNodeWithText("本校").assertIsDisplayed()
+            compose.onNodeWithText("发现").assertIsDisplayed()
             compose.onNodeWithText("已安装").assertIsDisplayed()
             capture("management")
             compose.onNodeWithContentDescription("更多").performClick()
@@ -76,12 +76,27 @@ class PluginCenterDeviceTest {
             val catalog = JSONObject().put("payload", payload).put("keyId", "ui-test").put("signature", sign(payload)).toString()
             try {
                 AcademicProviderRegistry.configureLocalCatalog(server.url("/catalog.json").toString(), key.toString())
-                server.enqueue(MockResponse().setBody(catalog)); server.enqueue(MockResponse().setBody(catalog)); server.enqueue(MockResponse().setBody(okio.Buffer().write(signed)))
-                compose.onNodeWithText("浏览并安装插件").performScrollTo().performClick()
+                val offline = java.util.concurrent.atomic.AtomicBoolean(false)
+                server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse = when {
+                        offline.get() -> MockResponse().setResponseCode(503)
+                        request.path == "/catalog.json" -> MockResponse().setBody(catalog)
+                        request.path == "/mock.zfplugin" -> MockResponse().setBody(okio.Buffer().write(signed))
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+                compose.activityRule.scenario.recreate()
                 compose.waitUntil(10_000) { compose.onAllNodesWithTag("catalog-install-$id").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo()
                 capture("catalog")
-                compose.onNodeWithTag("catalog-install-$id").assertIsEnabled().performClick()
+                val beforeSearch = server.requestCount
+                compose.onNodeWithTag("plugin-search").performTextInput("找不到的学校")
+                compose.onNodeWithText("没有找到匹配的插件").assertExists()
+                compose.onNodeWithTag("plugin-search").performTextReplacement("模拟 适配")
+                compose.onNodeWithTag("catalog-install-$id").assertExists()
+                org.junit.Assert.assertEquals(beforeSearch, server.requestCount)
+                compose.onNodeWithTag("plugin-search").performTextClearance()
+                compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsEnabled().performClick()
                 compose.waitUntil(15_000) { AcademicProviderRegistry.packages().active(id)?.official == true }
                 compose.waitForIdle()
                 // Installation opens details; school binding remains a deliberate action.
@@ -89,8 +104,15 @@ class PluginCenterDeviceTest {
                 compose.onNodeWithText("实际验证").assertExists()
                 compose.onNodeWithText("完成").performClick()
                 compose.waitUntil(10_000) { compose.onAllNodes(isRoot()).fetchSemanticsNodes().size == 1 }
-                compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsNotEnabled()
+                compose.onNodeWithTag("plugin-use-$id").performScrollTo().assertIsEnabled()
                 capture("installed")
+                offline.set(true)
+                compose.onNodeWithContentDescription("更多").performClick()
+                compose.onNodeWithText("刷新插件目录").performClick()
+                compose.onNodeWithTag("plugin-list").performScrollToIndex(0)
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("刷新失败，仍可浏览已保存的插件").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithTag("plugin-use-$id").assertExists()
+                capture("catalog-offline")
             } finally {
                 AcademicProviderRegistry.packages().deactivate(id)
                 prefs.edit().putString("url", oldUrl).putString("key", oldKey).commit()

@@ -75,7 +75,8 @@ __pycache__/
 /web-app/
 /AndroidLiquidGlass/
 /tools/
-/docs/
+/docs/*
+!/docs/images/
 /pic/
 /api.md
 /退课API技术文档.md

@@ -430,6 +430,7 @@ fun LiquidSegmentedControl(
     verticalInset: Dp? = null,
     restingRefraction: Float? = null,
     showTrack: Boolean = true,
+    refractLabels: Boolean = true,
     labelContent: (@Composable (index: Int, selection: Float, color: Color) -> Unit)? = null
 ) {
     if (options.isEmpty()) return
@@ -443,8 +444,8 @@ fun LiquidSegmentedControl(
     val isLightTheme = LocalWallpaperAppearanceColors.current.usesDarkForeground
     val trackShape = RoundedCornerShape(percent = 50)
     val indicatorShape = RoundedCornerShape(percent = 50)
-    // Keep labels in the optical source on both paths. API 31/32 refreshes this
-    // small overlay independently from the more expensive page background.
+    // Animated date labels stay live above the lens. Other controls keep labels
+    // in a small optical overlay, independent of the more expensive page background.
     val segmentLabelsSnapshot = remember { GlassLensContentSnapshot() }
     val segmentsBackdrop = rememberLayerBackdrop(onDraw = { segmentLabelsSnapshot.draw(this) })
     val animationScope = rememberCoroutineScope()
@@ -560,10 +561,10 @@ fun LiquidSegmentedControl(
             }
         )
         val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
-        val indicatorBackdrop = if (glassBackdrop != null) {
+        val indicatorBackdrop = if (glassBackdrop != null && refractLabels) {
             rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)
         } else {
-            null
+            glassBackdrop
         }
 
         // API 31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 GlassLens.kt）。
@@ -576,11 +577,11 @@ fun LiquidSegmentedControl(
             // 标签带上选项文字：屏幕上同时有多个分段控件，且尺寸可能相同
             // （登录页的「密码登录/Cookie登录」与课程页的「可选/已选」都是 381x126），
             // 只按尺寸命名会互相覆盖。
-            rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme,
+            rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme, refractLabels,
                 freshness = LocalPageGlassFreshness.current,
                 rasterizeOverlayOnCpu = true,
                 overlaySource = { coords ->
-                    segmentLabelsSnapshot.draw(this, coords)
+                    if (refractLabels) segmentLabelsSnapshot.draw(this, coords)
                 }) { coords ->
                 with(glassBackdrop) { drawBackdrop(lensDensity, coords, null) }
             }
@@ -798,7 +799,7 @@ fun LiquidSegmentedControl(
                     }
                 )
         ) {
-            segmentLabels()
+            if (refractLabels || glassBackdrop == null) segmentLabels()
         }
 
         val indicatorBaseModifier = Modifier
@@ -811,6 +812,7 @@ fun LiquidSegmentedControl(
             }
 
         if (glassBackdrop != null && indicatorBackdrop != null) {
+            if (refractLabels) {
             // 专供滑块折射采样的隐藏层：染成主色后，透镜里浮出的就是饱和蓝字，
             // 滑块表面因此可以做到几乎透明，不必靠白色填充去制造存在感。
             val labelTint = ColorFilter.tint(if (enabled) MaterialTheme.colorScheme.primary
@@ -857,6 +859,7 @@ fun LiquidSegmentedControl(
                         )
                     }
                 }
+            }
             }
 
             Box(
@@ -1031,6 +1034,9 @@ fun LiquidSegmentedControl(
             )
         }
 
+        // Child graphics layers animate without rerecording an ancestor Picture.
+        // Keep changing dates in the foreground so a frozen glyph cannot cover them.
+        if (!refractLabels && glassBackdrop != null) segmentLabels()
     }
 }
 

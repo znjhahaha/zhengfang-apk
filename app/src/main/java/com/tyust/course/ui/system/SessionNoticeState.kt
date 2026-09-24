@@ -17,6 +17,7 @@ class SessionNoticeState {
         var next = mutableState.value.takeIf { it.token == session.token } ?: SessionNoticeSnapshot(session.token)
         next = when {
             !session.expired -> SessionNoticeSnapshot(session.token)
+            session.expiryFeedback == com.tyust.course.manager.RequestFeedback.Silent -> next.copy(visible = false)
             !needsLogin -> next.copy(visible = false)
             canPresent && !next.shown -> next.copy(shown = true, visible = true)
             else -> next

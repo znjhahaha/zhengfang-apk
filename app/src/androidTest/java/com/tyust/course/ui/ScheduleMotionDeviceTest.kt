@@ -180,6 +180,26 @@ class ScheduleMotionDeviceTest {
         compose.onNodeWithText("第 5 周").assertIsDisplayed()
     }
 
+    @Test fun calendarResolutionKeepsTheRequestedWeekWhenThePagerIsRecreated() {
+        val date = mutableStateOf<String?>(null)
+        val week = mutableIntStateOf(1)
+        compose.setContent {
+            CourseSelectorTheme {
+                LaunchedEffect(date.value) { if (date.value != null) week.intValue = 6 }
+                Box(Modifier.size(360.dp, 640.dp)) {
+                    ScheduleScreen(week.intValue, emptyList(), false, periodCount = 4,
+                        onWeekChange = { week.intValue = it }, onCourseClick = {},
+                        firstWeekDate = date.value, weekRequestKey = date.value,
+                        displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false))
+                }
+            }
+        }
+        compose.runOnIdle { date.value = "2026-09-07" }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(6, week.intValue) }
+        compose.onNodeWithText("第 6 周").assertIsDisplayed()
+    }
+
     @Test fun restoredScrollSurvivesAnInitiallyShortLayout() {
         val periods = mutableIntStateOf(4)
         compose.setContent {
@@ -199,6 +219,118 @@ class ScheduleMotionDeviceTest {
         compose.runOnIdle { periods.intValue = 12 }
         compose.waitForIdle()
         assertEquals(600f, scrollOffset(), 1f)
+    }
+
+    @Test fun timetableBottomAndScrollRangeStayStableAcrossContentRefreshAndReverseDrag() {
+        val courses = mutableStateOf(listOf(ScheduleCourseUi("数学", "教师", "A101", 1, 1, 2, "1-16周", Color.Blue)))
+        compose.setContent {
+            CourseSelectorTheme {
+                Box(Modifier.size(360.dp, 640.dp)) {
+                    ScheduleScreen(1, courses.value, false, onWeekChange = {}, onCourseClick = {},
+                        firstWeekDate = "2026-09-07", displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false))
+                }
+            }
+        }
+        fun range() = compose.onNodeWithTag("schedule-grid-1").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        repeat(5) { compose.onNodeWithTag("schedule-grid-1").performTouchInput { swipeUp() } }
+        val bottom = range().maxValue()
+        assertEquals(bottom, range().value(), 2f)
+        compose.runOnIdle { courses.value = courses.value.map { it.copy(name = "很长的课程名称与跨学科联合研讨实验项目及综合实践", teacher = "张文博、李思远、王若宁",
+            location = "新校区 明理教学楼 B302 多媒体教室", isCurrent = true) } }
+        compose.waitForIdle()
+        val expandedBottom = range().maxValue()
+        assertTrue("Complete metadata may grow the grid", expandedBottom > bottom)
+        assertEquals("Refresh must preserve the bottom anchor without another gesture", expandedBottom, range().value(), 2f)
+        repeat(3) {
+            compose.onNodeWithTag("schedule-grid-1").performTouchInput { swipeUp() }
+            assertEquals(expandedBottom, range().maxValue(), 2f)
+            assertEquals(expandedBottom, range().value(), 2f)
+        }
+        compose.onNodeWithTag("schedule-grid-1").performTouchInput { swipeDown() }
+        assertTrue(range().value() < expandedBottom)
+        val stopped = range().value()
+        compose.mainClock.advanceTimeBy(500)
+        assertEquals(stopped, range().value(), 2f)
+    }
+
+    @Test fun userDragCancelsPendingRestorationBeforeADataLayoutGrows() {
+        val periods = mutableIntStateOf(8)
+        compose.setContent {
+            CourseSelectorTheme {
+                Box(Modifier.size(360.dp, 640.dp)) {
+                    ScheduleScreen(1, emptyList(), false, periodCount = periods.intValue,
+                        onWeekChange = {}, onCourseClick = {}, firstWeekDate = "2026-09-07",
+                        displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false),
+                        positionKey = "drag-fixture", positionCalendar = "calendar",
+                        restoredPosition = com.tyust.course.schedule.ScheduleViewPosition(1, 1, 600, 0, "calendar"))
+                }
+            }
+        }
+        fun offset() = compose.onNodeWithTag("schedule-grid-1").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNodeWithTag("schedule-grid-1").performTouchInput { swipeDown() }
+        val dragged = offset()
+        compose.runOnIdle { periods.intValue = 12 }
+        compose.mainClock.advanceTimeBy(500)
+        assertEquals(dragged, offset(), 2f)
+    }
+
+    @Test fun todayCancelsAnOlderPendingScrollRestoration() {
+        val periods = mutableIntStateOf(2)
+        var returns = 0
+        compose.setContent {
+            CourseSelectorTheme {
+                Box(Modifier.size(360.dp, 640.dp)) {
+                    ScheduleScreen(1, emptyList(), false, periodCount = periods.intValue,
+                        onWeekChange = {}, onCourseClick = {}, firstWeekDate = "2026-09-07",
+                        now = java.util.GregorianCalendar(2026, 8, 8).timeInMillis,
+                        selectedDay = 1, onTodayClick = { returns++ },
+                        displayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(dayView = false),
+                        positionKey = "today-fixture", positionCalendar = "calendar",
+                        restoredPosition = com.tyust.course.schedule.ScheduleViewPosition(1, 1, 600, 0, "calendar"))
+                }
+            }
+        }
+        fun offset() = compose.onNodeWithTag("schedule-grid-1").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue("The saved offset must still be waiting for the initial layout", offset() < 600f)
+        compose.onNodeWithTag("schedule-today").performClick()
+        assertEquals(0f, offset(), 1f)
+        compose.runOnIdle { periods.intValue = 12 }
+        compose.mainClock.advanceTimeBy(500)
+        assertEquals(0f, offset(), 1f)
+        assertEquals(1, returns)
+    }
+
+    @Test fun numberCarryMonthChangeAndRapidReversalKeepTheirAllocatedWidth() {
+        val value = mutableStateOf("9.99")
+        val direction = mutableLongStateOf(1)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CourseSelectorTheme {
+                Box(Modifier.size(320.dp, 160.dp).testTag("schedule-navigation-frame")) {
+                    AnimatedNumberText(value.value, Modifier.testTag("number-test"), directionKey = direction.longValue,
+                        style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                }
+            }
+        }
+        val width = compose.onNodeWithTag("number-test").fetchSemanticsNode().boundsInRoot.width
+        captureFrame("number-carry-start")
+        compose.runOnIdle { value.value = "10.01"; direction.longValue = 2 }
+        compose.mainClock.advanceTimeBy(80)
+        captureFrame("number-carry-middle")
+        compose.runOnIdle { value.value = "9.99"; direction.longValue = 1 }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNodeWithText("9.99").assertIsDisplayed()
+        assertEquals(width, compose.onNodeWithTag("number-test").fetchSemanticsNode().boundsInRoot.width, 1f)
+        compose.runOnIdle { value.value = "9月30日"; direction.longValue = 30 }
+        compose.mainClock.advanceTimeBy(300)
+        val dateWidth = compose.onNodeWithTag("number-test").fetchSemanticsNode().boundsInRoot.width
+        compose.runOnIdle { value.value = "10月1日"; direction.longValue = 31 }
+        compose.mainClock.advanceTimeBy(80)
+        captureFrame("number-month-middle")
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNodeWithText("10月1日").assertIsDisplayed()
+        assertEquals(dateWidth, compose.onNodeWithTag("number-test").fetchSemanticsNode().boundsInRoot.width, 1f)
+        captureFrame("number-month-end")
     }
 
     @Test fun nestedScrollHandsOnlyUnconsumedDownwardMovementToSheet() {

@@ -42,9 +42,9 @@ class ScheduleSingleWidgetProvider : ScheduleWidgetProvider()
 class ScheduleTimelineWidgetProvider : ScheduleWidgetProvider()
 
 enum class ScheduleWidgetStyle(val title: String, val description: String, val provider: Class<out AppWidgetProvider>) {
-    Single("简洁单课", "1×1 · 当前或下一节课程，保留名称与时间", ScheduleSingleWidgetProvider::class.java),
-    Double("双课程", "2×1 · 两门课程并排，拉大后显示教室", ScheduleWidgetProvider::class.java),
-    Timeline("今日时间轴", "2×2 · 今日课程时间轴，拉大可查看更多", ScheduleTimelineWidgetProvider::class.java)
+    Single("简洁单课", "1×1 · 完整课名与教师，保留时间、地点", ScheduleSingleWidgetProvider::class.java),
+    Double("双课程", "2×1 · 两课并排，课名、教师完整显示", ScheduleWidgetProvider::class.java),
+    Timeline("课程时间轴", "2×2 · 完整课名与教师，拉大查看更多课程", ScheduleTimelineWidgetProvider::class.java)
 }
 
 /** Only local cache reads and an inexact, non-wakeup boundary alarm; never performs authentication. */

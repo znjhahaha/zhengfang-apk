@@ -53,12 +53,12 @@ class ScheduleAgendaComponentDeviceTest {
                 }
             }
         }
-        compose.onNodeWithText("2 门重叠 · 点按查看").performClick()
+        compose.onNodeWithText("大学体育").performClick()
         compose.onNodeWithText("重叠课程").assertIsDisplayed()
         compose.onNodeWithTag("schedule-day-course-seminar").performClick()
         compose.runOnIdle { assertEquals("seminar", chosen); weekend.value = false }
         compose.onNodeWithTag("schedule-course-weekend").assertDoesNotExist()
-        compose.onNodeWithText("2 门重叠 · 点按查看").performClick()
+        compose.onNodeWithText("大学体育").performClick()
         compose.onNodeWithTag("schedule-day-course-pe").performClick()
         compose.runOnIdle { assertEquals("pe", chosen) }
         capture("agenda-overlap")
@@ -99,7 +99,7 @@ class ScheduleAgendaComponentDeviceTest {
                 assertTrue(title.height >= title.lineHeight)
                 assertTrue(view.findViewById<View>(R.id.widget_header).isClickable)
                 assertTrue(view.findViewById<View>(R.id.widget_course).isClickable)
-                val two = size.first >= 250 && size.second >= 110 * font
+                val two = true
                 assertEquals(if (two) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.widget_next).visibility)
                 val fields = listOf(R.id.widget_name, R.id.widget_location, R.id.widget_time) +
                     if (two) listOf(R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time) else emptyList()
@@ -108,10 +108,11 @@ class ScheduleAgendaComponentDeviceTest {
                     assertTrue("Clipped widget field $id at $size/font$font: height=${field.height}, line=${field.lineHeight}, bottom=${field.bottom}, parent=${(field.parent as View).height}",
                         field.height >= field.lineHeight && field.bottom <= (field.parent as View).height)
                 }
-                assertEquals("东区体育馆", view.findViewById<TextView>(R.id.widget_location).text.toString())
+                assertTrue(view.findViewById<TextView>(R.id.widget_location).text.isNotBlank())
+                assertTrue(view.findViewById<View>(R.id.widget_course).contentDescription.contains("东区体育馆"))
                 if (two) {
                     assertEquals("计算机网络", view.findViewById<TextView>(R.id.widget_next_name).text.toString())
-                    assertEquals("东区体育馆", view.findViewById<TextView>(R.id.widget_next_location).text.toString())
+                    assertTrue(view.findViewById<TextView>(R.id.widget_next_location).text.isNotBlank())
                 }
             }
             capture("widget-${size.first}-${size.second}-font$font")
@@ -121,7 +122,7 @@ class ScheduleAgendaComponentDeviceTest {
     @Test fun allWidgetStylesFitSmallSizesLargeFontsAndBothThemes() {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm").parse("2026-09-07 08:10")!!.time
         val base = ScheduleTimeBase("2026-09-07", mapOf(1 to "08:00", 2 to "10:00"), mapOf(1 to "08:45", 2 to "10:45"))
-        val first = ScheduleCourseRecord("first", "高等数学", "", "博学楼 A205", 1, 1, 1, "1-16周")
+        val first = ScheduleCourseRecord("first", "跨学科联合研讨与实验课程", "张文博、李思远", "主校区 明理教学楼 B302（实验机房）", 1, 1, 1, "1-16周")
         val state = ScheduleWidgetState.from(ScheduleSnapshot("fixture", "fixture", "2026-2027-1",
             listOf(first, first.copy(id = "next", name = "计算机网络", startPeriod = 2, endPeriod = 2)), base, now, true), now)
         var style by mutableStateOf(ScheduleWidgetStyle.Single)
@@ -146,7 +147,12 @@ class ScheduleAgendaComponentDeviceTest {
                 }
             }
             for (night in listOf(false, true)) for (kind in ScheduleWidgetStyle.entries) {
-                for ((dimensions, scale) in listOf((280 to 240) to 1f, (150 to 110) to 2f, (360 to 360) to 1.6f)) {
+                val minimum = when (kind) {
+                    ScheduleWidgetStyle.Single -> 56 to 56
+                    ScheduleWidgetStyle.Double -> 130 to 56
+                    ScheduleWidgetStyle.Timeline -> 130 to 130
+                }
+                for ((dimensions, scale) in listOf(minimum to 1f, minimum to 1.6f, (280 to 240) to 1f, (150 to 110) to 2f, (360 to 360) to 1.6f)) {
                     compose.runOnIdle {
                         appearance.receiveThemeMode(if (night) com.tyust.course.manager.AppThemeMode.Dark else com.tyust.course.manager.AppThemeMode.Light)
                         dark = night; style = kind; size = dimensions; font = scale
@@ -158,10 +164,25 @@ class ScheduleAgendaComponentDeviceTest {
                             if (view is TextView && view.text.isNotEmpty()) {
                                 assertTrue("Clipped ${view.text} in $kind at $dimensions/$scale", view.height >= view.lineHeight)
                                 assertTrue("Overflow ${view.text} in $kind", view.bottom <= (view.parent as View).height)
+                                val required = view.id in setOf(R.id.widget_name, R.id.widget_next_name, R.id.widget_teacher,
+                                    R.id.widget_next_teacher, R.id.widget_time, R.id.widget_next_time,
+                                    R.id.widget_location, R.id.widget_next_location, R.id.widget_timeline_time)
+                                if (required) {
+                                    val layout = requireNotNull(view.layout)
+                                    assertTrue("Clipped full text ${view.text} at $dimensions/$scale", view.height >= layout.height)
+                                    assertEquals(view.text.length, layout.getLineEnd(layout.lineCount - 1))
+                                    for (line in 0 until layout.lineCount) {
+                                        assertEquals("Ellipsized ${view.text}", 0, layout.getEllipsisCount(line))
+                                        assertTrue("Line wider than field: ${view.text}", layout.getLineWidth(line) <= view.width + 1)
+                                    }
+                                    if (view.id in setOf(R.id.widget_teacher, R.id.widget_next_teacher)) assertEquals(first.teacher, view.text.toString())
+                                }
                             }
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) check(view.getChildAt(i))
                         }
                         check(requireNotNull(rendered))
+                        assertEquals(first.name, rendered!!.findViewById<TextView>(R.id.widget_name).text.toString())
+                        assertEquals(View.VISIBLE, rendered!!.findViewById<View>(R.id.widget_teacher).visibility)
                         assertTrue(rendered!!.findViewById<View>(R.id.widget_course).isClickable)
                     }
                     capture("style-${kind.name}-${if (night) "dark" else "light"}-${dimensions.first}-${dimensions.second}-font$scale")

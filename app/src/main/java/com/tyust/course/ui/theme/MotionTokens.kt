@@ -15,16 +15,19 @@ import androidx.compose.animation.core.tween
  */
 object MotionDuration {
     /** Immediate feedback for micro-interactions */
-    const val Fast = 100
+    const val Fast = 120
 
     /** Standard UI transitions */
-    const val Medium = 200
+    const val Medium = 220
+
+    /** Only the changed digits move; container geometry stays fixed. */
+    const val Number = 180
 
     /** Emphasized, attention-grabbing transitions */
     const val Slow = 400
 
     /** Tab switching transitions */
-    const val TabTransition = 180
+    const val TabTransition = 220
 
     /** Dialog enter/exit animations */
     const val DialogEnter = 400
