@@ -26,6 +26,7 @@ object ScheduleWidgetNavigation {
         action: ScheduleWidgetAction = if (course == null) ScheduleWidgetAction.Today else ScheduleWidgetAction.Course,
         startsAt: Long? = null): Intent =
         Intent(context, MainActivity::class.java).setAction(ACTION)
+            .putExtra("pageId", com.tyust.course.academic.plugin.PluginPageRegistry.SCHEDULE)
             .setData(Uri.Builder().scheme("course-schedule").authority("today")
                 .appendQueryParameter("account", account).appendQueryParameter("school", school)
                 .appendQueryParameter("term", term).appendQueryParameter("target", action.name).apply {

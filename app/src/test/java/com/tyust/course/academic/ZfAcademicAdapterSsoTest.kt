@@ -205,7 +205,7 @@ class ZfAcademicAdapterSsoTest {
             academicSystem = AcademicSystem.ZF.id
             allowedAcademicHosts.add(domain)
         }
-        val gateway = AcademicPasswordLoginGateway(school)
+        val gateway = LegacyProtocolFixtures.gateway(school)
         try {
             block(teaching, cas, gateway, Events(), school)
         } finally {

@@ -16,26 +16,36 @@ import java.security.PublicKey
 import java.util.concurrent.TimeUnit
 
 /** Catalog and downloads are verified using the app's pinned signing key. */
-class PluginCatalogClient(private val endpoint: String, private val keys: Map<String, PublicKey>, private val store: PluginPackageStore) {
+class PluginCatalogClient(private val endpoint: String, private val keys: Map<String, PublicKey>, private val store: PluginPackageStore, private val fallbackEndpoint: String? = null) {
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).callTimeout(45, TimeUnit.SECONDS).build()
 
-    suspend fun check(): List<JSONObject> = withContext(Dispatchers.IO) {
-        val origin = endpoint.toHttpUrlOrNull() ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效目录地址")
-        val catalog = PluginJson.parse(download(origin, origin, PluginLimits.PACKAGE_BYTES).toString(Charsets.UTF_8))
+    suspend fun check(): List<JSONObject> = verifiedCatalog().second
+    private suspend fun verifiedCatalog(): Pair<HttpUrl, List<JSONObject>> = withContext(Dispatchers.IO) {
+        var origin = endpoint.toHttpUrlOrNull() ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效目录地址")
+        val bytes = try { download(origin, origin, PluginLimits.PACKAGE_BYTES) } catch (missing: CatalogMissing) {
+            val fallback = fallbackEndpoint?.toHttpUrlOrNull() ?: throw missing
+            origin = fallback
+            download(fallback, fallback, PluginLimits.PACKAGE_BYTES)
+        }
+        val catalog = PluginJson.parse(bytes.toString(Charsets.UTF_8))
         val payload = catalog.getJSONObject("payload")
         PluginPackageVerifier.verifySignature(payload, catalog, keys)
         if (payload.getInt("apiVersion") !in 1..PluginLimits.API_VERSION) throw PluginException(PluginErrorCode.UNSUPPORTED, "目录版本不受支持")
-        PluginJson.objects(payload.getJSONArray("entries")).also { entries ->
+        val entries = PluginJson.objects(payload.getJSONArray("entries"))
+        entries.also {
             if (entries.size > 1000 || entries.map { it.getString("id") }.distinct().size != entries.size)
                 throw PluginException(PluginErrorCode.VALIDATION_FAILED, "目录数量超限或标识重复")
+            if (payload.optInt("catalogVersion", 1) !in 1..2) throw PluginException(PluginErrorCode.UNSUPPORTED, "目录格式版本不受支持")
             store.rememberCatalog(catalog)
         }
+        val installed = (AcademicProviderRegistry.knownPackages() + store.list()).associateBy { it.manifest.id }.values.map { it.manifest }
+        origin to entries.mapNotNull { PluginUpdatePolicy.select(it, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities(), installed) }
     }
-    suspend fun update(id: String): PluginPackage = withContext(Dispatchers.IO) {
-        val entry = check().firstOrNull { it.getString("id") == id }
+    suspend fun update(id: String, stageOnly: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
+        val (origin, entries) = verifiedCatalog()
+        val entry = entries.firstOrNull { it.getString("id") == id }
             ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "目录未提供此适配")
-        val origin = endpoint.toHttpUrlOrNull()!!
         val url = origin.resolve(entry.getString("url")) ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效包地址")
         val bytes = download(url, origin, PluginLimits.PACKAGE_BYTES)
         if (PluginJson.sha256(bytes) != entry.getString("sha256")) throw PluginException(PluginErrorCode.BAD_SIGNATURE, "下载内容摘要不匹配")
@@ -51,7 +61,7 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
         if (manifestJson.getString("id") != id || manifestJson.getString("version") != entry.getString("version"))
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "目录与包身份不一致")
         currentCoroutineContext().ensureActive()
-        store.install(bytes, false)
+        store.install(bytes, false, stageOnly)
     }
     private suspend fun download(initial: HttpUrl, origin: HttpUrl, limit: Int): ByteArray {
         var url = initial
@@ -63,6 +73,7 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
             if (response.code in 300..399) url = url.resolve(response.location.orEmpty())
                 ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效跳转")
             else {
+                if (response.code == 404) throw CatalogMissing()
                 if (response.code !in 200..299) throw PluginException(PluginErrorCode.NETWORK_RETRYABLE, "下载失败：${response.code}")
                 return response.bytes
             }
@@ -85,6 +96,8 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
         })
     }
 }
+
+private class CatalogMissing : java.io.IOException("插件目录尚未提供")
 
 internal fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray {
     val output = java.io.ByteArrayOutputStream()

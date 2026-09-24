@@ -14,13 +14,13 @@ class BundledAcademicProvidersTest {
 
     @Test fun packagesAreCompleteValidatedProgramsBundledWithApp() {
         val packages = BundledAcademicProviders.load { File(assets, it).readBytes() }
-        assertEquals(2, packages.size)
+        assertEquals(6, packages.size)
         for ((_, pkg) in packages) {
             assertTrue(pkg.bundled)
             assertFalse(pkg.official) // Bundling does not forge a catalog signature.
             assertTrue(pkg.source.contains("globalThis.plugin"))
             assertTrue(pkg.manifest.capabilities.containsAll(listOf("auth.start", "auth.resume", "auth.validate", "study.terms",
-                "study.schedule", "study.calendar", "study.grades", "study.exams", "selection.catalog", "selection.enrolled")))
+                "study.schedule", "study.grades", "study.exams", "selection.catalog", "selection.enrolled")))
         }
     }
 

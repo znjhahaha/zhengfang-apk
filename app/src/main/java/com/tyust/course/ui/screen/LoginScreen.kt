@@ -73,6 +73,7 @@ fun LoginScreen(
     onOpenWebView: () -> Unit = {},
     onSchoolAdded: () -> Unit = {},
     onDemoMode: () -> Unit = {},
+    onServiceCenter: () -> Unit = {},
     onSchoolAdaptation: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     isLoading: Boolean = false,
@@ -517,6 +518,7 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        TextButton(onClick = onServiceCenter, modifier = Modifier.fillMaxWidth()) { Text("打开服务中心与通用工具") }
                         // Demo Mode Button
                         TextButton(
                             onClick = { onDemoMode() },

@@ -13,7 +13,9 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Bridges the new suspend adapter to the existing login screen contract. */
-class AcademicPasswordLoginGateway(private val school: SchoolConfig) : PasswordLoginGateway {
+class AcademicPasswordLoginGateway internal constructor(private val school: SchoolConfig,
+    private val createAdapter: (SchoolConfig, String) -> AcademicProtocolAdapter) : PasswordLoginGateway {
+    constructor(school: SchoolConfig) : this(school, AcademicGatewayFactory::create)
     @Volatile private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var adapter: AcademicProtocolAdapter? = null
     var studentName: String = ""
@@ -36,7 +38,7 @@ class AcademicPasswordLoginGateway(private val school: SchoolConfig) : PasswordL
             val result = loginResult {
                 if (school.academicSystem == AcademicSystem.AUTO.id && !com.tyust.course.academic.plugin.AcademicProviderRegistry.hasBinding(school) && AcademicGatewayFactory.detect(school, key) == null)
                     throw AcademicException(AcademicStatus.PAGE_CHANGED, "无法识别教务系统，请在学校配置中手动选择")
-                val created = AcademicGatewayFactory.create(school, key)
+                val created = createAdapter(school, key)
                 currentCoroutineContext().ensureActive()
                 adapter = created
                 created.login(Credentials(username, password))

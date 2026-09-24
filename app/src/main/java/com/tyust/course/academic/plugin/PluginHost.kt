@@ -23,9 +23,9 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /** Host-side authority. Values supplied by the JS context are never used for account selection. */
-class PluginHost(private val operation: PluginOperation, private val storageRoot: File) {
+class PluginHost(private val operation: PluginOperation, private val storageRoot: File, cookies: CookieJar = operation.session.cookies) {
     private val policy = PluginNetworkPolicy(operation.manifest.network)
-    private val client = OkHttpClient.Builder().cookieJar(operation.session.cookies)
+    private val client = OkHttpClient.Builder().cookieJar(cookies)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS).build()
@@ -35,10 +35,15 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
 
     @Synchronized fun call(method: String, payload: JSONObject): JSONObject {
         operation.requireActive()
-        if (operation.method.substringBefore('.') in setOf("ui", "task", "data") && method != "capabilities.list" && method != "log" && !method.startsWith("crypto."))
+        if (operation.method.substringBefore('.') in setOf("ui", "task", "data", "command") && method != "capabilities.list" && method != "log" && !method.startsWith("crypto."))
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "原生插件须通过效果调用宿主能力")
         if (operation.method == "__inspect" && !method.startsWith("crypto."))
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "包加载检查不允许网络或存储副作用")
+        if (operation.manifest.isNative && operation.method.substringBefore('.') in setOf("services", "workflow")) {
+            val permission = when { method == "http" -> "network"; method.startsWith("storage.") -> "storage"; else -> null }
+            if (permission != null && permission !in operation.manifest.permissions)
+                throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务提供方未声明 $permission 权限")
+        }
         if (++calls > 2000) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "宿主调用次数超过上限")
         val value: Any? = when {
             method == "http" -> http(payload)
@@ -79,8 +84,16 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
         val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
-        val academicToken = operation.manifest.json.optInt("apiVersion") == 3 &&
-            operation.manifest.json.optString("kind") in setOf("independent", "extension")
+        val academicToken = operation.manifest.apiVersion == 3 &&
+            (operation.manifest.kind in setOf("independent", "extension") || operation.manifest.isNative && operation.manifest.isAcademic && operation.method.substringBefore('.') in setOf("auth", "study", "selection"))
+        val authScope = if (payload.has("authScope")) {
+            if (!academicToken || purpose != "auth" || payload.optJSONObject("authScope") == null) invalid("认证范围仅支持 API 3 教务认证")
+            PluginAuthScope(payload.getJSONObject("authScope")).also {
+                policy.requireAllowed(it.login, "GET", "auth", null)
+                policy.requireAllowed(it.service, "GET", "auth", null)
+            }
+        } else null
+        val transport = if (academicToken) client.newBuilder().cookieJar(PluginAcademicCookies(operation.session, operation.manifest.id, authScope) { operation.requireActive() }).build() else client
         if (payload.has("sameOriginReferer") &&
             (payload.opt("sameOriginReferer") !is Boolean || !academicToken)) invalid("同源 Referer 仅支持 API 3 教务插件")
         val sameOriginReferer = payload.optBoolean("sameOriginReferer", false)
@@ -126,6 +139,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         var callbackFragment: String? = null
         while (true) {
             operation.requireActive()
+            authScope?.requireAllowed(url, method)
             policy.requireAllowed(url, method, purpose, form)
             val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
             if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
@@ -141,7 +155,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 builder.post(body)
             }
             if (purpose == "mutation") operation.markMutation()
-            val call = client.newCall(builder.build())
+            val call = transport.newCall(builder.build())
             operation.register(call)
             try {
                 call.execute().use { response ->
@@ -154,11 +168,12 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         if (method == "POST" && response.code in setOf(307, 308)) invalid("不能自动重放 POST 跳转")
                         val resolved = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
                         val next = PluginRedirects.upgradeToHttps(url, resolved, upgradeHttpRedirects)
+                        authScope?.requireAllowed(next, "GET")
                         if ((authorization != null || token != null) && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
                             throw PluginException(PluginErrorCode.UNTRUSTED_URL, "认证令牌不能随跳转发送到其他站点")
                         if (boundToken != null && cookieToken(next) != boundToken)
                             throw PluginException(PluginErrorCode.UNTRUSTED_URL, "Cookie 认证范围不能随跳转变化")
-                        if (url.isHttps && !next.isHttps) throw PluginException(PluginErrorCode.UNTRUSTED_URL, "不允许 HTTPS 降级")
+                        if (url.isHttps && !next.isHttps && authScope?.registeredHttpCallback(url, next) != true) throw PluginException(PluginErrorCode.UNTRUSTED_URL, "不允许 HTTPS 降级")
                         // SPA SSO callbacks carry a token in the URL fragment. It belongs to the
                         // callback result, never to the HTTP request or network-policy path.
                         if (next.fragment != null && purpose != "auth") invalid("仅认证回调允许 URL 片段")
@@ -194,13 +209,39 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     private fun store(persistent: Boolean, method: String, payload: JSONObject): Any? {
         val key = payload.getString("key")
         if (key.isEmpty() || key.length > 200) invalid("无效存储键")
-        val namespace = PluginJson.sha256((operation.session.key.schoolId + "\u0000" + operation.session.key.accountKey +
-            "\u0000" + operation.manifest.id + "\u0000" + operation.development + if (operation.manifest.isNative) "\u0000" + operation.packageDigest else "").toByteArray())
+        val identity = PluginStorageScope.session(operation.session, operation.manifest.id, operation.development)
+        val namespace = PluginStorageScope.hash(identity)
         synchronized(storeLock) {
             operation.requireActive()
             val file = AtomicFile(File(storageRoot, "$namespace.json"))
+            if (persistent) PluginLocalData.trackStorage(storageRoot, operation.manifest.id, namespace)
+            if (persistent && operation.manifest.isNative && !file.baseFile.exists()) {
+                // The early native host used a digest suffix. Import the active/previous
+                // version once into the stable account namespace; never reset on update.
+                val digests = listOf(operation.packageDigest) + runCatching { AcademicProviderRegistry.packages().lineage(operation.manifest.id) }.getOrDefault(emptyList())
+                val oldIdentity = PluginStorageScope.base(operation.session.key.schoolId, operation.session.key.accountKey, operation.manifest.id, operation.development)
+                val serverId = operation.session.key.schoolId.takeIf { it.startsWith("service:${operation.manifest.id}:") }?.removePrefix("service:${operation.manifest.id}:")
+                val legacy = digests.distinct().filter { digest ->
+                    if (serverId == null) true else {
+                        val manifest = if (digest == operation.packageDigest) operation.manifest else runCatching { AcademicProviderRegistry.packages().readDigest(digest).manifest }.getOrNull()
+                        manifest?.json?.optJSONArray("servers")?.let(PluginJson::objects)?.any {
+                            it.optString("id") == serverId && it.optString("origin").trimEnd('/') == operation.session.baseUrl.trimEnd('/')
+                        } == true
+                    }
+                }.map { AtomicFile(File(storageRoot, "${PluginStorageScope.hash(oldIdentity + "\u0000" + it)}.json")) }
+                    .firstOrNull { it.baseFile.exists() }
+                if (legacy != null) {
+                    val bytes = legacy.readFully()
+                    PluginJson.parse(String(bytes, Charsets.UTF_8))
+                    storageRoot.mkdirs(); val output = file.startWrite()
+                    try { operation.requireActive(); output.write(bytes); file.finishWrite(output) }
+                    catch (e: Exception) { file.failWrite(output); throw e }
+                    PluginLocalData.trackStorage(storageRoot, operation.manifest.id, legacy.baseFile.nameWithoutExtension)
+                }
+            }
             val states = sessionStates.getOrPut(operation.session) { mutableMapOf() }
             val stateId = "$namespace:${operation.epoch}"
+            states.keys.removeAll { !it.endsWith(":" + operation.epoch) }
             val values = if (persistent) {
                 if (file.baseFile.exists()) PluginJson.parse(String(file.readFully(), Charsets.UTF_8)) else JSONObject()
             } else states.getOrPut(stateId) { JSONObject() }
@@ -217,7 +258,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             if (persistent) {
                 storageRoot.mkdirs()
                 val output = file.startWrite()
-                try { output.write(values.toString().toByteArray()); file.finishWrite(output) }
+                try { operation.requireActive(); output.write(values.toString().toByteArray()); file.finishWrite(output) }
                 catch (e: Exception) { file.failWrite(output); throw e }
             }
             return JSONObject.NULL
@@ -250,7 +291,8 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)
     companion object {
-        private val storeLock = Any()
+        private val storeLock = PluginServiceAccounts.lock
         private val sessionStates = java.util.WeakHashMap<com.tyust.course.academic.AcademicSession, MutableMap<String, JSONObject>>()
+        internal fun clearTemporaryState(session: com.tyust.course.academic.AcademicSession) = synchronized(storeLock) { sessionStates.remove(session); Unit }
     }
 }

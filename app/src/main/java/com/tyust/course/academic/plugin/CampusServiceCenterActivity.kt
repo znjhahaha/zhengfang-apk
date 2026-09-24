@@ -23,10 +23,10 @@ import kotlinx.coroutines.withContext
 
 class CampusServiceCenterActivity : ComponentActivity() {
     private var generation by mutableIntStateOf(0)
-    override fun onResume() { super.onResume(); generation++ }
+    override fun onResume() { super.onResume(); generation++; PluginPages.refresh() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { CourseSelectorTheme { Center() } }
+        setContent { CourseSelectorTheme { GlassPageScaffold(title = "服务中心", onBack = { finish() }) { padding -> Box(Modifier.fillMaxSize().padding(padding)) { ExtensionCenterContent() } } } }
     }
     @Composable private fun Center() {
         val school = UserManager.getInstance().currentSchool

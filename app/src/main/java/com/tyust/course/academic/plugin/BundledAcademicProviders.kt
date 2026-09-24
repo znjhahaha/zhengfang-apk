@@ -14,6 +14,12 @@ object BundledAcademicProviders {
         Definition("cn.edu.sdipct.chengfang", AcademicSystem.CHENGFANG, "jwxt.sdipct.edu.cn", "authserver.sdipct.edu.cn",
             "https://authserver.sdipct.edu.cn/authserver/login?service=https%3A%2F%2Fjwxt.sdipct.edu.cn%2Fnew%2FssoLogin")
     )
+    val protocolDefinitions = listOf(
+        Definition("org.zf.protocol.zf", AcademicSystem.ZF, "school.example.test", "", ""),
+        Definition("org.zf.protocol.zf-old", AcademicSystem.ZF_OLD, "school.example.test", "", ""),
+        Definition("org.zf.protocol.qz", AcademicSystem.QZ, "school.example.test", "", ""),
+        Definition("org.zf.protocol.qz-old", AcademicSystem.QZ_OLD, "school.example.test", "", "")
+    )
 
     fun detect(input: String): Definition? {
         val url = input.trim().let { if (it.contains("://")) it else "https://$it" }.toHttpUrlOrNull() ?: return null
@@ -36,9 +42,10 @@ object BundledAcademicProviders {
         val index = JSONObject(readAsset("bundled-academic/index.json").toString(Charsets.UTF_8))
         require(index.getInt("format") == 1)
         val entries = PluginJson.objects(index.getJSONArray("entries"))
-        require(entries.size == definitions.size && entries.map { it.getString("id") }.toSet() == definitions.map { it.id }.toSet())
+        val allDefinitions = definitions + protocolDefinitions
+        require(entries.size == allDefinitions.size && entries.map { it.getString("id") }.toSet() == allDefinitions.map { it.id }.toSet())
         val schema = PluginSchema(JSONObject(readAsset("academic-plugin/manifest.schema.json").toString(Charsets.UTF_8)))
-        return definitions.associate { definition ->
+        return allDefinitions.associate { definition ->
             val entry = entries.single { it.getString("id") == definition.id }
             val asset = "${definition.system.id}.eduplugin"
             require(entry.getString("asset") == asset && entry.getString("type") == definition.system.id)

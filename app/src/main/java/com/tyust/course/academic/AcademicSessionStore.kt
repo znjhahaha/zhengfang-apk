@@ -47,6 +47,7 @@ class AcademicSession internal constructor(
     private val epochCounter = AtomicLong(1L)
     private val operationMutex = Mutex()
     private val requestMutex = Mutex()
+    private val pluginAuthCookies = mutableMapOf<String, AcademicCookieJar>()
     private var lastRequestStarted: Long? = null
     @Volatile var retired: Boolean = false
         private set
@@ -57,6 +58,8 @@ class AcademicSession internal constructor(
         synchronized(this) {
             epoch = epochCounter.incrementAndGet()
             cookies.clear()
+            pluginAuthCookies.values.forEach { it.retire() }
+            pluginAuthCookies.clear()
         }
     }
 
@@ -68,6 +71,14 @@ class AcademicSession internal constructor(
 
     fun requireActive() {
         if (retired) throw kotlinx.coroutines.CancellationException("Session replaced")
+    }
+    /** External identity-provider cookies never join the teaching cookie jar. */
+    internal fun authenticationCookies(namespace: String): AcademicCookieJar = synchronized(this) {
+        requireActive()
+        pluginAuthCookies[namespace] ?: run {
+            check(pluginAuthCookies.size < 32) { "Too many authentication authorities" }
+            AcademicCookieJar().also { pluginAuthCookies[namespace] = it }
+        }
     }
 
     /** Monotonic, cancellable pacing shared by transports for this account's session. */

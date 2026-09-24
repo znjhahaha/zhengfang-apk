@@ -90,16 +90,16 @@ abstract class PluginSchoolBindingChecks {
         catch (error: PluginException) { assertEquals(PluginErrorCode.BAD_SIGNATURE, error.code) }
         val pkg = install("test.binding.official")
         val alias = school("/portal", "ALIAS.EXAMPLE.TEST.")
-        assertNull(AcademicProviderRegistry.resolve(alias))
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(alias)?.manifest?.id)
         val catalog = aliases(pkg.manifest.id)
         store.rememberCatalog(catalog)
         assertEquals(pkg.digest, AcademicProviderRegistry.resolve(alias)?.digest)
-        assertNull(AcademicProviderRegistry.resolve(school("/portal-extra", "alias.example.test")))
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(school("/portal-extra", "alias.example.test"))?.manifest?.id)
         catalog.getJSONObject("payload").getJSONArray("entries").getJSONObject(0).getJSONArray("aliases")
             .getJSONObject(0).put("host", "tampered.example.test")
         try { store.rememberCatalog(catalog); fail("Unsigned alias change was accepted") }
         catch (error: PluginException) { assertEquals(PluginErrorCode.BAD_SIGNATURE, error.code) }
-        assertNull(AcademicProviderRegistry.resolve(school("/portal", "tampered.example.test")))
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(school("/portal", "tampered.example.test"))?.manifest?.id)
         val dev = install("test.binding.development", official = false)
         store.rememberCatalog(aliases(dev.manifest.id))
         assertFalse(AcademicProviderRegistry.matches(dev, alias))
@@ -121,7 +121,8 @@ abstract class PluginSchoolBindingChecks {
         AcademicProviderRegistry.setSchoolEnabled(b.manifest.id, school, true)
         assertEquals(b.digest, AcademicProviderRegistry.resolve(school)?.digest)
         AcademicProviderRegistry.choose(school, "builtin.zf")
-        assertNull(AcademicProviderRegistry.resolve(school))
+        // Built-in now resolves to the updatable TypeScript package.
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(school)?.manifest?.id)
         AcademicProviderRegistry.choose(school, a.manifest.id)
         assertEquals(a.digest, AcademicProviderRegistry.resolve(school)?.digest)
     }
@@ -134,13 +135,13 @@ abstract class PluginSchoolBindingChecks {
         assertEquals(a.digest, AcademicProviderRegistry.resolve(campusA)?.digest)
         assertEquals(b.digest, AcademicProviderRegistry.resolve(campusB)?.digest)
         AcademicProviderRegistry.setSchoolEnabled(a.manifest.id, campusA, false)
-        assertNull(AcademicProviderRegistry.resolve(campusA))
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(campusA)?.manifest?.id)
         assertEquals(b.digest, AcademicProviderRegistry.resolve(campusB)?.digest)
         AcademicProviderRegistry.choose(campusB, "builtin.zf")
         AcademicProviderRegistry.setSchoolEnabled(a.manifest.id, campusA, true)
         assertEquals(a.digest, AcademicProviderRegistry.resolve(campusA)?.digest)
-        assertNull(AcademicProviderRegistry.resolve(campusB))
-        assertNull(AcademicProviderRegistry.resolve(school("/campus-ab")))
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(campusB)?.manifest?.id)
+        assertEquals("org.zf.protocol.zf", AcademicProviderRegistry.resolve(school("/campus-ab"))?.manifest?.id)
     }
 
     @Test fun updateAndRollbackKeepPreviouslyPinnedPackageReadable() = runBlocking {

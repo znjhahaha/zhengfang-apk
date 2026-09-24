@@ -10,12 +10,12 @@ object AcademicGatewayFactory {
 
     /** True when the school opts into the adapter flow, including auto-detection. */
     fun supports(school: SchoolConfig): Boolean {
-        return AcademicProviderRegistry.hasBinding(school) || school.academicSystem != AcademicSystem.LEGACY_ZF.id
+        return true // legacy_zf is a compatibility name for the preinstalled TypeScript provider.
     }
 
     /** Auto-detection opts into this flow but cannot create an adapter yet. */
     fun hasSelectedAdapter(school: SchoolConfig): Boolean = AcademicProviderRegistry.hasBinding(school) || when (AcademicSystem.fromId(school.academicSystem)) {
-        AcademicSystem.ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD -> true
+        AcademicSystem.ZF, AcademicSystem.LEGACY_ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD -> true
         else -> false
     }
 
@@ -35,33 +35,19 @@ object AcademicGatewayFactory {
         AcademicProviderRegistry.prepareBuiltinSchool(school)
         val session = sessions.session(school.id, accountStorageKey, school.getFullBasePath())
         AcademicProviderRegistry.adapter(school, session)?.let { return it }
-        return createBuiltin(school, session)
+        throw AcademicException(AcademicStatus.UNSUPPORTED, "请安装、启用或选择本校的教务协议插件")
     }
 
     internal fun createBuiltin(school: SchoolConfig, session: AcademicSession): AcademicProtocolAdapter {
-        val system = school.academicType()
         AcademicProviderRegistry.builtinAdapter(school, session)?.let { return it }
-        require(system != AcademicSystem.LEGACY_ZF && system != AcademicSystem.AUTO) { "School has no selected academic adapter" }
-        val transport = AcademicHttpTransport(school, session)
-        val adapter = when (system) {
-            AcademicSystem.ZF -> ZfAcademicAdapter(school, session, transport)
-            AcademicSystem.ZF_OLD -> ZfOldAcademicAdapter(school, session, transport)
-            AcademicSystem.QZ -> QzAcademicAdapter(school, session, transport)
-            AcademicSystem.QZ_OLD -> QzOldAcademicAdapter(school, session, transport)
-            AcademicSystem.JINZHI, AcademicSystem.CHENGFANG -> throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无对应的内置教务适配，请安装本校适配插件")
-            AcademicSystem.LEGACY_ZF, AcademicSystem.AUTO -> error("Academic adapter is not selected")
-        }
-        return BuiltinAcademicProvider(adapter, session, system)
+        throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无可用的预装教务协议插件")
     }
 
     fun createStudy(school: SchoolConfig, accountStorageKey: String): AcademicStudyAdapter {
         AcademicProviderRegistry.prepareBuiltinSchool(school)
         val session = sessions.session(school.id, accountStorageKey, school.fullBasePath)
         AcademicProviderRegistry.adapter(school, session)?.let { return it }
-        require(school.academicType() !in setOf(AcademicSystem.AUTO, AcademicSystem.LEGACY_ZF))
-        if (school.academicType() in setOf(AcademicSystem.JINZHI, AcademicSystem.CHENGFANG))
-            throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无对应的内置教务适配")
-        return AcademicStudyReader(school, session, AcademicHttpTransport(school, session))
+        throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无可用的学业数据插件")
     }
 
     fun invalidate(school: SchoolConfig, accountStorageKey: String) {
@@ -90,7 +76,7 @@ object AcademicGatewayFactory {
 
     fun loginUrl(school: SchoolConfig): String {
         com.tyust.course.academic.plugin.BundledAcademicProviders.matching(school)?.let { return it.loginUrl }
-        if (school.academicType() == AcademicSystem.QZ) QzCasEntry.forSchool(school)?.let { return it.service.toString() }
+        if (school.academicType() == AcademicSystem.QZ) com.tyust.course.academic.plugin.GenericAcademicProtocols.configuration(school).optString("casServiceUrl").takeIf { it.isNotBlank() }?.let { return it }
         val path = when (AcademicSystem.fromId(school.academicSystem)) {
             AcademicSystem.ZF -> "xtgl/login_slogin.html"
             AcademicSystem.ZF_OLD -> "default2.aspx"

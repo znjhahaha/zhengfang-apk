@@ -11,7 +11,7 @@ object NativePluginContract {
         unique(c.getJSONArray("entries")); unique(c.optJSONArray("menuActions")); unique(c.optJSONArray("dataProviders")); unique(c.optJSONArray("tasks"))
         PluginJson.objects(c.getJSONArray("entries")).forEach { if (it.getString("pageId") !in pages) invalid("入口指向未声明页面") }
         c.optJSONArray("menuActions")?.let { actions -> PluginJson.objects(actions).forEach { if (it.has("pageId") && it.getString("pageId") !in pages) invalid("菜单指向未声明页面") } }
-        val groups = listOf(Triple("ui.", pages.isNotEmpty(), setOf("ui.init", "ui.reduce")),
+        val groups = listOf(Triple("ui.", PluginJson.objects(c.getJSONArray("pages")).any { it.optString("renderer") != "web" }, setOf("ui.init", "ui.reduce")),
             Triple("task.", (c.optJSONArray("tasks")?.length() ?: 0) > 0, setOf("task.run")),
             Triple("data.", (c.optJSONArray("dataProviders")?.length() ?: 0) > 0, setOf("data.query")))
         for ((prefix, required, expected) in groups) {

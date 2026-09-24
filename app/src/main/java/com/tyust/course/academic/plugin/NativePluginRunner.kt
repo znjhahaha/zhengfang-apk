@@ -12,18 +12,25 @@ import java.io.File
 import java.util.UUID
 
 object NativePluginRunner {
-    suspend fun invoke(app: Context, pkg: PluginPackage, session: AcademicSession, method: String, args: JSONObject, context: JSONObject, active: () -> Boolean): JSONObject {
+    suspend fun invoke(app: Context, pkg: PluginPackage, session: AcademicSession, method: String, args: JSONObject, context: JSONObject, confirmed: Boolean = false, active: () -> Boolean): JSONObject {
         if (method !in pkg.manifest.capabilities) throw PluginException(PluginErrorCode.UNSUPPORTED, "插件未实现此接口")
         when (method) {
             "ui.init", "ui.reduce" -> NativePluginContract.page(pkg.manifest, args.getString("pageId"))
             "task.run" -> NativePluginContract.contribution(pkg.manifest, "tasks", args.getString("taskId"))
             "data.query" -> NativePluginContract.contribution(pkg.manifest, "dataProviders", args.getString("providerId"))
+            "command.run" -> NativePluginContract.contribution(pkg.manifest, "commands", args.getString("commandId"))
         }
-        val operation = PluginOperation(session, pkg.manifest, method, development = !pkg.official, pageContext = context, packageDigest = pkg.digest, scopeStillActive = active)
-        val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"))
+        val lease = PluginVersionLeases.acquire(pkg.manifest.id)
+        val pageContext = JSONObject(context.toString()).put("settings", PluginSettings.values(app, pkg))
+        val operation = PluginOperation(session, pkg.manifest, method, development = !pkg.official, confirmed = confirmed, actionId = args.optString("name"), pageContext = pageContext, packageDigest = pkg.digest, scopeStillActive = active)
+        try {
+        operation.requireActive()
+        val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"), PluginWebSessionCookies.jar(app, pkg, session, active))
         val result = PluginSandboxClient(app).execute(pkg.source, args, operation, host)
+        operation.requireActive()
         val schema = PluginSchema(PluginJson.parse(app.assets.open("academic-plugin/contract.schema.json").bufferedReader().use { it.readText() }))
-        return schema.response(method, result).also { if (method != "data.query") NativePluginContract.validateResult(it, method == "task.run") }
+        return schema.response(method, result).also { if (method in setOf("ui.init", "ui.reduce", "task.run")) NativePluginContract.validateResult(it, method == "task.run") }
+        } finally { operation.close(); lease.close() }
     }
 }
 
@@ -42,6 +49,7 @@ class NativeUiSession(
     private val mutableSnapshot = MutableStateFlow(NativeUiSnapshot())
     val snapshot = mutableSnapshot.asStateFlow()
     private var state: Any? = JSONObject()
+    private var templateId = ""
     private var closed = false
     init {
         host.cancelEffects = { ids -> ids.forEach { effects[it]?.cancel() } }
@@ -52,7 +60,7 @@ class NativeUiSession(
                 val before = mutableSnapshot.value
                 mutableSnapshot.value = before.copy(busy = true)
                 try {
-                    val args = JSONObject().put("pageId", before.pageId)
+                    val args = JSONObject().put("pageId", templateId)
                     if (pending.init) args.put("params", pending.params) else args.put("state", state ?: JSONObject.NULL).put("event", pending.event)
                     val context = JSONObject().put("pageId", before.pageId).put("pageInstance", before.instance).put("capabilities", host.capabilities())
                     val result = withContext(Dispatchers.IO) { NativePluginRunner.invoke(app, pkg, session, if (pending.init) "ui.init" else "ui.reduce", args, context) { isCurrent(pending.instance) } }
@@ -66,7 +74,12 @@ class NativeUiSession(
         }
     }
     fun open(pageId: String, params: JSONObject = JSONObject()) {
-        NativePluginContract.page(pkg.manifest, pageId)
+        val registered = PluginPages.registry.page(pageId)
+        if (pageId.contains('/') && registered?.pluginId != pkg.manifest.id) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "页面不属于当前插件")
+        templateId = registered?.templateId ?: pageId
+        val declaration = NativePluginContract.page(pkg.manifest, templateId)
+        if (declaration.optString("renderer") == "web") throw PluginException(PluginErrorCode.UNSUPPORTED, "此页面由网页容器打开")
+        if (PluginPlatformContract.requirements(declaration, PluginPages.capabilities()).isNotEmpty()) throw PluginException(PluginErrorCode.UNSUPPORTED, "页面能力条件不满足")
         host.requireCompatible()
         effects.values.toList().forEach(Job::cancel); effects.clear(); queuedInputs.clear()
         while (events.tryReceive().isSuccess) { /* Retire queued events from the old page. */ }

@@ -19,13 +19,12 @@ class PluginAcademicAdapter(
     private val schema = PluginSchema(PluginJson.parse(app.assets.open("academic-plugin/contract.schema.json").bufferedReader().use { it.readText() }))
     private var continuation: String? = null
     private var ownWebLogin: JSONObject? = null
+    @Volatile private var loginInProgress = false
     val webLogin: JSONObject? get() = ownWebLogin ?: (base as? PluginAcademicAdapter)?.webLogin
     val version: String get() = pinned.manifest.version
     fun rebind(newSession: AcademicSession): PluginAcademicAdapter {
         val rebound = inheritedPackage?.let { PluginAcademicAdapter(app, it, newSession, scopeStillActive = scopeStillActive) }
-            ?: baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, newSession) }
         val reader = (rebound as? AcademicStudyAdapter)
-            ?: baseSchool?.let { AcademicStudyReader(it, newSession, AcademicHttpTransport(it, newSession)) }
         return PluginAcademicAdapter(app, pinned, newSession, rebound, reader, baseSchool, scopeStillActive, inheritedPackage)
     }
     @Volatile var lastTrace: List<JSONObject> = emptyList()
@@ -46,6 +45,7 @@ class PluginAcademicAdapter(
         val op = PluginOperation(session, pinned.manifest, method, development = !pinned.official && !pinned.bundled, confirmed = confirmed,
             actionId = if (method == "service.action") args.getString("actionId") else null, scopeStillActive = scopeStillActive)
         val host = PluginHost(op, storageRoot)
+        val lease = PluginVersionLeases.acquire(pinned.manifest.id)
         try {
             val result = PluginSandboxClient(app).execute(pinned.source, args, op, host)
             schema.response(method, result).also { data ->
@@ -59,7 +59,7 @@ class PluginAcademicAdapter(
                 }
             }
         } catch (e: PluginException) { val failure = op.failure(e.code, e.message.orEmpty()); throw AcademicException(status(failure.code), failure.message.orEmpty(), e) }
-        finally { lastTrace = host.report() }
+        finally { lastTrace = host.report(); op.close(); lease.close() }
         }
     }
     private suspend fun pages(method: String, args: JSONObject = JSONObject(), onFirstPage: (JSONObject) -> Unit = {}): List<JSONObject> {
@@ -79,6 +79,10 @@ class PluginAcademicAdapter(
         throw AcademicException(AcademicStatus.PAGE_CHANGED, "插件分页超过上限")
     }
     override suspend fun login(credentials: Credentials): LoginResult = if (has("auth.start")) {
+        clearLoginState()
+        session.invalidate()
+        PluginHost.clearTemporaryState(session)
+        loginInProgress = true
         session.username = credentials.username
         auth(invoke("auth.start", JSONObject().put("username", credentials.username).put("password", credentials.password)))
     } else native().login(credentials)
@@ -92,10 +96,14 @@ class PluginAcademicAdapter(
     override suspend fun refreshCaptcha(): CaptchaChallenge? = if (has("auth.refreshCaptcha"))
         auth(invoke("auth.refreshCaptcha", JSONObject().put("continuationId", continuation ?: unsupported("auth.refreshCaptcha")))).captcha
         else (native() as? AcademicCaptchaLogin)?.refreshCaptcha()
-    override fun clearLoginState() { continuation = null; ownWebLogin = null; (base as? AcademicCaptchaLogin)?.clearLoginState() }
+    override fun clearLoginState() {
+        if (loginInProgress) { session.invalidate(); PluginHost.clearTemporaryState(session) }
+        loginInProgress = false; continuation = null; ownWebLogin = null; (base as? AcademicCaptchaLogin)?.clearLoginState()
+    }
     override fun cookieHeader() = session.cookieHeader()
     private fun auth(data: JSONObject): LoginResult = when (data.getString("status")) {
-        "authenticated" -> LoginResult(AcademicStatus.SUCCESS, data.getString("studentName"), data.getString("studentId"))
+        "authenticated" -> { loginInProgress = false; continuation = null; ownWebLogin = null
+            LoginResult(AcademicStatus.SUCCESS, data.getString("studentName"), data.getString("studentId")) }
         "captcha" -> { continuation = data.getString("continuationId"); LoginResult(AcademicStatus.CAPTCHA_REQUIRED,
             captcha = CaptchaChallenge(data.getString("imageBase64").decodeBase64()?.toByteArray() ?: ByteArray(0), "captcha", null)) }
         "webLogin" -> { continuation = data.getString("continuationId"); ownWebLogin = data

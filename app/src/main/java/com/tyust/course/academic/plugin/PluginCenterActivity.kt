@@ -33,6 +33,8 @@ class PluginCenterActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         var packages by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
         var catalog by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+        var staged by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
+        var pending by remember { mutableStateOf<PluginPackage?>(null) }
         var selected by remember { mutableStateOf<PluginPackage?>(null) }
         var uninstall by remember { mutableStateOf<PluginPackage?>(null) }
         var installedView by remember { mutableStateOf(false) }
@@ -48,6 +50,7 @@ class PluginCenterActivity : ComponentActivity() {
 
         suspend fun refresh() {
             packages = withContext(Dispatchers.IO) { AcademicProviderRegistry.reload(); AcademicProviderRegistry.packages().list() }
+            staged = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().staged() }
         }
         fun run(block: suspend () -> Unit) {
             if (busy) return
@@ -135,12 +138,24 @@ class PluginCenterActivity : ComponentActivity() {
                         InsetGroupedRow(title = entry.optString("name", id), subtitle = entry.optString("description").ifBlank { "版本 ${entry.getString("version")}" },
                             showDivider = index < catalog.lastIndex, trailing = {
                                 LiquidButton(onClick = { run {
-                                    selected = AcademicProviderRegistry.catalog().update(id); refresh()
-                                    message = "安装完成，匹配当前学校的插件会自动生效"
+                                    val candidate = AcademicProviderRegistry.catalog().update(id, stageOnly = true)
+                                    val activated = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().activateStaged(id) }
+                                    if (activated == null) pending = candidate else { selected = activated; message = "安装完成" }
+                                    refresh()
                                 } }, enabled = !busy && !latest, minHeight = 44.dp, horizontalPadding = 16.dp, style = LiquidButtonStyle.Tinted,
                                     modifier = Modifier.testTag("catalog-install-$id")) { Text(if (latest) "已安装" else if (installed == null) "安装" else "更新") }
                             })
                     }
+                }
+                if (staged.isNotEmpty()) InsetGroupedSection(header = "待处理更新") {
+                    staged.forEach { pkg -> InsetGroupedRow(title = pkg.manifest.name, subtitle = "${pkg.manifest.version} · 查看权限或等待任务结束", onClick = { pending = pkg }) }
+                }
+                InsetGroupedSection(header = "更新设置") {
+                    val preferences = remember { getSharedPreferences("plugin-updates", MODE_PRIVATE) }
+                    var automatic by remember { mutableStateOf(preferences.getBoolean("enabled", true)) }
+                    InsetGroupedRow(title = "自动更新兼容插件", subtitle = "每天检查，新增权限需确认", trailing = {
+                        Switch(automatic, { automatic = it; preferences.edit().putBoolean("enabled", it).apply() })
+                    })
                 }
                 InsetGroupedSection(header = "一起适配更多学校") {
                     InsetGroupedRow(title = "招募校园插件开发者", subtitle = "欢迎有能力的同学为自己的学校开发独立适配。开发文档、示例与工具已集中提供。QQ群 1074017033",
@@ -148,6 +163,17 @@ class PluginCenterActivity : ComponentActivity() {
                 }
             }
         }
+        pending?.let { pkg -> SystemDialog(onDismissRequest = { pending = null }, title = { Text("安装 ${pkg.manifest.name} ${pkg.manifest.version}") },
+            confirmButton = { TextButton(onClick = { pending = null; run {
+                val activated = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().activateStaged(pkg.manifest.id, true, pkg.digest) }
+                refresh(); message = if (activated == null) "已确认，相关任务结束后将自动切换" else "安装完成"
+            } }) { Text("确认安装") } }, dismissButton = { TextButton(onClick = { pending = null }) { Text("稍后") } }) {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("权限：" + pkg.manifest.permissions.joinToString("、", transform = ::permissionName).ifBlank { "无额外权限" })
+                Text("网络范围：" + pkg.manifest.network.joinToString("\n") { it.getString("origin") + it.getString("pathPrefix") })
+                Text("正在运行和需要核对结果的任务会保留原版本。")
+            }
+        } }
         if (chooseProvider && school != null) SystemDialog(onDismissRequest = { chooseProvider = false }, title = { Text("本校教务适配") },
             confirmButton = { TextButton(onClick = { chooseProvider = false }) { Text("完成") } }) {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -207,6 +233,9 @@ class PluginCenterActivity : ComponentActivity() {
                         AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, !enabled)
                         generation++; selected = null
                     }) { Text(if (enabled) "本校停用" else "本校启用") }
+                    TextButton(onClick = { AcademicProviderRegistry.setEnabled(pkg.manifest.id, !AcademicProviderRegistry.isEnabled(pkg.manifest.id)); generation++; selected = null }) {
+                        Text(if (AcademicProviderRegistry.isEnabled(pkg.manifest.id)) "停用所有入口与任务" else "启用插件")
+                    }
                     TextButton(onClick = { PluginFeedback.open(this@PluginCenterActivity, pkg) }) { Text("快捷反馈") }
                     TextButton(onClick = { selected = null; uninstall = pkg }) { Text("卸载插件", color = MaterialTheme.colorScheme.error) }
                 }
@@ -215,7 +244,7 @@ class PluginCenterActivity : ComponentActivity() {
         uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, title = { Text("卸载 ${pkg.manifest.name}？") },
             confirmButton = { TextButton(onClick = { run { withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().deactivate(pkg.manifest.id) }; refresh(); generation++ }; uninstall = null }) { Text("卸载") } },
             dismissButton = { TextButton(onClick = { uninstall = null }) { Text("取消") } }) {
-            Text("将从所有学校的可用插件中移除。已开始的后台任务仍使用原来的包版本。仅想在当前学校关闭时，请使用“本校停用”。")
+            Text("将移除页面、账号授权并停止后续任务。已提交结果和服务器业务数据保留。仅想在当前学校关闭时，请使用“本校停用”。")
         } }
     }
     @Composable private fun Detail(label: String, value: String) {

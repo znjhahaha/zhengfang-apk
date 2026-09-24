@@ -234,6 +234,7 @@ class ScheduleReminderScheduler private constructor(private val context: Context
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 data = Uri.Builder().scheme("course-reminder").authority("open").appendPath(id).build()
                 putExtra(EXTRA_REMINDER_ID, id)
+                putExtra("pageId", com.tyust.course.academic.plugin.PluginPageRegistry.SCHEDULE)
             }
             val content = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val notification = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_course_reminder)

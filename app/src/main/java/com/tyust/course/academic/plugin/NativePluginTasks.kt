@@ -30,6 +30,13 @@ object NativePluginTasks {
         try { stream.write(record.toString().toByteArray()); file.finishWrite(stream) } catch (e: Exception) { file.failWrite(stream); throw e }
     }
     private fun records(app: Context) = root(app).listFiles()?.filter { it.extension == "json" }?.mapNotNull { runCatching { PluginJson.parse(it.readText()) }.getOrNull() }.orEmpty()
+    fun busy(app: Context, pluginId: String): Boolean = synchronized { records(app).any { it.optString("pluginId") == pluginId && it.optString("status") in setOf("scheduled", "running", "result_unknown") } }
+    fun stopPlugin(app: Context, pluginId: String) = synchronized {
+        records(app).filter { it.optString("pluginId") == pluginId && it.optString("status") in setOf("scheduled", "running") }.forEach { record ->
+            app.getSystemService(JobScheduler::class.java).cancel(record.getInt("jobId"))
+            status(app, record.getString("handle"), "cancelled")
+        }
+    }
     fun schedule(app: Context, pkg: PluginPackage, session: AcademicSession, namespace: String, input: JSONObject): JSONObject = synchronized(lock) {
         if (PluginJson.canonical(input.get("state")).toByteArray().size > PluginLimits.STATE_BYTES || PluginJson.canonical(input.get("input")).toByteArray().size > 65536) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "任务状态过大")
         val mine = records(app).filter { it.optString("namespace") == namespace }
@@ -39,6 +46,7 @@ object NativePluginTasks {
         val jobId = (500_000..600_000).firstOrNull { it !in used } ?: throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "无法分配任务")
         val whenMillis = System.currentTimeMillis() + input.getLong("delaySeconds") * 1000
         val record = JSONObject().put("handle", handle).put("namespace", namespace).put("pluginId", pkg.manifest.id).put("digest", pkg.digest)
+            .put("academicAccount", com.tyust.course.manager.UserManager.getInstance().currentAccountStorageKey)
             .put("schoolKey", session.key.schoolId).put("accountKey", session.key.accountKey).put("baseUrl", session.baseUrl)
             .put("taskId", input.getString("taskId")).put("input", input.get("input")).put("state", input.get("state"))
             .put("jobId", jobId).put("scheduledAt", whenMillis).put("status", "scheduled")
@@ -79,16 +87,26 @@ class NativePluginJobService : JobService() {
                 if (record.getString("status") != "scheduled") { if (record.getString("status") == "running") NativePluginTasks.status(this@NativePluginJobService, handle, "result_unknown"); return@launch }
                 NativePluginTasks.status(this@NativePluginJobService, handle, "running")
                 val pkg = AcademicProviderRegistry.packages().readDigest(record.getString("digest"))
-                val session = AcademicSession(AcademicSessionKey(record.getString("schoolKey"), record.getString("accountKey")), record.getString("baseUrl"))
+                val accounts = PluginServiceAccounts(this@NativePluginJobService)
+                val serviceId = record.getString("schoolKey").takeIf { it.startsWith("service:${pkg.manifest.id}:") }?.removePrefix("service:${pkg.manifest.id}:")
+                val session = if (serviceId != null) accounts.session(pkg, serviceId) else AcademicSession(AcademicSessionKey(record.getString("schoolKey"), record.getString("accountKey")), record.getString("baseUrl"))
                 val job = currentCoroutineContext().job
-                host = NativeCapabilityHost(this@NativePluginJobService, pkg, session, null) { job.isActive }
+                val user = com.tyust.course.manager.UserManager.getInstance()
+                val token = user.sessionState.token
+                fun active() = job.isActive && user.sessionState.isCurrent(token) &&
+                    record.optString("academicAccount", token.accountStorageKey) == user.currentAccountStorageKey &&
+                    PluginPages.available(pkg) && AcademicProviderRegistry.isCurrentPackage(pkg.manifest.id, pkg.digest) &&
+                    session.key.accountKey == record.getString("accountKey") && accounts.current(pkg, session) &&
+                    NativePluginTasks.load(this@NativePluginJobService, handle).getString("status") == "running"
+                if (!active()) { session.retire(); throw PluginException(PluginErrorCode.STALE_CONTEXT, "后台任务的账号或插件已改变") }
+                host = NativeCapabilityHost(this@NativePluginJobService, pkg, session, null, ::active)
                 var state: Any = record.get("state")
                 val pending = ArrayDeque<JSONObject?>().apply { add(null) }
                 while (pending.isNotEmpty()) {
                     ensureActive()
                     val event = pending.removeFirst()
                     val args = JSONObject().put("taskId", record.getString("taskId")).put("input", record.get("input")).put("state", state).apply { if (event != null) put("event", event) }
-                    val result = NativePluginRunner.invoke(this@NativePluginJobService, pkg, session, "task.run", args, JSONObject().put("capabilities", host.capabilities())) { job.isActive }
+                    val result = NativePluginRunner.invoke(this@NativePluginJobService, pkg, session, "task.run", args, JSONObject().put("capabilities", host.capabilities()), active = ::active)
                     state = result.get("state")
                     for (effect in PluginJson.objects(result.getJSONArray("effects"))) {
                         flow.accept(effect.getString("id"))
@@ -97,6 +115,8 @@ class NativePluginJobService : JobService() {
                         pending.add(JSONObject().put("type", "effect.result").put("effectId", effect.getString("id")).put("result", response))
                     }
                 }
+                // Save the final service session while the running context is still valid.
+                host.close(); host = null; session.retire()
                 NativePluginTasks.status(this@NativePluginJobService, handle, if (flow.failureCode(PluginErrorCode.CANCELLED) == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "completed")
             } catch (e: CancellationException) { runCatching { NativePluginTasks.status(this@NativePluginJobService, handle, if (flow.failureCode(PluginErrorCode.CANCELLED) == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "cancelled") } }
             catch (e: Exception) { runCatching { NativePluginTasks.status(this@NativePluginJobService, handle, if (e is PluginException && e.code == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "failed") } }

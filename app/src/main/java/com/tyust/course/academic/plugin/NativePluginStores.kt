@@ -18,11 +18,27 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Handles are meaningful only within the host-selected school/account/package namespace. */
-class NativePluginFiles(private val app: Context, namespace: String) {
+class NativePluginFiles(private val app: Context, namespace: String, private val legacyNamespaces: List<String> = emptyList(), private val guard: () -> Unit = {}) {
     private val root = File(app.filesDir, "native-plugin-files/${PluginJson.sha256(namespace.toByteArray())}")
-    fun file(handle: String): File {
+    fun file(handle: String): File = synchronized(lock) {
+        guard()
         if (!handle.matches(Regex("[a-f0-9]{32}"))) invalid("文件句柄无效")
-        return File(root, "$handle.bin").takeIf { it.isFile } ?: invalid("文件句柄已失效")
+        val target = File(root, "$handle.bin")
+        if (!target.isFile) for (namespace in legacyNamespaces) {
+            val legacy = File(root.parentFile, PluginStorageScope.hash(namespace))
+            val source = File(legacy, "$handle.bin"); val metadata = File(legacy, "$handle.json")
+            if (!source.isFile || !metadata.isFile) continue
+            if (source.length() > MAX_BYTES || totalBytes() + source.length() > MAX_TOTAL) limited()
+            PluginJson.parse(metadata.readText())
+            root.mkdirs()
+            for ((from, to) in listOf(source to target, metadata to File(root, "$handle.json"))) {
+                val atomic = AtomicFile(to); val output = atomic.startWrite()
+                try { from.inputStream().use { it.copyTo(output) }; atomic.finishWrite(output) }
+                catch (e: Exception) { atomic.failWrite(output); throw e }
+            }
+            break
+        }
+        target.takeIf { it.isFile } ?: invalid("文件句柄已失效")
     }
     fun info(handle: String): JSONObject = synchronized(lock) {
         val file = file(handle)
@@ -30,6 +46,7 @@ class NativePluginFiles(private val app: Context, namespace: String) {
         JSONObject().put("handle", handle).put("name", metadata.getString("name")).put("mime", metadata.getString("mime")).put("size", file.length())
     }
     fun create(name: String, mime: String, bytes: ByteArray = ByteArray(0)): JSONObject = synchronized(lock) {
+        guard()
         root.mkdirs()
         if ((root.listFiles()?.count { it.extension == "bin" } ?: 0) >= 64) limited()
         if (bytes.size > MAX_BYTES || totalBytes() + bytes.size > MAX_TOTAL) limited()
@@ -60,18 +77,24 @@ class NativePluginFiles(private val app: Context, namespace: String) {
         RandomAccessFile(target, "rw").use { it.seek(offset); it.write(bytes); it.fd.sync() }
         info(handle)
     }
-    fun remove(handle: String) = synchronized(lock) { file(handle).delete(); File(root, "$handle.json").delete(); Unit }
+    fun remove(handle: String) = synchronized(lock) {
+        file(handle).delete(); File(root, "$handle.json").delete()
+        legacyNamespaces.forEach { namespace -> val legacy = File(root.parentFile, PluginStorageScope.hash(namespace)); File(legacy, "$handle.bin").delete(); File(legacy, "$handle.json").delete() }
+        Unit
+    }
+    fun clear(): Unit = synchronized(lock) { root.listFiles()?.forEach { it.delete() }; root.delete(); Unit }
     private fun totalBytes() = root.listFiles()?.filter { it.extension == "bin" }?.sumOf { it.length() } ?: 0L
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)
     private fun limited(): Nothing = throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "插件文件达到数量或容量上限")
-    companion object { const val MAX_BYTES = 16 * 1024 * 1024; const val MAX_TOTAL = 32 * 1024 * 1024; private val lock = Any() }
+    companion object { const val MAX_BYTES = 16 * 1024 * 1024; const val MAX_TOTAL = 32 * 1024 * 1024; private val lock = PluginServiceAccounts.lock }
 }
 
 /** Secrets never enter plugin state: only opaque credential handles cross the JS boundary. */
-class NativePluginVault(app: Context, namespace: String) {
+class NativePluginVault(app: Context, namespace: String, private val legacyNamespaces: List<String> = emptyList(), private val keyProvider: (() -> SecretKey)? = null, private val guard: () -> Unit = {}) {
     private val root = File(app.noBackupFilesDir, "native-plugin-vault/${PluginJson.sha256(namespace.toByteArray())}")
     private val ephemeral = mutableMapOf<String, JSONObject>()
     private fun key(): SecretKey = synchronized(keyLock) {
+        keyProvider?.let { return@synchronized it() }
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
             init(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
@@ -80,6 +103,7 @@ class NativePluginVault(app: Context, namespace: String) {
     }
     private fun path(name: String) = AtomicFile(File(root, PluginJson.sha256(name.toByteArray()) + ".json"))
     fun put(name: String, value: JSONObject, persistent: Boolean = true): Unit = synchronized(vaultLock) {
+        guard()
         if (value.toString().toByteArray().size > PluginLimits.STATE_BYTES) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "凭据超过容量限制")
         if (!persistent) { ephemeral[name] = JSONObject(value.toString()); return@synchronized }
         root.mkdirs()
@@ -91,16 +115,39 @@ class NativePluginVault(app: Context, namespace: String) {
         ephemeral.remove(name)
     }
     fun get(name: String): JSONObject? = synchronized(vaultLock) {
+        guard()
         ephemeral[name]?.let { return@synchronized JSONObject(it.toString()) }
         val target = path(name)
-        if (!target.baseFile.exists()) return@synchronized null
+        if (!target.baseFile.exists()) {
+            for (namespace in legacyNamespaces) {
+                val legacy = File(root.parentFile, PluginStorageScope.hash(namespace))
+                val file = AtomicFile(File(legacy, PluginJson.sha256(name.toByteArray()) + ".json"))
+                if (!file.baseFile.exists()) continue
+                val value = decrypt(legacy, file, name)
+                put(name, value)
+                return@synchronized value
+            }
+            return@synchronized null
+        }
+        decrypt(root, target, name)
+    }
+    private fun decrypt(folder: File, target: AtomicFile, name: String): JSONObject {
         try {
             val encoded = PluginJson.parse(String(target.readFully()))
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(encoded.getString("iv"), Base64.DEFAULT))); updateAAD((root.name + name).toByteArray()) }
-            PluginJson.parse(String(cipher.doFinal(Base64.decode(encoded.getString("data"), Base64.DEFAULT))))
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(encoded.getString("iv"), Base64.DEFAULT))); updateAAD((folder.name + name).toByteArray()) }
+            return PluginJson.parse(String(cipher.doFinal(Base64.decode(encoded.getString("data"), Base64.DEFAULT))))
         } catch (_: Exception) { throw PluginException(PluginErrorCode.SESSION_EXPIRED, "已保存的会话无法恢复，请重新认证") }
     }
-    fun remove(name: String): Unit = synchronized(vaultLock) { ephemeral.remove(name); path(name).delete() }
+    fun remove(name: String): Unit = synchronized(vaultLock) {
+        guard(); ephemeral.remove(name); path(name).delete()
+        legacyNamespaces.forEach { namespace -> AtomicFile(File(File(root.parentFile, PluginStorageScope.hash(namespace)), PluginJson.sha256(name.toByteArray()) + ".json")).delete() }
+    }
+    fun clear(): Unit = synchronized(vaultLock) { ephemeral.clear(); root.listFiles()?.forEach { it.delete() }; root.delete(); Unit }
+    fun findCredential(name: String): String? = synchronized(vaultLock) {
+        val reference = "credential-key:$name"
+        val handle = get(reference)?.optString("handle")?.takeIf { it.isNotBlank() } ?: return@synchronized null
+        if (get("credential:$handle") != null) handle else { remove(reference); null }
+    }
     fun saveCredential(name: String, values: JSONObject, remember: Boolean): String = synchronized(vaultLock) {
         val old = get("credential-key:$name")?.optString("handle")
         if (!old.isNullOrBlank()) remove("credential:$old")
@@ -109,5 +156,5 @@ class NativePluginVault(app: Context, namespace: String) {
         put("credential-key:$name", JSONObject().put("handle", handle), remember)
         handle
     }
-    companion object { private val keyLock = Any(); private val vaultLock = Any(); private const val ALIAS = "native-plugin-v3-vault" }
+    companion object { private val keyLock = Any(); private val vaultLock = PluginServiceAccounts.lock; private const val ALIAS = "native-plugin-v3-vault" }
 }

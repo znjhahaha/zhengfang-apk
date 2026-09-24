@@ -22,6 +22,8 @@ class CourseApplication : Application() {
         if (processName == packageName) {
             mainProcess = true
             com.tyust.course.academic.plugin.AcademicProviderRegistry.initialize(this)
+            com.tyust.course.academic.plugin.PluginPages.initialize(this)
+            com.tyust.course.academic.plugin.PluginUpdates.start(this)
             GlassRuntimeGuard.initialize(this)
             AppearanceSettingsManager.initialize(this)
             AppThemeCoordinator.initialize(this)

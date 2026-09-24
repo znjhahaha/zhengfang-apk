@@ -24,7 +24,13 @@
     "ui.init": "UiResult",
     "ui.reduce": "UiResult",
     "task.run": "TaskResult",
-    "data.query": "DataResult"
+    "data.query": "DataResult",
+    "command.run": "CommandResult",
+    "services.invoke": "ServiceResult",
+    "workflow.prepare": "WorkflowPlan",
+    "workflow.step": "WorkflowReceipt",
+    "workflow.reconcile": "WorkflowReconciliation",
+    "workflow.cancel": "WorkflowCancellation"
   },
   "$defs": {
     "Error": {
@@ -3019,6 +3025,143 @@
       ],
       "additionalProperties": false
     },
+    "CommandResult": {
+      "type": "object",
+      "properties": {
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiEffect"
+          },
+          "maxItems": 8
+        },
+        "value": {}
+      },
+      "required": [
+        "effects"
+      ],
+      "additionalProperties": false
+    },
+    "ServiceResult": {
+      "type": "object",
+      "properties": {
+        "value": {}
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowPlan": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 160,
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 96,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "target": {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              "input": {}
+            },
+            "required": [
+              "id",
+              "target",
+              "label",
+              "input"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 200,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "title",
+        "summary",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowReceipt": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "confirmed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "value": {}
+      },
+      "required": [
+        "status",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowReconciliation": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "confirmed",
+            "notApplied",
+            "unknown"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "value": {}
+      },
+      "required": [
+        "status",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowCancellation": {
+      "type": "object",
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cancelled"
+      ],
+      "additionalProperties": false
+    },
     "auth.start": {
       "anyOf": [
         {
@@ -3785,6 +3928,222 @@
             },
             "data": {
               "$ref": "#/$defs/DataResult"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "command.run": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/CommandResult"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "services.invoke": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/ServiceResult"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "workflow.prepare": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/WorkflowPlan"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "workflow.step": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/WorkflowReceipt"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "workflow.reconcile": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/WorkflowReconciliation"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "workflow.cancel": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/WorkflowCancellation"
             }
           },
           "required": [

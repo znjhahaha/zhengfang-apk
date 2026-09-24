@@ -195,7 +195,7 @@ fun CapsuleNavigationBar(
 ) {
     val useGlass = backdrop != null && isBackdropSupported()
     val reduced = rememberGlassAccessibilityMode().reduceMotion
-    val iconPlayback = rememberNavigationIconPlayback(items.size, selectedTab, reduced)
+    val iconPlayback = rememberNavigationIconPlayback(items.size, selectedTab.coerceAtLeast(0), reduced)
     val haptics = LocalHapticFeedback.current
     val selectTab: (Int) -> Unit = { index ->
         if (index != selectedTab) {
@@ -251,7 +251,7 @@ fun CapsuleNavigationBar(
                 if (minimizeFraction > 0.001f) {
                     MinimizedNavCapsule(
                         item = items.getOrElse(selectedTab) { items.first() },
-                        iconPhase = { iconPlayback.phase(selectedTab) },
+                        iconPhase = { iconPlayback.phase(selectedTab.coerceAtLeast(0)) },
                         backdrop = requireNotNull(backdrop),
                         onClick = { if (minimized) onExpandRequest() },
                         modifier = Modifier.graphicsLayer {
