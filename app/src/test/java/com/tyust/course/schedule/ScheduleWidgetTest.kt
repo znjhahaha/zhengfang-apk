@@ -40,10 +40,28 @@ class ScheduleWidgetTest {
     @Test
     @Config(sdk = [33])
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun remoteViewsInflateAtBothSizesAndEveryCourseRemainsClickable() {
+    fun doubleWidgetAdaptsItsFieldsAndClickTargetsToAvailableSpace() {
         val state = ScheduleWidgetState.from(snapshot().copy(courses = listOf(course, course.copy(id = "next", startPeriod = 2, endPeriod = 2))), now)
-        for ((width, height) in listOf(150 to 110, 250 to 110, 280 to 110, 280 to 128, 280 to 180, 360 to 240)) {
-            val view = ScheduleWidgetRenderer.views(context, state, width, height).apply(context, FrameLayout(context))
+        data class SizeCase(
+            val width: Int, val height: Int, val time: String, val nextTime: String,
+            val roomVisible: Boolean = true, val statusVisible: Boolean = false,
+            val courseTargets: Boolean = true
+        )
+        // Compact cards keep both courses and start times; larger cards add details.
+        // At the minimum height, the whole card opens today's schedule for a usable touch target.
+        val cases = listOf(
+            SizeCase(130, 56, "08:00", "10:00", roomVisible = false, courseTargets = false),
+            SizeCase(150, 110, "08:00", "10:00"),
+            SizeCase(250, 110, "08:00", "10:00"),
+            SizeCase(280, 110, "08:00–08:45", "10:00–10:45"),
+            SizeCase(280, 128, "08:00–08:45", "10:00–10:45", statusVisible = true),
+            SizeCase(280, 180, "08:00–08:45", "10:00–10:45", statusVisible = true),
+            SizeCase(360, 240, "08:00–08:45", "10:00–10:45", statusVisible = true)
+        )
+        for (case in cases) {
+            val width = case.width
+            val height = case.height
+            val view = ScheduleWidgetRenderer.views(context, state, width, height, ScheduleWidgetStyle.Double).apply(context, FrameLayout(context))
             val density = context.resources.displayMetrics.density
             view.measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec((height * density).toInt(), View.MeasureSpec.EXACTLY))
@@ -55,31 +73,42 @@ class ScheduleWidgetTest {
                     val text = view.findViewById<TextView>(id); "$id:height=${text.measuredHeight},min=${text.minHeight},font=${text.textSize},padding=${text.paddingTop}+${text.paddingBottom},line=${text.lineHeight}" },
                 view.findViewById<TextView>(R.id.widget_name).measuredHeight > 0)
             assertEquals("体育馆", view.findViewById<TextView>(R.id.widget_location).text.toString())
-            assertEquals("08:00–08:45", view.findViewById<TextView>(R.id.widget_time).text.toString())
-            assertEquals(if (width >= 250) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.widget_next).visibility)
-            val fields = listOf(R.id.widget_name, R.id.widget_location, R.id.widget_time) +
-                if (width >= 250) listOf(R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time) else emptyList()
+            assertEquals(case.time, view.findViewById<TextView>(R.id.widget_time).text.toString())
+            assertEquals(case.nextTime, view.findViewById<TextView>(R.id.widget_next_time).text.toString())
+            assertEquals(View.VISIBLE, view.findViewById<View>(R.id.widget_next).visibility)
+            assertEquals(View.VISIBLE, view.findViewById<View>(R.id.widget_separator).visibility)
+            assertEquals("大学体育", view.findViewById<TextView>(R.id.widget_next_name).text.toString())
+            assertEquals("体育馆", view.findViewById<TextView>(R.id.widget_next_location).text.toString())
+            for (id in listOf(R.id.widget_location, R.id.widget_next_location)) {
+                assertEquals(if (case.roomVisible) View.VISIBLE else View.GONE, view.findViewById<View>(id).visibility)
+            }
+            for (id in listOf(R.id.widget_status, R.id.widget_next_status)) {
+                assertEquals(if (case.statusVisible) View.VISIBLE else View.GONE, view.findViewById<View>(id).visibility)
+            }
+            val fields = listOf(R.id.widget_name, R.id.widget_time, R.id.widget_next_name, R.id.widget_next_time) +
+                (if (case.roomVisible) listOf(R.id.widget_location, R.id.widget_next_location) else emptyList()) +
+                (if (case.statusVisible) listOf(R.id.widget_status, R.id.widget_next_status) else emptyList())
             for (id in fields) {
                 val text = view.findViewById<TextView>(id)
+                assertEquals(View.VISIBLE, text.visibility)
                 assertTrue("$width x $height clipped ${context.resources.getResourceEntryName(id)}: " +
                     "height=${text.height}, line=${text.lineHeight}, layout=${text.layout?.height}, " +
                     "bottom=${text.bottom}, parent=${(text.parent as View).height}",
-                    text.height >= text.lineHeight && text.bottom <= (text.parent as View).height)
+                    text.height >= text.lineHeight && text.top >= 0 && text.bottom <= (text.parent as View).height)
             }
             assertTrue(view.findViewById<View>(R.id.widget_course).performClick())
             val intent = shadowOf(context as Application).nextStartedActivity
             ScheduleWidgetNavigation.accept(intent)
-            assertEquals(course.id, ScheduleWidgetNavigation.requested?.course)
+            assertEquals(if (case.courseTargets) course.id else null, ScheduleWidgetNavigation.requested?.course)
             assertTrue(ScheduleWidgetNavigation.requested!!.matches("a", "school"))
             assertFalse(ScheduleWidgetNavigation.requested!!.matches("b", "school"))
-            assertEquals(ScheduleWidgetAction.Course, ScheduleWidgetNavigation.requested?.action)
-            if (width >= 250) {
-                assertEquals("体育馆", view.findViewById<TextView>(R.id.widget_next_location).text.toString())
-                assertEquals("10:00–10:45", view.findViewById<TextView>(R.id.widget_next_time).text.toString())
-                view.findViewById<View>(R.id.widget_next).performClick()
-                ScheduleWidgetNavigation.accept(shadowOf(context as Application).nextStartedActivity)
-                assertEquals("next", ScheduleWidgetNavigation.requested?.course)
-            }
+            assertEquals(if (case.courseTargets) ScheduleWidgetAction.Course else ScheduleWidgetAction.Today, ScheduleWidgetNavigation.requested?.action)
+            assertTrue(view.findViewById<View>(R.id.widget_next).performClick())
+            ScheduleWidgetNavigation.accept(shadowOf(context as Application).nextStartedActivity)
+            assertEquals(if (case.courseTargets) "next" else null, ScheduleWidgetNavigation.requested?.course)
+            assertEquals(if (case.courseTargets) ScheduleWidgetAction.Course else ScheduleWidgetAction.Today, ScheduleWidgetNavigation.requested?.action)
+            assertTrue(view.findViewById<View>(R.id.widget_course).contentDescription.toString().contains("08:00–08:45"))
+            assertTrue(view.findViewById<View>(R.id.widget_next).contentDescription.toString().contains("10:00–10:45"))
             view.findViewById<View>(R.id.widget_header).performClick()
             ScheduleWidgetNavigation.accept(shadowOf(context as Application).nextStartedActivity)
             assertNull(ScheduleWidgetNavigation.requested?.course)
