@@ -44,8 +44,9 @@ internal object QzScriptParser {
         val operation = function(html, "xsxkOper")
         val opArgs = Regex("""function\s+xsxkOper\s*\(([^)]*)\)""").find(html)?.groupValues?.get(1)?.split(',')?.map(String::trim).orEmpty()
         val defaults = linkedMapOf<String, String>()
-        Regex("""(?<!function )\bxsxkOper\s*\(([^)]*)\)""").findAll(html).forEach { call ->
-            split(call.groupValues[1], ',').forEachIndexed { index, argument ->
+        Regex("""\bxsxkOper\s*\(([^)]*)\)""").findAll(codeMask(html)).forEach { call ->
+            val arguments = html.substring(call.groups[1]!!.range)
+            split(arguments, ',').forEachIndexed { index, argument ->
                 if (index < opArgs.size && argument.trim().firstOrNull() in listOf('\'', '"'))
                     expression(argument, emptyMap(), false)?.let { defaults[opArgs[index]] = it }
             }
@@ -129,6 +130,37 @@ internal object QzScriptParser {
             expression(it.groupValues[2], values, placeholders)?.let { value -> values[it.groupValues[1]] = value }
         }
         return values
+    }
+
+    /** Retains offsets while hiding strings and comments, including generated button HTML. */
+    private fun codeMask(script: String): String {
+        val result = script.toCharArray()
+        var index = 0
+        while (index < script.length) {
+            val start = index
+            val character = script[index]
+            val next = script.getOrNull(index + 1)
+            when {
+                character == '\'' || character == '"' || character == '`' -> {
+                    index++
+                    while (index < script.length) {
+                        if (script[index] == '\\') { index = (index + 2).coerceAtMost(script.length); continue }
+                        if (script[index++] == character) break
+                    }
+                }
+                character == '/' && next == '/' -> {
+                    index += 2
+                    while (index < script.length && script[index] != '\n' && script[index] != '\r') index++
+                }
+                character == '/' && next == '*' -> {
+                    val end = script.indexOf("*/", index + 2)
+                    index = if (end < 0) script.length else end + 2
+                }
+                else -> { index++; continue }
+            }
+            for (position in start until index) result[position] = ' '
+        }
+        return String(result)
     }
 
     private fun expression(raw: String, values: Map<String, String>, placeholders: Boolean): String? {

@@ -91,6 +91,9 @@ class AcademicHttpTransport(
             if (currentMethod == "POST") builder.post(body ?: FormBody.Builder().build()) else builder.get()
             val request = builder.build()
             try {
+                // This school's backend expires sessions on rapid repeated page requests.
+                // A 1.2s interval was verified against its authorized read-only workflow.
+                if (parsed.host == "jw.cqiivc.com") session.paceRequest(1_200)
                 execute(request).use {
                 session.requireActive()
                 if (it.code in 300..399) {

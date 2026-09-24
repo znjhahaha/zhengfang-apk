@@ -171,12 +171,21 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
         val page = transport.get(transport.appUrl("xsxk/xklc_list"), transport.appUrl("framework/xsMain.jsp"))
         requirePage(page)
         val document = Jsoup.parse(page.text, page.url)
+        data class RoundEntry(val url: String, val id: String, val name: String, val declaration: Boolean)
         val links = document.select("a[href], [onclick]").mapNotNull { element ->
-            val round = Regex("""comeInXkIndx\s*\(\s*['"]([^'"]+)""").find(element.attr("onclick") + element.attr("href"))?.groupValues?.get(1)
-            val href = if (round != null) transport.appUrl("xsxk/xsxk_index?jx0502zbid=" + encode(round))
-                else element.absUrl("href").takeIf { it.contains("/xsxk/") && !it.contains("Oper") && !it.contains("exit") }
-            href?.let { Triple(it, round.orEmpty(), element.closest("tr")?.text() ?: element.text()) }
-        }.distinctBy { it.first }
+            if (!AcademicHtml.isEnabledControl(element)) return@mapNotNull null
+            val call = Regex("""\b(comeInXkIndx|toxk)\s*\(\s*['"]([^'"]+)['"]\s*\)""").find(element.attr("onclick") + element.attr("href"))
+            val direct = element.absUrl("href").toHttpUrlOrNull()
+            val round = call?.groupValues?.get(2) ?: direct?.queryParameterValues("jx0502zbid")?.singleOrNull()
+            if (round.isNullOrBlank()) return@mapNotNull null
+            val target = if (call != null) transport.appUrl("xsxk/" +
+                (if (call.groupValues[1] == "toxk") "xklc_view" else "xsxk_index") + "?jx0502zbid=" + encode(round))
+            else element.absUrl("href").takeIf {
+                direct?.encodedPath?.endsWith("/xsxk/xklc_view") == true ||
+                    direct?.encodedPath?.endsWith("/xsxk/xsxk_index") == true
+            }
+            target?.let { RoundEntry(it, round, element.closest("tr")?.text() ?: element.text(), call?.groupValues?.get(1) == "toxk") }
+        }.distinctBy { it.url }
         if (links.isEmpty()) {
             val direct = discoverScopes(page, emptyMap(), "选课")
             if (direct.isNotEmpty()) return@serial CourseContext(session.epoch, direct)
@@ -185,14 +194,53 @@ internal class QzOldAcademicAdapter(school: SchoolConfig, session: AcademicSessi
                     table.select("th").any { it.text().trim() == "选课时间" }
             }
             if (roundTable?.text()?.let { it.contains("未查询到数据") || it.contains("暂无数据") } == true ||
-                AcademicJson.status(page.text) == AcademicStatus.ROUND_CLOSED)
+                AcademicJson.status(document.text()) == AcademicStatus.ROUND_CLOSED)
                 return@serial CourseContext(session.epoch, emptyList())
             throw AcademicException(AcademicStatus.PAGE_CHANGED, "未发现学校提供的选课轮次")
         }
-        val scopes = links.flatMap { (url, id, name) ->
-            discoverScopes(transport.get(url, page.url), mapOf("roundId" to id, "roundPage" to url), name)
+        val scopes = links.flatMap { (url, id, name, declaration) ->
+            val entry = if (URI(url).path.endsWith("/xklc_view")) reviewedRound(page, url, id, declaration) else transport.get(url, page.url)
+            requirePage(entry)
+            val found = discoverScopes(entry, mapOf("roundId" to id, "roundPage" to entry.url), name)
+            if (found.isEmpty() && AcademicJson.status(Jsoup.parse(entry.text).text()) != AcademicStatus.ROUND_CLOSED)
+                throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校选课入口未提供可识别的课程类别")
+            found
         }
         CourseContext(session.epoch, scopes)
+    }
+
+    private suspend fun reviewedRound(list: AcademicResponse, url: String, id: String, checkDeclaration: Boolean): AcademicResponse {
+        if (id.isBlank()) throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校选课入口缺少唯一轮次")
+        if (checkDeclaration) checkRoundDeclaration(list)
+        val overview = transport.get(url, list.url)
+        requirePage(overview)
+        val document = Jsoup.parse(overview.text, overview.url)
+        if (AcademicJson.status(document.text()) == AcademicStatus.ROUND_CLOSED) return overview
+        val buttons = document.select("[onclick]").filter(AcademicHtml::isEnabledControl).mapNotNull { control ->
+            val call = Regex("""^\s*(xsxkOpen|xk)\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*['"]0['"]\s*)?\)\s*;?\s*$""")
+                .matchEntire(control.attr("onclick")) ?: return@mapNotNull null
+            if (call.groupValues[2] != id) return@mapNotNull null
+            val function = QzScriptParser.function(overview.text, call.groupValues[1])
+            Regex("""window\.open\(\s*['"]([^'"]*/xsxk/xsxk_index\?jx0502zbid=)['"]\s*\+\s*jx0502zbid\s*\)""")
+                .find(function)?.groupValues?.get(1)?.let { URI(overview.url).resolve(it + encode(id)).toString() }
+        }.distinct()
+        val entry = buttons.singleOrNull()
+            ?: throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校未提供唯一可用的选课入口")
+        return transport.get(entry, overview.url)
+    }
+
+    private suspend fun checkRoundDeclaration(list: AcademicResponse) {
+        val script = QzScriptParser.function(list.text, "toxk")
+        if (!Regex("""url\s*:\s*['"][^'"]*/xsxk/mzlist\.do['"]""").containsMatchIn(script))
+            throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校选课声明检查地址已变化")
+        val response = transport.postForm(transport.appUrl("xsxk/mzlist.do"), emptyList(), list.url, ajax = true)
+        requirePage(response)
+        val declaration = runCatching { JSONObject(response.text) }.getOrNull()
+            ?: throw AcademicException(AcademicStatus.PAGE_CHANGED, "无法确认学校选课声明状态")
+        if (!declaration.optBoolean("success") || !declaration.has("istc"))
+            throw AcademicException(AcademicStatus.PAGE_CHANGED, "无法确认学校选课声明状态")
+        if (declaration.optBoolean("istc"))
+            throw AcademicException(AcademicStatus.HUMAN_VERIFICATION_REQUIRED, "请先在教务网页阅读并确认选课声明")
     }
 
     override suspend fun selected(context: CourseContext): List<SelectedCourse> = serial {

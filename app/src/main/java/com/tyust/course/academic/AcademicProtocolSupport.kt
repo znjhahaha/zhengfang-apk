@@ -83,7 +83,7 @@ internal object AcademicJson {
         val conflictId = runCatching { JSONObject(body).optString("yxjx0404id") }.getOrDefault("")
         if (detail.contains("冲突") || conflictId !in setOf("", "null")) return AcademicStatus.CONFLICT
         if (listOf("学分上限", "超过学分", "超出学分", "学分限制").any(detail::contains)) return AcademicStatus.CREDIT_LIMIT
-        if (listOf("未开始", "未开放", "已结束", "选课时间已过", "不在选课时间", "只可退课").any(detail::contains)) return AcademicStatus.ROUND_CLOSED
+        if (listOf("未开始", "未开放", "已结束", "选课时间已过", "不在选课时间", "当前不属于选课阶段", "只可退课").any(detail::contains)) return AcademicStatus.ROUND_CLOSED
         if (listOf("已选该", "已经选", "重复选课").any(detail::contains)) return AcademicStatus.ALREADY_SELECTED
         if (listOf("已满", "无余量", "名额不足", "容量不足").any(detail::contains)) return AcademicStatus.NO_CAPACITY
         if (code !in 200..299) return AcademicStatus.VALIDATION_FAILED
