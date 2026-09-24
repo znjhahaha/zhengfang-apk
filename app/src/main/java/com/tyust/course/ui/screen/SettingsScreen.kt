@@ -92,6 +92,8 @@ fun SettingsScreen(
     onStartupPageSelect: () -> Unit = {},
     glassEffectEnabled: Boolean = true,
     onGlassEffectChange: (Boolean) -> Unit = {},
+    navBarAutoCollapseEnabled: Boolean = true,
+    onNavBarAutoCollapseChange: (Boolean) -> Unit = {},
     usageEnabled: Boolean = true,
     onUsageEnabledChange: (Boolean) -> Unit = {},
     isSuper: Boolean = false,
@@ -227,11 +229,27 @@ fun SettingsScreen(
                     } else {
                         "已关闭，改用不透明材质，更省电也更清晰"
                     },
-                    showDivider = false,
                     trailing = {
                         LiquidSwitch(
                             checked = glassEffectEnabled,
                             onCheckedChange = onGlassEffectChange
+                        )
+                    }
+                )
+                InsetGroupedRow(
+                    icon = Icons.Outlined.Home,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    title = "底部导航栏自动收起",
+                    subtitle = if (navBarAutoCollapseEnabled) {
+                        "向下浏览时收起，向上浏览时展开"
+                    } else {
+                        "始终保持展开"
+                    },
+                    showDivider = false,
+                    trailing = {
+                        LiquidSwitch(
+                            checked = navBarAutoCollapseEnabled,
+                            onCheckedChange = onNavBarAutoCollapseChange
                         )
                     }
                 )

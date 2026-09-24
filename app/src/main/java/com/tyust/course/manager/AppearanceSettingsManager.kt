@@ -188,6 +188,7 @@ object AppearanceSettingsManager {
     private const val STORE_VERSION = 2
 
     private const val KEY_GLASS_EFFECT = "glass_effect_enabled"
+    private const val KEY_NAV_BAR_AUTO_COLLAPSE = "nav_bar_auto_collapse_enabled"
 
     private const val TAG = "AppearanceSettings"
 
@@ -226,6 +227,10 @@ object AppearanceSettingsManager {
      * 不需要任何新的渲染代码。
      */
     var glassEffectEnabled by mutableStateOf(true)
+        private set
+
+    /** 关闭时底部导航栏保持展开；默认沿用滚动收缩行为。 */
+    var navBarAutoCollapseEnabled by mutableStateOf(true)
         private set
 
     /** 用户自定义底色，从未设置过则为 null。 */
@@ -286,6 +291,7 @@ object AppearanceSettingsManager {
             ?.let { name -> runCatching { WallpaperPreset.valueOf(name) }.getOrNull() }
             ?: WallpaperPreset.Aurora
         glassEffectEnabled = prefs?.getBoolean(KEY_GLASS_EFFECT, true) ?: true
+        navBarAutoCollapseEnabled = prefs?.getBoolean(KEY_NAV_BAR_AUTO_COLLAPSE, true) ?: true
         customColor = prefs
             ?.takeIf { it.contains(KEY_CUSTOM_COLOR) }
             ?.getInt(KEY_CUSTOM_COLOR, 0)
@@ -355,6 +361,12 @@ object AppearanceSettingsManager {
         if (glassEffectEnabled == enabled) return
         glassEffectEnabled = enabled
         prefs?.edit()?.putBoolean(KEY_GLASS_EFFECT, enabled)?.apply()
+    }
+
+    fun updateNavBarAutoCollapse(enabled: Boolean) {
+        if (navBarAutoCollapseEnabled == enabled) return
+        navBarAutoCollapseEnabled = enabled
+        prefs?.edit()?.putBoolean(KEY_NAV_BAR_AUTO_COLLAPSE, enabled)?.apply()
     }
 
     /**

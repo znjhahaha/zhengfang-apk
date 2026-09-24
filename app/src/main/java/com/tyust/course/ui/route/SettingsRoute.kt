@@ -386,6 +386,8 @@ fun SettingsRoute(
         onStartupPageSelect = { showStartupPageDialog = true },
         glassEffectEnabled = AppearanceSettingsManager.glassEffectEnabled,
         onGlassEffectChange = { AppearanceSettingsManager.updateGlassEffect(it) },
+        navBarAutoCollapseEnabled = AppearanceSettingsManager.navBarAutoCollapseEnabled,
+        onNavBarAutoCollapseChange = { AppearanceSettingsManager.updateNavBarAutoCollapse(it) },
         usageEnabled = usagePreferences.enabled,
         onUsageEnabledChange = com.tyust.course.usage.UsageStatsManager::setEnabled,
         isSuper = isSuper,

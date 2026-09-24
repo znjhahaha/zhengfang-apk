@@ -338,6 +338,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
 
     // 底栏滚动最小化：捕获页面内任意滚动的方向（nested scroll 冒泡，页面零改动）
     var navBarMinimized by remember { mutableStateOf(false) }
+    val navBarAutoCollapseEnabled = AppearanceSettingsManager.navBarAutoCollapseEnabled
     // API31/32 折射底图的新鲜度。页面内容随滚动移动，底图必须跟着重拍，
     // 否则折射里是启动那一刻的画面。见 GlassLensFreshness 的注释。
     //
@@ -351,10 +352,10 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         }
     }
     val navScrollIntent = remember { NavScrollIntent() }
-    val navBarScrollConnection = remember(density, dialogHostState) {
+    val navBarScrollConnection = remember(density, dialogHostState, navBarAutoCollapseEnabled) {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && dialogHostState.currentDialog == null) {
+                if (navBarAutoCollapseEnabled && source == NestedScrollSource.UserInput && dialogHostState.currentDialog == null) {
                     if (consumed.y == 0f && available.y > 0f) {
                         navBarMinimized = false
                         navScrollIntent.reset()
@@ -370,7 +371,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             }
         }
     }
-    LaunchedEffect(selectedTab) {
+    LaunchedEffect(selectedTab, navBarAutoCollapseEnabled) {
         navBarMinimized = false
         navScrollIntent.reset()
     }
@@ -609,7 +610,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                         selectedTab = targetTab
                     }
                 },
-                minimized = navBarMinimized,
+                minimized = navBarAutoCollapseEnabled && navBarMinimized,
                 onExpandRequest = { navBarMinimized = false },
                 backdrop = navBarBackdrop,
                 lensFreshness = lensFreshness,

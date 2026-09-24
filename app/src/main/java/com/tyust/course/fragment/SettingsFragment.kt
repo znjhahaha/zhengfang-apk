@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import com.tyust.course.LoginActivity
+import com.tyust.course.manager.AppearanceSettingsManager
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.ui.screen.SettingsScreen
@@ -46,6 +47,8 @@ class SettingsFragment : Fragment() {
                     onCredits = { handleCredits() },
                     onLogout = { handleLogout() },
                     onQuotaClick = { showQuotaDetails() },
+                    navBarAutoCollapseEnabled = AppearanceSettingsManager.navBarAutoCollapseEnabled,
+                    onNavBarAutoCollapseChange = { AppearanceSettingsManager.updateNavBarAutoCollapse(it) },
                     isSuper = isSuper,
                     quotaInfo = quotaInfo
                 )
