@@ -2,6 +2,7 @@
 gradlew text eol=lf
 scripts/*.sh text eol=lf
 app/src/main/assets/academic-plugin/** text eol=lf
+app/src/main/assets/bundled-academic/*.json text eol=lf
 app/src/androidTest/assets/academic-plugin/*.json text eol=lf
 app/src/androidTest/assets/academic-plugin/*.js text eol=lf
 *.zfplugin binary
