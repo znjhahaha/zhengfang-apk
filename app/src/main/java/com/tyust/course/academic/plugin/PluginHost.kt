@@ -81,6 +81,9 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
         val academicToken = operation.manifest.json.optInt("apiVersion") == 3 &&
             operation.manifest.json.optString("kind") in setOf("independent", "extension")
+        if (payload.has("sameOriginReferer") &&
+            (payload.opt("sameOriginReferer") !is Boolean || !academicToken)) invalid("同源 Referer 仅支持 API 3 教务插件")
+        val sameOriginReferer = payload.optBoolean("sameOriginReferer", false)
         if (payload.has("upgradeHttpRedirects") &&
             (payload.opt("upgradeHttpRedirects") !is Boolean || !academicToken || purpose != "auth")) invalid("HTTPS 回调升级仅支持 API 3 教务认证")
         val upgradeHttpRedirects = payload.optBoolean("upgradeHttpRedirects", false)
@@ -125,6 +128,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             operation.requireActive()
             policy.requireAllowed(url, method, purpose, form)
             val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
+            if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
             if (method == "POST") {
                 val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {

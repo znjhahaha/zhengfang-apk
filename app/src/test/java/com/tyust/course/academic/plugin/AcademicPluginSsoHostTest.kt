@@ -11,6 +11,35 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 class AcademicPluginSsoHostTest {
+    @Test fun refererUsesEachTargetsRootWithoutQueryOrPreviousOrigin() {
+        MockWebServer().use { source -> MockWebServer().use { target ->
+            source.enqueue(MockResponse().setResponseCode(302).setHeader("Location", target.url("/api/end?ticket=fictional")))
+            target.enqueue(MockResponse().setBody("{}"))
+            val input = request(source, null).put("url", source.url("/api/start?token=fictional").toString()).put("sameOriginReferer", true)
+            host(source, target).call("http", input)
+            assertEquals(source.url("/").toString(), source.takeRequest(1, TimeUnit.SECONDS)?.getHeader("Referer"))
+            assertEquals(target.url("/").toString(), target.takeRequest(1, TimeUnit.SECONDS)?.getHeader("Referer"))
+        } }
+    }
+
+    @Test fun refererIsOptInAndCannotBeSuppliedOrUsedByOtherKinds() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("{}"))
+            host(server).call("http", request(server, null))
+            assertNull(server.takeRequest(1, TimeUnit.SECONDS)?.getHeader("Referer"))
+            val cases = listOf(host(server, version = 2) to true, host(server, kind = "service") to true,
+                host(server, kind = "native") to true, host(server, kind = "configuration") to true,
+                host(server) to "true", host(server) to JSONObject.NULL)
+            for ((h, value) in cases) {
+                try { h.call("http", request(server, null).put("sameOriginReferer", value)); fail("Must reject") }
+                catch (e: PluginException) { assertEquals(PluginErrorCode.VALIDATION_FAILED, e.code) }
+            }
+            try { host(server).call("http", request(server, null).put("headers", JSONObject().put("Referer", "https://another.test"))); fail("Must reject") }
+            catch (e: PluginException) { assertEquals(PluginErrorCode.VALIDATION_FAILED, e.code) }
+            assertEquals(1, server.requestCount)
+        }
+    }
+
     private fun host(vararg servers: MockWebServer, version: Int = 3, kind: String = "independent", auth: Boolean = false,
                      cookies: List<okhttp3.Cookie> = emptyList()): PluginHost {
         val rules = servers.map { JSONObject().put("origin", it.url("/").toString().trimEnd('/'))

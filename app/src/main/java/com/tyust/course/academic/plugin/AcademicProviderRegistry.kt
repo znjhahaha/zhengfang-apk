@@ -16,7 +16,12 @@ object AcademicProviderRegistry {
     @Volatile private var localEndpoint: String? = null
     val usingLocalCatalog: Boolean get() = localEndpoint != null
     @Volatile private var installed: Map<String, PluginPackage> = emptyMap()
-    fun initialize(context: Context) { app = context.applicationContext; localEndpoint = null; store = PluginPackageStore(context, trustedKeys()); runCatching { reload() } }
+    @Volatile private var bundled: Map<String, PluginPackage> = emptyMap()
+    fun initialize(context: Context) {
+        app = context.applicationContext; localEndpoint = null
+        bundled = BundledAcademicProviders.load { context.assets.open(it).use { stream -> stream.readBytes() } }
+        store = PluginPackageStore(context, trustedKeys()); runCatching { reload() }
+    }
     fun packages(): PluginPackageStore = store ?: error("Plugin registry has not been initialized")
     private fun preferences() = app?.getSharedPreferences("plugin-local-catalog", Context.MODE_PRIVATE)
     private fun localKeys(): Map<String, java.security.PublicKey> {
@@ -66,32 +71,66 @@ object AcademicProviderRegistry {
     fun reload() { installed = store?.list().orEmpty().associateBy { it.manifest.id } }
     fun resolve(school: SchoolConfig): PluginPackage? {
         val explicit = manualChoice(school)
-        if (explicit.startsWith("builtin.")) return null
+        if (explicit.startsWith("builtin.")) return builtin(school, explicit.removePrefix("builtin."))
         if (explicit.isNotBlank() && !isEnabled(explicit, school) && explicit in installed) return null
         if (explicit.isNotBlank()) return installed[explicit]?.takeIf { it.manifest.isAcademic }
+            ?: builtin(school)?.takeIf { it.manifest.id == explicit }
             ?: throw AcademicException(AcademicStatus.UNSUPPORTED, "该学校适配尚未安装，请导入或恢复内置适配")
         val candidates = candidates(school)
         if (candidates.size > 1) throw AcademicException(AcademicStatus.UNSUPPORTED, "本校有多个教务适配，请到插件中心选择并记忆")
-        return candidates.singleOrNull()
+        return candidates.singleOrNull() ?: builtin(school)
     }
-    fun hasBinding(school: SchoolConfig) = manualChoice(school).let { it.isNotBlank() && !it.startsWith("builtin.") } || candidates(school).isNotEmpty()
+    private fun builtin(school: SchoolConfig, choice: String = school.academicSystem): PluginPackage? =
+        BundledAcademicProviders.matching(school, choice)?.let { bundled[it.id] }
+    fun prepareBuiltinSchool(school: SchoolConfig) {
+        val pkg = resolve(school)?.takeIf { it.bundled } ?: return
+        school.academicSystem = pkg.manifest.school.getString("academicSystem")
+        // The bundled providers own the site's root context, including browser cookie import.
+        school.basePath = ""
+    }
+    fun builtinAdapter(school: SchoolConfig, session: AcademicSession): PluginAcademicAdapter? {
+        val choice = manualChoice(school)
+        if (choice.startsWith("builtin.") && choice !in setOf("builtin.auto", "builtin.${school.academicSystem}")) return null
+        return builtin(school)?.let { PluginAcademicAdapter(app ?: error("Plugin registry has not been initialized"), it, session) }
+    }
+    fun hasBinding(school: SchoolConfig): Boolean {
+        val choice = manualChoice(school)
+        if (choice.startsWith("builtin.")) return builtin(school, choice.removePrefix("builtin.")) != null
+        return choice.isNotBlank() || candidates(school).isNotEmpty() || builtin(school) != null
+    }
     fun hasCapability(school: SchoolConfig, operation: String): Boolean = runCatching {
         val pkg = resolve(school)
-        pkg == null || operation in pkg.manifest.capabilities || pkg.manifest.baseProvider != null
+        if (pkg == null) school.academicType() !in setOf(AcademicSystem.JINZHI, AcademicSystem.CHENGFANG)
+        else operation in pkg.manifest.capabilities || pkg.manifest.baseProvider?.let { base ->
+            BuiltinAcademicInheritance.providers[base]?.let { operation in bundled[it]?.manifest?.capabilities.orEmpty() } ?: true
+        } == true
     }.getOrDefault(false)
-    fun overrides(school: SchoolConfig, operation: String): Boolean = runCatching { operation in resolve(school)?.manifest?.capabilities.orEmpty() }.getOrDefault(false)
+    fun overrides(school: SchoolConfig, operation: String): Boolean = runCatching {
+        val pkg = resolve(school) ?: return@runCatching false
+        operation in pkg.manifest.capabilities || BuiltinAcademicInheritance.providers[pkg.manifest.baseProvider]?.let {
+            operation in bundled[it]?.manifest?.capabilities.orEmpty()
+        } == true
+    }.getOrDefault(false)
     fun adapter(school: SchoolConfig, session: AcademicSession): PluginAcademicAdapter? {
         val pkg = resolve(school) ?: return null
+        return adapterFor(pkg, school, session)
+    }
+    fun adapterFor(pkg: PluginPackage, school: SchoolConfig, session: AcademicSession): PluginAcademicAdapter {
         val baseSchool = pkg.manifest.baseProvider?.let { provider -> SchoolConfig.fromJson(school.toJson()).apply {
             academicProvider = ""; academicSystem = provider.removePrefix("builtin.").let { if (it == "legacy_zf") "zf" else it }
         } }
-        val base = baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, session) }
-        val study = baseSchool?.let { AcademicStudyReader(it, session, AcademicHttpTransport(it, session)) }
-        return PluginAcademicAdapter(app ?: error("Plugin registry has not been initialized"), pkg, session, base, study, baseSchool)
+        val context = app ?: error("Plugin registry has not been initialized")
+        val inherited = BuiltinAcademicInheritance.providers[pkg.manifest.baseProvider]?.let { id ->
+            BuiltinAcademicInheritance.inherit(pkg, bundled[id] ?: error("Builtin provider missing"), school)
+        }
+        val base = inherited?.let { PluginAcademicAdapter(context, it, session) }
+            ?: baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, session) }
+        val study = (base as? AcademicStudyAdapter) ?: baseSchool?.let { AcademicStudyReader(it, session, AcademicHttpTransport(it, session)) }
+        return PluginAcademicAdapter(context, pkg, session, base, study, baseSchool, inheritedPackage = inherited)
     }
     fun school(pkg: PluginPackage): SchoolConfig = SchoolConfig.fromJson(pkg.manifest.school).apply {
         require(pkg.manifest.isAcademic) { "普通界面插件不能替换学校教务" }
         academicProvider = pkg.manifest.id
-        academicSystem = pkg.manifest.baseProvider?.removePrefix("builtin.") ?: "auto"
+        academicSystem = pkg.manifest.baseProvider?.removePrefix("builtin.") ?: pkg.manifest.school.optString("academicSystem", "auto")
     }
 }

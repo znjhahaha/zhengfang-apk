@@ -13,16 +13,21 @@ class PluginAcademicAdapter(
     private val app: Context, val pinned: PluginPackage, val session: AcademicSession,
     private val base: AcademicProtocolAdapter? = null, private val study: AcademicStudyAdapter? = null,
     private val baseSchool: com.tyust.course.model.SchoolConfig? = null,
-    private val scopeStillActive: () -> Boolean = { true }
+    private val scopeStillActive: () -> Boolean = { true },
+    private val inheritedPackage: PluginPackage? = null
 ) : AcademicProtocolAdapter, AcademicStudyAdapter, AcademicCaptchaLogin, SessionBackedAdapter {
     private val schema = PluginSchema(PluginJson.parse(app.assets.open("academic-plugin/contract.schema.json").bufferedReader().use { it.readText() }))
     private var continuation: String? = null
-    var webLogin: JSONObject? = null
-        private set
+    private var ownWebLogin: JSONObject? = null
+    val webLogin: JSONObject? get() = ownWebLogin ?: (base as? PluginAcademicAdapter)?.webLogin
     val version: String get() = pinned.manifest.version
-    fun rebind(newSession: AcademicSession) = PluginAcademicAdapter(app, pinned, newSession,
-        baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, newSession) },
-        baseSchool?.let { AcademicStudyReader(it, newSession, AcademicHttpTransport(it, newSession)) }, baseSchool, scopeStillActive)
+    fun rebind(newSession: AcademicSession): PluginAcademicAdapter {
+        val rebound = inheritedPackage?.let { PluginAcademicAdapter(app, it, newSession, scopeStillActive = scopeStillActive) }
+            ?: baseSchool?.let { AcademicGatewayFactory.createBuiltin(it, newSession) }
+        val reader = (rebound as? AcademicStudyAdapter)
+            ?: baseSchool?.let { AcademicStudyReader(it, newSession, AcademicHttpTransport(it, newSession)) }
+        return PluginAcademicAdapter(app, pinned, newSession, rebound, reader, baseSchool, scopeStillActive, inheritedPackage)
+    }
     @Volatile var lastTrace: List<JSONObject> = emptyList()
         private set
     private val storageRoot = File(app.filesDir, if (session.key.accountKey.startsWith("dev:")) "academic-plugin-development/${pinned.digest}" else "academic-plugin-storage")
@@ -32,10 +37,13 @@ class PluginAcademicAdapter(
         storageRoot.listFiles()?.filter { it.isFile }?.forEach { it.delete() }
     }
 
-    suspend fun invoke(method: String, args: JSONObject = JSONObject(), confirmed: Boolean = false): JSONObject = session.withProtocolLock {
-        if (method !in pinned.manifest.capabilities) unsupported(method)
+    val effectiveCapabilities: Set<String> get() = pinned.manifest.capabilities + (base as? PluginAcademicAdapter)?.effectiveCapabilities.orEmpty()
+    suspend fun invoke(method: String, args: JSONObject = JSONObject(), confirmed: Boolean = false): JSONObject {
+        if (method !in pinned.manifest.capabilities)
+            return (base as? PluginAcademicAdapter)?.invoke(method, args, confirmed) ?: unsupported(method)
+        return session.withProtocolLock {
         ServicePluginContract.requireRequest(pinned.manifest, method, args, confirmed)
-        val op = PluginOperation(session, pinned.manifest, method, development = !pinned.official, confirmed = confirmed,
+        val op = PluginOperation(session, pinned.manifest, method, development = !pinned.official && !pinned.bundled, confirmed = confirmed,
             actionId = if (method == "service.action") args.getString("actionId") else null, scopeStillActive = scopeStillActive)
         val host = PluginHost(op, storageRoot)
         try {
@@ -52,6 +60,7 @@ class PluginAcademicAdapter(
             }
         } catch (e: PluginException) { val failure = op.failure(e.code, e.message.orEmpty()); throw AcademicException(status(failure.code), failure.message.orEmpty(), e) }
         finally { lastTrace = host.report() }
+        }
     }
     private suspend fun pages(method: String, args: JSONObject = JSONObject(), onFirstPage: (JSONObject) -> Unit = {}): List<JSONObject> {
         val rows = mutableListOf<JSONObject>()
@@ -77,17 +86,19 @@ class PluginAcademicAdapter(
     override suspend fun submitCaptcha(code: String): LoginResult = if (has("auth.resume"))
         auth(invoke("auth.resume", JSONObject().put("continuationId", continuation ?: unsupported("auth.resume")).put("captcha", code)))
         else (native() as? AcademicCaptchaLogin)?.submitCaptcha(code) ?: unsupported("auth.resume")
-    suspend fun resumeWebLogin(): LoginResult = auth(invoke("auth.resume", JSONObject().put("continuationId", continuation ?: unsupported("auth.resume")).put("webLoginCompleted", true)))
+    suspend fun resumeWebLogin(): LoginResult = if (has("auth.resume"))
+        auth(invoke("auth.resume", JSONObject().put("continuationId", continuation ?: unsupported("auth.resume")).put("webLoginCompleted", true)))
+        else (base as? PluginAcademicAdapter)?.resumeWebLogin() ?: unsupported("auth.resume")
     override suspend fun refreshCaptcha(): CaptchaChallenge? = if (has("auth.refreshCaptcha"))
         auth(invoke("auth.refreshCaptcha", JSONObject().put("continuationId", continuation ?: unsupported("auth.refreshCaptcha")))).captcha
         else (native() as? AcademicCaptchaLogin)?.refreshCaptcha()
-    override fun clearLoginState() { continuation = null; webLogin = null; (base as? AcademicCaptchaLogin)?.clearLoginState() }
+    override fun clearLoginState() { continuation = null; ownWebLogin = null; (base as? AcademicCaptchaLogin)?.clearLoginState() }
     override fun cookieHeader() = session.cookieHeader()
     private fun auth(data: JSONObject): LoginResult = when (data.getString("status")) {
         "authenticated" -> LoginResult(AcademicStatus.SUCCESS, data.getString("studentName"), data.getString("studentId"))
         "captcha" -> { continuation = data.getString("continuationId"); LoginResult(AcademicStatus.CAPTCHA_REQUIRED,
             captcha = CaptchaChallenge(data.getString("imageBase64").decodeBase64()?.toByteArray() ?: ByteArray(0), "captcha", null)) }
-        "webLogin" -> { continuation = data.getString("continuationId"); webLogin = data
+        "webLogin" -> { continuation = data.getString("continuationId"); ownWebLogin = data
             val policy = PluginNetworkPolicy(pinned.manifest.network)
             for (field in listOf("url", "completionUrl")) {
                 val url = data.getString(field).toHttpUrlOrNull()

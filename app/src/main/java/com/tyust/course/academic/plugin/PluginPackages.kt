@@ -23,7 +23,7 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.UUID
 import java.util.zip.ZipInputStream
 
-data class PluginPackage(val manifest: PluginManifest, val source: String, val digest: String, val official: Boolean)
+data class PluginPackage(val manifest: PluginManifest, val source: String, val digest: String, val official: Boolean, val bundled: Boolean = false)
 
 object PluginPackageVerifier {
     // Some API 24 providers support EC keys and signatures but expose no EC

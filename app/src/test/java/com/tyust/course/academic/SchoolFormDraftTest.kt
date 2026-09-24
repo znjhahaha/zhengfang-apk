@@ -18,7 +18,7 @@ class SchoolFormDraftTest {
             assertEquals("测试大学", restored.name)
             assertTrue(restored.allowedAcademicHosts.contains(restored.domain))
         }
-        assertEquals(listOf("自动识别", "新正方", "旧正方", "新强智", "旧强智"),
+        assertEquals(listOf("自动识别", "新正方", "旧正方", "新强智", "旧强智", "金智", "乘方"),
             AcademicCapabilities.selectableSystems.map(AcademicCapabilities::selectionLabel))
     }
 

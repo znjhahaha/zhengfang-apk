@@ -170,6 +170,7 @@ data class PluginManifest(val json: JSONObject) {
 
     fun validate(schema: PluginSchema) {
         schema.validate(json)
+        BuiltinAcademicInheritance.configuration(this)
         if (kind in setOf("independent", "service", "native") && baseProvider != null || kind !in setOf("independent", "service", "native") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
         if (!isNative && !json.has("school")) invalid("教务适配和旧版服务需要学校信息")
         if (isNative) NativePluginContract.validateManifest(this)

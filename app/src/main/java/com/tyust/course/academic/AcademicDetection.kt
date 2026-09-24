@@ -25,6 +25,10 @@ object AcademicDetection {
     suspend fun detect(input: String, template: SchoolConfig? = null, timeoutMillis: Long = 20_000): AcademicDetectionResult {
         val address = AcademicAddress.parse(input)
             ?: return AcademicDetectionResult(AcademicDetectionStatus.INVALID_ADDRESS)
+        com.tyust.course.academic.plugin.BundledAcademicProviders.detect(input)?.let {
+            return AcademicDetectionResult(AcademicDetectionStatus.SUCCESS,
+                com.tyust.course.academic.plugin.BundledAcademicProviders.address(it), it.system)
+        }
         val initial = input.trim().let { if (it.contains("://")) it else "https://$it" }
         var reachable = false
         val result = withTimeoutOrNull(timeoutMillis) {

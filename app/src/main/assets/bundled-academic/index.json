@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "entries": [
+    {
+      "id": "cn.edu.huat.neweas",
+      "type": "jinzhi",
+      "asset": "jinzhi.eduplugin",
+      "sha256": "984fe2b1aa8bec6f6686da9f233a5047bc0cddb4f4dffb0958dd5600f8ab9fad"
+    },
+    {
+      "id": "cn.edu.sdipct.chengfang",
+      "type": "chengfang",
+      "asset": "chengfang.eduplugin",
+      "sha256": "1388626d287003e6fb8a12310ad2dde41cc140b80cd8df02b860f391e9ee0ae9"
+    }
+  ]
+}

@@ -32,6 +32,7 @@ object AcademicGatewayFactory {
     }
 
     fun create(school: SchoolConfig, accountStorageKey: String): AcademicProtocolAdapter {
+        AcademicProviderRegistry.prepareBuiltinSchool(school)
         val session = sessions.session(school.id, accountStorageKey, school.getFullBasePath())
         AcademicProviderRegistry.adapter(school, session)?.let { return it }
         return createBuiltin(school, session)
@@ -39,6 +40,7 @@ object AcademicGatewayFactory {
 
     internal fun createBuiltin(school: SchoolConfig, session: AcademicSession): AcademicProtocolAdapter {
         val system = school.academicType()
+        AcademicProviderRegistry.builtinAdapter(school, session)?.let { return it }
         require(system != AcademicSystem.LEGACY_ZF && system != AcademicSystem.AUTO) { "School has no selected academic adapter" }
         val transport = AcademicHttpTransport(school, session)
         val adapter = when (system) {
@@ -46,15 +48,19 @@ object AcademicGatewayFactory {
             AcademicSystem.ZF_OLD -> ZfOldAcademicAdapter(school, session, transport)
             AcademicSystem.QZ -> QzAcademicAdapter(school, session, transport)
             AcademicSystem.QZ_OLD -> QzOldAcademicAdapter(school, session, transport)
+            AcademicSystem.JINZHI, AcademicSystem.CHENGFANG -> throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无对应的内置教务适配，请安装本校适配插件")
             AcademicSystem.LEGACY_ZF, AcademicSystem.AUTO -> error("Academic adapter is not selected")
         }
         return BuiltinAcademicProvider(adapter, session, system)
     }
 
     fun createStudy(school: SchoolConfig, accountStorageKey: String): AcademicStudyAdapter {
+        AcademicProviderRegistry.prepareBuiltinSchool(school)
         val session = sessions.session(school.id, accountStorageKey, school.fullBasePath)
         AcademicProviderRegistry.adapter(school, session)?.let { return it }
         require(school.academicType() !in setOf(AcademicSystem.AUTO, AcademicSystem.LEGACY_ZF))
+        if (school.academicType() in setOf(AcademicSystem.JINZHI, AcademicSystem.CHENGFANG))
+            throw AcademicException(AcademicStatus.UNSUPPORTED, "本校暂无对应的内置教务适配")
         return AcademicStudyReader(school, session, AcademicHttpTransport(school, session))
     }
 
@@ -83,6 +89,7 @@ object AcademicGatewayFactory {
         (school.id + "::" + username.trim()).replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     fun loginUrl(school: SchoolConfig): String {
+        com.tyust.course.academic.plugin.BundledAcademicProviders.matching(school)?.let { return it.loginUrl }
         if (school.academicType() == AcademicSystem.QZ) QzCasEntry.forSchool(school)?.let { return it.service.toString() }
         val path = when (AcademicSystem.fromId(school.academicSystem)) {
             AcademicSystem.ZF -> "xtgl/login_slogin.html"
@@ -96,7 +103,8 @@ object AcademicGatewayFactory {
     }
 
     fun detectAndApply(school: SchoolConfig, html: String): AcademicSystem? {
-        val detected = SystemDetector.classify(html) ?: return null
+        val detected = com.tyust.course.academic.plugin.BundledAcademicProviders.matching(school)?.system
+            ?: SystemDetector.classify(html) ?: return null
         school.academicSystem = detected.id
         school.detectionSource = "automatic"
         if (!school.allowedAcademicHosts.contains(school.domain)) school.allowedAcademicHosts.add(school.domain)

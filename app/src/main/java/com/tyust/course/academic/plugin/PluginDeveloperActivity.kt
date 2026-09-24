@@ -50,8 +50,10 @@ class PluginDeveloperActivity : ComponentActivity() {
         var bindCandidate by remember { mutableStateOf<PluginPackage?>(null) }
         val sessions = remember { AcademicSessionStore() }
         val sessionId = remember { "dev:${UUID.randomUUID()}" }
-        val adapter = remember(selected?.digest) { selected?.takeUnless { it.manifest.isNative }?.let { pkg -> PluginAcademicAdapter(this, pkg,
-            sessions.session(pkg.manifest.school.getString("id"), sessionId, "${pkg.manifest.school.getString("protocol")}://${pkg.manifest.school.getString("domain")}${pkg.manifest.school.getString("basePath")}")) } }
+        val adapter = remember(selected?.digest) { selected?.takeUnless { it.manifest.isNative }?.let { pkg ->
+            val school = com.tyust.course.model.SchoolConfig.fromJson(pkg.manifest.school)
+            AcademicProviderRegistry.adapterFor(pkg, school, sessions.session(school.id, sessionId, school.fullBasePath))
+        } }
         DisposableEffect(Unit) { onDispose { sessions.clear() } }
         suspend fun refresh() { packages = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().list() } }
         LaunchedEffect(Unit) { refresh() }
@@ -230,7 +232,7 @@ class PluginDeveloperActivity : ComponentActivity() {
                     }
                 }
                 val debugPackage = selected
-                if (developer && debugPackage != null && !debugPackage.manifest.isNative && debugPackage.manifest.capabilities.isNotEmpty()) {
+                if (developer && debugPackage != null && !debugPackage.manifest.isNative && adapter?.effectiveCapabilities?.isNotEmpty() == true) {
                     InsetGroupedSection(header = "独立测试会话", footer = "测试会话与当前账号隔离，选退课调用仍需确认。") {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("${debugPackage.manifest.id} · ${debugPackage.manifest.version}", style = MaterialTheme.typography.bodySmall,
@@ -238,7 +240,7 @@ class PluginDeveloperActivity : ComponentActivity() {
                             Box {
                                 LiquidButton({ showMethods = true }, enabled = !busy) { Text(operation, style = MaterialTheme.typography.bodyMedium); Icon(Icons.Outlined.ExpandMore, null) }
                                 DropdownMenu(showMethods, { showMethods = false }) {
-                                    debugPackage.manifest.capabilities.forEach { method -> DropdownMenuItem(text = { Text(method) }, onClick = {
+                                    adapter.effectiveCapabilities.forEach { method -> DropdownMenuItem(text = { Text(method) }, onClick = {
                                         operation = method; showMethods = false; args = defaultArgs(method)
                                     }) }
                                 }
