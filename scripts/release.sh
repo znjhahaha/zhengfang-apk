@@ -50,6 +50,7 @@ REST="${VERSION#*.}"
 CODE="${REST#*.}"
 
 NOTES_FILE="release-notes/${TAG}.md"
+ANNOUNCEMENT_FILE="release-notes/${TAG}-announcement.json"
 VERSION_FILE="app/version.properties"
 CHANGELOG="CHANGELOG.md"
 
@@ -164,6 +165,19 @@ $(printf '%s\n' "$NOTES" | grep -nE '^[[:space:]]*[#*-]|`' | sed 's/^/       /')
 fi
 
 note "更新日志 $(printf '%s\n' "$NOTES" | wc -l | tr -d ' ') 行，来自 ${NOTES_FILE}"
+
+# CI requires this archive before it starts Gradle. Validate the same input before
+# changing version files or creating an immutable release tag.
+[ -f "$ANNOUNCEMENT_FILE" ] || die "缺少 ${ANNOUNCEMENT_FILE}。请先编写发布公告；CI 会校验此文件。"
+RELEASE_PYTHON=""
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        RELEASE_PYTHON="$candidate"
+        break
+    fi
+done
+[ -n "$RELEASE_PYTHON" ] || die "发布公告校验需要 Python 3。"
+"$RELEASE_PYTHON" scripts/publish_announcement.py --tag "$TAG" --validate-only
 
 # ── 5. 写 version.properties ─────────────────────────────────────────
 cat > "$VERSION_FILE" <<PROPS
