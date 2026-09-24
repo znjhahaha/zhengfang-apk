@@ -30,6 +30,10 @@ object AcademicDetection {
         // still perform blocking work. A Compose caller must never resume that on Main.
         val address = AcademicAddress.parse(input)
             ?: return@withContext AcademicDetectionResult(AcademicDetectionStatus.INVALID_ADDRESS)
+        com.tyust.course.academic.plugin.BundledAcademicProviders.detect(input)?.let {
+            return@withContext AcademicDetectionResult(AcademicDetectionStatus.SUCCESS,
+                com.tyust.course.academic.plugin.BundledAcademicProviders.address(it), it.system)
+        }
         val initial = input.trim().let { if (it.contains("://")) it else "https://$it" }
         var reachable = false
         var lastFailure: Throwable? = null

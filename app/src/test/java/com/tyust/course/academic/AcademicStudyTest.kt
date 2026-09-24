@@ -192,6 +192,36 @@ class AcademicStudyTest {
         }
     }
 
+    @Test fun oldQzScheduleUsesTheSemesterFormAfterSsoAndPrintForms() = runBlocking {
+        server(AcademicSystem.QZ_OLD) { server, reader ->
+            val unrelated = """<form name='loginForm1' method='post' action='/legacy/Logon.do'>
+                <input name='ticket' value='sso-only'><input name='useraccount' value='another-service'></form>
+                <form name='FormPrint' method='post'><input name='printOnly' value='yes'></form>"""
+            val page = unrelated + qzSchedule.replace("<form action", "<form method='post' action")
+            enqueue(server, "<a href='/jsxsd/xskb/xskb_list.do'>课表</a>", page, page)
+            assertEquals(1, reader.schedule(AcademicTerm("2026-2027-1")).size)
+            server.takeRequest(); server.takeRequest()
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/jsxsd/xskb/xskb_list.do?viweType=0", request.path)
+            val body = request.body.readUtf8()
+            assertTrue(body.contains("xnxq01id=2026-2027-1"))
+            assertTrue(body.contains("kbjcmsid=mode1"))
+            assertFalse(body.contains("ticket"))
+            assertFalse(body.contains("useraccount"))
+            assertFalse(body.contains("printOnly"))
+        }
+    }
+
+    @Test fun ambiguousQzSemesterFormsDoNotSubmitAnyQuery() = runBlocking {
+        server(AcademicSystem.QZ_OLD) { server, reader ->
+            enqueue(server, "<a href='/jsxsd/xskb/xskb_list.do'>课表</a>", qzSchedule + qzSchedule)
+            try { reader.schedule(AcademicTerm("2026-2027-1")); fail() }
+            catch (e: AcademicException) { assertEquals(AcademicStatus.PAGE_CHANGED, e.status) }
+            assertEquals(2, server.requestCount)
+        }
+    }
+
     @Test fun oldQzGradesUseTheHtmlQueryWithItsHiddenFields() = runBlocking {
         server(AcademicSystem.QZ_OLD) { server, reader ->
             enqueue(server, "<a href='/jsxsd/kscj/cjcx_frm'>成绩</a>",

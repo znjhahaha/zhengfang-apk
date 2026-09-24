@@ -171,6 +171,9 @@ internal class ZfAcademicAdapter(school: SchoolConfig, session: AcademicSession,
         hidden["mm"] = password
         hidden["language"] = hidden["language"].orEmpty().ifBlank { "zh_CN" }
         val result = transport.postForm(transport.appUrl("xtgl/login_slogin.html"), hidden.toList(), page.url)
+        // A rejected login may make the next menu request redirect to an HTTP login page.
+        // Report the school's actual rejection before attempting authenticated queries.
+        if (AcademicHtml.isLoginPage(result.text)) AcademicLoginHtml.failure(result)?.let { return@serial it }
         transport.get(transport.appUrl("xtgl/index_initMenu.html"))
         val identity = validateIdentity()
         when {

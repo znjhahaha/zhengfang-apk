@@ -16,7 +16,11 @@ object AcademicCapabilities {
         AcademicSystemSupport(AcademicSystem.QZ, "新强智", "支持直接账密登录；额外的人机验证或统一认证需在学校网页完成。",
             "App 为保护学校登录状态，按账号串行提交。轮次与课程类别来自学校，轮次未开放时仍可查询已选及学习数据。"),
         AcademicSystemSupport(AcademicSystem.QZ_OLD, "旧强智", "支持账号密码、图片验证码获取与刷新；定制统一认证保留网页登录入口。",
-            "App 为保护学校登录状态，按账号串行提交。学校菜单、开放轮次与操作权限决定可用查询和选退课。")
+            "App 为保护学校登录状态，按账号串行提交。学校菜单、开放轮次与操作权限决定可用查询和选退课。"),
+        AcademicSystemSupport(AcademicSystem.JINZHI, "金智", "已内置湖北汽车工业学院统一认证与教务适配。",
+            "支持学期、课表、作息、成绩、考试及选课查询；选退操作受学校开放时间与权限限制。其他学校需对应适配。"),
+        AcademicSystemSupport(AcademicSystem.CHENGFANG, "乘方", "已内置山东石油化工学院适配，请使用统一认证密码完成学校网页登录。",
+            "支持学期、课表、作息、成绩、考试和已选查询。当前该校选退提交尚未验证，请使用学校网页；其他学校需对应适配。")
     )
     val selectableSystems: List<AcademicSystem> = listOf(AcademicSystem.AUTO) + systems.map { it.system }
     fun selectionIndex(id: String?): Int = selectableSystems.indexOf(system(id) ?: AcademicSystem.AUTO).coerceAtLeast(0)

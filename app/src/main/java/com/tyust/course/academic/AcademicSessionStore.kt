@@ -3,6 +3,7 @@ package com.tyust.course.academic
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
@@ -45,6 +46,8 @@ class AcademicSession internal constructor(
     internal var pageCharset: java.nio.charset.Charset? = null
     private val epochCounter = AtomicLong(1L)
     private val operationMutex = Mutex()
+    private val requestMutex = Mutex()
+    private var lastRequestStarted: Long? = null
     @Volatile var retired: Boolean = false
         private set
     var epoch: Long = epochCounter.get()
@@ -65,6 +68,17 @@ class AcademicSession internal constructor(
 
     fun requireActive() {
         if (retired) throw kotlinx.coroutines.CancellationException("Session replaced")
+    }
+
+    /** Monotonic, cancellable pacing shared by transports for this account's session. */
+    internal suspend fun paceRequest(intervalMillis: Long) = requestMutex.withLock {
+        requireActive()
+        lastRequestStarted?.let { previous ->
+            val remaining = intervalMillis * 1_000_000 - (System.nanoTime() - previous)
+            if (remaining > 0) delay((remaining + 999_999) / 1_000_000)
+        }
+        requireActive()
+        lastRequestStarted = System.nanoTime()
     }
 
     fun cookieHeader(): String = (baseUrl.trimEnd('/') + "/").toHttpUrlOrNull()?.let { cookies.loadForRequest(it) }

@@ -29,6 +29,12 @@ class AcademicLiveSmokeTest {
                 report.put("login", login.status.name)
                 if (login.status == AcademicStatus.SUCCESS) {
                     report.put("identityVerified", login.studentId.isNotBlank())
+                    val study = AcademicGatewayFactory.createStudy(school, AcademicGatewayFactory.accountKey(school, config.getString("username")))
+                    val term = study.catalog().currentTerm
+                    report.put("currentTerm", term.id)
+                    report.put("schedule", study.schedule(term).size)
+                    report.put("grades", study.grades(null).grades.size)
+                    report.put("exams", study.exams(term).size)
                     val context = adapter.loadCourseContext()
                     report.put("scopes", context.scopes.size)
                     val courses = adapter.listCourses(context, CourseQuery(pageSize = 100))

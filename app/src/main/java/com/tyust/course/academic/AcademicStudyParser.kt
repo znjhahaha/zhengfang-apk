@@ -131,7 +131,14 @@ internal object AcademicStudyParser {
         for (cell in grid.filter { it.row > headingRow && it.col in days }) {
             val modern = cell.element.select(".courselists-item")
             val legacy = cell.element.select(".kbcontent")
-            val entries = when { modern.isNotEmpty() -> modern; legacy.isNotEmpty() -> legacy; else -> legacyBlocks(cell.element) }
+            val visibleLegacy = cell.element.select(".kbcontent1")
+            val entries = when {
+                modern.isNotEmpty() -> modern
+                visibleLegacy.isNotEmpty() -> QzTimetableCells.entries(cell.element,
+                    grid.filter { it.row == cell.row && it.col < days.keys.min() }.map { it.element.text() })
+                legacy.isNotEmpty() -> legacy
+                else -> legacyBlocks(cell.element)
+            }
             for (entry in entries) {
                 val abbreviation = entry.selectFirst(".qz-hasCourse-abbrinfo")
                 val lines = if (abbreviation != null) listOf(entry.selectFirst(".qz-hasCourse-title")?.text().orEmpty(), abbreviation.text()) else lines(entry)
@@ -140,7 +147,7 @@ internal object AcademicStudyParser {
                 val periodText = Regex("""(?:第|\[)?(\d+(?:\s*[-—,，、]\s*\d+)*)\s*节""").find(content)?.groupValues?.get(1)
                 val spans = periods(periodText.orEmpty())
                 if (spans.isEmpty()) {
-                    if (modern.isNotEmpty() || legacy.isNotEmpty()) throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校课表缺少可识别的节次")
+                    if (modern.isNotEmpty() || legacy.isNotEmpty() || visibleLegacy.isNotEmpty()) throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校课表缺少可识别的节次")
                     continue
                 }
                 val name = entry.selectFirst(".qz-hasCourse-title")?.text()?.trim().orEmpty().ifBlank { lines.firstOrNull().orEmpty() }
@@ -156,7 +163,7 @@ internal object AcademicStudyParser {
                 spans.forEach { (start, end) -> result += AcademicScheduleEntry(name, teacher, location, days.getValue(cell.col), start, end, weeks) }
             }
         }
-        if (result.isEmpty() && document.select(".courselists-item,.kbcontent").any { it.text().isNotBlank() })
+        if (result.isEmpty() && document.select(".courselists-item,.kbcontent,.kbcontent1").any { it.text().isNotBlank() })
             throw AcademicException(AcademicStatus.PAGE_CHANGED, "学校课表格式已变化，暂时无法读取节次")
         return result.distinct()
     }

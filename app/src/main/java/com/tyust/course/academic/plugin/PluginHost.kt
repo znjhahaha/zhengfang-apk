@@ -78,12 +78,52 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         val charsetName = payload.optString("charset", "UTF-8")
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
-        val supplied = payload.optJSONObject("headers") ?: JSONObject()
-        val allowedHeaders = setOf("accept", "content-type", "x-requested-with") + if (operation.manifest.isService || operation.manifest.isNative) setOf("authorization") else emptySet()
+        val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
+        val academicToken = operation.manifest.json.optInt("apiVersion") == 3 &&
+            operation.manifest.json.optString("kind") in setOf("independent", "extension")
+        if (payload.has("sameOriginReferer") &&
+            (payload.opt("sameOriginReferer") !is Boolean || !academicToken)) invalid("同源 Referer 仅支持 API 3 教务插件")
+        val sameOriginReferer = payload.optBoolean("sameOriginReferer", false)
+        if (payload.has("upgradeHttpRedirects") &&
+            (payload.opt("upgradeHttpRedirects") !is Boolean || !academicToken || purpose != "auth")) invalid("HTTPS 回调升级仅支持 API 3 教务认证")
+        val upgradeHttpRedirects = payload.optBoolean("upgradeHttpRedirects", false)
+        val cookieBinding = payload.optJSONObject("cookieHeader")
+        if (payload.has("cookieHeader") && (cookieBinding == null || !academicToken)) invalid("Cookie 认证请求头仅支持 API 3 教务插件")
+        fun cookieToken(target: HttpUrl): String {
+            val binding = cookieBinding ?: invalid("缺少 Cookie 认证声明")
+            val name = binding.optString("cookie")
+            if (binding.keys().asSequence().toSet() != setOf("cookie", "header") ||
+                !name.matches(Regex("[A-Za-z0-9_-]{1,64}")) || binding.optString("header") !in setOf("Authorization", "X-Token")) invalid("无效 Cookie 认证声明")
+            val matches = operation.session.cookies.loadForRequest(target).filter { it.name == name }
+            if (matches.isEmpty()) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "网页登录凭据尚未导入，请重新完成网页登录")
+            if (matches.size != 1) invalid("存在多个同名网页登录凭据")
+            return try { java.net.URLDecoder.decode(matches.single().value.replace("+", "%2B"), "UTF-8") }
+            catch (_: IllegalArgumentException) { invalid("网页登录凭据编码无效") }
+        }
+        val boundToken = if (cookieBinding != null) {
+            policy.requireAllowed(url, method, purpose, form)
+            val header = cookieBinding.optString("header")
+            if (supplied.keys().asSequence().any { it.equals(header, true) }) invalid("认证请求头不可重复")
+            cookieToken(url).also { supplied.put(header, it) }
+        } else null
+        val allowedHeaders = setOf("accept", "content-type", "x-requested-with") +
+            (if (operation.manifest.isService || operation.manifest.isNative || academicToken) setOf("authorization") else emptySet()) +
+            (if (academicToken) setOf("x-token") else emptySet())
+        val headerNames = supplied.keys().asSequence().map { it.lowercase() }.toList()
+        if (headerNames.distinct().size != headerNames.size) invalid("请求头不可重复")
         supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
         val authorization = supplied.keys().asSequence().firstOrNull { it.equals("authorization", true) }
-        if (authorization != null && (!supplied.getString(authorization).startsWith("Bearer ") || supplied.getString(authorization).length > 8192)) invalid("服务认证仅支持 Bearer 请求头")
+        if (authorization != null) {
+            val value = supplied.getString(authorization)
+            if (academicToken) {
+                val secret = value.removePrefix("Bearer ")
+                if (value.length !in 1..8192 || secret.isEmpty() || secret.any { it.code !in 33..126 }) invalid("无效教务认证令牌")
+            } else if (!value.startsWith("Bearer ") || value.length > 8192) invalid("服务认证仅支持 Bearer 请求头")
+        }
+        val token = supplied.keys().asSequence().firstOrNull { it.equals("x-token", true) }
+        if (token != null && (supplied.getString(token).length !in 1..8192 || supplied.getString(token).any { it.code !in 33..126 })) invalid("无效教务认证令牌")
         var redirected = 0
+        var callbackFragment: String? = null
         while (true) {
             operation.requireActive()
             val rule = policy.requireAllowed(url, method, purpose, form)
@@ -91,6 +131,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 operation.manifest.json.optJSONObject("school")?.optString("userAgent").orEmpty()
             }.ifBlank { "ZhengfangAcademicPlugin/1" }
             val builder = Request.Builder().url(url).header("User-Agent", userAgent)
+            if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
             if (method == "POST") {
                 val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {
@@ -114,11 +155,18 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
                         if (++redirected > 5) invalid("跳转次数超过上限")
                         if (method == "POST" && response.code in setOf(307, 308)) invalid("不能自动重放 POST 跳转")
-                        val next = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
-                        if (authorization != null && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
-                            throw PluginException(PluginErrorCode.UNTRUSTED_URL, "服务认证不能随跳转发送到其他站点")
+                        val resolved = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
+                        val next = PluginRedirects.upgradeToHttps(url, resolved, upgradeHttpRedirects)
+                        if ((authorization != null || token != null) && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
+                            throw PluginException(PluginErrorCode.UNTRUSTED_URL, "认证令牌不能随跳转发送到其他站点")
+                        if (boundToken != null && cookieToken(next) != boundToken)
+                            throw PluginException(PluginErrorCode.UNTRUSTED_URL, "Cookie 认证范围不能随跳转变化")
                         if (url.isHttps && !next.isHttps) throw PluginException(PluginErrorCode.UNTRUSTED_URL, "不允许 HTTPS 降级")
-                        url = next
+                        // SPA SSO callbacks carry a token in the URL fragment. It belongs to the
+                        // callback result, never to the HTTP request or network-policy path.
+                        if (next.fragment != null && purpose != "auth") invalid("仅认证回调允许 URL 片段")
+                        callbackFragment = next.encodedFragment
+                        url = next.newBuilder().fragment(null).build()
                         method = "GET"
                         form = null
                     } else {
@@ -136,7 +184,8 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         }
                         val headers = JSONObject()
                         listOf("Content-Type", "Date", "Retry-After").forEach { name -> response.header(name)?.let { headers.put(name, it) } }
-                        return JSONObject().put("status", response.code).put("url", url.toString()).put("headers", headers).put("body", body)
+                        val responseUrl = url.newBuilder().encodedFragment(callbackFragment).build()
+                        return JSONObject().put("status", response.code).put("url", responseUrl.toString()).put("headers", headers).put("body", body)
                     }
                 }
             } catch (e: IOException) {
@@ -188,6 +237,13 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             "aesCbcEncrypt" -> Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
                 init(Cipher.ENCRYPT_MODE, SecretKeySpec(decode("keyBase64"), "AES"), IvParameterSpec(decode("ivBase64")))
             }.doFinal(bytes).toByteString().base64()
+            "aesEcbEncrypt" -> {
+                val key = decode("keyBase64")
+                if (key.size !in setOf(16, 24, 32)) invalid("无效 AES 密钥长度")
+                Cipher.getInstance("AES/ECB/PKCS5Padding").apply {
+                    init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"))
+                }.doFinal(bytes).toByteString().base64()
+            }
             "rsaEncrypt" -> Cipher.getInstance("RSA/ECB/PKCS1Padding").apply {
                 init(Cipher.ENCRYPT_MODE, KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(decode("publicKeySpkiBase64"))))
             }.doFinal(bytes).toByteString().base64()

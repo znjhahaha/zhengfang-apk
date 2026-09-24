@@ -29,14 +29,27 @@ class AcademicAuthenticatedSmokeTest {
             val adapter = AcademicGatewayFactory.create(school, account)
             val study = AcademicGatewayFactory.createStudy(school, account)
             val report = JSONObject().put("system", school.academicSystem)
+            // Optional, independently documented capability boundary. It cannot waive login,
+            // networking or parser failures, and remains visible as UNSUPPORTED in the report.
+            val unavailable = profile.optJSONObject("expectedUnavailable") ?: JSONObject()
+            require(unavailable.keys().asSequence().all { it == "selected" && unavailable.getString(it) == "UNSUPPORTED" })
+            if (unavailable.length() > 0) report.put("expectedUnavailable", unavailable)
+            // One read transaction shares the same round context, as the App does.
+            // Re-entering a school's selection landing page can replace its active round session.
+            var contextResult: Result<CourseContext>? = null
+            suspend fun context(): CourseContext = (contextResult ?: runCatching { adapter.loadCourseContext() }
+                .also { contextResult = it }).getOrThrow()
             suspend fun probe(name: String, read: suspend () -> Any) {
-                try { report.put(name, read()) }
+                try {
+                    report.put(name, read())
+                    if (unavailable.has(name)) failures += "${school.academicSystem}:$name:CAPABILITY_CHANGED"
+                }
                 catch (e: Exception) {
                     val status = (e as? AcademicException)?.status?.name ?: e.javaClass.simpleName
                     report.put(name, status)
                     report.put(name + "Message", e.message.orEmpty().take(200))
                     report.put(name + "At", e.stackTrace.firstOrNull { it.className.startsWith("com.tyust.course.academic") }?.toString())
-                    failures += "${school.academicSystem}:$name:$status"
+                    if (unavailable.optString(name) != status) failures += "${school.academicSystem}:$name:$status"
                 }
             }
             probe("identity") {
@@ -45,13 +58,13 @@ class AcademicAuthenticatedSmokeTest {
                 result.status.name
             }
             probe("courses") {
-                val context = adapter.loadCourseContext()
+                val context = context()
                 report.put("scopes", context.scopes.size)
                 val courses = adapter.listCourses(context, CourseQuery(pageSize = 100))
                 report.put("sections", courses.firstOrNull()?.let { adapter.listSections(it).size } ?: 0)
                 courses.size
             }
-            probe("selected") { adapter.selected(adapter.loadCourseContext()).size }
+            probe("selected") { adapter.selected(context()).size }
             probe("schedule") {
                 val catalog = study.catalog()
                 report.put("currentTerm", catalog.currentTerm.id)

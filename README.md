@@ -6,7 +6,7 @@
 
 在手机上看课表、查成绩、处理选课。
 
-支持新正方、旧正方、新强智和旧强智，也可以通过校园插件适配自己的学校。
+支持新正方、旧正方、新强智和旧强智，内置湖北汽车工业学院金智教务与山东石油化工学院乘方教务，也可以通过校园插件适配自己的学校。
 
 [![最新版](https://img.shields.io/github/v/release/znjhahaha/zhengfang-apk?style=flat-square&color=2563eb&label=Release)](https://github.com/znjhahaha/zhengfang-apk/releases/latest)
 [![Android 7.0+](https://img.shields.io/badge/Android-7.0%2B-34a853?style=flat-square&logo=android&logoColor=white)](https://github.com/znjhahaha/zhengfang-apk/releases/latest)
@@ -93,6 +93,10 @@
 ## 校园插件
 
 插件中心提供 **发现** 与 **已安装** 两个入口，可以按名称搜索、筛选学校，并查看插件详情、安装或启用适配。已有目录会先显示，刷新失败时仍可浏览本地保存的插件。
+
+**湖北汽车工业学院（金智）与山东石油化工学院（乘方）无需额外导入插件。** 输入学校教务地址或指定统一认证入口即可识别，按学校要求登录后查询课表、成绩和考试。乘方使用官方统一认证网页登录，目前不支持选退课提交。
+
+其他使用金智或乘方的学校，可以通过 API 3 配置或扩展插件继承内置协议；需要声明本校地址、认证方式与网络范围并完成验证。具体能力和适配方式见 [内置教务说明](BUNDLED-ACADEMIC.md)。
 
 | 你想做的事 | 入口 |
 | --- | --- |

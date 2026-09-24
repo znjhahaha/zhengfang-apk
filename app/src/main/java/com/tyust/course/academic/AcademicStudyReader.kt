@@ -22,10 +22,11 @@ internal class AcademicStudyReader(
     }
 
     private var menu: AcademicResponse? = null
+    private val zfSchedule by lazy { ZfStudySchedule(school, http, ::checked) }
 
     override suspend fun catalog(): AcademicStudyCatalog = session.withProtocolLock {
         val page = when (school.academicType()) {
-            AcademicSystem.ZF -> checked(http.get(http.appUrl("kbcx/xskbcx_cxXsKb.html?gnmkdm=${school.scheduleGnmkdm}")))
+            AcademicSystem.ZF -> zfSchedule.catalogPage()
             AcademicSystem.ZF_OLD -> studyPage(Page.SCHEDULE)
             else -> qzSchedulePage()
         }
@@ -37,18 +38,17 @@ internal class AcademicStudyReader(
     override suspend fun schedule(term: AcademicTerm): List<AcademicScheduleEntry> = session.withProtocolLock {
         when (school.academicType()) {
             AcademicSystem.ZF -> {
-                val url = http.appUrl(school.schedulePath) + "?gnmkdm=${school.scheduleGnmkdm}"
-                val response = checked(http.postForm(url, zfTerm(term).toList(), ajax = true))
+                val response = zfSchedule.schedule(zfTerm(term))
                 AcademicStudyParser.jsonSchedule(response.text)
             }
             AcademicSystem.ZF_OLD -> AcademicStudyParser.htmlSchedule(oldZfQuery(Page.SCHEDULE, term).text)
             else -> {
                 val page = qzSchedulePage()
-                val fields = formFields(page).apply {
+                val form = qzScheduleForm(page)
+                val fields = (form?.let { AcademicHtml.formFields(it).toMap().toMutableMap() } ?: mutableMapOf()).apply {
                     put("xnxq01id", term.id)
                     put("zc", "")
                 }
-                val form = Jsoup.parse(page.text, page.url).selectFirst("form")
                 val url = form?.let { AcademicHtml.action(it, page.url) } ?: page.url
                 requireStudyUrl(url, Page.SCHEDULE)
                 val response = checked(if (form?.attr("method").equals("post", true)) http.postForm(url, fields.toList(), page.url)
@@ -269,6 +269,18 @@ internal class AcademicStudyReader(
 
     private fun formFields(page: AcademicResponse): MutableMap<String, String> =
         Jsoup.parse(page.text, page.url).selectFirst("form")?.let { AcademicHtml.formFields(it).toMap().toMutableMap() } ?: mutableMapOf()
+
+    private fun qzScheduleForm(page: AcademicResponse): Element? {
+        val forms = Jsoup.parse(page.text, page.url).select("form")
+        // Legacy pages may prepend an SSO form and a print form to the timetable.
+        // Only the semester form owns the query defaults and submission method.
+        val candidates = forms.filter { it.selectFirst("[name=xnxq01id]") != null }
+        return when {
+            candidates.size == 1 -> candidates.single()
+            candidates.isEmpty() && forms.size <= 1 -> forms.firstOrNull()
+            else -> throw AcademicException(AcademicStatus.PAGE_CHANGED, "无法确定学校课表查询表单")
+        }
+    }
 
     private fun isModernQz(page: AcademicResponse) = page.text.contains("qzTable") || page.text.contains("/assets_newL/")
 
