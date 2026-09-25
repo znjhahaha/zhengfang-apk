@@ -99,7 +99,12 @@ fun ScheduleSettingsScreen(
     onEditCustomCourse: (String) -> Unit = {},
     onSyncSchedule: (() -> Unit)? = null,
     displayPreferences: com.tyust.course.schedule.ScheduleDisplayPreferences = com.tyust.course.schedule.ScheduleDisplayPreferences(),
-    onDisplayPreferences: ((com.tyust.course.schedule.ScheduleDisplayPreferences) -> Unit)? = null
+    onDisplayPreferences: ((com.tyust.course.schedule.ScheduleDisplayPreferences) -> Unit)? = null,
+    reminderAccountLabel: String = "",
+    reminderTerm: String = "",
+    reminderSummary: com.tyust.course.schedule.SemesterReminderSummary? = null,
+    canChangeReminders: Boolean = false,
+    onSemesterReminders: (Boolean) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var periodCount by remember { mutableStateOf(manager.periodCount) }
@@ -198,6 +203,10 @@ fun ScheduleSettingsScreen(
                         ),
                     verticalArrangement = Arrangement.spacedBy(SectionSpacing)
                 ) {
+                    reminderSummary?.let { summary ->
+                        SemesterReminderSection(reminderAccountLabel, reminderTerm, summary, canChangeReminders,
+                            onSemesterReminders, onConfigureTime = { showDatePicker = true })
+                    }
                     if (onDisplayPreferences != null) {
                         InsetGroupedSection(header = "课表显示") {
                             InsetGroupedRow(title = "周末", subtitle = "只影响周视图", trailing = {

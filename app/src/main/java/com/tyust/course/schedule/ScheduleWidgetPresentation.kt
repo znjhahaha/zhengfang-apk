@@ -126,10 +126,7 @@ internal object ScheduleWidgetRenderer {
                 compactTime -> listOf(item.dateLabel, item.time.substringBefore('–')).filter(String::isNotBlank).joinToString(" ")
                 else -> listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" ")
             }
-            val room = item?.let {
-                if (compactTime) ScheduleLocation.room(it.location) ?: ScheduleLocation.compact(it.location)
-                else ScheduleLocation.compact(it.location)
-            }.orEmpty()
+            val room = item?.location.orEmpty()
             return listOf(
                 ScheduleWidgetText(item?.name ?: "暂无后续", 14f, bold = true),
                 ScheduleWidgetText(item?.course?.teacher?.ifBlank { "教师待定" }.orEmpty(), 11f, margin = 2f),
@@ -253,8 +250,7 @@ internal object ScheduleWidgetRenderer {
             }
             val time = dateLabel + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.startsAt)) +
                 if (width >= 250 * scale) "–" + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(item.endsAt)) else ""
-            val room = if (width < 250 * scale) ScheduleLocation.room(item.course.location) ?: ScheduleLocation.compact(item.course.location)
-                else ScheduleLocation.compact(item.course.location)
+            val room = item.course.location.ifBlank { "教室待定" }
             return listOf(ScheduleWidgetText(time, 12f, singleLine = true),
                 ScheduleWidgetText(item.course.name, 14f, bold = true, margin = 2f),
                 ScheduleWidgetText(item.course.teacher.ifBlank { "教师待定" }, 12f, margin = 2f),

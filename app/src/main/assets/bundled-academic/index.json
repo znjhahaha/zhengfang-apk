@@ -5,13 +5,37 @@
       "id": "cn.edu.huat.neweas",
       "type": "jinzhi",
       "asset": "jinzhi.eduplugin",
-      "sha256": "984fe2b1aa8bec6f6686da9f233a5047bc0cddb4f4dffb0958dd5600f8ab9fad"
+      "sha256": "1aad6899d44e6db3890cae2397b84a8a21fc5289566800f239602ad861cadc1a"
     },
     {
       "id": "cn.edu.sdipct.chengfang",
       "type": "chengfang",
       "asset": "chengfang.eduplugin",
-      "sha256": "1388626d287003e6fb8a12310ad2dde41cc140b80cd8df02b860f391e9ee0ae9"
+      "sha256": "f4bdd3e5e3e6fe30ba8a00f3892ad9fd65a56e9e32f50876d5cc45102d46ec1b"
+    },
+    {
+      "id": "org.zf.protocol.zf",
+      "type": "zf",
+      "asset": "zf.eduplugin",
+      "sha256": "89617a8b67519d5a3fde4f0fe2bd906de34718a2a9ea36996cf3b681e8485dcc"
+    },
+    {
+      "id": "org.zf.protocol.zf-old",
+      "type": "zf_old",
+      "asset": "zf_old.eduplugin",
+      "sha256": "b26377efdbd9a40db1a663802733ba1a8164cc6195c4bf52e2657bd1cb1b5766"
+    },
+    {
+      "id": "org.zf.protocol.qz",
+      "type": "qz",
+      "asset": "qz.eduplugin",
+      "sha256": "56105fee9681bba8a74d850fb53e1d35fb0f922f6d4357a71b1c25f1b199aecf"
+    },
+    {
+      "id": "org.zf.protocol.qz-old",
+      "type": "qz_old",
+      "asset": "qz_old.eduplugin",
+      "sha256": "45a9d79c34aec809d45bbf514019d3c56d1701c9e00657524cac0c840de1a7e6"
     }
   ]
 }

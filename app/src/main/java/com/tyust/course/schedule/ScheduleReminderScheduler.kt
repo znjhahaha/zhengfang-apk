@@ -94,6 +94,19 @@ class ScheduleReminderScheduler private constructor(private val context: Context
     }
 
     @Synchronized
+    fun setSemesterEnabled(account: String, term: String, courses: List<ScheduleCourseRecord>, enabled: Boolean): Boolean {
+        // A UI callback from the previous account cannot create intent for the new session.
+        if (account != activeAccount() || account.isBlank() || term.isBlank() || courses.isEmpty()) return false
+        val old = records()
+        val updated = SemesterReminders.update(old, account, term, courses, enabled)
+        if (updated != old) { save(updated); reconcile() }
+        return true
+    }
+
+    fun semesterSummary(account: String, term: String, courses: List<ScheduleCourseRecord>): SemesterReminderSummary =
+        SemesterReminders.summary(records(), account, term, courses, timeBase(account, term), permissions(), activeAccount(), System.currentTimeMillis())
+
+    @Synchronized
     fun updateSnapshot(account: String, term: String, courses: List<ScheduleCourseRecord>) {
         if (account.isBlank() || term.isBlank()) return
         val byId = courses.associateBy { it.id }
@@ -234,6 +247,7 @@ class ScheduleReminderScheduler private constructor(private val context: Context
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 data = Uri.Builder().scheme("course-reminder").authority("open").appendPath(id).build()
                 putExtra(EXTRA_REMINDER_ID, id)
+                putExtra("pageId", com.tyust.course.academic.plugin.PluginPageRegistry.SCHEDULE)
             }
             val content = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val notification = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_course_reminder)

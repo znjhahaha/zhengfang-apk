@@ -228,6 +228,7 @@ class LoginActivity : ComponentActivity() {
                     onDemoMode = {
                         handleDemoMode()
                     },
+                    onServiceCenter = { startActivity(Intent(this@LoginActivity, com.tyust.course.academic.plugin.CampusServiceCenterActivity::class.java)) },
                     onSchoolAdaptation = {
                         showSchoolAdaptation = true
                     },

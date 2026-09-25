@@ -2,12 +2,11 @@ package com.tyust.course.schedule
 
 import android.content.Context
 import android.graphics.Typeface
-import android.graphics.text.LineBreaker
-import android.os.Build
 import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
 import android.util.TypedValue
+import android.view.View
+import android.widget.TextView
+import com.tyust.course.R
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -26,27 +25,29 @@ internal class ScheduleWidgetTextFitter(private val context: Context, width: Flo
 
     fun dp(value: Float): Int = (value * metrics.density).roundToInt()
 
-    private fun layout(field: ScheduleWidgetText, scale: Float): StaticLayout {
-        val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-            textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, field.size * scale, metrics)
+    private fun measure(field: ScheduleWidgetText, scale: Float): TextView {
+        // Match RemoteViews' actual TextView metrics, including CJK fallback line spacing.
+        // Measure all lines even for a one-line field so fits() can reject truncation.
+        return TextView(context, null, 0, R.style.ScheduleWidgetFullText).apply {
+            text = field.text
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, field.size * scale)
             typeface = if (field.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
+            hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
+            measure(View.MeasureSpec.makeMeasureSpec(this@ScheduleWidgetTextFitter.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         }
-        return StaticLayout.Builder.obtain(field.text, 0, field.text.length, paint, width)
-            .setIncludePad(false)
-            .setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE)
-            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
-            .apply { if (Build.VERSION.SDK_INT >= 28) setUseLineSpacingFromFallbacks(true) }
-            .build()
     }
 
     fun height(fields: List<ScheduleWidgetText>, scale: Float = 1f): Int = fields.filter { it.text.isNotEmpty() }
-        .sumOf { layout(it, scale).height + dp(it.margin) + 1 }
+        .sumOf { measure(it, scale).measuredHeight + dp(it.margin) + 1 }
 
     fun fits(fields: List<ScheduleWidgetText>, available: Int, scale: Float = 1f): Boolean {
         var height = 0
         for (field in fields.filter { it.text.isNotEmpty() }) {
-            val layout = layout(field, scale)
-            height += layout.height + dp(field.margin) + 1
+            val label = measure(field, scale)
+            val layout = label.layout ?: return false
+            height += label.measuredHeight + dp(field.margin) + 1
             if (height > available || (field.singleLine && layout.lineCount > 1)) return false
             for (line in 0 until layout.lineCount) if (ceil(layout.getLineWidth(line)) > width) return false
         }

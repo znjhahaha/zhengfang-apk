@@ -48,7 +48,7 @@ class ScheduleDateRenderingDeviceTest {
         }
         compose.mainClock.autoAdvance = false
         compose.mainClock.advanceTimeBy(500)
-        val dateNode = compose.onNodeWithTag("schedule-header-date", true)
+        val dateNode = compose.onNodeWithTag("schedule-date-title", true)
         val width = dateNode.fetchSemanticsNode().boundsInRoot.width
         fun assertAligned(label: String, name: String) {
             dateNode.assertTextEquals(label)
@@ -110,7 +110,7 @@ class ScheduleDateRenderingDeviceTest {
         fun assertCurrent(date: String, name: String) {
             compose.waitForIdle()
             fun pixels(parent: String): Bitmap {
-                val node = compose.onNode(hasTestTag("schedule-weekday-date-3") and
+                val node = compose.onNode(hasTestTag("schedule-day-number-3") and
                     hasAnyAncestor(hasTestTag(parent)), useUnmergedTree = true)
                 node.assertTextEquals(date)
                 return node.captureToImage().asAndroidBitmap()

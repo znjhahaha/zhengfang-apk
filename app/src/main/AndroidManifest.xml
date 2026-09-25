@@ -36,6 +36,7 @@
         <activity android:name=".diagnostics.ErrorReportActivity" android:exported="false" android:theme="@style/Theme.CourseSelector" />
         <activity android:name=".academic.plugin.NativePluginActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <service android:name=".academic.plugin.NativePluginJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
+        <service android:name=".academic.plugin.PluginUpdateJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
 
         <provider
             android:name=".manager.AppearanceThemeProvider"

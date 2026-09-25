@@ -13,8 +13,8 @@ class AcademicGatewayReadinessTest {
             assertFalse(AcademicGatewayFactory.hasSelectedAdapter(school))
         }
         school.academicSystem = "legacy_zf"
-        assertFalse(AcademicGatewayFactory.supports(school))
-        assertFalse(AcademicGatewayFactory.hasSelectedAdapter(school))
+        assertTrue(AcademicGatewayFactory.supports(school))
+        assertTrue(AcademicGatewayFactory.hasSelectedAdapter(school))
         for (type in listOf("zf", "zf_old", "qz", "qz_old")) {
             school.academicSystem = type
             assertTrue(AcademicGatewayFactory.hasSelectedAdapter(school))

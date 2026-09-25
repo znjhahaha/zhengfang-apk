@@ -9,11 +9,12 @@ public class SchoolConfig {
     public String protocol;
     public String description;
 
-    // Optional protocol adapter. legacy_zf preserves the historical CourseApiClient path.
+    // Optional protocol adapter. legacy_zf aliases the bundled TypeScript Zhengfang provider.
     public String academicSystem = "legacy_zf";
     public String academicProvider = "";
     public String detectionSource = "legacy";
     public String pageCharset = "UTF-8";
+    public String userAgent = "";
     public java.util.ArrayList<String> allowedAcademicHosts = new java.util.ArrayList<>();
     public int academicConfigVersion = 1;
 
@@ -156,6 +157,7 @@ public class SchoolConfig {
             json.put("academicProvider", academicProvider);
             json.put("detectionSource", detectionSource);
             json.put("pageCharset", pageCharset);
+            if (!userAgent.isEmpty()) json.put("userAgent", userAgent);
             org.json.JSONArray academicHosts = new org.json.JSONArray();
             for (String host : allowedAcademicHosts) academicHosts.put(host);
             json.put("allowedAcademicHosts", academicHosts);
@@ -196,6 +198,7 @@ public class SchoolConfig {
             config.academicProvider = json.optString("academicProvider", "");
             config.detectionSource = json.optString("detectionSource", "legacy");
             config.pageCharset = json.optString("pageCharset", "UTF-8");
+            config.userAgent = json.optString("userAgent", "");
             config.academicConfigVersion = json.optInt("academicConfigVersion", 1);
             org.json.JSONArray academicHosts = json.optJSONArray("allowedAcademicHosts");
             if (academicHosts != null) {

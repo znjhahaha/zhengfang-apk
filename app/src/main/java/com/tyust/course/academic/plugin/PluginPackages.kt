@@ -94,8 +94,9 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
     // All stores in the host process must serialize the shared AtomicFile transaction.
     private val lock get() = storeLock
 
-    suspend fun install(bytes: ByteArray, allowDevelopment: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
+    suspend fun install(bytes: ByteArray, allowDevelopment: Boolean = false, stageOnly: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
         val candidate = PluginPackageVerifier.read(bytes, schema, trustedKeys, allowDevelopment)
+        PluginPlatformContract.requireCompatible(candidate.manifest, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities())
         if (candidate.source.isNotEmpty()) {
             val session = AcademicSessionStore().session(candidate.manifest.json.optJSONObject("school")?.optString("id") ?: candidate.manifest.id, "package-inspection", "https://invalid.example")
             val op = PluginOperation(session, candidate.manifest, "__inspect", development = true)
@@ -119,36 +120,97 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
             // Never silently downgrade an official active package through the developer import route.
             if (!candidate.official && previous?.optBoolean("official") == true)
                 throw PluginException(PluginErrorCode.VALIDATION_FAILED, "请先在开发调试中停用官方适配，再导入开发包")
+            if (stageOnly || previous?.optString("active")?.let { it.isNotBlank() && it != candidate.digest } == true) {
+                val record = previous?.let { JSONObject(it.toString()) } ?: JSONObject()
+                record.put("staged", candidate.digest)
+                if (record.optString("approved") != candidate.digest) record.remove("approved")
+                state.put(candidate.manifest.id, record); save(state)
+                return@synchronized
+            }
             val record = JSONObject().put("active", candidate.digest).put("official", candidate.official)
             previous?.optString("active")?.takeIf { it != candidate.digest }?.let { record.put("previous", it) }
                 ?: previous?.optString("previous")?.takeIf { it.isNotBlank() }?.let { record.put("previous", it) }
             state.put(candidate.manifest.id, record)
             save(state)
         }
+        if (!stageOnly) activateStaged(candidate.manifest.id)
         candidate
+    }
+    fun staged(): List<PluginPackage> = synchronized(lock) {
+        val state = state()
+        state.keys().asSequence().mapNotNull { id -> state.getJSONObject(id).optString("staged").takeIf { it.isNotBlank() }?.let { runCatching { readDigest(it) }.getOrNull() } }.toList()
+    }
+    fun activateStaged(id: String, allowExpanded: Boolean = false, expectedDigest: String? = null): PluginPackage? = synchronized(lock) {
+        val state = state(); val record = state.optJSONObject(id) ?: return@synchronized null
+        val digest = record.optString("staged").takeIf { it.isNotBlank() } ?: return@synchronized null
+        if (expectedDigest != null && expectedDigest != digest)
+            throw PluginException(PluginErrorCode.CONFLICT, "待更新的版本已改变，请重新选择")
+        val candidate = readDigest(digest)
+        if (allowExpanded) {
+            if (expectedDigest != digest) throw PluginException(PluginErrorCode.CONFLICT, "待更新的版本已改变，请重新查看权限")
+            record.put("approved", digest); save(state)
+        }
+        val previous = record.optString("active").takeIf { it.isNotBlank() }?.let(::readDigest) ?: AcademicProviderRegistry.knownPackage(id)
+        if (blocked(id, previous?.digest)) return@synchronized null
+        PluginPlatformContract.requireCompatible(candidate.manifest, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities())
+        if (!PluginUpdatePolicy.compatible(candidate.manifest.json, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities(), installedManifests())) return@synchronized null
+        if (record.optString("approved") != digest && PluginUpdatePolicy.expanded(previous?.manifest, candidate.manifest).isNotEmpty()) return@synchronized null
+        PluginVersionLeases.whenIdle(id) {
+            previous?.takeIf { !it.bundled && it.digest != digest }?.let { record.put("previous", it.digest) }
+            record.put("active", digest).put("official", candidate.official).remove("staged")
+            record.remove("approved")
+            state.put(id, record); save(state); candidate
+        }
     }
     fun active(id: String): PluginPackage? = synchronized(lock) {
         state().optJSONObject(id)?.optString("active")?.takeIf { it.isNotBlank() }?.let(::readDigest)
     }
+    fun activeDigest(id: String): String? = synchronized(lock) { state().optJSONObject(id)?.optString("active")?.takeIf { it.isNotBlank() } }
     fun list(): List<PluginPackage> = synchronized(lock) { state().keys().asSequence().mapNotNull { active(it) }.toList() }
+    fun lineage(id: String): List<String> = synchronized(lock) { state().optJSONObject(id)?.let { record ->
+        listOf("active", "previous").mapNotNull { key -> record.optString(key).takeIf { it.matches(Regex("[a-f0-9]{64}")) } }
+    }.orEmpty() }
     fun rollback(id: String): PluginPackage = synchronized(lock) {
         val state = state()
         val record = state.optJSONObject(id) ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "未安装适配")
         val previous = record.optString("previous")
         val candidate = readDigest(previous)
         val active = record.getString("active")
-        record.put("active", previous).put("previous", active).put("official", candidate.official)
-        save(state)
-        candidate
+        if (blocked(id, active)) throw PluginException(PluginErrorCode.CONFLICT, "相关任务或待核对工作流仍在使用当前版本")
+        PluginPlatformContract.requireCompatible(candidate.manifest, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities())
+        if (!PluginUpdatePolicy.compatible(candidate.manifest.json, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities(), installedManifests()))
+            throw PluginException(PluginErrorCode.CONFLICT, "回退版本不满足当前服务依赖")
+        PluginVersionLeases.whenIdle(id) {
+            record.put("active", previous).put("previous", active).put("official", candidate.official)
+            record.remove("staged"); record.remove("approved")
+            save(state); candidate
+        } ?: throw PluginException(PluginErrorCode.CONFLICT, "当前插件正在使用中")
     }
-    fun deactivate(id: String) = synchronized(lock) { val state = state(); state.remove(id); save(state) }
+    private fun installedManifests() = (AcademicProviderRegistry.knownPackages() + list()).associateBy { it.manifest.id }.values.map { it.manifest }
+    private fun blocked(id: String, digest: String?) = PluginVersionLeases.busy(id) || NativePluginTasks.busy(context, id) ||
+        digest in PluginWorkflowJournal(PluginWorkflowFiles(context)).references()
+    fun deactivate(id: String) {
+        PluginAcademicSession.revoke(context, id)
+        val removed = synchronized(lock) {
+            val previous = active(id)
+            val state = state(); state.remove(id); save(state)
+            previous
+        }
+        removed?.let { PluginServiceAccounts(context).clearPlugin(it) }
+        NativePluginTasks.stopPlugin(context, id)
+        PluginPages.registry.clearPlugin(id)
+        val grants = context.getSharedPreferences("native-plugin-permissions", Context.MODE_PRIVATE)
+        val edit = grants.edit(); grants.all.keys.filter { it.startsWith("$id:") }.forEach(edit::remove); edit.commit()
+        PluginServiceAccounts(context).cleanRetiredProfiles()
+    }
     fun rememberCatalog(catalog: JSONObject, source: String? = null) = synchronized(lock) {
         val payload = catalog.getJSONObject("payload")
         PluginPackageVerifier.verifySignature(payload, catalog, trustedKeys)
         val version = payload.getInt("apiVersion")
         require(version in 1..PluginLimits.API_VERSION)
         root.mkdirs()
-        val file = AtomicFile(File(root, "catalog-api$version.json")); val output = file.startWrite()
+        val suffix = if (payload.optInt("catalogVersion") == 2) "-v2" else ""
+        val file = AtomicFile(File(root, "catalog-api$version$suffix.json")); val output = file.startWrite()
         try { output.write(catalog.toString().toByteArray()); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
         if (source != null) {
             val discovery = AtomicFile(File(root, "catalog-source-${PluginJson.sha256(source.toByteArray())}.json"))
@@ -165,13 +227,14 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
             val payload = envelope.getJSONObject("payload")
             PluginPackageVerifier.verifySignature(payload, envelope, trustedKeys)
             require(payload.getInt("apiVersion") in 1..PluginLimits.API_VERSION)
+            require(payload.optInt("catalogVersion", 1) in 1..2)
             PluginJson.objects(payload.getJSONArray("entries")).also { entries ->
                 require(entries.size <= 1000 && entries.map { it.getString("id") }.distinct().size == entries.size)
             }
         }.getOrDefault(emptyList())
     }
-    private fun catalogs(): List<JSONObject> = (1..PluginLimits.API_VERSION).mapNotNull { version -> runCatching {
-        val envelope = PluginJson.parse(String(AtomicFile(File(root, "catalog-api$version.json")).readFully()))
+    private fun catalogs(): List<JSONObject> = ((1..PluginLimits.API_VERSION).map { "catalog-api$it.json" } + "catalog-api3-v2.json").mapNotNull { name -> runCatching {
+        val envelope = PluginJson.parse(String(AtomicFile(File(root, name)).readFully()))
         envelope.getJSONObject("payload").also { PluginPackageVerifier.verifySignature(it, envelope, trustedKeys) }
     }.getOrNull() }
     fun metadata(id: String): JSONObject? = synchronized(lock) { catalogs().asReversed().firstNotNullOfOrNull { payload ->

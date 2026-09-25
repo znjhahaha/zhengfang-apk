@@ -81,6 +81,7 @@ fun LoginScreen(
     onOpenWebView: () -> Unit = {},
     onSchoolAdded: () -> Unit = {},
     onDemoMode: () -> Unit = {},
+    onServiceCenter: () -> Unit = {},
     onSchoolAdaptation: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     isLoading: Boolean = false,
@@ -268,6 +269,8 @@ fun LoginScreen(
                         
                         var selectedSchool by remember { mutableStateOf<SchoolConfig?>(null) }
                         var showAddSchoolDialog by remember { mutableStateOf(false) }
+                        var showSchoolManagement by remember { mutableStateOf(false) }
+                        var addSchoolName by remember { mutableStateOf("") }
                         
                         // Keep the user's current choice when the list refreshes after add/edit.
                         LaunchedEffect(schools, selectedSchoolId) {
@@ -283,20 +286,10 @@ fun LoginScreen(
                         val selectedSchoolIndex = schools
                             .indexOfFirst { it.id == selectedSchool?.id }
                             .takeIf { it >= 0 }
-                        SystemPicker(
-                            options = schools.map { it.name },
-                            selectedIndex = selectedSchoolIndex,
-                            onSelect = { index ->
-                                selectedSchool = schools[index]
-                                onSchoolSelected(schools[index])
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = "请选择学校",
-                            actionLabel = "添加／管理学校",
-                            onAction = { showAddSchoolDialog = true },
-                            backdrop = backdrop,
-                            maxLabelLines = 2
-                        )
+                        SchoolSearchPicker(schools, selectedSchool, enabled = !isLoading,
+                            onSelected = { selectedSchool = it; onSchoolSelected(it) }, onAdded = onSchoolAdded,
+                            onAddManually = { addSchoolName = it; showAddSchoolDialog = true },
+                            onManage = { showSchoolManagement = true })
                         Text(
                             text = if (selectedSchoolIndex == null) com.tyust.course.academic.AcademicCapabilities.FOUR_SYSTEMS
                                 else com.tyust.course.academic.AcademicCapabilities.name(schools[selectedSchoolIndex].academicSystem),
@@ -319,14 +312,25 @@ fun LoginScreen(
                         
                         // Add School Dialog
                         if (showAddSchoolDialog) {
-                            SchoolManagementDialog(
-                                selectedSchoolId = selectedSchool?.id,
+                            AddSchoolDialog(
+                                initialName = addSchoolName,
                                 onDismiss = { showAddSchoolDialog = false },
-                                onSelect = { school -> selectedSchool = school; onSchoolSelected(school) },
-                                onChanged = onSchoolAdded
+                                onConfirm = { draft ->
+                                    val school = draft.toSchoolConfig()
+                                    UserManager.getInstance().addCustomSchool(school)
+                                    selectedSchool = school
+                                    onSchoolSelected(school)
+                                    onSchoolAdded()
+                                    showAddSchoolDialog = false
+                                }
                             )
                         }
                         
+                        if (showSchoolManagement) SchoolManagementDialog(
+                            selectedSchoolId = selectedSchool?.id,
+                            onSelect = { school -> selectedSchool = school; onSchoolSelected(school) },
+                            onChanged = onSchoolAdded, onDismiss = { showSchoolManagement = false })
+
                         // Edit School Config Dialog
                         if (showEditSchoolDialog && selectedSchool != null) {
                             EditSchoolConfigDialog(
@@ -541,6 +545,7 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        TextButton(onClick = onServiceCenter, modifier = Modifier.fillMaxWidth()) { Text("打开服务中心与通用工具") }
                         // Demo Mode Button
                         TextButton(
                             onClick = { onDemoMode() },
@@ -776,9 +781,10 @@ fun BindingConfirmationDialog(
 @Composable
 fun AddSchoolDialog(
     onDismiss: () -> Unit,
-    onConfirm: (com.tyust.course.model.SchoolFormDraft) -> Unit
+    onConfirm: (com.tyust.course.model.SchoolFormDraft) -> Unit,
+    initialName: String = ""
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
     var domain by remember { mutableStateOf("") }
     var basePath by remember { mutableStateOf("") }
     var protocol by remember { mutableStateOf("https") }

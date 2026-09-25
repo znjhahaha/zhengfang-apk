@@ -360,7 +360,7 @@ class AcademicPasswordLoginTest {
     private fun withGateway(system: AcademicSystem, block: (MockWebServer, AcademicPasswordLoginGateway, Events) -> Unit) {
         val server = MockWebServer()
         server.start()
-        val gateway = AcademicPasswordLoginGateway(AcademicCoreTest.testSchool(server, system))
+        val gateway = LegacyProtocolFixtures.gateway(AcademicCoreTest.testSchool(server, system))
         try { block(server, gateway, Events()) } finally { gateway.clearSensitiveState(); server.shutdown() }
     }
 

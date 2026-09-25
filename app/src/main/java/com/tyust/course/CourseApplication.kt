@@ -23,6 +23,8 @@ class CourseApplication : Application() {
             mainProcess = true
             com.tyust.course.diagnostics.AppDiagnostics.install(this)
             com.tyust.course.academic.plugin.AcademicProviderRegistry.initialize(this)
+            com.tyust.course.academic.plugin.PluginPages.initialize(this)
+            com.tyust.course.academic.plugin.PluginUpdates.start(this)
             GlassRuntimeGuard.initialize(this)
             AppearanceSettingsManager.initialize(this)
             AppThemeCoordinator.initialize(this)

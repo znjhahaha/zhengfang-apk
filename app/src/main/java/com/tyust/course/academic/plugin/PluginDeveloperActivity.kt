@@ -79,7 +79,11 @@ class PluginDeveloperActivity : ComponentActivity() {
                             ?: throw IllegalArgumentException("无法读取文件")
                         AcademicProviderRegistry.packages().install(bytes, developer)
                     }
-                    AcademicProviderRegistry.reload(); refresh(); feedback = "导入完成"
+                    AcademicProviderRegistry.reload(); refresh()
+                    val imported = selected
+                    feedback = if (imported != null && AcademicProviderRegistry.packages().activeDigest(imported.manifest.id) != imported.digest)
+                        "已验证并暂存，请在插件管理中查看待更新版本及授权" else "导入完成"
+                    selected = imported?.let { AcademicProviderRegistry.packages().active(it.manifest.id) }
                     operation = selected?.manifest?.capabilities?.firstOrNull() ?: "study.terms"
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { feedback = e.message ?: "导入失败" }

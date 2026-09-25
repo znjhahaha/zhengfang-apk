@@ -15,7 +15,7 @@ internal class ScheduleCalendarStore(private val preferences: SharedPreferences)
     fun write(account: String, term: String, value: ScheduleTimeBase): Boolean {
         val calendar = normalized(value)
         if (account.isBlank() || term.isBlank() || read(account, term) == calendar) return false
-        preferences.edit().putString("calendar:$account|$term", ReminderJson.timeBase(calendar).toString()).apply()
+        check(preferences.edit().putString("calendar:$account|$term", ReminderJson.timeBase(calendar).toString()).commit())
         return true
     }
 

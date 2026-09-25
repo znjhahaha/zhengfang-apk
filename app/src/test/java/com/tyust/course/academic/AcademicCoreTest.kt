@@ -11,10 +11,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AcademicCoreTest {
-    @Test fun oldSchoolJsonKeepsLegacyRouting() {
+    @Test fun oldSchoolJsonKeepsLegacyAliasForPreinstalledProtocolRouting() {
         val school = SchoolConfig.fromJson(JSONObject("""{"id":"existing","domain":"jw.example.edu.cn"}"""))
         assertEquals("legacy_zf", school.academicSystem)
-        assertFalse(AcademicGatewayFactory.supports(school))
+        assertTrue(AcademicGatewayFactory.supports(school))
         school.academicSystem = "qz_old"
         school.pageCharset = "GBK"
         school.allowedAcademicHosts = arrayListOf("sso.example.edu.cn")

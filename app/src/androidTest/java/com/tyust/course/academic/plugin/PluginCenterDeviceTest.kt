@@ -97,6 +97,9 @@ class PluginCenterDeviceTest {
                 org.junit.Assert.assertEquals(beforeSearch, server.requestCount)
                 compose.onNodeWithTag("plugin-search").performTextClearance()
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsEnabled().performClick()
+                compose.waitUntil(15_000) { compose.onAllNodesWithText("确认安装").fetchSemanticsNodes().isNotEmpty() }
+                org.junit.Assert.assertNull(AcademicProviderRegistry.packages().active(id))
+                compose.onNodeWithText("确认安装").performClick()
                 compose.waitUntil(15_000) { AcademicProviderRegistry.packages().active(id)?.official == true }
                 compose.waitForIdle()
                 // Installation opens details; school binding remains a deliberate action.

@@ -84,6 +84,8 @@ class PluginCenterActivity : ComponentActivity() {
         val focus = LocalFocusManager.current
         var packages by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
         var catalog by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+        var staged by remember { mutableStateOf<List<PluginPackage>>(emptyList()) }
+        var pending by remember { mutableStateOf<PluginPackage?>(null) }
         var selected by remember { mutableStateOf<PluginPackage?>(null) }
         var uninstall by remember { mutableStateOf<PluginPackage?>(null) }
         var installedView by rememberSaveable { mutableStateOf(false) }
@@ -110,6 +112,7 @@ class PluginCenterActivity : ComponentActivity() {
             val snapshot = packages.sortedBy { it.manifest.id }.joinToString { it.digest }
             if (packageSnapshot != null && packageSnapshot != snapshot) changed = true
             packageSnapshot = snapshot
+            staged = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().staged() }
         }
         fun run(block: suspend () -> Unit) {
             if (busy) return
@@ -146,15 +149,22 @@ class PluginCenterActivity : ComponentActivity() {
             chooseProvider = false; generation++
             message = "已保存本校选择，正在运行的任务继续使用原适配"
         }
+        suspend fun activate(candidate: PluginPackage) {
+            val activated = withContext(Dispatchers.IO) {
+                AcademicProviderRegistry.packages().activateStaged(candidate.manifest.id, expectedDigest = candidate.digest)
+            }
+            if (activated == null) pending = candidate else selected = activated
+            refresh(); generation++
+            message = if (activated == null) "插件已暂存，请查看权限或等待相关任务结束" else "安装完成，选择“用于本校”或打开服务即可使用"
+        }
         val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) run {
-                selected = withContext(Dispatchers.IO) {
+                val candidate = withContext(Dispatchers.IO) {
                     val bytes = contentResolver.openInputStream(uri)?.use { it.readBytesBounded(PluginLimits.PACKAGE_BYTES) }
                         ?: error("无法读取插件文件")
-                    AcademicProviderRegistry.packages().install(bytes, allowDevelopment = false)
+                    AcademicProviderRegistry.packages().install(bytes, allowDevelopment = false, stageOnly = true)
                 }
-                changed = true; refresh(); generation++
-                message = "导入完成，签名与兼容性已验证"
+                activate(candidate)
             }
         }
         val developerTools = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -173,15 +183,14 @@ class PluginCenterActivity : ComponentActivity() {
         fun install(entry: JSONObject) = run {
             installingId = entry.getString("id")
             try {
-                selected = catalogClient.update(entry.getString("id"))
-                changed = true; refresh(); generation++
-                message = "安装完成，选择“用于本校”或打开服务即可使用"
+                activate(catalogClient.update(entry.getString("id"), stageOnly = true))
             } finally { installingId = null }
         }
-        fun canOpen(pkg: PluginPackage): Boolean = !fromLogin && school != null &&
-            school.id == UserManager.getInstance().currentSchool?.id &&
-            AcademicProviderRegistry.isEnabled(pkg.manifest.id, school) &&
-            AcademicProviderRegistry.matches(pkg, school) &&
+        fun canOpen(pkg: PluginPackage): Boolean = !fromLogin &&
+            (school == null && PluginDiscovery.universal(pkg.manifest.json) || school != null &&
+                school.id == UserManager.getInstance().currentSchool?.id &&
+                AcademicProviderRegistry.isEnabled(pkg.manifest.id, school) &&
+                AcademicProviderRegistry.matches(pkg, school)) &&
             (pkg.manifest.isService || pkg.manifest.isNative && (pkg.manifest.contributes.optJSONArray("pages")?.length() ?: 0) > 0)
         fun use(pkg: PluginPackage) {
             when {
@@ -295,6 +304,21 @@ class PluginCenterActivity : ComponentActivity() {
                     if (message.isNotBlank()) item("message") {
                         Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (installedView && staged.isNotEmpty()) item("staged-updates") {
+                        InsetGroupedSection(header = "待处理更新") {
+                            staged.forEach { pkg -> InsetGroupedRow(title = pkg.manifest.name,
+                                subtitle = "${pkg.manifest.version} · 查看权限或等待任务结束", onClick = { pending = pkg }) }
+                        }
+                    }
+                    if (installedView) item("update-settings") {
+                        val preferences = remember { getSharedPreferences("plugin-updates", MODE_PRIVATE) }
+                        var automatic by remember { mutableStateOf(preferences.getBoolean("enabled", true)) }
+                        InsetGroupedSection {
+                            InsetGroupedRow(title = "自动更新兼容插件", subtitle = "每天检查，新增权限需确认", trailing = {
+                                Switch(automatic, { automatic = it; preferences.edit().putBoolean("enabled", it).apply() })
+                            })
+                        }
+                    }
                     if (catalogLoading && !installedView) item("loading") {
                         LinearProgressIndicator(Modifier.fillMaxWidth().testTag("plugin-catalog-loading"))
                     }
@@ -356,6 +380,19 @@ class PluginCenterActivity : ComponentActivity() {
                 if (targetSchoolId?.let { UserManager.getInstance().getSchoolById(it) } == null) targetSchoolId = null
                 changed = true; generation++
             })
+        pending?.let { pkg -> SystemDialog(onDismissRequest = { pending = null }, title = { Text("安装 ${pkg.manifest.name} ${pkg.manifest.version}") },
+            confirmButton = { TextButton(onClick = { pending = null; run {
+                val activated = withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().activateStaged(pkg.manifest.id, true, pkg.digest) }
+                refresh(); generation++
+                if (activated != null) selected = activated
+                message = if (activated == null) "已确认，相关任务结束后将自动切换" else "安装完成"
+            } }) { Text("确认安装") } }, dismissButton = { TextButton(onClick = { pending = null }) { Text("稍后") } }) {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("权限：" + pkg.manifest.permissions.joinToString("、", transform = ::permissionName).ifBlank { "无额外权限" })
+                Text("网络范围：" + pkg.manifest.network.joinToString("\n") { it.getString("origin") + it.getString("pathPrefix") })
+                Text("正在运行和需要核对结果的任务会保留原版本。")
+            }
+        } }
         if (chooseProvider && school != null) SystemDialog(onDismissRequest = { chooseProvider = false }, title = { Text("本校教务适配") },
             confirmButton = { TextButton(onClick = { chooseProvider = false }) { Text("完成") } }) {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -368,7 +405,9 @@ class PluginCenterActivity : ComponentActivity() {
             }
         }
         selected?.let { pkg ->
-            val metadata = if (pkg.official) AcademicProviderRegistry.packages().metadata(pkg.manifest.id) else null
+            val catalogMetadata = if (pkg.official) AcademicProviderRegistry.packages().metadata(pkg.manifest.id) else null
+            val metadata = PluginSourceDetails.release(pkg, catalogMetadata)
+            val source = PluginSourceDetails.source(pkg, catalogMetadata)
             val authorRef = metadata?.optString("authorRef")?.ifBlank { null } ?: pkg.manifest.json.optString("authorRef")
             val author = authorRef.takeIf { it.isNotBlank() }?.let { AcademicProviderRegistry.packages().author(it) }
             val features = (metadata?.optJSONArray("features") ?: pkg.manifest.json.optJSONArray("features"))?.let(PluginJson::strings)
@@ -394,6 +433,24 @@ class PluginCenterActivity : ComponentActivity() {
                     author?.optString("bio")?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     if (authorRef.isNotBlank()) TextButton(onClick = { web("/authors/" + Uri.encode(authorRef)) }) { Text("作者主页") }
                     Detail("版本与兼容", "${pkg.manifest.version} · API ${pkg.manifest.apiVersion}" + if (pkg.official) " · 已验证签名" else " · 开发包")
+                    Detail("许可证", source?.optString("license")?.ifBlank { null } ?: pkg.manifest.json.optString("license").ifBlank { "作者未提供" })
+                    val repository = PluginSourceDetails.repository(source?.optString("repository")?.ifBlank { null } ?: pkg.manifest.json.optString("repository"))
+                    repository?.let { url -> TextButton(onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }) { Text("源码仓库") } }
+                    if (pkg.official) {
+                        source?.let {
+                            Detail("本版本源码 SHA-256", it.getString("sha256"))
+                            TextButton(onClick = { web(PluginSourceDetails.download(pkg)) }) { Text("下载 ${pkg.manifest.version} 源码") }
+                        }
+                        TextButton(onClick = { web(PluginSourceDetails.page(pkg)) }) { Text("本版本源码与参与修改") }
+                    }
+                    if ("academic.session" in pkg.manifest.permissions) {
+                        val shared = runCatching { PluginAcademicSession(this@PluginCenterActivity, pkg, { true }).authorized() }.getOrDefault(false)
+                        Detail("教务登录共享", if (shared) "已授权使用当前教务登录" else "尚未授权；首次使用时确认")
+                        if (shared) TextButton(onClick = {
+                            PluginAcademicSession.revoke(this@PluginCenterActivity, pkg.manifest.id)
+                            message = "已撤销此插件的教务登录授权"; generation++; selected = null
+                        }) { Text("撤销教务登录授权") }
+                    }
                     Detail("权限", pkg.manifest.permissions.joinToString("、") { permissionName(it) }.ifBlank { "无额外权限" })
                     Detail("网络范围", pkg.manifest.network.toString())
                     val matchRules = metadata?.optJSONArray("matches") ?: pkg.manifest.json.optJSONArray("matches")
@@ -421,6 +478,9 @@ class PluginCenterActivity : ComponentActivity() {
                         AcademicProviderRegistry.setSchoolEnabled(pkg.manifest.id, school, !enabled)
                         changed = true; generation++; selected = null
                     }) { Text(if (enabled) "本校停用" else "本校启用") }
+                    TextButton(onClick = { AcademicProviderRegistry.setEnabled(pkg.manifest.id, !AcademicProviderRegistry.isEnabled(pkg.manifest.id)); generation++; selected = null }) {
+                        Text(if (AcademicProviderRegistry.isEnabled(pkg.manifest.id)) "停用所有入口与任务" else "启用插件")
+                    }
                     TextButton(onClick = { PluginFeedback.open(this@PluginCenterActivity, pkg) }) { Text("快捷反馈") }
                     TextButton(onClick = { selected = null; uninstall = pkg }) { Text("卸载插件", color = MaterialTheme.colorScheme.error) }
                 }
@@ -429,9 +489,10 @@ class PluginCenterActivity : ComponentActivity() {
         uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, title = { Text("卸载 ${pkg.manifest.name}？") },
             confirmButton = { TextButton(onClick = { run { withContext(Dispatchers.IO) { AcademicProviderRegistry.packages().deactivate(pkg.manifest.id) }; refresh(); generation++ }; uninstall = null }) { Text("卸载") } },
             dismissButton = { TextButton(onClick = { uninstall = null }) { Text("取消") } }) {
-            Text("将从所有学校的可用插件中移除。已开始的后台任务仍使用原来的包版本。仅想在当前学校关闭时，请使用“本校停用”。")
+            Text("将移除页面、账号授权并停止后续任务。已提交结果和服务器业务数据保留。仅想在当前学校关闭时，请使用“本校停用”。")
         } }
     }
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable private fun PluginCard(
         entry: JSONObject, scope: String, state: String, action: String, enabled: Boolean,
         actionTag: String, onAction: () -> Unit, onDetails: (() -> Unit)?
@@ -454,6 +515,15 @@ class PluginCenterActivity : ComponentActivity() {
                 Text(entry.optString("description").ifBlank {
                     if (entry.optString("kind") in setOf("configuration", "independent", "extension")) "连接学校教务，查询课表与成绩" else "为校园生活添加更多服务"
                 }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                val features = PluginJson.strings(entry.optJSONArray("features"))
+                if (features.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    features.forEach { feature ->
+                        Surface(shape = RoundedCornerShape(8.dp), color = colors.primary.copy(alpha = 0.08f)) {
+                            Text(feature, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall, color = colors.primary)
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${entry.optString("version")} · $state", Modifier.weight(1f),
                         style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
@@ -473,7 +543,8 @@ class PluginCenterActivity : ComponentActivity() {
     private fun web(path: String) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AcademicProviderRegistry.OFFICIAL_WEBSITE + path))) }
     private fun permissionName(name: String) = mapOf("network" to "网络", "storage" to "隔离存储", "credentials" to "加密凭据", "session" to "会话",
         "files" to "文件", "device.clipboard" to "剪贴板", "device.haptics" to "触感", "tasks" to "后台任务", "notifications" to "通知",
-        "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制")[name] ?: name
+        "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制", "academic.session" to "使用本校教务登录",
+        "academic.read" to "读取学业数据", "academic.write" to "导入课表")[name] ?: name
     private fun capabilityName(name: String) = mapOf("ui.init" to "原生页面", "ui.reduce" to "交互与状态", "task.run" to "后台流程", "data.query" to "数据提供者",
         "auth.start" to "登录", "auth.resume" to "继续认证", "auth.validate" to "会话校验", "auth.refreshCaptcha" to "验证码",
         "study.terms" to "学期", "study.schedule" to "课表", "study.grades" to "成绩", "study.gradeDetails" to "成绩明细", "study.exams" to "考试",

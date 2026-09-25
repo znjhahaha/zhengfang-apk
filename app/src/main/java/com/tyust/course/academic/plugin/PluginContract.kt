@@ -131,6 +131,7 @@ class PluginSchema(private val root: JSONObject) {
                 if (schema.has("pattern") && !Regex(schema.getString("pattern")).containsMatchIn(s)) fail(path, "字符串格式错误")
             }
             "boolean" -> if (value !is Boolean) fail(path, "应为布尔值")
+            "null" -> if (value != null && value != JSONObject.NULL) fail(path, "应为空值")
             "integer", "number" -> {
                 val n = (value as? Number)?.toDouble() ?: fail(path, "应为数值")
                 if (!n.isFinite() || (schema.optString("type") == "integer" && n % 1.0 != 0.0) ||
@@ -171,6 +172,7 @@ data class PluginManifest(val json: JSONObject) {
     fun validate(schema: PluginSchema) {
         schema.validate(json)
         BuiltinAcademicInheritance.configuration(this)
+        PluginPlatformContract.validate(this)
         if (kind in setOf("independent", "service", "native") && baseProvider != null || kind !in setOf("independent", "service", "native") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
         if (!isNative && !json.has("school")) invalid("教务适配和旧版服务需要学校信息")
         if (isNative) NativePluginContract.validateManifest(this)

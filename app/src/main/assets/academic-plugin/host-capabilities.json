@@ -1,7 +1,817 @@
 [
   {
-    "name": "network.request",
+    "name": "pages.register",
     "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "instanceId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "templateId",
+        "instanceId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "pageId": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "pageId"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "pages.open",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "pageId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "pageId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "pages.close",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "pages.unregister",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "pageId": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "pageId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "services.discover",
+    "version": 1,
+    "permission": "services",
+    "input": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "maxLength": 96
+          },
+          "providerVersion": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "digest": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "kind": {
+            "enum": [
+              "read",
+              "write"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "providerId",
+          "providerVersion",
+          "digest",
+          "name",
+          "version",
+          "kind",
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "services.call",
+    "version": 1,
+    "permission": "services",
+    "input": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "providerId": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "input": {}
+      },
+      "required": [
+        "name",
+        "version",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "value": {},
+        "providerId": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "digest": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "value",
+        "providerId",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "workflow.prepare",
+    "version": 1,
+    "permission": "workflow",
+    "input": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "providerId": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "input": {}
+      },
+      "required": [
+        "name",
+        "version",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "cancelled": {
+          "type": "boolean"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 200
+        }
+      },
+      "required": [
+        "workflowId",
+        "title",
+        "summary",
+        "approved",
+        "cancelled",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "workflow.step",
+    "version": 1,
+    "permission": "workflow",
+    "input": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "workflow.reconcile",
+    "version": 1,
+    "permission": "workflow",
+    "input": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "workflow.cancel",
+    "version": 1,
+    "permission": "workflow",
+    "input": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "workflow.list",
+    "version": 1,
+    "permission": "workflow",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 200
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.study.snapshot",
+    "version": 1,
+    "permission": "academic.read",
+    "input": {
+      "type": "object",
+      "properties": {
+        "termId": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.study.refresh",
+    "version": 1,
+    "permission": "academic.read",
+    "input": {
+      "type": "object",
+      "properties": {
+        "termId": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.schedule.preview",
+    "version": 1,
+    "permission": "academic.write",
+    "input": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "type": "object"
+        },
+        "calendar": {
+          "type": "object"
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "schedule",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.schedule.confirm",
+    "version": 1,
+    "permission": "academic.write",
+    "input": {
+      "type": "object",
+      "properties": {
+        "previewId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        }
+      },
+      "required": [
+        "previewId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object"
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "accounts.select",
+    "version": 1,
+    "permission": "credentials",
+    "input": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        }
+      },
+      "required": [
+        "serverId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "accountId"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "accounts.remove",
+    "version": 1,
+    "permission": "credentials",
+    "input": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "accountId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "serverId",
+        "accountId"
+      ],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.session.authorize",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "schoolName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "baseUrl": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "grant",
+        "schoolName",
+        "baseUrl"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.session.request",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "request": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            },
+            "purpose": {
+              "enum": [
+                "query",
+                "mutation"
+              ]
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "form": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 262144
+            },
+            "charset": {
+              "enum": [
+                "UTF-8",
+                "GBK",
+                "GB2312",
+                "GB18030"
+              ]
+            },
+            "responseType": {
+              "enum": [
+                "text",
+                "base64"
+              ]
+            },
+            "sameOriginReferer": {
+              "type": "boolean"
+            },
+            "cookieHeader": {
+              "type": "object",
+              "properties": {
+                "cookie": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "header": {
+                  "enum": [
+                    "Authorization",
+                    "X-Token"
+                  ]
+                }
+              },
+              "required": [
+                "cookie",
+                "header"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "url",
+            "purpose"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "grant",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 7340032
+        }
+      },
+      "required": [
+        "status",
+        "url",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "responseBytes": 5242880
+    }
+  },
+  {
+    "name": "academic.session.revoke",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "network.request",
+    "version": 3,
     "permission": "network",
     "input": {
       "type": "object",
@@ -65,16 +875,296 @@
           "properties": {
             "form": {
               "type": "object",
+              "maxProperties": 24,
               "additionalProperties": {
-                "type": "string",
-                "maxLength": 8192
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "transform": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "publicKeySpkiBase64": {
+                                "type": "string",
+                                "maxLength": 16384
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "publicKeySpkiBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "modulus": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "exponent": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "encoding": {
+                                "enum": [
+                                  "base64",
+                                  "hex"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "modulus",
+                              "exponent",
+                              "encoding"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-cbc"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "ivBase64": {
+                                "type": "string",
+                                "maxLength": 32
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64",
+                              "ivBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-ecb"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "digest"
+                              },
+                              "algorithm": {
+                                "enum": [
+                                  "SHA-256",
+                                  "MD5"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "algorithm"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "from"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             },
             "headers": {
               "type": "object",
+              "maxProperties": 24,
               "additionalProperties": {
-                "type": "string",
-                "maxLength": 8192
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "transform": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "publicKeySpkiBase64": {
+                                "type": "string",
+                                "maxLength": 16384
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "publicKeySpkiBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "modulus": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "exponent": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "encoding": {
+                                "enum": [
+                                  "base64",
+                                  "hex"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "modulus",
+                              "exponent",
+                              "encoding"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-cbc"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "ivBase64": {
+                                "type": "string",
+                                "maxLength": 32
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64",
+                              "ivBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-ecb"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "digest"
+                              },
+                              "algorithm": {
+                                "enum": [
+                                  "SHA-256",
+                                  "MD5"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "algorithm"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "from"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             }
           },
@@ -695,7 +1785,7 @@
   },
   {
     "name": "files.download",
-    "version": 1,
+    "version": 2,
     "permission": "files",
     "input": {
       "type": "object",
@@ -762,16 +1852,296 @@
               "properties": {
                 "form": {
                   "type": "object",
+                  "maxProperties": 24,
                   "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 8192
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "transform": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "publicKeySpkiBase64": {
+                                    "type": "string",
+                                    "maxLength": 16384
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "publicKeySpkiBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "modulus": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                  },
+                                  "exponent": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  },
+                                  "encoding": {
+                                    "enum": [
+                                      "base64",
+                                      "hex"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "modulus",
+                                  "exponent",
+                                  "encoding"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-cbc"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "ivBase64": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64",
+                                  "ivBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-ecb"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "digest"
+                                  },
+                                  "algorithm": {
+                                    "enum": [
+                                      "SHA-256",
+                                      "MD5"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "algorithm"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "base64"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "from"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "headers": {
                   "type": "object",
+                  "maxProperties": 24,
                   "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 8192
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "transform": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "publicKeySpkiBase64": {
+                                    "type": "string",
+                                    "maxLength": 16384
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "publicKeySpkiBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "modulus": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                  },
+                                  "exponent": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  },
+                                  "encoding": {
+                                    "enum": [
+                                      "base64",
+                                      "hex"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "modulus",
+                                  "exponent",
+                                  "encoding"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-cbc"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "ivBase64": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64",
+                                  "ivBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-ecb"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "digest"
+                                  },
+                                  "algorithm": {
+                                    "enum": [
+                                      "SHA-256",
+                                      "MD5"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "algorithm"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "base64"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "from"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 }
               },
@@ -839,7 +2209,7 @@
   },
   {
     "name": "files.upload",
-    "version": 1,
+    "version": 2,
     "permission": "files",
     "input": {
       "type": "object",
@@ -911,16 +2281,296 @@
               "properties": {
                 "form": {
                   "type": "object",
+                  "maxProperties": 24,
                   "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 8192
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "transform": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "publicKeySpkiBase64": {
+                                    "type": "string",
+                                    "maxLength": 16384
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "publicKeySpkiBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "modulus": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                  },
+                                  "exponent": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  },
+                                  "encoding": {
+                                    "enum": [
+                                      "base64",
+                                      "hex"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "modulus",
+                                  "exponent",
+                                  "encoding"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-cbc"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "ivBase64": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64",
+                                  "ivBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-ecb"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "digest"
+                                  },
+                                  "algorithm": {
+                                    "enum": [
+                                      "SHA-256",
+                                      "MD5"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "algorithm"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "base64"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "from"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "headers": {
                   "type": "object",
+                  "maxProperties": 24,
                   "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 8192
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "transform": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "publicKeySpkiBase64": {
+                                    "type": "string",
+                                    "maxLength": 16384
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "publicKeySpkiBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "rsa-pkcs1"
+                                  },
+                                  "modulus": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                  },
+                                  "exponent": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  },
+                                  "encoding": {
+                                    "enum": [
+                                      "base64",
+                                      "hex"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "modulus",
+                                  "exponent",
+                                  "encoding"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-cbc"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "ivBase64": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64",
+                                  "ivBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "aes-ecb"
+                                  },
+                                  "keyBase64": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "keyBase64"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "digest"
+                                  },
+                                  "algorithm": {
+                                    "enum": [
+                                      "SHA-256",
+                                      "MD5"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "algorithm"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "base64"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "from"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 }
               },

@@ -7,6 +7,10 @@ import android.graphics.Paint
 import android.graphics.Picture
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import com.tyust.course.academic.plugin.PluginPages
+import com.tyust.course.academic.plugin.ExtensionCenterContent
+import com.tyust.course.academic.plugin.PluginPageRegistry
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.Lifecycle
@@ -159,6 +163,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
 
         UserManager.getInstance().init(this)
+        PluginPages.refresh()
+        intent.getStringExtra("pageId")?.let { if (PluginPages.registry.page(it) != null) PluginPages.requested.value = it }
         if (savedInstanceState == null) com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
         if (savedInstanceState == null) com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
 
@@ -217,23 +223,25 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent.getStringExtra("pageId")?.let { if (PluginPages.registry.page(it) != null) PluginPages.requested.value = it }
         com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
         com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
     }
 }
 
 sealed class BottomNavItem(
-    val page: StartupPage,
-    val symbol: AppSymbolSpec
+    val page: StartupPage?,
+    val symbol: AppSymbolSpec,
+    val route: String = "app.${page?.route}",
+    val label: String = page?.label.orEmpty()
 ) {
-    val route: String get() = page.route
-    val label: String get() = page.label
     val icon: ImageVector get() = symbol.outline
     object Courses : BottomNavItem(StartupPage.Courses, AppSymbolSpec.Courses)
     object Schedule : BottomNavItem(StartupPage.Schedule, AppSymbolSpec.Schedule)
     object Grab : BottomNavItem(StartupPage.Grab, AppSymbolSpec.Grab)
     object Grades : BottomNavItem(StartupPage.Grades, AppSymbolSpec.Grades)
     object Settings : BottomNavItem(StartupPage.Settings, AppSymbolSpec.Settings)
+    class Extension(route: String, label: String) : BottomNavItem(null, AppSymbolSpec.Courses, route, label)
 
     companion object {
         val entries: List<BottomNavItem> get() = listOf(Courses, Schedule, Grab, Grades, Settings)
@@ -247,7 +255,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
     val startupPagePreferences = remember(context) { StartupPagePreferences.from(context) }
-    val items = remember { BottomNavItem.entries }
+    val pageRevision by PluginPages.revision.collectAsState()
+    val registeredPages = remember(pageRevision) { PluginPages.registry.pages() }
+    val routes = registeredPages.map { it.id }
+    val items = remember(pageRevision) { PluginPages.registry.pinned().mapNotNull { route ->
+        BottomNavItem.entries.firstOrNull { it.route == route } ?: PluginPages.registry.page(route)?.let { BottomNavItem.Extension(it.id, it.title) }
+    } }
     
     val hasStarred = prefs.getBoolean("has_starred", false)
     val dismissCount = prefs.getInt("star_dismiss_count", 0)
@@ -269,18 +282,31 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     val pageDataViewModel: PageDataViewModel = viewModel()
     val pageData = remember(currentAccountStorageKey) { pageDataViewModel.forAccount(currentAccountStorageKey) }
     // Resolve before creating the motion state so the first frame is already on the chosen page.
-    var selectedTab by remember(pageData) {
-        pageData.state("navigation.tab") {
-            val startupPage = startupPagePreferences.read()
-            items.indexOfFirst { it.page == startupPage }.coerceAtLeast(0)
+    var selectedPage by remember(pageData) {
+        pageData.state("navigation.page") {
+            PluginPages.registry.startup("app.${startupPagePreferences.read().route}")
         }
     }
-    val navigationMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedTab, currentAccountStorageKey, accessibility.reduceMotion)
+    var pageHistory by remember(pageData) { pageData.state("navigation.history") { emptyList<String>() } }
+    var pageParameters by remember(pageData) { pageData.state("navigation.parameters") { emptyMap<String, String>() } }
+    fun openPage(route: String) { if (route != selectedPage && PluginPages.registry.page(route) != null) { pageHistory = (pageHistory + selectedPage).takeLast(30); selectedPage = route } }
+    fun backPage() { val valid = pageHistory.filter { PluginPages.registry.page(it) != null }; selectedPage = valid.lastOrNull() ?: PluginPages.registry.fallback(); pageHistory = valid.dropLast(1) }
+    BackHandler(selectedPage.contains('/') || selectedPage == PluginPageRegistry.SERVICES || items.none { it.route == selectedPage }) { backPage() }
+    val selectedTab = routes.indexOf(selectedPage).coerceAtLeast(0)
+    val selectedNavigationIndex = items.indexOfFirst { it.route == selectedPage }
+    val navigationMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedTab, currentAccountStorageKey + routes.joinToString(), accessibility.reduceMotion)
+    val barMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedNavigationIndex, currentAccountStorageKey + items.joinToString { it.route }, accessibility.reduceMotion)
+    val pageRequest by PluginPages.requested.collectAsState()
+    LaunchedEffect(pageRequest) { pageRequest?.let { openPage(it); PluginPages.requested.value = null } }
+    LaunchedEffect(pageRevision, currentAccountStorageKey) {
+        if (PluginPages.registry.page(selectedPage) == null) selectedPage = PluginPages.registry.fallback()
+        pageHistory = pageHistory.filter { PluginPages.registry.page(it) != null }
+    }
     val reminderRequest = com.tyust.course.schedule.CourseReminderNavigation.requestedId
     val widgetRequest = com.tyust.course.schedule.ScheduleWidgetNavigation.requested
     LaunchedEffect(widgetRequest, currentAccountStorageKey) {
         widgetRequest?.let {
-            if (com.tyust.course.schedule.ScheduleWidgetNavigation.matchesCurrentAccount(it)) selectedTab = 1
+            if (com.tyust.course.schedule.ScheduleWidgetNavigation.matchesCurrentAccount(it)) openPage(PluginPageRegistry.SCHEDULE)
             else {
                 com.tyust.course.ui.system.GlassToaster.show("这张课表属于其他账号，请刷新桌面组件")
                 com.tyust.course.schedule.ScheduleWidgetNavigation.consume()
@@ -289,7 +315,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     }
     LaunchedEffect(reminderRequest, currentAccountStorageKey) {
         if (reminderRequest != null) {
-            if (com.tyust.course.schedule.ScheduleReminderScheduler.get(context).findById(reminderRequest) != null) selectedTab = 1
+            if (com.tyust.course.schedule.ScheduleReminderScheduler.get(context).findById(reminderRequest) != null) openPage(PluginPageRegistry.SCHEDULE)
             else {
                 com.tyust.course.ui.system.GlassToaster.show("这条课程提醒已失效或属于其他账号")
                 com.tyust.course.schedule.CourseReminderNavigation.consume()
@@ -578,18 +604,20 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                     alpha = (1f - 0.03f * dialogHostState.pageProgress) * entry
                                 }
                             ) { page ->
-                              savedPages.SaveableStateProvider(items[page].route) {
-                                com.tyust.course.academic.plugin.ServiceExtensionHost(when (page) { 0 -> "home"; 1 -> "schedule"; 3 -> "grades"; else -> null }) {
-                                when (page) {
-                                    0 -> com.tyust.course.ui.route.CourseListRoute()
-                                    1 -> com.tyust.course.ui.route.ScheduleRoute(isActive = selectedTab == 1)
-                                    2 -> com.tyust.course.ui.route.GrabProRoute()
-                                    3 -> com.tyust.course.ui.route.GradesRoute()
-                                    4 -> com.tyust.course.ui.route.SettingsRoute(
+                              val route = routes.getOrElse(page) { PluginPages.registry.fallback() }
+                              savedPages.SaveableStateProvider(route) {
+                                com.tyust.course.academic.plugin.ServiceExtensionHost(when (route) { "app.courses" -> "home"; "app.schedule" -> "schedule"; "app.grades" -> "grades"; else -> null }) {
+                                when (route) {
+                                    "app.courses" -> com.tyust.course.ui.route.CourseListRoute()
+                                    "app.schedule" -> com.tyust.course.ui.route.ScheduleRoute(isActive = selectedPage == route)
+                                    "app.grab" -> com.tyust.course.ui.route.GrabProRoute()
+                                    "app.grades" -> com.tyust.course.ui.route.GradesRoute()
+                                    "app.settings" -> com.tyust.course.ui.route.SettingsRoute(
                                         onSurveyCenter = { initialSurveyId = null; showSurveyCenter = true },
                                         surveyUnreadCount = surveyFeed.unreadCount(System.currentTimeMillis())
                                     )
-                                    else -> com.tyust.course.ui.route.CourseListRoute()
+                                    "app.services" -> com.tyust.course.academic.plugin.ExtensionCenterContent(onOpen = { openPage(it) })
+                                    else -> com.tyust.course.academic.plugin.PluginPageContent(route, onNavigate = { next, params -> pageParameters = pageParameters + (next to params.toString()); openPage(next) }, onBack = { backPage() }, params = org.json.JSONObject(pageParameters[route] ?: "{}"))
                                 }
                                 }
                               }
@@ -602,14 +630,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             } // 关闭 navBarBackdrop 捕获层
 
             // 底栏位于捕获层外，避免采样源包含底栏自身。
-            CompositionLocalProvider(com.tyust.course.ui.theme.LocalNavigationMotion provides navigationMotion) {
+            CompositionLocalProvider(com.tyust.course.ui.theme.LocalNavigationMotion provides barMotion) {
             CapsuleNavigationBar(
                 items = items,
-                selectedTab = selectedTab,
+                selectedTab = selectedNavigationIndex,
                 onTabSelect = { targetTab ->
-                    if (targetTab != selectedTab) {
-                        selectedTab = targetTab
-                    }
+                    items.getOrNull(targetTab)?.let { openPage(it.route) }
                 },
                 minimized = navBarAutoCollapseEnabled && navBarMinimized,
                 onExpandRequest = { navBarMinimized = false },
@@ -627,7 +653,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             GlassToastHost(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = navBarContentInset + if (selectedTab == 2)
+                    .padding(bottom = navBarContentInset + if (selectedPage == "app.grab")
                         com.tyust.course.ui.system.TaskControlsReservedHeight + 12.dp else 12.dp)
             )
 
@@ -645,7 +671,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             com.tyust.course.ui.screen.SurveyReminder(
                 repository = surveyRepository,
                 canPresent = startupOverlaysReady && !session.expired && !showStarDialog && !updateState.showDialog() &&
-                    !dialogHostState.hasBlockingSurfaceExcept("survey-reminder") && !showSurveyCenter && selectedTab != 2 &&
+                    !dialogHostState.hasBlockingSurfaceExcept("survey-reminder") && !showSurveyCenter && selectedPage != "app.grab" &&
                     (surveyUsagePreferences.noticeSeen || isDemoMode),
                 foreground = foreground,
                 onOpen = { id -> initialSurveyId = id; showSurveyCenter = true }

@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /** Explicit inheritance may reuse a protocol on another school; defaults must never select the reference school. */
 object BuiltinAcademicInheritance {
-    val providers = mapOf("builtin.jinzhi" to "cn.edu.huat.neweas", "builtin.chengfang" to "cn.edu.sdipct.chengfang")
+    val providers = mapOf("builtin.jinzhi" to "cn.edu.huat.neweas", "builtin.chengfang" to "cn.edu.sdipct.chengfang") + GenericAcademicProtocols.providers.mapKeys { "builtin." + it.key }
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)
     private fun https(value: String, query: Boolean = false): String {
         val u = value.toHttpUrlOrNull() ?: invalid("内置教务地址无效")
@@ -15,6 +15,10 @@ object BuiltinAcademicInheritance {
         return u.toString()
     }
     fun configuration(manifest: PluginManifest): JSONObject? {
+        if (manifest.baseProvider?.removePrefix("builtin.") in GenericAcademicProtocols.providers) {
+            if (manifest.json.has("builtinConfig")) invalid("这类协议使用学校配置，不接受金智/乘方的 builtinConfig")
+            return GenericAcademicProtocols.configuration(SchoolConfig.fromJson(manifest.school))
+        }
         if (manifest.baseProvider !in providers) {
             if (manifest.json.has("builtinConfig")) invalid("builtinConfig 仅用于金智或乘方继承")
             return null
@@ -43,12 +47,13 @@ object BuiltinAcademicInheritance {
     }
 
     fun inherit(parent: PluginPackage, base: PluginPackage, school: SchoolConfig): PluginPackage {
+        if (parent.manifest.baseProvider?.removePrefix("builtin.") in GenericAcademicProtocols.providers) return GenericAcademicProtocols.bind(base, school, parent)
         val config = configuration(parent.manifest) ?: invalid("没有可继承的内置协议")
         val declared = PluginSchoolMatcher.endpoint(SchoolConfig.fromJson(parent.manifest.school))
         val actual = PluginSchoolMatcher.endpoint(school)
         if (declared == null || actual == null || declared.scheme != actual.scheme || declared.host != actual.host ||
             declared.port != actual.port || declared.encodedPath.trimEnd('/') != actual.encodedPath.trimEnd('/')) invalid("插件继承配置与当前学校不一致")
-        require(base.bundled && base.manifest.id == providers[parent.manifest.baseProvider])
+        require((base.bundled || base.official) && base.manifest.id == providers[parent.manifest.baseProvider])
         val source = "globalThis.__builtinAcademicConfig=" + PluginJson.canonical(config) + ";\n" + base.source
         val manifest = JSONObject(base.manifest.json.toString()).put("id", parent.manifest.id).put("version", parent.manifest.version)
             .put("school", parent.manifest.school).put("network", parent.manifest.json.getJSONArray("network"))

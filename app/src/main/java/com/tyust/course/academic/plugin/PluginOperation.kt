@@ -28,7 +28,7 @@ class PluginOperation(
         .put("accountId", session.key.accountKey).put("sessionEpoch", epoch)
         .put("providerId", manifest.id).put("providerVersion", manifest.version).put("operationId", id)
         .put("baseUrl", session.baseUrl).put("development", development)
-        .apply { pageContext.keys().forEach { key -> if (key in setOf("pageId", "pageInstance", "capabilities")) put(key, pageContext.get(key)) } }
+        .apply { pageContext.keys().forEach { key -> if (key in setOf("pageId", "pageInstance", "capabilities", "settings")) put(key, pageContext.get(key)) } }
 
     fun requireActive() {
         if (!active.get()) throw PluginException(PluginErrorCode.CANCELLED, "调用已取消")
@@ -40,7 +40,8 @@ class PluginOperation(
         val serviceMutation = manifest.isService && method == "service.action" && actionId != null &&
             ServicePluginContract.action(manifest, actionId).getString("kind") == "mutation"
         val nativeMutation = manifest.isNative && method == "host.effect"
-        if (!confirmed || method !in setOf("selection.select", "selection.drop") && !serviceMutation && !nativeMutation)
+        val workflowMutation = manifest.isNative && method == "workflow.step" && manifest.json.optJSONArray("services")?.let(PluginJson::objects).orEmpty().any { it.getString("name") == actionId && it.getString("kind") == "write" }
+        if (!confirmed || method !in setOf("selection.select", "selection.drop") && !serviceMutation && !nativeMutation && !workflowMutation)
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "写入操作需要用户确认")
         if (!mutation.compareAndSet(false, true))
             throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "单次调用不能重放写入请求")
@@ -51,6 +52,7 @@ class PluginOperation(
     fun failure(code: PluginErrorCode, message: String): PluginException = PluginException(
         if (mutationSent && code in setOf(PluginErrorCode.TIMEOUT, PluginErrorCode.CANCELLED,
             PluginErrorCode.RUNTIME_EXITED, PluginErrorCode.NETWORK_RETRYABLE, PluginErrorCode.RESOURCE_LIMIT,
-            PluginErrorCode.PAGE_CHANGED, PluginErrorCode.VALIDATION_FAILED))
+            PluginErrorCode.PAGE_CHANGED, PluginErrorCode.VALIDATION_FAILED, PluginErrorCode.STALE_CONTEXT,
+            PluginErrorCode.SESSION_EXPIRED, PluginErrorCode.PERMISSION_DENIED))
             PluginErrorCode.RESULT_UNKNOWN else code, message)
 }

@@ -54,15 +54,16 @@ class NativePluginContractTest {
         val operation = PluginOperation(session, manifest(), "host.effect", confirmed = true)
         operation.markMutation(); assertEquals(PluginErrorCode.RESULT_UNKNOWN, operation.failure(PluginErrorCode.TIMEOUT, "timeout").code)
     }
-    @Test fun v3StorageDoesNotCrossSchoolAccountOrPackageDigest() {
+    @Test fun v3StorageIsolatedAcrossSchoolAndAccountButPreservedAcrossPackageUpdates() {
         val root = kotlin.io.path.createTempDirectory("native-storage").toFile()
         try {
             fun host(school: String = "s", account: String = "a", digest: String = "package-one") = PluginHost(
                 PluginOperation(AcademicSessionStore().session(school, account, "https://example.test/"), manifest(), "host.effect", packageDigest = digest), root)
             host().call("storage.set", JSONObject().put("key", "note").put("value", "private-state"))
             assertEquals("private-state", host().call("storage.get", JSONObject().put("key", "note")).getString("data"))
-            for (other in listOf(host(school = "other"), host(account = "other"), host(digest = "different-code")))
+            for (other in listOf(host(school = "other"), host(account = "other")))
                 assertTrue(other.call("storage.get", JSONObject().put("key", "note")).isNull("data"))
+            assertEquals("private-state", host(digest = "different-code").call("storage.get", JSONObject().put("key", "note")).getString("data"))
         } finally { root.deleteRecursively() }
     }
     @Test fun schoolMatchingNormalizesHostsAndKeepsPortAndPathBoundaries() {

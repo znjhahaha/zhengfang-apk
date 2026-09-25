@@ -42,11 +42,13 @@ class AcademicSession internal constructor(
     val baseUrl: String,
     val cookies: AcademicCookieJar = AcademicCookieJar()
 ) {
+    internal val instanceId: String = java.util.UUID.randomUUID().toString()
     internal var username: String = ""
     internal var pageCharset: java.nio.charset.Charset? = null
     private val epochCounter = AtomicLong(1L)
     private val operationMutex = Mutex()
     private val requestMutex = Mutex()
+    private val pluginAuthCookies = mutableMapOf<String, AcademicCookieJar>()
     private var lastRequestStarted: Long? = null
     @Volatile var retired: Boolean = false
         private set
@@ -57,6 +59,8 @@ class AcademicSession internal constructor(
         synchronized(this) {
             epoch = epochCounter.incrementAndGet()
             cookies.clear()
+            pluginAuthCookies.values.forEach { it.retire() }
+            pluginAuthCookies.clear()
         }
     }
 
@@ -68,6 +72,14 @@ class AcademicSession internal constructor(
 
     fun requireActive() {
         if (retired) throw kotlinx.coroutines.CancellationException("Session replaced")
+    }
+    /** External identity-provider cookies never join the teaching cookie jar. */
+    internal fun authenticationCookies(namespace: String): AcademicCookieJar = synchronized(this) {
+        requireActive()
+        pluginAuthCookies[namespace] ?: run {
+            check(pluginAuthCookies.size < 32) { "Too many authentication authorities" }
+            AcademicCookieJar().also { pluginAuthCookies[namespace] = it }
+        }
     }
 
     /** Monotonic, cancellable pacing shared by transports for this account's session. */
@@ -97,6 +109,9 @@ class AcademicSession internal constructor(
 
 class AcademicSessionStore {
     private val sessions = ConcurrentHashMap<AcademicSessionKey, AcademicSession>()
+
+    internal fun existing(schoolId: String, accountKey: String, baseUrl: String): AcademicSession? =
+        sessions[AcademicSessionKey(schoolId, accountKey)]?.takeIf { !it.retired && it.baseUrl == baseUrl }
 
     fun session(schoolId: String, accountKey: String, baseUrl: String): AcademicSession =
         sessions.compute(AcademicSessionKey(schoolId, accountKey)) { key, previous ->

@@ -20,7 +20,7 @@ class PluginHostRedirectTest {
                 .put("purposes", JSONArray(listOf("query")))
         }
         val manifest = PluginManifest(JSONObject().put("id", "test.redirect.service")
-            .put("kind", "service").put("version", "1.0.0").put("network", JSONArray(rules)))
+            .put("kind", "service").put("apiVersion", 2).put("version", "1.0.0").put("network", JSONArray(rules)))
         val session = AcademicSessionStore().session("synthetic-school", "synthetic-account", servers[0].url("/").toString())
         return PluginHost(PluginOperation(session, manifest, "service.page"), File("build/plugin-redirect-test-store"))
     }

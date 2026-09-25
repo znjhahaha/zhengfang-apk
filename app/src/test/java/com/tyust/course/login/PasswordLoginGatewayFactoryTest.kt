@@ -11,7 +11,7 @@ class PasswordLoginGatewayFactoryTest {
         val other = SchoolConfig("other", "Other", "jw.example.edu.cn", "https")
 
         assertTrue(PasswordLoginGatewayFactory.create(tyust) is TyustSsoLoginManager)
-        assertTrue(PasswordLoginGatewayFactory.create(other) is PasswordLoginManager)
+        assertTrue(PasswordLoginGatewayFactory.create(other) is com.tyust.course.academic.AcademicPasswordLoginGateway)
     }
 
     @Test
@@ -20,6 +20,6 @@ class PasswordLoginGatewayFactoryTest {
         val other = SchoolConfig("other", "Other", "jw.example.edu.cn", "https")
 
         assertTrue(PasswordLoginGatewayFactory.create(zjut) is ZjutSsoLoginManager)
-        assertTrue(PasswordLoginGatewayFactory.create(other) is PasswordLoginManager)
+        assertTrue(PasswordLoginGatewayFactory.create(other) is com.tyust.course.academic.AcademicPasswordLoginGateway)
     }
 }
