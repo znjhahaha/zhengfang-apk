@@ -32,7 +32,6 @@ internal class ScheduleWidgetTextFitter(private val context: Context, width: Flo
             text = field.text
             setTextSize(TypedValue.COMPLEX_UNIT_SP, field.size * scale)
             typeface = if (field.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-            breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
             hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
             measure(View.MeasureSpec.makeMeasureSpec(this@ScheduleWidgetTextFitter.width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
