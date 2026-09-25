@@ -205,3 +205,7 @@ CHANGELOG.md     更新记录
 欢迎提交 [Issue](https://github.com/znjhahaha/zhengfang-apk/issues) 和 Pull Request。涉及学校差异时优先考虑插件；修改 App 时请说明具体问题、修改后的行为及验证方法，界面改动请附截图。
 
 项目采用 [GNU GPL v3](LICENSE)。修改和分发时请保留版权与许可说明，并按要求提供对应源码。
+
+## 社区认可
+
+本项目认可 [LINUX DO](https://linux.do/) 社区倡导的「真诚、友善、团结、专业」，支持开源分享与技术交流。
