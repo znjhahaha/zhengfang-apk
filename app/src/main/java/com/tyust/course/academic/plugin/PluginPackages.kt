@@ -143,6 +143,8 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
     fun activateStaged(id: String, allowExpanded: Boolean = false, expectedDigest: String? = null): PluginPackage? = synchronized(lock) {
         val state = state(); val record = state.optJSONObject(id) ?: return@synchronized null
         val digest = record.optString("staged").takeIf { it.isNotBlank() } ?: return@synchronized null
+        if (expectedDigest != null && expectedDigest != digest)
+            throw PluginException(PluginErrorCode.CONFLICT, "待更新的版本已改变，请重新选择")
         val candidate = readDigest(digest)
         if (allowExpanded) {
             if (expectedDigest != digest) throw PluginException(PluginErrorCode.CONFLICT, "待更新的版本已改变，请重新查看权限")
@@ -188,6 +190,7 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
     private fun blocked(id: String, digest: String?) = PluginVersionLeases.busy(id) || NativePluginTasks.busy(context, id) ||
         digest in PluginWorkflowJournal(PluginWorkflowFiles(context)).references()
     fun deactivate(id: String) {
+        PluginAcademicSession.revoke(context, id)
         val removed = synchronized(lock) {
             val previous = active(id)
             val state = state(); state.remove(id); save(state)

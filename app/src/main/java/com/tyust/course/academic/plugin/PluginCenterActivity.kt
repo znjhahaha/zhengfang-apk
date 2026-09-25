@@ -186,7 +186,9 @@ class PluginCenterActivity : ComponentActivity() {
             }
         }
         selected?.let { pkg ->
-            val metadata = if (pkg.official) AcademicProviderRegistry.packages().metadata(pkg.manifest.id) else null
+            val catalogMetadata = if (pkg.official) AcademicProviderRegistry.packages().metadata(pkg.manifest.id) else null
+            val metadata = PluginSourceDetails.release(pkg, catalogMetadata)
+            val source = PluginSourceDetails.source(pkg, catalogMetadata)
             val authorRef = metadata?.optString("authorRef")?.ifBlank { null } ?: pkg.manifest.json.optString("authorRef")
             val author = authorRef.takeIf { it.isNotBlank() }?.let { AcademicProviderRegistry.packages().author(it) }
             val features = (metadata?.optJSONArray("features") ?: pkg.manifest.json.optJSONArray("features"))?.let(PluginJson::strings)
@@ -208,6 +210,24 @@ class PluginCenterActivity : ComponentActivity() {
                     author?.optString("bio")?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     if (authorRef.isNotBlank()) TextButton(onClick = { web("/authors/" + Uri.encode(authorRef)) }) { Text("作者主页") }
                     Detail("版本与兼容", "${pkg.manifest.version} · API ${pkg.manifest.apiVersion}" + if (pkg.official) " · 已验证签名" else " · 开发包")
+                    Detail("许可证", source?.optString("license")?.ifBlank { null } ?: pkg.manifest.json.optString("license").ifBlank { "作者未提供" })
+                    val repository = PluginSourceDetails.repository(source?.optString("repository")?.ifBlank { null } ?: pkg.manifest.json.optString("repository"))
+                    repository?.let { url -> TextButton(onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }) { Text("源码仓库") } }
+                    if (pkg.official) {
+                        source?.let {
+                            Detail("本版本源码 SHA-256", it.getString("sha256"))
+                            TextButton(onClick = { web(PluginSourceDetails.download(pkg)) }) { Text("下载 ${pkg.manifest.version} 源码") }
+                        }
+                        TextButton(onClick = { web(PluginSourceDetails.page(pkg)) }) { Text("本版本源码与参与修改") }
+                    }
+                    if ("academic.session" in pkg.manifest.permissions) {
+                        val shared = runCatching { PluginAcademicSession(this@PluginCenterActivity, pkg, { true }).authorized() }.getOrDefault(false)
+                        Detail("教务登录共享", if (shared) "已授权使用当前教务登录" else "尚未授权；首次使用时确认")
+                        if (shared) TextButton(onClick = {
+                            PluginAcademicSession.revoke(this@PluginCenterActivity, pkg.manifest.id)
+                            message = "已撤销此插件的教务登录授权"; generation++; selected = null
+                        }) { Text("撤销教务登录授权") }
+                    }
                     Detail("权限", pkg.manifest.permissions.joinToString("、") { permissionName(it) }.ifBlank { "无额外权限" })
                     Detail("网络范围", pkg.manifest.network.toString())
                     val matchRules = metadata?.optJSONArray("matches") ?: pkg.manifest.json.optJSONArray("matches")
@@ -254,7 +274,8 @@ class PluginCenterActivity : ComponentActivity() {
     private fun web(path: String) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AcademicProviderRegistry.OFFICIAL_WEBSITE + path))) }
     private fun permissionName(name: String) = mapOf("network" to "网络", "storage" to "隔离存储", "credentials" to "加密凭据", "session" to "会话",
         "files" to "文件", "device.clipboard" to "剪贴板", "device.haptics" to "触感", "tasks" to "后台任务", "notifications" to "通知",
-        "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制")[name] ?: name
+        "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制", "academic.session" to "使用本校教务登录",
+        "academic.read" to "读取学业数据", "academic.write" to "导入课表")[name] ?: name
     private fun capabilityName(name: String) = mapOf("ui.init" to "原生页面", "ui.reduce" to "交互与状态", "task.run" to "后台流程", "data.query" to "数据提供者",
         "auth.start" to "登录", "auth.resume" to "继续认证", "auth.validate" to "会话校验", "auth.refreshCaptcha" to "验证码",
         "study.terms" to "学期", "study.schedule" to "课表", "study.grades" to "成绩", "study.gradeDetails" to "成绩明细", "study.exams" to "考试",

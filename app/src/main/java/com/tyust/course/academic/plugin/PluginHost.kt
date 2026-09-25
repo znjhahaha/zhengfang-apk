@@ -23,7 +23,8 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /** Host-side authority. Values supplied by the JS context are never used for account selection. */
-class PluginHost(private val operation: PluginOperation, private val storageRoot: File, cookies: CookieJar = operation.session.cookies) {
+class PluginHost(private val operation: PluginOperation, private val storageRoot: File, cookies: CookieJar = operation.session.cookies,
+    private val sharedRequest: ((HttpUrl, String, String, JSONObject?) -> Unit)? = null) {
     private val policy = PluginNetworkPolicy(operation.manifest.network)
     private val client = OkHttpClient.Builder().cookieJar(cookies)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
@@ -84,7 +85,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
         val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
-        val academicToken = operation.manifest.apiVersion == 3 &&
+        val academicToken = sharedRequest != null || operation.manifest.apiVersion == 3 &&
             (operation.manifest.kind in setOf("independent", "extension") || operation.manifest.isNative && operation.manifest.isAcademic && operation.method.substringBefore('.') in setOf("auth", "study", "selection"))
         val authScope = if (payload.has("authScope")) {
             if (!academicToken || purpose != "auth" || payload.optJSONObject("authScope") == null) invalid("认证范围仅支持 API 3 教务认证")
@@ -93,7 +94,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 policy.requireAllowed(it.service, "GET", "auth", null)
             }
         } else null
-        val transport = if (academicToken) client.newBuilder().cookieJar(PluginAcademicCookies(operation.session, operation.manifest.id, authScope) { operation.requireActive() }).build() else client
+        val transport = if (academicToken && sharedRequest == null) client.newBuilder().cookieJar(PluginAcademicCookies(operation.session, operation.manifest.id, authScope) { operation.requireActive() }).build() else client
         if (payload.has("sameOriginReferer") &&
             (payload.opt("sameOriginReferer") !is Boolean || !academicToken)) invalid("同源 Referer 仅支持 API 3 教务插件")
         val sameOriginReferer = payload.optBoolean("sameOriginReferer", false)
@@ -115,6 +116,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         }
         val boundToken = if (cookieBinding != null) {
             policy.requireAllowed(url, method, purpose, form)
+            sharedRequest?.invoke(url, method, purpose, form)
             val header = cookieBinding.optString("header")
             if (supplied.keys().asSequence().any { it.equals(header, true) }) invalid("认证请求头不可重复")
             cookieToken(url).also { supplied.put(header, it) }
@@ -141,6 +143,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             operation.requireActive()
             authScope?.requireAllowed(url, method)
             policy.requireAllowed(url, method, purpose, form)
+            sharedRequest?.invoke(url, method, purpose, form)
             val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
             if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }

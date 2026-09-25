@@ -255,6 +255,7 @@ fun LoginScreen(
                         
                         var selectedSchool by remember { mutableStateOf<SchoolConfig?>(null) }
                         var showAddSchoolDialog by remember { mutableStateOf(false) }
+                        var addSchoolName by remember { mutableStateOf("") }
                         
                         // Keep the user's current choice when the list refreshes after add/edit.
                         LaunchedEffect(schools) {
@@ -270,20 +271,9 @@ fun LoginScreen(
                         val selectedSchoolIndex = schools
                             .indexOfFirst { it.id == selectedSchool?.id }
                             .takeIf { it >= 0 }
-                        SystemPicker(
-                            options = schools.map { it.name },
-                            selectedIndex = selectedSchoolIndex,
-                            onSelect = { index ->
-                                selectedSchool = schools[index]
-                                onSchoolSelected(schools[index])
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = "请选择学校",
-                            actionLabel = "添加学校",
-                            onAction = { showAddSchoolDialog = true },
-                            backdrop = backdrop,
-                            maxLabelLines = 2
-                        )
+                        SchoolSearchPicker(schools, selectedSchool, enabled = !isLoading,
+                            onSelected = { selectedSchool = it; onSchoolSelected(it) }, onAdded = onSchoolAdded,
+                            onAddManually = { addSchoolName = it; showAddSchoolDialog = true })
                         Text(
                             text = if (selectedSchoolIndex == null) com.tyust.course.academic.AcademicCapabilities.FOUR_SYSTEMS
                                 else com.tyust.course.academic.AcademicCapabilities.name(schools[selectedSchoolIndex].academicSystem),
@@ -295,6 +285,7 @@ fun LoginScreen(
                         // Add School Dialog
                         if (showAddSchoolDialog) {
                             AddSchoolDialog(
+                                initialName = addSchoolName,
                                 onDismiss = { showAddSchoolDialog = false },
                                 onConfirm = { draft ->
                                     val newSchool = draft.toSchoolConfig()
@@ -754,9 +745,10 @@ fun BindingConfirmationDialog(
 @Composable
 fun AddSchoolDialog(
     onDismiss: () -> Unit,
-    onConfirm: (com.tyust.course.model.SchoolFormDraft) -> Unit
+    onConfirm: (com.tyust.course.model.SchoolFormDraft) -> Unit,
+    initialName: String = ""
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
     var domain by remember { mutableStateOf("") }
     var basePath by remember { mutableStateOf("") }
     var protocol by remember { mutableStateOf("https") }

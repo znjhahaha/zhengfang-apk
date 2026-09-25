@@ -55,6 +55,7 @@ class NativeCapabilityHost(
     var cancelEffects: (List<String>) -> Unit = {}
     private val services by lazy { PluginServices(app, pkg, session, interaction, active) }
     private val academic by lazy { PluginAcademicData(app, pkg, active) }
+    private val academicSession by lazy { PluginAcademicSession(app, pkg, active) }
     fun capabilities(): JSONArray = JSONArray(descriptors.filter { descriptor ->
         descriptor.getString("name") in (IMPLEMENTED + PLATFORM) && (interaction != null || !descriptor.getBoolean("userGesture") && !descriptor.getString("name").startsWith("navigation."))
     })
@@ -89,6 +90,21 @@ class NativeCapabilityHost(
             throw PluginException(PluginErrorCode.UNSUPPORTED, "加密凭据绑定需要声明并调用 $name 版本 2")
         val result = withTimeout(effect.optLong("timeoutMs", 120_000).coerceIn(1000, 600_000)) {
             when (name) {
+                "academic.session.authorize" -> {
+                    val description = academicSession.description()
+                    if (!academicSession.authorized()) confirm(flow, "使用本校教务登录", description)
+                    academicSession.authorize()
+                }
+                "academic.session.revoke" -> { PluginAcademicSession.revoke(app, pkg.manifest.id); JSONObject.NULL }
+                "academic.session.request" -> {
+                    requireNetworkPermission()
+                    val grant = input.getString("grant")
+                    academicSession.requireGrant(grant)
+                    val request = input.getJSONObject("request")
+                    val mutation = request.getString("purpose") == "mutation"
+                    if (mutation) confirm(flow, "确认提交", "${pkg.manifest.name} 将使用当前教务账号向 ${request.getString("url")} 提交数据。")
+                    callHost("http", request, mutation, flow = flow, shared = academicSession, grant = grant)
+                }
                 "academic.study.snapshot", "academic.study.refresh" -> {
                     val grant = pkg.manifest.id + ":" + PluginJson.sha256((namespace + "academic.read" + com.tyust.course.manager.UserManager.getInstance().currentAccountStorageKey).toByteArray())
                     if (!prefs.getBoolean(grant, false)) {
@@ -238,14 +254,17 @@ class NativeCapabilityHost(
         }
         return PluginCredentialBindings.apply(request, values)
     }
-    private suspend fun callHost(method: String, input: JSONObject, confirmed: Boolean = false, upload: File? = null, field: String = "file", flow: NativeFlow? = null): Any? = suspendCancellableCoroutine { continuation ->
-        val operation = PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, confirmed = confirmed, packageDigest = pkg.digest,
-            scopeStillActive = { active() && PluginServiceAccounts(app).current(pkg, session) })
+    private suspend fun callHost(method: String, input: JSONObject, confirmed: Boolean = false, upload: File? = null, field: String = "file", flow: NativeFlow? = null,
+        shared: PluginAcademicSession? = null, grant: String = ""): Any? = suspendCancellableCoroutine { continuation ->
+        val operation = PluginOperation(shared?.session ?: session, pkg.manifest, "host.effect", development = !pkg.official, confirmed = confirmed, packageDigest = pkg.digest,
+            scopeStillActive = { shared?.requireGrant(grant); active() && PluginServiceAccounts(app).current(pkg, session) })
+        shared?.track(grant, operation)
         operations.add(operation)
         val worker = ioScope.launch {
             val lease = PluginVersionLeases.acquire(pkg.manifest.id)
             try {
-                val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"), PluginWebSessionCookies.jar(app, pkg, session, active))
+                val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"), shared?.cookies(grant) ?: PluginWebSessionCookies.jar(app, pkg, session, active),
+                    sharedRequest = shared?.let { access -> { url, verb, purpose, form -> access.requireRequest(grant, url, verb, purpose, form) } })
                 val value = if (upload != null) host.upload(input, upload, field) else {
                     val response = host.call(method, input)
                     if (!response.getBoolean("ok")) { val error = response.getJSONObject("error"); throw PluginException(PluginErrorCode.valueOf(error.getString("code")), error.getString("message")) }
@@ -253,7 +272,7 @@ class NativeCapabilityHost(
                 }
                 if (continuation.isActive) continuation.resume(value)
             } catch (error: Exception) { if (continuation.isActive) continuation.resumeWithException(if (error is PluginException) operation.failure(error.code, error.message.orEmpty()) else error) }
-            finally { operation.close(); operations.remove(operation); lease.close() }
+            finally { operation.close(); shared?.untrack(operation); operations.remove(operation); lease.close() }
         }
         continuation.invokeOnCancellation {
             operation.close()
@@ -263,7 +282,7 @@ class NativeCapabilityHost(
     }
     fun close() { operations.forEach(PluginOperation::close); operations.clear(); ioScope.cancel(); if (active()) PluginSessionCookies.save(app, pkg, session) }
     companion object {
-        val PLATFORM = setOf("pages.register", "pages.open", "pages.close", "pages.unregister", "accounts.select", "accounts.remove", "services.discover", "services.call", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel", "workflow.list", "academic.study.snapshot", "academic.study.refresh", "academic.schedule.preview", "academic.schedule.confirm")
+        val PLATFORM = setOf("pages.register", "pages.open", "pages.close", "pages.unregister", "accounts.select", "accounts.remove", "services.discover", "services.call", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel", "workflow.list", "academic.study.snapshot", "academic.study.refresh", "academic.schedule.preview", "academic.schedule.confirm", "academic.session.authorize", "academic.session.request", "academic.session.revoke")
         val IMPLEMENTED = setOf("network.request", "storage.get", "storage.set", "storage.remove", "auth.prompt", "credentials.find", "credentials.remove", "session.save", "session.restore", "session.clear", "files.pick", "files.create", "files.read", "files.write", "files.remove", "files.download", "files.upload", "files.open", "files.share", "device.clipboard.read", "device.clipboard.write", "device.haptic", "tasks.schedule", "tasks.cancel", "tasks.list", "notifications.post", "navigation.page", "navigation.back", "navigation.url", "runtime.cancel", "data.query")
     }
 }

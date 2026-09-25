@@ -363,7 +363,8 @@
           "services",
           "workflow",
           "academic.read",
-          "academic.write"
+          "academic.write",
+          "academic.session"
         ]
       },
       "maxItems": 24,

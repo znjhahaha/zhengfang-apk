@@ -42,6 +42,7 @@ class AcademicSession internal constructor(
     val baseUrl: String,
     val cookies: AcademicCookieJar = AcademicCookieJar()
 ) {
+    internal val instanceId: String = java.util.UUID.randomUUID().toString()
     internal var username: String = ""
     internal var pageCharset: java.nio.charset.Charset? = null
     private val epochCounter = AtomicLong(1L)
@@ -108,6 +109,9 @@ class AcademicSession internal constructor(
 
 class AcademicSessionStore {
     private val sessions = ConcurrentHashMap<AcademicSessionKey, AcademicSession>()
+
+    internal fun existing(schoolId: String, accountKey: String, baseUrl: String): AcademicSession? =
+        sessions[AcademicSessionKey(schoolId, accountKey)]?.takeIf { !it.retired && it.baseUrl == baseUrl }
 
     fun session(schoolId: String, accountKey: String, baseUrl: String): AcademicSession =
         sessions.compute(AcademicSessionKey(schoolId, accountKey)) { key, previous ->

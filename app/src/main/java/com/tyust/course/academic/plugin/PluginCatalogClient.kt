@@ -21,7 +21,12 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
         .retryOnConnectionFailure(false).callTimeout(45, TimeUnit.SECONDS).build()
 
     suspend fun check(): List<JSONObject> = verifiedCatalog().second
-    private suspend fun verifiedCatalog(): Pair<HttpUrl, List<JSONObject>> = withContext(Dispatchers.IO) {
+    /** Search keeps incompatible schools visible, but never bypasses envelope verification. */
+    suspend fun schoolEntries(): List<SchoolSearchProvider> = PluginSchoolSearch.catalog(
+        verifiedCatalog(selectCompatible = false).second, com.tyust.course.BuildConfig.VERSION_CODE,
+        PluginPages.capabilities(), AcademicProviderRegistry.knownPackages().map { it.manifest })
+
+    private suspend fun verifiedCatalog(selectCompatible: Boolean = true): Pair<HttpUrl, List<JSONObject>> = withContext(Dispatchers.IO) {
         var origin = endpoint.toHttpUrlOrNull() ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效目录地址")
         val bytes = try { download(origin, origin, PluginLimits.PACKAGE_BYTES) } catch (missing: CatalogMissing) {
             val fallback = fallbackEndpoint?.toHttpUrlOrNull() ?: throw missing
@@ -40,7 +45,9 @@ class PluginCatalogClient(private val endpoint: String, private val keys: Map<St
             store.rememberCatalog(catalog)
         }
         val installed = (AcademicProviderRegistry.knownPackages() + store.list()).associateBy { it.manifest.id }.values.map { it.manifest }
-        origin to entries.mapNotNull { PluginUpdatePolicy.select(it, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities(), installed) }
+        origin to if (selectCompatible) entries.mapNotNull {
+            PluginUpdatePolicy.select(it, com.tyust.course.BuildConfig.VERSION_CODE, PluginPages.capabilities(), installed)
+        } else entries
     }
     suspend fun update(id: String, stageOnly: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
         val (origin, entries) = verifiedCatalog()

@@ -63,6 +63,7 @@ object AcademicProviderRegistry {
     private fun schoolKey(school: SchoolConfig) = PluginJson.sha256(PluginSchoolMatcher.key(school).toByteArray())
     fun isEnabled(id: String, school: SchoolConfig) = isEnabled(id) && schoolPrefs()?.getBoolean("disabled:${schoolKey(school)}:$id", false) != true
     fun setSchoolEnabled(id: String, school: SchoolConfig, enabled: Boolean) {
+        if (!enabled) app?.let { PluginAcademicSession.revoke(it, id) }
         schoolPrefs()?.edit()?.putBoolean("disabled:${schoolKey(school)}:$id", !enabled)?.apply()
         PluginPages.refresh()
     }
@@ -72,6 +73,7 @@ object AcademicProviderRegistry {
     fun contributions(school: SchoolConfig, kind: String): List<Pair<PluginPackage, JSONObject>> = services(school).filter { it.manifest.isNative }.flatMap { pkg -> pkg.manifest.contributes.optJSONArray(kind)?.let(PluginJson::objects).orEmpty().map { pkg to it } }
     fun isEnabled(id: String): Boolean = (store?.activeDigest(id) != null || id in bundled) && schoolPrefs()?.getBoolean("disabled:global:$id", false) != true
     fun setEnabled(id: String, enabled: Boolean) {
+        if (!enabled) app?.let { PluginAcademicSession.revoke(it, id) }
         schoolPrefs()?.edit()?.putBoolean("disabled:global:$id", !enabled)?.commit()
         if (!enabled) app?.let { NativePluginTasks.stopPlugin(it, id) }
         PluginPages.refresh()

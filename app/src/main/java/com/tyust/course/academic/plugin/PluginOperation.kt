@@ -52,6 +52,7 @@ class PluginOperation(
     fun failure(code: PluginErrorCode, message: String): PluginException = PluginException(
         if (mutationSent && code in setOf(PluginErrorCode.TIMEOUT, PluginErrorCode.CANCELLED,
             PluginErrorCode.RUNTIME_EXITED, PluginErrorCode.NETWORK_RETRYABLE, PluginErrorCode.RESOURCE_LIMIT,
-            PluginErrorCode.PAGE_CHANGED, PluginErrorCode.VALIDATION_FAILED))
+            PluginErrorCode.PAGE_CHANGED, PluginErrorCode.VALIDATION_FAILED, PluginErrorCode.STALE_CONTEXT,
+            PluginErrorCode.SESSION_EXPIRED, PluginErrorCode.PERMISSION_DENIED))
             PluginErrorCode.RESULT_UNKNOWN else code, message)
 }

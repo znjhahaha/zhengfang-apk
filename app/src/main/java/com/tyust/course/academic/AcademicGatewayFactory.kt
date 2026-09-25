@@ -8,6 +8,10 @@ import com.tyust.course.academic.plugin.AcademicProviderRegistry
 object AcademicGatewayFactory {
     private val sessions = AcademicSessionStore()
 
+    /** Borrow only an existing login; plugins cannot create or select its account. */
+    internal fun sharedSession(school: SchoolConfig, accountStorageKey: String): AcademicSession? =
+        sessions.existing(school.id, accountStorageKey, school.fullBasePath)
+
     /** True when the school opts into the adapter flow, including auto-detection. */
     fun supports(school: SchoolConfig): Boolean {
         return true // legacy_zf is a compatibility name for the preinstalled TypeScript provider.

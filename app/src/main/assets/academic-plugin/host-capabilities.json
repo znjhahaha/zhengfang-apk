@@ -614,6 +614,202 @@
     }
   },
   {
+    "name": "academic.session.authorize",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "schoolName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "baseUrl": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "grant",
+        "schoolName",
+        "baseUrl"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
+    "name": "academic.session.request",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "request": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            },
+            "purpose": {
+              "enum": [
+                "query",
+                "mutation"
+              ]
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "form": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 262144
+            },
+            "charset": {
+              "enum": [
+                "UTF-8",
+                "GBK",
+                "GB2312",
+                "GB18030"
+              ]
+            },
+            "responseType": {
+              "enum": [
+                "text",
+                "base64"
+              ]
+            },
+            "sameOriginReferer": {
+              "type": "boolean"
+            },
+            "cookieHeader": {
+              "type": "object",
+              "properties": {
+                "cookie": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "header": {
+                  "enum": [
+                    "Authorization",
+                    "X-Token"
+                  ]
+                }
+              },
+              "required": [
+                "cookie",
+                "header"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "url",
+            "purpose"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "grant",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 7340032
+        }
+      },
+      "required": [
+        "status",
+        "url",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "responseBytes": 5242880
+    }
+  },
+  {
+    "name": "academic.session.revoke",
+    "version": 1,
+    "permission": "academic.session",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {},
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    }
+  },
+  {
     "name": "network.request",
     "version": 2,
     "permission": "network",

@@ -534,6 +534,18 @@ fun ScheduleRoute() {
         com.tyust.course.ui.system.GlassSubpage(onDismiss = { showSettingsDialog = false; settingsTermOverride = null }) { close ->
             ScheduleSettingsScreen(
                 manager = settingsManager,
+                reminderAccountLabel = UserManager.getInstance().username.ifBlank { "当前登录账号" },
+                reminderTerm = settingsTerm,
+                reminderSummary = reminderScheduler.semesterSummary(routeAccountKey, settingsTerm,
+                    if (settingsTerm == resolvedTermId) courses.map { it.record() } else emptyList()),
+                canChangeReminders = !isDemoMode && !isLoading && settingsTerm.isNotBlank() &&
+                    settingsTerm == resolvedTermId && courses.isNotEmpty() && session.token.accountStorageKey == routeAccountKey,
+                onSemesterReminders = { enabled ->
+                    if (!isLoading && settingsTerm == resolvedTermId && session.token.accountStorageKey == routeAccountKey &&
+                        reminderScheduler.setSemesterEnabled(routeAccountKey, settingsTerm, courses.map { it.record() }, enabled)) {
+                        GlassToaster.show(if (enabled) "已保存本学期提醒，请查看生效状态" else "已关闭本学期全部提醒")
+                    }
+                },
                 displayPreferences = displayPreferences,
                 onDisplayPreferences = { displayPreferences = it; displayStore.write(routeAccountKey, it) },
                 periodTimesOverride = periodTimesFor(termTimeBase),
