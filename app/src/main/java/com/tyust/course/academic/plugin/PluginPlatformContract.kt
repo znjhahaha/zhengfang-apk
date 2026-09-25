@@ -16,6 +16,10 @@ object PluginPlatformContract {
     fun validate(manifest: PluginManifest) {
         val m = manifest.json
         unique(m.optJSONArray("requires"), "name")
+        if (manifest.network.any { it.has("authHeader") } &&
+            (manifest.apiVersion != 3 || manifest.network.any { it.has("authHeader") && it.optString("authHeader") != "X-Token" } ||
+                m.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().none { it.optString("name") == "network.request" && it.optInt("version") >= 3 }))
+            invalid("X-Token 需要 API 3，并在 requires 声明 network.request 版本 3")
         val servers = m.optJSONArray("servers")?.let(PluginJson::objects).orEmpty()
         val services = m.optJSONArray("services")?.let(PluginJson::objects).orEmpty()
         val dependencies = m.optJSONArray("serviceDependencies")?.let(PluginJson::objects).orEmpty()

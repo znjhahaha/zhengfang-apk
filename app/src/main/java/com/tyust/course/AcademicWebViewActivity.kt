@@ -14,6 +14,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebResourceError
 import android.webkit.WebChromeClient
 import com.tyust.course.academic.AcademicUrlPolicy
+import com.tyust.course.academic.AcademicRedirects
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -267,6 +269,14 @@ class AcademicWebViewActivity : ComponentActivity() {
     }
 
     private fun handleNavigation(url: String, mainFrame: Boolean): Boolean {
+        if (mainFrame) {
+            val source = startUrl.toHttpUrlOrNull()
+            val target = url.toHttpUrlOrNull()
+            if (source != null && target != null) {
+                val secure = AcademicRedirects.preferVerifiedHttps(source, target)
+                if (secure != target) { webView?.loadUrl(secure.toString()); return true }
+            }
+        }
         if (WebLoginNavigation.isWebUrl(url) || url == "about:blank" || url.startsWith("javascript:", true)) return false
         if (mainFrame) Toast.makeText(this, "请使用网页方式继续登录", Toast.LENGTH_SHORT).show()
         return true

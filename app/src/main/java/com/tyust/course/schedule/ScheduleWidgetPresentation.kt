@@ -91,13 +91,13 @@ internal object ScheduleWidgetRenderer {
         if (style == ScheduleWidgetStyle.Timeline && height >= 170 * scale && width >= 200)
             return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor)
         val views = RemoteViews(context.packageName, if (style == ScheduleWidgetStyle.Single) R.layout.schedule_widget_single else R.layout.schedule_widget)
-        val two = style == ScheduleWidgetStyle.Double && state.secondary != null && width >= 250 && height >= 110 * scale
-        val compactSingle = !two && height < 128 * scale
-        val tall = height >= 180 * scale
-        val showHeader = height >= 94 * scale
+        val compactSingle = height < 128 * scale
+        val paddingDp = if (compactSingle) 4 else 6
+        val plan = ScheduleWidgetTextSizing(context).cards(state, width, height, scale, style, paddingDp)
+        val two = plan.two
         val density = context.resources.displayMetrics.density
         val horizontalPadding = (8 * density).toInt()
-        val verticalPadding = ((if (compactSingle) 4 else 6) * density).toInt()
+        val verticalPadding = (paddingDp * density).toInt()
         // Reserve the compact card's height for its name, room and time, including
         // large system fonts, before spending that space on decorative padding.
         views.setViewPadding(R.id.widget_root, horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
@@ -109,13 +109,13 @@ internal object ScheduleWidgetRenderer {
         })
         views.setTextViewText(R.id.widget_heading, state.heading)
         views.setTextViewText(R.id.widget_date, state.date)
-        views.setViewVisibility(R.id.widget_header, if (showHeader) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.widget_header, if (plan.header || state.primary == null) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_date, if (width >= 250) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_courses, if (state.primary != null) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_empty, if (state.primary == null) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_next, if (two) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_separator, if (two) View.VISIBLE else View.GONE)
-        views.setViewVisibility(R.id.widget_footer, if (state.primary != null && height >= 224 * scale) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.widget_footer, if (state.primary != null && plan.footer) View.VISIBLE else View.GONE)
         views.setTextViewText(R.id.widget_footer, state.summary)
         views.setTextViewText(R.id.widget_message, state.message)
         views.setTextViewText(R.id.widget_action, state.actionLabel)
@@ -129,20 +129,15 @@ internal object ScheduleWidgetRenderer {
             views.setTextViewText(room, item.location)
             views.setTextViewText(time, listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" "))
             views.setTextViewText(status, item.status)
-            views.setInt(name, "setMaxLines", if (tall) 2 else 1)
-            views.setInt(room, "setMaxLines", if (height >= 220 * scale) 2 else 1)
-            val nameSize = when {
-                two -> 15f
-                compactSingle -> 14f
-                else -> 16f
-            }
-            views.setTextViewTextSize(name, android.util.TypedValue.COMPLEX_UNIT_SP, nameSize)
-            views.setViewVisibility(status, if (two || height >= 128 * scale) View.VISIBLE else View.GONE)
+            views.setTextViewTextSize(name, android.util.TypedValue.COMPLEX_UNIT_SP, plan.nameSize)
+            views.setTextViewTextSize(room, android.util.TypedValue.COMPLEX_UNIT_SP, plan.roomSize)
+            views.setTextViewTextSize(time, android.util.TypedValue.COMPLEX_UNIT_SP, plan.timeSize)
+            views.setViewVisibility(time, if (plan.time) View.VISIBLE else View.GONE)
+            views.setViewVisibility(status, if (plan.status) View.VISIBLE else View.GONE)
         }
         row(state.primary, R.id.widget_name, R.id.widget_location, R.id.widget_time, R.id.widget_status)
         row(state.secondary, R.id.widget_next_name, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
         if (style == ScheduleWidgetStyle.Single && !compactSingle) {
-            views.setTextViewTextSize(R.id.widget_time, android.util.TypedValue.COMPLEX_UNIT_SP, if (height >= 180 * scale) 23f else 18f)
             views.setTextColor(R.id.widget_time, accentColor)
         }
         fun click(id: Int, item: ScheduleWidgetCourse? = null, action: ScheduleWidgetAction = ScheduleWidgetAction.Today) {
@@ -180,7 +175,37 @@ internal object ScheduleWidgetRenderer {
         views.setTextColor(R.id.widget_date, secondary)
         views.setTextColor(R.id.widget_footer, secondary)
         views.removeAllViews(R.id.widget_timeline_rows)
-        val rows = timelineItems(state, height, scale)
+        val sizing = ScheduleWidgetTextSizing(context)
+        val available = sizing.px(height - 24f - 8f - 4f - 2f) -
+            sizing.textHeight("今日时间轴", 14f, sizing.px(width - 24f), true) -
+            sizing.textHeight("点按查看全部", 11f, sizing.px(width - 24f))
+        data class RowPlan(val item: ScheduleOccurrence, val nameSize: Float, val roomSize: Float, val status: Boolean, val height: Float)
+        fun rowPlan(item: ScheduleOccurrence): RowPlan {
+            var nameSize = 14f
+            var roomSize = 11f
+            var status = width >= 320 && scale <= 1.3f
+            fun measured(): Float {
+                val column = sizing.px(width - 24f - 42f * scale - 16f - 4f - if (status) 39f * scale else 0f)
+                return maxOf(sizing.px(40f), sizing.textHeight(item.course.name, nameSize, column, true) +
+                    sizing.textHeight(item.course.location.ifBlank { "教室待定" }, roomSize, column) + sizing.px(3f)) + sizing.px(10f)
+            }
+            if (measured() > available) status = false
+            while (measured() > available && nameSize > 10f / scale) {
+                nameSize -= .5f; roomSize = minOf(roomSize, nameSize)
+            }
+            return RowPlan(item, nameSize, roomSize, status, measured())
+        }
+        val candidates = timelineItems(state, height, scale).map(::rowPlan)
+        val focus = candidates.indexOfFirst { it.item.endsAt > state.now }.takeIf { it >= 0 } ?: candidates.lastIndex
+        val selected = mutableListOf<RowPlan>()
+        var remaining = available
+        // Keep the current/next class first, then fit complete rows around it.
+        if (focus >= 0) for (index in (focus until candidates.size) + (focus - 1 downTo 0)) {
+            val row = candidates[index]
+            if (row.height <= remaining) { selected += row; remaining -= row.height }
+        }
+        val plans = selected.sortedBy { it.item.startsAt }
+        val rows = plans.map { it.item }
         val snapshot = state.snapshot
         fun intent(item: ScheduleOccurrence? = null, action: ScheduleWidgetAction = ScheduleWidgetAction.Today): PendingIntent = PendingIntent.getActivity(context, 0,
             ScheduleWidgetNavigation.intent(context, snapshot?.account.orEmpty(), snapshot?.school.orEmpty(), snapshot?.term.orEmpty(),
@@ -188,7 +213,8 @@ internal object ScheduleWidgetRenderer {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         views.setOnClickPendingIntent(R.id.widget_root, intent())
         views.setOnClickPendingIntent(R.id.widget_header, intent())
-        for (item in rows) {
+        for (plan in plans) {
+            val item = plan.item
             val row = RemoteViews(context.packageName, R.layout.schedule_widget_timeline_row)
             val past = item.endsAt <= state.now
             val current = state.now in item.startsAt until item.endsAt
@@ -196,13 +222,15 @@ internal object ScheduleWidgetRenderer {
             row.setTextViewText(R.id.widget_timeline_time, time)
             row.setTextViewText(R.id.widget_name, item.course.name)
             row.setTextViewText(R.id.widget_location, item.course.location.ifBlank { "教室待定" })
+            row.setTextViewTextSize(R.id.widget_name, android.util.TypedValue.COMPLEX_UNIT_SP, plan.nameSize)
+            row.setTextViewTextSize(R.id.widget_location, android.util.TypedValue.COMPLEX_UNIT_SP, plan.roomSize)
             row.setTextViewText(R.id.widget_status, when { current -> "进行中"; past -> "已结束"; else -> "待上课" })
             row.setTextColor(R.id.widget_timeline_time, if (current) accent else secondary)
             row.setTextColor(R.id.widget_name, if (past) secondary else primary)
             row.setTextColor(R.id.widget_location, secondary)
             row.setTextColor(R.id.widget_status, if (current) accent else secondary)
             row.setInt(R.id.widget_timeline_dot, "setBackgroundColor", if (current) accent else secondary)
-            row.setViewVisibility(R.id.widget_status, if (width >= 320 && scale <= 1.3f) View.VISIBLE else View.GONE)
+            row.setViewVisibility(R.id.widget_status, if (plan.status) View.VISIBLE else View.GONE)
             row.setOnClickPendingIntent(R.id.widget_course, intent(item))
             views.addView(R.id.widget_timeline_rows, row)
         }

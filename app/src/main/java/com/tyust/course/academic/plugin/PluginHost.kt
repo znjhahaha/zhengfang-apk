@@ -87,6 +87,8 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
         val academicToken = sharedRequest != null || operation.manifest.apiVersion == 3 &&
             (operation.manifest.kind in setOf("independent", "extension") || operation.manifest.isNative && operation.manifest.isAcademic && operation.method.substringBefore('.') in setOf("auth", "study", "selection"))
+        val scopedToken = operation.manifest.apiVersion == 3 && (operation.manifest.isService || operation.manifest.isNative) &&
+            operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().any { it.optString("name") == "network.request" && it.optInt("version") >= 3 }
         val authScope = if (payload.has("authScope")) {
             if (!academicToken || purpose != "auth" || payload.optJSONObject("authScope") == null) invalid("认证范围仅支持 API 3 教务认证")
             PluginAuthScope(payload.getJSONObject("authScope")).also {
@@ -123,7 +125,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         } else null
         val allowedHeaders = setOf("accept", "content-type", "x-requested-with") +
             (if (operation.manifest.isService || operation.manifest.isNative || academicToken) setOf("authorization") else emptySet()) +
-            (if (academicToken) setOf("x-token") else emptySet())
+            (if (academicToken || scopedToken) setOf("x-token") else emptySet())
         val headerNames = supplied.keys().asSequence().map { it.lowercase() }.toList()
         if (headerNames.distinct().size != headerNames.size) invalid("请求头不可重复")
         supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
@@ -133,16 +135,16 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             if (academicToken) {
                 val secret = value.removePrefix("Bearer ")
                 if (value.length !in 1..8192 || secret.isEmpty() || secret.any { it.code !in 33..126 }) invalid("无效教务认证令牌")
-            } else if (!value.startsWith("Bearer ") || value.length > 8192) invalid("服务认证仅支持 Bearer 请求头")
+            } else if (!value.startsWith("Bearer ") || value.length !in 8..8192 || value.removePrefix("Bearer ").any { it.code !in 33..126 }) invalid("服务认证需要有效的 Bearer 请求头")
         }
         val token = supplied.keys().asSequence().firstOrNull { it.equals("x-token", true) }
-        if (token != null && (supplied.getString(token).length !in 1..8192 || supplied.getString(token).any { it.code !in 33..126 })) invalid("无效教务认证令牌")
+        if (token != null && (supplied.getString(token).length !in 1..8192 || supplied.getString(token).any { it.code !in 33..126 })) invalid("无效 X-Token")
         var redirected = 0
         var callbackFragment: String? = null
         while (true) {
             operation.requireActive()
             authScope?.requireAllowed(url, method)
-            policy.requireAllowed(url, method, purpose, form)
+            policy.requireAllowed(url, method, purpose, form, if (token != null && !academicToken) "X-Token" else null)
             sharedRequest?.invoke(url, method, purpose, form)
             val builder = Request.Builder().url(url).header("User-Agent", "ZhengfangAcademicPlugin/1")
             if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())

@@ -99,4 +99,30 @@ class NativeCredentialIntegrationTest {
             } finally { live = false; host.close(); session.retire() }
         }
     }
+
+    @Test fun nativeTokenBindingUsesTheVaultAndDeclaredNetworkScope() = runBlocking {
+        MockWebServer().use { server ->
+            server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
+            val origin = "http://127.0.0.1:${server.port}"
+            val pkg = pkg(origin)
+            pkg.manifest.json.getJSONArray("requires").getJSONObject(0).put("version", 3)
+            pkg.manifest.network.single().put("authHeader", "X-Token")
+            val session = AcademicSession(AcademicSessionKey("plugin:test.native-login", "default"), origin)
+            val host = NativeCapabilityHost(app, pkg, session, interaction) { true }
+            try {
+                host.requireCompatible()
+                val handle = credential(host)
+                val request = JSONObject().put("url", "$origin/api/login").put("method", "POST").put("purpose", "auth")
+                    .put("credential", handle).put("bindings", JSONObject().put("headers", JSONObject().put("X-Token", "username")))
+                server.enqueue(MockResponse().setBody("ok"))
+                assertEquals(200, (host.execute(effect("network.request", request, 3), NativeFlow(true)) as JSONObject).getInt("status"))
+                val sent = server.takeRequest(1, TimeUnit.SECONDS)!!
+                assertEquals("synthetic-student", sent.getHeader("X-Token")); assertNull(sent.getHeader("Authorization"))
+                pkg.manifest.network.single().remove("authHeader")
+                try { host.execute(effect("network.request", request, 3), NativeFlow(true)); fail("Undeclared token must not be sent") }
+                catch (error: PluginException) { assertEquals(PluginErrorCode.UNTRUSTED_URL, error.code) }
+                assertEquals(1, server.requestCount)
+            } finally { host.close(); session.retire() }
+        }
+    }
 }

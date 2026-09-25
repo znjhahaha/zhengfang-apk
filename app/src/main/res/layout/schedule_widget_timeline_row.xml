@@ -13,7 +13,7 @@
     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
         android:orientation="vertical" android:paddingStart="4dp">
         <TextView android:id="@+id/widget_name" style="@style/ScheduleWidgetCourseName" android:textSize="14sp" />
-        <TextView android:id="@+id/widget_location" style="@style/ScheduleWidgetMetadata" android:layout_marginTop="3dp" />
+        <TextView android:id="@+id/widget_location" style="@style/ScheduleWidgetFullText" android:layout_marginTop="3dp" />
     </LinearLayout>
     <TextView android:id="@+id/widget_status" style="@style/ScheduleWidgetMetadata"
         android:layout_width="wrap_content" android:paddingStart="6dp" />

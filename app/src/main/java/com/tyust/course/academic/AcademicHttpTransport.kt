@@ -108,10 +108,11 @@ class AcademicHttpTransport(
                         currentMethod = "GET"
                     }
                     if (++redirects > 5) throw AcademicException(AcademicStatus.PAGE_CHANGED, "Too many redirects")
-                    val next = parsed.resolve(location)?.toString()
+                    val resolved = parsed.resolve(location)
                         ?: throw AcademicException(AcademicStatus.UNTRUSTED_URL, "Invalid redirect")
-                    ensureAllowed(next.toHttpUrlOrNull() ?: throw AcademicException(AcademicStatus.UNTRUSTED_URL, "Invalid redirect"))
-                    url = next
+                    val next = AcademicRedirects.preferVerifiedHttps(parsed, resolved)
+                    ensureAllowed(next)
+                    url = next.toString()
                     continue
                 }
                 val source = it.body?.source()

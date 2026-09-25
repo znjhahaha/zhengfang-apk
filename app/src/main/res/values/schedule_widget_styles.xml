@@ -9,7 +9,13 @@
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
     </style>
-    <style name="ScheduleWidgetCourseName" parent="ScheduleWidgetMetadata">
+    <style name="ScheduleWidgetFullText" parent="ScheduleWidgetMetadata">
+        <item name="android:maxLines">2147483647</item>
+        <item name="android:ellipsize">none</item>
+        <item name="android:breakStrategy">simple</item>
+        <item name="android:hyphenationFrequency">none</item>
+    </style>
+    <style name="ScheduleWidgetCourseName" parent="ScheduleWidgetFullText">
         <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">#1D2433</item>

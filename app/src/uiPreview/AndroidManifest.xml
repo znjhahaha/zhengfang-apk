@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application android:label="正方教务助手 · 预览" tools:replace="android:label">
+        <activity android:name=".AcademicWebLoginProbeActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:screenOrientation="unspecified" tools:replace="android:screenOrientation" />
         <activity android:name=".LoginActivity" android:screenOrientation="unspecified" tools:replace="android:screenOrientation" />
     </application>

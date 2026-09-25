@@ -811,7 +811,7 @@
   },
   {
     "name": "network.request",
-    "version": 2,
+    "version": 3,
     "permission": "network",
     "input": {
       "type": "object",

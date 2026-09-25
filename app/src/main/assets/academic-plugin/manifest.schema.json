@@ -804,6 +804,9 @@
             "minLength": 1,
             "maxLength": 512,
             "pattern": "^[!-~](?:[ -~]*[!-~])?(?![\\s\\S])"
+          },
+          "authHeader": {
+            "const": "X-Token"
           }
         },
         "required": [

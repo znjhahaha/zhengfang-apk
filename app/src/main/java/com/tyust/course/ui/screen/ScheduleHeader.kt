@@ -36,6 +36,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
@@ -51,6 +55,15 @@ import com.tyust.course.ui.system.glass.drawBackdropSource
 import com.tyust.course.ui.system.glass.glassLensAnchor
 import com.tyust.course.ui.system.glass.rememberGlassLensRegion
 import java.util.Calendar
+
+// Numeric and CJK fallback fonts share a stable line box. Tabular digits keep
+// single- and double-digit dates centered when the selected week changes.
+private val ScheduleDateTypography = TextStyle(
+    letterSpacing = 0.sp,
+    fontFeatureSettings = "tnum",
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+)
 
 @Composable
 internal fun scheduleHeaderHeight() = maxOf(56.dp, 44.dp * LocalDensity.current.fontScale) * 2
@@ -133,10 +146,12 @@ fun WeekHeaderCompact(
                     .semantics { contentDescription = "选择日期与学期" }.padding(start = 4.dp),
                     verticalArrangement = Arrangement.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("${date.get(Calendar.MONTH) + 1}月${date.get(Calendar.DAY_OF_MONTH)}日",
-                            modifier = Modifier.weight(1f, fill = false),
-                            fontSize = when { fontScale > 1.3f -> 15.sp; fontScale > 1.1f -> 20.sp; else -> 22.sp },
-                            lineHeight = if (fontScale > 1.3f) 18.sp else 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        ScheduleDateText("${date.get(Calendar.MONTH) + 1}月${date.get(Calendar.DAY_OF_MONTH)}日",
+                            timestamp = date.timeInMillis, tag = "schedule-date-title",
+                            modifier = Modifier.weight(1f, fill = false), color = colors.onSurface,
+                            style = ScheduleDateTypography.copy(
+                                fontSize = when { fontScale > 1.3f -> 15.sp; fontScale > 1.1f -> 20.sp; else -> 22.sp },
+                                lineHeight = if (fontScale > 1.3f) 18.sp else 24.sp, fontWeight = FontWeight.Bold))
                         AnimatedLineIcon(AnimatedIconSpec.Chevron, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
                     }
                     Text(when {
@@ -215,12 +230,17 @@ private fun ScheduleDateStrip(anchor: String, week: Int, selectedDay: Int, dayCo
         backdrop = backdrop, height = height, edgePadding = 0.dp,
         verticalInset = 2.dp, restingRefraction = 0f, showTrack = false) { index, selection, color ->
         val day = index + 1
-        val date = requireNotNull(ScheduleDates.date(anchor, week, day)).get(Calendar.DAY_OF_MONTH)
+        val date = requireNotNull(ScheduleDates.date(anchor, week, day))
         Column(Modifier.fillMaxSize().testTag("schedule-weekday-$day").semantics {
             if (today == day) stateDescription = "今天"
         }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("一二三四五六日"[index].toString(), fontSize = 11.sp, lineHeight = 15.sp, color = color)
-            Text(date.toString(), fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold,
+            Text("一二三四五六日"[index].toString(),
+                modifier = Modifier.fillMaxWidth().testTag("schedule-weekday-label-$day"),
+                style = ScheduleDateTypography, textAlign = TextAlign.Center,
+                fontSize = 11.sp, lineHeight = 15.sp, color = color, maxLines = 1)
+            ScheduleDateText(date.get(Calendar.DAY_OF_MONTH).toString(), timestamp = date.timeInMillis,
+                tag = "schedule-day-number-$day", modifier = Modifier.fillMaxWidth(), fillColumn = true,
+                style = ScheduleDateTypography.copy(fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
                 color = if (today == day || selection >= 0.5f) colors.primary else colors.onSurface)
             Box(Modifier.padding(top = 2.dp).size(3.dp)
                 .background(if (today == day) colors.primary else Color.Transparent, RoundedCornerShape(2.dp)))
