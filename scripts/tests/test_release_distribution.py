@@ -10,7 +10,7 @@ from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release_distribution as d
-from promote_release import verify_run
+from promote_release import verify_run, prepare_promotion_notes
 
 
 def payload(channel='test'):
@@ -236,5 +236,34 @@ class PromotionTests(unittest.TestCase):
     def test_missing_or_failed_checks_rejected(self):
         for tests in [{},dict(tests=1,failures=1),dict(tests=1,errors=1)]:
             with self.assertRaises(d.DeliveryError): verify_run(self.run,dict(self.receipt,tests=tests))
+
+    def test_stable_wording_preserves_original_apk_and_receipt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); (root/'release-notes').mkdir()
+            (root/'release-notes/v1.0.101.md').write_text('## notes\n测试说明\n\n## stable notes\n正式说明\n\n## validation\n内部证据\n')
+            (root/'release-notes.txt').write_text('测试说明\n')
+            (root/'app-release.apk').write_bytes(b'signed-original')
+            (root/'receipt.json').write_bytes(b'original-receipt')
+            prepare_promotion_notes('v1.0.101', root, root)
+            self.assertEqual((root/'release-notes.txt').read_text(), '正式说明\n')
+            self.assertEqual((root/'app-release.apk').read_bytes(), b'signed-original')
+            self.assertEqual((root/'receipt.json').read_bytes(), b'original-receipt')
+
+    def test_legacy_promotion_without_stable_section_retains_artifact_notes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); (root/'release-notes').mkdir()
+            (root/'release-notes.txt').write_text('原始说明\n')
+            prepare_promotion_notes('v1.0.100', root, root)
+            (root/'release-notes/v1.0.100.md').write_text('## notes\n归档\n')
+            prepare_promotion_notes('v1.0.100', root, root)
+            self.assertEqual((root/'release-notes.txt').read_text(), '原始说明\n')
+
+    def test_empty_stable_section_fails_without_replacing_artifact_notes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); (root/'release-notes').mkdir()
+            (root/'release-notes/v1.0.101.md').write_text('## stable notes\n\n## validation\n内部证据\n')
+            (root/'release-notes.txt').write_text('原始说明\n')
+            with self.assertRaises(d.DeliveryError): prepare_promotion_notes('v1.0.101', root, root)
+            self.assertEqual((root/'release-notes.txt').read_text(), '原始说明\n')
 
 if __name__ == '__main__': unittest.main()

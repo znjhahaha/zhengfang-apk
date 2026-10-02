@@ -42,11 +42,27 @@ def download_test_run(run_id, directory, budget):
     return receipt
 
 
+def prepare_promotion_notes(tag, directory, root=ROOT):
+    """Optional reviewed stable wording; APK and its build receipt stay unchanged."""
+    archived = Path(root)/'release-notes'/f'{tag}.md'
+    if not archived.is_file():
+        return
+    text = archived.read_text()
+    marker = '## stable notes\n'
+    if marker not in text:
+        return
+    notes = text.split(marker, 1)[1].split('\n## ', 1)[0].strip()
+    if not notes:
+        raise DeliveryError('Empty archived stable release notes')
+    (Path(directory)/'release-notes.txt').write_text(notes+'\n')
+
+
 def promote(run_id, directory, budget):
     receipt = download_test_run(run_id, directory, budget)
     directory = Path(directory); tag = 'v'+receipt['versionName']
     if not re.fullmatch(r'v1\.0\.[0-9]+', tag):
         raise DeliveryError('Unsupported version tag')
+    prepare_promotion_notes(tag, directory)
     ref = gh_api(f'repos/{REPO}/git/ref/tags/{tag}', budget, missing=True)
     if ref:
         obj = ref['object']
