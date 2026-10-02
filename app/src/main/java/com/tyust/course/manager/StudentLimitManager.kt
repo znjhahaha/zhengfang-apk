@@ -15,6 +15,7 @@ object StudentLimitManager {
     private const val TAG = "StudentLimitManager"
     private const val PREFS_NAME = "student_limit_prefs"
     private const val KEY_USED_NAMES = "used_student_names"
+    private const val KEY_MIGRATED = "binding_records_migrated"
     private const val KEY_BOUND_RECORDS = "bound_student_records"
 
     data class BoundStudentRecord(
@@ -79,8 +80,11 @@ object StudentLimitManager {
 
     private fun migrateLegacyNamesIfNeeded(context: Context) {
         val prefs = getPrefs(context)
+        if (prefs.getBoolean(KEY_MIGRATED, false)) return
         val existing = prefs.getString(KEY_BOUND_RECORDS, "[]").orEmpty()
-        if (existing != "[]" && existing.isNotBlank()) return
+        if (existing != "[]" && existing.isNotBlank()) {
+            prefs.edit().putBoolean(KEY_MIGRATED, true).commit(); return
+        }
 
         val oldNames = prefs.getStringSet(KEY_USED_NAMES, emptySet()).orEmpty()
             .filter { it.isNotBlank() }
@@ -103,10 +107,11 @@ object StudentLimitManager {
                 )
             )
         }
-        prefs.edit().putString(KEY_BOUND_RECORDS, arr.toString()).apply()
+        prefs.edit().putString(KEY_BOUND_RECORDS, arr.toString()).putBoolean(KEY_MIGRATED, true).commit()
         Log.d(TAG, "已迁移旧版绑定记录到当前学校: $schoolName, count=${oldNames.size}")
     }
 
+    @Synchronized
     fun getBoundStudents(context: Context): List<BoundStudentRecord> {
         migrateLegacyNamesIfNeeded(context)
         return try {
@@ -152,7 +157,11 @@ object StudentLimitManager {
         schoolId: String,
         studentName: String,
         studentId: String
-    ): BindingCheck = evaluateBinding(getBoundStudents(context), schoolId, studentName, studentId)
+    ): BindingCheck {
+        val result = evaluateBinding(getBoundStudents(context), schoolId, studentName, studentId)
+        return if (com.tyust.course.activation.ActivationManager.getMaxStudents(context) <= 0)
+            result.copy(allowed = schoolId.isNotBlank() && normalizeIdentity(studentName, studentId).isNotBlank()) else result
+    }
 
     internal fun evaluateBinding(
         boundRecords: List<BoundStudentRecord>,
@@ -229,7 +238,7 @@ object StudentLimitManager {
     ): Boolean = synchronized(this) {
         val identity = normalizeIdentity(studentName, studentId)
         val records = getBoundStudents(context).toMutableList()
-        if (!evaluateBinding(records, schoolId, studentName, studentId).allowed) return@synchronized false
+        if (!checkCanUseStudent(context, schoolId, studentName, studentId).allowed) return@synchronized false
         val exists = records.any { it.schoolId == schoolId && it.identity == identity }
         if (!exists) {
             records.add(
@@ -240,17 +249,40 @@ object StudentLimitManager {
                     studentId = studentId
                 )
             )
-            val arr = JSONArray()
-            records.forEach { arr.put(recordToJson(it)) }
-            getPrefs(context).edit()
-                .putString(KEY_BOUND_RECORDS, arr.toString())
-                .putStringSet(KEY_USED_NAMES, records.map { it.displayName }.toSet())
-                .apply()
-            Log.d(TAG, "已记录新学生: $studentName @ $schoolName, 当前共 ${records.size} 个")
+            if (!writeRecords(context, records)) return@synchronized false
         } else {
             Log.d(TAG, "学生 $studentName 已存在记录中")
         }
         true
+    }
+
+    private fun writeRecords(context: Context, records: List<BoundStudentRecord>): Boolean {
+        val arr = JSONArray(); records.forEach { arr.put(recordToJson(it)) }
+        return getPrefs(context).edit().putString(KEY_BOUND_RECORDS, arr.toString())
+            .putStringSet(KEY_USED_NAMES, records.map { it.displayName }.toSet())
+            .putBoolean(KEY_MIGRATED, true).commit()
+    }
+
+    fun currentBindingKey(): Pair<String, String>? {
+        val user = UserManager.getInstance()
+        if (!user.isLoggedIn || user.isDemoMode) return null
+        val id = normalizeIdentity(user.studentName.orEmpty(), user.studentId.orEmpty())
+        return user.currentSchool?.id?.let { it to id }
+    }
+
+    internal fun remainingAfterRelease(records: List<BoundStudentRecord>, requested: Set<Pair<String, String>>,
+        active: Pair<String, String>?): List<BoundStudentRecord> = records.filter {
+        val key = it.schoolId to it.identity
+        key == active || key !in requested
+    }
+
+    /** The same monitor guards activation, so a stale dialog cannot remove a newly active account. */
+    @Synchronized
+    fun release(context: Context, requested: List<BoundStudentRecord>): Int {
+        val records = getBoundStudents(context)
+        val remaining = remainingAfterRelease(records, requested.map { it.schoolId to it.identity }.toSet(), currentBindingKey())
+        if (remaining.size == records.size) return 0
+        return if (writeRecords(context, remaining)) records.size - remaining.size else 0
     }
 
     /**

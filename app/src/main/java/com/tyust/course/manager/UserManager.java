@@ -294,6 +294,10 @@ public class UserManager {
 
     // 从 SharedPreferences 加载登录状态
     public void loadLoginState() {
+        synchronized (StudentLimitManager.INSTANCE) { loadLoginStateLocked(); }
+    }
+
+    private void loadLoginStateLocked() {
         if (appContext == null)
             return;
 
@@ -324,11 +328,11 @@ public class UserManager {
             migrateLegacyAccountIfNeeded(prefs);
 
             currentAccountKey = prefs.getString(KEY_CURRENT_ACCOUNT_KEY, "");
-            if (!currentAccountKey.isEmpty()) {
+            if (isLoggedIn) {
                 AccountRecord record = findAccountRecord(currentAccountKey);
-                if (record != null) {
-                    applyAccountRecord(record, false);
-                }
+                boolean restored = record != null ? applyAccountRecord(record, false) : currentSchool != null &&
+                    StudentLimitManager.INSTANCE.recordStudent(appContext, currentSchool.id, currentSchool.name, studentName, studentId);
+                if (!restored) { isLoggedIn = false; savedCookie = ""; }
             }
 
             Log.d(TAG, "登录状态已加载: isLoggedIn=" + isLoggedIn + ", student=" + studentName + ", school="
@@ -715,6 +719,10 @@ public class UserManager {
     }
 
     private boolean applyAccountRecord(AccountRecord record, boolean persist) {
+        synchronized (StudentLimitManager.INSTANCE) { return applyAccountRecordLocked(record, persist); }
+    }
+
+    private boolean applyAccountRecordLocked(AccountRecord record, boolean persist) {
         if (record == null) return false;
         SchoolConfig school = getSchoolById(record.schoolId);
         if (school == null) {
@@ -722,6 +730,8 @@ public class UserManager {
             return false;
         }
 
+        if (appContext == null || !StudentLimitManager.INSTANCE.recordStudent(appContext, school.id, school.name,
+                record.studentName != null ? record.studentName : "", record.studentId != null ? record.studentId : "")) return false;
         currentSchool = school;
         studentName = record.studentName != null ? record.studentName : "";
         studentId = record.studentId != null ? record.studentId : "";

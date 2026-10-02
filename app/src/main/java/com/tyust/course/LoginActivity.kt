@@ -63,6 +63,7 @@ class LoginActivity : ComponentActivity() {
     private var validationJob: kotlinx.coroutines.Job? = null
 
     // Binding Dialog State
+    private var showBindingManager by mutableStateOf(false)
     private var showBindingDialog by mutableStateOf(false)
     private var bindingStudentName by mutableStateOf("")
     private var bindingStudentId by mutableStateOf("")
@@ -231,6 +232,7 @@ class LoginActivity : ComponentActivity() {
                     onDemoMode = {
                         handleDemoMode()
                     },
+                    onManageBindings = { manualLoginInteraction = true; showBindingManager = true },
                     onServiceCenter = { startActivity(Intent(this@LoginActivity, com.tyust.course.academic.plugin.CampusServiceCenterActivity::class.java)) },
                     onSchoolAdaptation = {
                         showSchoolAdaptation = true
@@ -283,6 +285,7 @@ class LoginActivity : ComponentActivity() {
                         !isLoading &&
                         !isAutoValidating
                 )
+                if (showBindingManager) com.tyust.course.ui.system.BindingManagementDialog { showBindingManager = false }
                 com.tyust.course.ui.screen.UsageNotice()
             }
         }
@@ -571,6 +574,13 @@ class LoginActivity : ComponentActivity() {
                 return
             }
         }
+        synchronized(com.tyust.course.manager.StudentLimitManager) {
+            val school = selectedLoginSchool ?: return
+            if (!com.tyust.course.manager.StudentLimitManager.recordStudent(this, school.id, school.name, studentName, bindingStudentId)) {
+                errorMessage = "名额不足，请管理本机绑定后重试"
+                discardPendingPasswordLogin()
+                return
+            }
         userManager.currentSchool = selectedLoginSchool ?: return
         userManager.isLoggedIn = true
         userManager.studentId = bindingStudentId
@@ -585,6 +595,7 @@ class LoginActivity : ComponentActivity() {
             )
         } else {
             userManager.saveCookieLogin(cookieStr.trim())
+        }
         }
         discardPendingPasswordLogin()
         Log.d(TAG, "Cookie 已保存，下次可自动登录")

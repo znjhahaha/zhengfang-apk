@@ -84,6 +84,7 @@ fun LoginScreen(
     onSchoolAdded: () -> Unit = {},
     onDemoMode: () -> Unit = {},
     onServiceCenter: () -> Unit = {},
+    onManageBindings: () -> Unit = {},
     onSchoolAdaptation: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     isLoading: Boolean = false,
@@ -542,6 +543,7 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        com.tyust.course.ui.system.SystemSecondaryButton(text = "管理本机绑定名额", onClick = onManageBindings, enabled = !isLoading, modifier = Modifier.fillMaxWidth())
                         TextButton(onClick = onServiceCenter, modifier = Modifier.fillMaxWidth()) { Text("打开服务中心与通用工具") }
                         // Demo Mode Button
                         TextButton(
@@ -765,7 +767,7 @@ fun BindingConfirmationDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "不同学校可共用设备，合计最多绑定 $maxStudents 个学生账号。确认后占用 1 个名额，且无法撤销。",
+                text = "不同学校可共用设备，合计最多绑定 $maxStudents 个学生账号。确认后占用 1 个名额。不再使用的账号可在配额管理中解绑。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

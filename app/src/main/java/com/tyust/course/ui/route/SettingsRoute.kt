@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.tyust.course.ui.system.BindingManagementContent
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemConfirmDialog
 import com.tyust.course.ui.system.SystemSecondaryButton
@@ -215,7 +216,9 @@ fun SettingsRoute(
             onAccountChanged()
             GlassToaster.show("已切换账号")
         } else {
-            GlassToaster.show("账号切换失败，请重新登录")
+            val record = UserManager.getInstance().savedAccounts.firstOrNull { it.key == accountKey }
+            val check = record?.let { StudentLimitManager.checkCanUseStudent(context, it.schoolId, it.studentName.orEmpty(), it.studentId.orEmpty()) }
+            GlassToaster.show(if (check != null && !check.allowed) check.reason + "，请在配额管理中解绑" else "账号切换失败，请重新登录")
         }
     }
 
@@ -553,6 +556,7 @@ fun SettingsRoute(
             usedCount = quotaUsedCount,
             maxCount = quotaMaxCount,
             boundNames = quotaBoundNames,
+            onBindingsChanged = ::refreshAccountUiState,
             accounts = quotaAccounts,
             currentAccountKey = currentAccountKey,
             onSwitchAccount = { accountKey ->
@@ -597,7 +601,7 @@ fun SettingsRoute(
         SimpleConfirmDialog(
             title = "删除账号",
             text = "将删除「${record.displayName}」的账号记录、已保存的密码、登录状态与本地课程缓存，" +
-                "此操作不可恢复。设备绑定名额不会因此释放。",
+                "此操作不可恢复。绑定名额不会自动释放，可在配额管理中解绑。",
             confirmText = "删除账号",
             onConfirm = {
                 deleteAccountEntirely(record)
@@ -680,6 +684,7 @@ private fun QuotaStatusDialog(
     usedCount: Int,
     maxCount: Int,
     boundNames: List<String>,
+    onBindingsChanged: () -> Unit,
     accounts: List<UserManager.AccountRecord>,
     currentAccountKey: String,
     onSwitchAccount: (String) -> Unit,
@@ -774,50 +779,7 @@ private fun QuotaStatusDialog(
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                if (boundNames.isEmpty()) {
-                    Text(
-                        text = "当前设备尚未绑定账号。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        boundNames.forEachIndexed { index, name ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Surface(
-                                        modifier = Modifier.size(24.dp),
-                                        color = NeuPrimary.copy(alpha = 0.12f),
-                                        shape = CircleShape
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = "${index + 1}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = NeuPrimary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                BindingManagementContent(onChanged = onBindingsChanged)
             }
 
             if (accounts.isNotEmpty()) {
@@ -1019,7 +981,7 @@ private fun AccountManagerDialog(
 
             Text(
                 text = "密码经系统密钥库加密后仅保存在本机，用于登录状态失效时自动续期；" +
-                    "退出登录不会删除它。删除账号不会释放设备绑定名额。",
+                    "退出登录不会删除它。删除账号不会自动释放绑定名额，可在配额管理中解绑。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 18.sp
