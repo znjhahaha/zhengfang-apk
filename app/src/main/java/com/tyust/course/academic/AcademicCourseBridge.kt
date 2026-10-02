@@ -9,6 +9,38 @@ data class AcademicCoursePage(val context: CourseContext, val courses: List<Cour
 
 /** Converts protocol-neutral course objects to the model used by the existing Compose screens. */
 object AcademicCourseBridge {
+    internal fun browser(school: SchoolConfig, account: String, expected: SessionToken): AcademicCourseBrowser {
+        val adapter = prepareSession(school, account, expected)
+        val digest = com.tyust.course.academic.plugin.AcademicProviderRegistry.operationProvider(school, "selection.courses")?.digest
+        return AcademicCourseBrowser(object : CourseBrowserSource {
+            override fun requireCurrent() {
+                prepareSession(school, account, expected)
+                if (digest != com.tyust.course.academic.plugin.AcademicProviderRegistry.operationProvider(school, "selection.courses")?.digest)
+                    throw kotlinx.coroutines.CancellationException("Provider replaced")
+            }
+            override suspend fun context() = adapter.inSession { requireCurrent(); adapter.loadCourseContext() }
+            override suspend fun page(context: CourseContext, query: CourseQuery, position: CoursePosition) =
+                adapter.inSession { requireCurrent(); adapter.scopedCoursePage(context, query, position) }
+            override suspend fun filters(context: CourseContext, query: CourseQuery): CourseFilters? = adapter.inSession {
+                requireCurrent()
+                val id = query.scopeId
+                if (!adapter.hasCourseFilters || id.isBlank()) null else adapter.courseFilters(context, id)
+            }
+            override suspend fun sections(offer: CourseOffer, cursor: String?) =
+                adapter.inSession { requireCurrent(); adapter.sectionPage(offer, cursor) }
+            override fun display(offer: CourseOffer, section: CourseSection?) = toCourse(offer, section).apply {
+                completeParams["academic_system"] = school.academicSystem
+            }
+        })
+    }
+
+    internal fun replaceCourseSections(existing: List<Course>, requested: Course, sections: List<Course>): List<Course> {
+        val key = requested.catalogGroupKey()
+        val index = existing.indexOfFirst { it.catalogGroupKey() == key }.takeIf { it >= 0 } ?: existing.size
+        val replacement = sections.ifEmpty { listOf(requested) }
+        return existing.take(index) + replacement + existing.drop(index).filterNot { it.catalogGroupKey() == key }
+    }
+
     internal fun mergeSections(existing: List<Course>, requested: Course, sections: List<Course>): List<Course> {
         if (sections.isEmpty()) return existing
         val scopeId = requested.completeParams["academic_scope_id"]
@@ -141,17 +173,18 @@ object AcademicCourseBridge {
         time = section?.time?.ifBlank { offer.time } ?: offer.time
         location = section?.location?.ifBlank { offer.location } ?: offer.location
         credit = offer.credit
-        capacity = section?.capacity ?: offer.capacity ?: 0
-        selected = section?.selected ?: offer.selected ?: 0
+        capacity = (if (section != null) section.capacity else offer.capacity) ?: 0
+        selected = (if (section != null) section.selected else offer.selected) ?: 0
         isSelected = offer.identity.selected
         completeParams = offer.raw.filterKeys { it.startsWith("academic_") }.toMutableMap().apply {
+            offer.sectionCount?.let { put("academic_section_count", it.toString()) }
             put("academic_stable_section", (if (section != null) section.knownIdentity
                 else offer.identity.sectionKnown).toString())
             put("academic_system", offer.raw["academic_system"].orEmpty())
             put("academic_scope_id", offer.scopeId)
             put("academic_course_id", offer.stableId)
-            put("academic_capacity_known", ((section?.capacity ?: offer.capacity) != null).toString())
-            put("academic_selected_known", ((section?.selected ?: offer.selected) != null).toString())
+            put("academic_capacity_known", ((if (section != null) section.capacity else offer.capacity) != null).toString())
+            put("academic_selected_known", ((if (section != null) section.selected else offer.selected) != null).toString())
         }
     }
 }

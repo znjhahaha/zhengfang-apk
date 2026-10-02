@@ -228,10 +228,10 @@ private fun loadFilterCategoriesFromRuntimeSource(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CourseListRoute() {
+fun CourseListRoute(isActive: Boolean = true) {
     val academicSchool = UserManager.getInstance().currentSchool
     if (!UserManager.getInstance().isDemoMode && academicSchool != null && com.tyust.course.academic.AcademicGatewayFactory.supports(academicSchool)) {
-        AcademicCourseListRoute(academicSchool)
+        AcademicCourseListRoute(academicSchool, isActive)
         return
     }
     val context = LocalContext.current

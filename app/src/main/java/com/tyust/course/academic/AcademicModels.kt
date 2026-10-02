@@ -44,6 +44,9 @@ data class CourseQuery(
     val filters: CourseFilterValues? = null
 )
 
+/** Cursor is opaque to callers; null means the provider has finished this query. */
+data class AcademicPage<T>(val items: List<T>, val nextCursor: String? = null)
+
 data class CourseFilterOption(val value: String, val label: String)
 data class CourseFilterGroup(val id: String, val label: String, val kind: String, val options: List<CourseFilterOption>)
 data class CourseFilters(val roundId: String, val revision: String, val groups: List<CourseFilterGroup>)
@@ -79,7 +82,8 @@ data class CourseOffer(
     val selected: Int? = null,
     val scopeId: String,
     val raw: Map<String, String> = emptyMap(),
-    val publicIdentity: AcademicCourseIdentity? = null
+    val publicIdentity: AcademicCourseIdentity? = null,
+    val sectionCount: Int? = null
 ) { val identity: AcademicCourseIdentity get() = publicIdentity ?: BuiltinCourseData.identity(stableId, raw) }
 
 data class CourseSection(
@@ -134,7 +138,17 @@ interface AcademicProtocolAdapter {
     suspend fun validateSession(): LoginResult
     suspend fun loadCourseContext(): CourseContext
     suspend fun listCourses(context: CourseContext, query: CourseQuery): List<CourseOffer>
+    suspend fun coursePage(context: CourseContext, query: CourseQuery, cursor: String? = null): AcademicPage<CourseOffer> {
+        val start = cursor?.toIntOrNull() ?: 0
+        require(start >= 0)
+        val rows = listCourses(context, query.copy(start = start))
+        return AcademicPage(rows, if (rows.size >= query.pageSize) (start + rows.size).toString() else null)
+    }
     suspend fun listSections(course: CourseOffer): List<CourseSection>
+    suspend fun sectionPage(course: CourseOffer, cursor: String? = null): AcademicPage<CourseSection> {
+        require(cursor == null)
+        return AcademicPage(listSections(course))
+    }
     suspend fun select(target: SelectionTarget): SelectionResult
     suspend fun selected(context: CourseContext): List<SelectedCourse>
     suspend fun drop(target: SelectionTarget): OperationResult

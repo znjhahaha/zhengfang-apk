@@ -625,7 +625,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                 ) {
                                 com.tyust.course.academic.plugin.ServiceExtensionHost(when (route) { "app.courses" -> "home"; "app.schedule" -> "schedule"; "app.grades" -> "grades"; else -> null }) {
                                 when (route) {
-                                    "app.courses" -> com.tyust.course.ui.route.CourseListRoute()
+                                    "app.courses" -> com.tyust.course.ui.route.CourseListRoute(isActive = selectedPage == route)
                                     "app.schedule" -> com.tyust.course.ui.route.ScheduleRoute(isActive = selectedPage == route)
                                     "app.grab" -> com.tyust.course.ui.route.GrabProRoute()
                                     "app.grades" -> com.tyust.course.ui.route.GradesRoute()

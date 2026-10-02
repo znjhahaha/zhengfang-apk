@@ -62,6 +62,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.flow.collectLatest
+import com.tyust.course.academic.CourseBrowserState
+import com.tyust.course.academic.CourseDetails
+import com.tyust.course.ui.system.SystemSecondaryButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -140,7 +147,16 @@ fun CourseListScreen(
     isFilterOptionsLoading: Boolean = false,
     filterOptionsMessage: String = "筛选条件加载失败，请下拉刷新重试",
     filterCategories: List<CourseParser.FilterCategory> = emptyList(),
-    showTargetAction: Boolean = true
+    showTargetAction: Boolean = true,
+    browserState: CourseBrowserState? = null,
+    onVisibleGroups: (Set<String>) -> Unit = {},
+    onToggleGroup: (String) -> Unit = {},
+    onExpandAll: (Set<String>) -> Unit = {},
+    onCollapseAll: () -> Unit = {},
+    onStopPreload: () -> Unit = {},
+    onRetryPreload: () -> Unit = {},
+    onLoadMore: () -> Unit = {},
+    localFilterNotice: Boolean = false
 ) {
     val reduceMotion = com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion
     val listState = rememberLazyListState()
@@ -156,6 +172,21 @@ fun CourseListScreen(
 
     val groupedCourses = remember(courses) {
         courses.groupBy { it.catalogGroupKey() to it.name.orEmpty() }.toList()
+    }
+
+    val currentGroups by rememberUpdatedState(groupedCourses)
+    val reportVisible by rememberUpdatedState(onVisibleGroups)
+    LaunchedEffect(listState, browserState != null) {
+        if (browserState == null) return@LaunchedEffect
+        snapshotFlow { listState.isScrollInProgress to listState.layoutInfo.visibleItemsInfo.map { it.key } }
+            .collectLatest { (scrolling, keys) ->
+                reportVisible(emptySet())
+                if (!scrolling) {
+                    kotlinx.coroutines.delay(150)
+                    val available = currentGroups.associate { (key, _) -> (key.first.length.toString() + ":" + key.first + key.second) to key.first }
+                    reportVisible(keys.mapNotNull { available[it] }.toSet())
+                }
+            }
     }
 
     // 课程列表的捕获层。筛选面板是列表的【兄弟】节点、不在这一层内，
@@ -196,6 +227,22 @@ fun CourseListScreen(
             )
         }
 
+        if (browserState != null) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = PagePadding), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SystemSecondaryButton(text = "展开全部", enabled = courses.isNotEmpty() && !isLoading,
+                    onClick = { onExpandAll(groupedCourses.map { it.first.first }.toSet()) })
+                SystemSecondaryButton(text = "收起全部", onClick = onCollapseAll)
+                if (browserState.bulkRunning) SystemSecondaryButton(text = "停止加载", onClick = onStopPreload)
+                if (browserState.bulk.any { browserState.details[it]?.phase == "failed" }) SystemSecondaryButton(text = "重试失败项", onClick = onRetryPreload)
+            }
+            if (browserState.bulk.isNotEmpty()) {
+                val complete = browserState.bulk.count { browserState.details[it]?.phase in setOf("ready", "failed") }
+                val failed = browserState.bulk.count { browserState.details[it]?.phase == "failed" }
+                Text("已处理 $complete/${browserState.bulk.size} 门 · 失败 $failed 门", modifier = Modifier.padding(horizontal = PagePadding), style = MaterialTheme.typography.bodySmall)
+            }
+            if (localFilterNotice) Text("本地筛选仅作用于已加载课程", modifier = Modifier.padding(horizontal = PagePadding), style = MaterialTheme.typography.bodySmall)
+        }
+
         // 筛选入口在顶栏（CourseListRoute 的芯片组），这里不再有那条居中把手带。
         // 已激活筛选标签栏
         if (activeFilter != null && !activeFilter.isEmpty()) {
@@ -226,7 +273,7 @@ fun CourseListScreen(
                         }
                     }
 
-                    courses.isEmpty() -> {
+                    courses.isEmpty() && browserState == null -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             SystemEmptyState(
                                 title = "暂无可选课程",
@@ -255,7 +302,7 @@ fun CourseListScreen(
                                 val courseId = classes.firstOrNull()?.courseId.orEmpty()
                                 val groupId = key.first
                                 val courseName = key.second
-                                val isExpanded = expandedGroups[groupId] == true
+                                val isExpanded = browserState?.expanded?.contains(groupId) ?: (expandedGroups[groupId] == true)
 
                                 CourseGroupItem(
                                     modifier = if (reduceMotion) Modifier else Modifier.animateItem(
@@ -267,10 +314,13 @@ fun CourseListScreen(
                                     courseName = courseName,
                                     classes = classes,
                                     isExpanded = isExpanded,
-                                    isLoading = loadingGroups[groupId] == true,
+                                    isLoading = if (browserState != null) browserState.details[groupId]?.phase == "loading" else loadingGroups[groupId] == true,
+                                    detail = if (browserState != null) browserState.details[groupId] ?: CourseDetails() else null,
                                     isDetailsReady = isDetailsReady,
                                     onExpandClick = {
-                                        if (!isExpanded && loadedGroups[groupId] != true) {
+                                        if (browserState != null) {
+                                            onToggleGroup(groupId)
+                                        } else if (!isExpanded && loadedGroups[groupId] != true) {
                                             loadingGroups[groupId] = true
                                             onFetchDetails(classes) { success ->
                                                 loadingGroups[groupId] = false
@@ -294,6 +344,17 @@ fun CourseListScreen(
                                     showTargetAction = showTargetAction,
                                     onSetFuzzyMatchTarget = onSetFuzzyMatchTarget
                                 )
+                            }
+                            if (browserState != null) item(key = "course-pagination-footer") {
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("已加载 ${browserState.courses.map { it.catalogGroupKey() }.distinct().size} 门课程", style = MaterialTheme.typography.bodySmall)
+                                    if (courses.isEmpty()) Text("已加载课程中暂无匹配项")
+                                    if (browserState.pageError.isNotBlank()) Text(browserState.pageError, color = MaterialTheme.colorScheme.error)
+                                    if (browserState.hasMore) SystemSecondaryButton(
+                                        text = if (browserState.loadingMore) "正在加载…" else if (browserState.pageError.isNotBlank()) "重试下一页" else "加载更多",
+                                        enabled = !browserState.loadingMore && !isLoading, onClick = onLoadMore)
+                                    else if (!isLoading && browserState.pageError.isBlank()) Text("已加载全部返回课程", style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
                     }
@@ -457,15 +518,16 @@ fun CourseGroupItem(
     onSetTargetCourse: (Course) -> Unit = {},
     onSetFuzzyMatchTarget: ((String, String, String?, String?) -> Unit)? = null,
     showTargetAction: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    detail: CourseDetails? = null
 ) {
     val firstCourse = classes.firstOrNull()
     val reduced = com.tyust.course.ui.system.rememberGlassAccessibilityMode().reduceMotion
     val credits = firstCourse?.credit ?: "0.0"
     val hasSelected = classes.any { it.isSelected }
     val hasUnknownCapacity = classes.any { it.completeParams["academic_capacity_known"] == "false" || it.completeParams["academic_selected_known"] == "false" }
-    val hasAvailableSeat = classes.any { !it.isSelected && it.completeParams["academic_capacity_known"] != "false" &&
-        it.completeParams["academic_selected_known"] != "false" && (it.capacity <= 0 || it.selected < it.capacity) }
+    val hasAvailableSeat = (detail == null || detail.phase == "ready" && detail.count != 0) && classes.any { !it.isSelected && it.completeParams["academic_capacity_known"] != "false" &&
+        it.completeParams["academic_selected_known"] != "false" && (it.selected < it.capacity) }
     val cardBorderColor by animateColorAsState(
         targetValue = when {
             hasSelected -> SemanticSuccess.copy(alpha = 0.35f)
@@ -486,7 +548,7 @@ fun CourseGroupItem(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = isDetailsReady && !isLoading, onClick = onExpandClick)
+                    .clickable(enabled = isDetailsReady && (!isLoading || detail != null), onClick = onExpandClick)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -510,14 +572,26 @@ fun CourseGroupItem(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            if (hasSelected || !hasAvailableSeat) {
+                            if (detail != null) {
+                                val quota = when {
+                                    detail.phase == "failed" -> "加载失败 · 点击重试"
+                                    detail.phase == "loading" -> "名额正在加载"
+                                    detail.phase != "ready" -> "名额待加载"
+                                    detail.count == 0 -> "暂无教学班"
+                                    hasUnknownCapacity -> "部分教学班未公布名额"
+                                    else -> "余量合计 ${classes.sumOf { (it.capacity - it.selected).coerceAtLeast(0) }}（查询时）"
+                                }
+                                SystemStatusBadge(text = quota, tone = if (detail.phase == "failed") SystemTone.Warning else SystemTone.Neutral)
+                            } else if (hasSelected || !hasAvailableSeat) {
                                 SystemStatusBadge(
                                     text = when { hasSelected -> "已选"; hasUnknownCapacity -> "名额未公布"; else -> "紧张" },
                                     tone = when { hasSelected -> SystemTone.Success; hasUnknownCapacity -> SystemTone.Neutral; else -> SystemTone.Warning }
                                 )
                             }
                             Text(
-                                text = "$credits 学分 · ${classes.size} 个教学班",
+                                text = "$credits 学分 · " + (if (detail == null) "${classes.size} 个教学班" else
+                                    (if (detail.phase == "ready") detail.count else firstCourse?.completeParams?.get("academic_section_count")?.toIntOrNull())
+                                        ?.let { "$it 个教学班" } ?: "教学班待加载"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -541,7 +615,7 @@ fun CourseGroupItem(
                             )
                         }
 
-                        IconButton(onClick = onExpandClick, enabled = isDetailsReady && !isLoading) {
+                        IconButton(onClick = onExpandClick, enabled = isDetailsReady && (!isLoading || detail != null)) {
                             com.tyust.course.ui.system.AnimatedLineIcon(
                                 com.tyust.course.ui.system.AnimatedIconSpec.Expand, Modifier.size(20.dp),
                                 state = when {
@@ -576,7 +650,10 @@ fun CourseGroupItem(
                     modifier = Modifier.padding(bottom = 4.dp)
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    classes.forEachIndexed { index, course ->
+                    if (detail != null && detail.phase != "ready") {
+                        Text(if (detail.error.isNotBlank()) detail.error else "正在准备教学班…", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                    (if (detail == null || detail.phase == "ready" && detail.count != 0) classes else emptyList()).forEachIndexed { index, course ->
                         TeachingClassRow(
                             course = course,
                             isMultiSelectMode = isMultiSelectMode,

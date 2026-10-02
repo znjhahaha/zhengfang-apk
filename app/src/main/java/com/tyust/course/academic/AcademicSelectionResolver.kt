@@ -25,19 +25,23 @@ internal suspend fun AcademicProtocolAdapter.resolveCandidates(
     if (scopeId.isNotBlank() && context.scopes.none { it.id == scopeId })
         throw AcademicException(AcademicStatus.ROUND_CLOSED, "目标课程所在轮次尚未开放或已经结束")
     val offers = mutableListOf<CourseOffer>()
-    val seen = mutableSetOf<List<String>>()
-    val pageSize = 50
-    for (page in 0 until 20) {
-        val rows = listCourses(context, CourseQuery(courseName, start = page * pageSize,
-            pageSize = pageSize, scopeId = scopeId))
-        val fresh = rows.filter { seen.add(listOf(it.scopeId, it.stableId, it.identity.sectionId)) }
+    val query = CourseQuery(courseName, pageSize = 50, scopeId = scopeId)
+    val history = CoursePageHistory()
+    var position: CoursePosition? = CoursePosition()
+    var count = 0
+    for (pageIndex in 0 until 20) {
+        val current = position ?: break
+        val page = scopedCoursePage(context, query, current)
+        val fresh = history.accept(current, page)
+        count += fresh.size
+        if (count > 1000) throw AcademicException(AcademicStatus.PAGE_CHANGED, "课程结果过多，请指定课程和轮次")
         offers += fresh.filter {
             (scopeId.isBlank() || it.scopeId == scopeId) &&
                 if (courseId.isNotBlank()) it.stableId == courseId else normalized(it.name) == normalized(courseName)
         }
-        // Older adapters may return the entire list and ignore pagination.
-        if (rows.size < pageSize || fresh.isEmpty()) break
-        if (page == 19) throw AcademicException(AcademicStatus.PAGE_CHANGED,
+        position = page.next
+        if (position == null) break
+        if (pageIndex == 19) throw AcademicException(AcademicStatus.PAGE_CHANGED,
             "课程结果过多，请从课程列表指定课程和选课分类后重试")
     }
     if (offers.map { it.scopeId to it.stableId }.distinct().size > 1)

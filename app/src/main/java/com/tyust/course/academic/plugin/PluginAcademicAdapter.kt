@@ -84,6 +84,9 @@ class PluginAcademicAdapter(
             op.requireActive()
             PluginTrace.stage(op, "response_validation")
             schema.response(method, result).also { data ->
+                if (method == "selection.courses" && pinned.manifest.json.optInt("minAppVersionCode") < 101 &&
+                    PluginJson.objects(data.getJSONArray("items")).any { it.has("sectionCount") })
+                    throw PluginException(PluginErrorCode.VALIDATION_FAILED, "sectionCount 需要声明 minAppVersionCode 101")
                 if (method == "study.schedule") PluginJson.objects(data.getJSONArray("entries")).forEach { com.tyust.course.schedule.ScheduleDetails.fromEntry(it) }
                 tokenCapture?.publish(data)
                 if (method == "service.page") {
@@ -216,18 +219,57 @@ class PluginAcademicAdapter(
     }
     override suspend fun loadCourseContext(): CourseContext = if (has("selection.catalog")) CourseContext(session.epoch,
         pages("selection.catalog").filter { it.getBoolean("open") }.map { CourseScope(it.getString("id"), it.getString("name"), it.optString("termId")) }) else native().loadCourseContext()
-    override suspend fun listCourses(context: CourseContext, query: CourseQuery): List<CourseOffer> = if (has("selection.courses")) {
+    override suspend fun coursePage(context: CourseContext, query: CourseQuery, cursor: String?): AcademicPage<CourseOffer> {
+        if (!has("selection.courses")) return native().coursePage(context, query, cursor)
         check(context)
-        val scopes = context.scopes.filter { query.scopeId.isBlank() || it.id == query.scopeId }
-        scopes.flatMap { scope -> pages("selection.courses", JSONObject().put("roundId", scope.id).put("keyword", query.keyword).put("teacher", query.teacher).apply { query.filters?.let { put("filters", it.toJson()) } }).map {
+        if (context.scopes.none { it.id == query.scopeId }) throw AcademicException(AcademicStatus.ROUND_CLOSED, "选课轮次已结束")
+        val page = invoke("selection.courses", JSONObject().put("roundId", query.scopeId)
+            .put("keyword", query.keyword).put("teacher", query.teacher).put("pageSize", query.pageSize.coerceIn(1, 200)).apply {
+                cursor?.let { put("cursor", it) }; query.filters?.let { put("filters", it.toJson()) }
+            })
+        val rows = PluginJson.objects(page.getJSONArray("items")).map {
+            if (it.getString("roundId") != query.scopeId) throw AcademicException(AcademicStatus.PAGE_CHANGED, "课程轮次不匹配")
             CourseOffer(it.getString("id"), it.getString("name"), it.optString("teacher"), it.optString("time"), it.optString("location"), it.optString("credits"),
-                number(it,"capacity"), number(it,"selected"), scope.id, mapOf("sectionId" to it.optString("sectionId"), "jxbmc" to it.optString("sectionName")))
-        } }.drop(query.start).take(query.pageSize)
-    } else native().listCourses(context, query)
-    override suspend fun listSections(course: CourseOffer): List<CourseSection> = if (has("selection.sections")) pages("selection.sections", JSONObject().put("roundId", course.scopeId).put("courseId", course.stableId)).map {
-        if (it.getString("courseId") != course.stableId) throw AcademicException(AcademicStatus.PAGE_CHANGED, "教学班课程身份不匹配")
-        CourseSection(it.getString("id"), course.stableId, it.optString("name"), it.optString("teacher"), it.optString("time"), it.optString("location"), number(it,"capacity"), number(it,"selected"))
-    } else native().listSections(course)
+                number(it,"capacity"), number(it,"selected"), query.scopeId,
+                mapOf("sectionId" to it.optString("sectionId"), "jxbmc" to it.optString("sectionName")), sectionCount = number(it,"sectionCount"))
+        }
+        return AcademicPage(rows, page.optString("nextCursor").takeIf(String::isNotBlank))
+    }
+    override suspend fun listCourses(context: CourseContext, query: CourseQuery): List<CourseOffer> {
+        if (!has("selection.courses")) return native().listCourses(context, query)
+        val rows = mutableListOf<CourseOffer>()
+        val history = CoursePageHistory()
+        var position: CoursePosition? = CoursePosition()
+        while (position != null && rows.size < query.start + query.pageSize) {
+            val page = scopedCoursePage(context, query, position)
+            rows += history.accept(position, page)
+            position = page.next
+        }
+        return rows.drop(query.start).take(query.pageSize)
+    }
+    override suspend fun sectionPage(course: CourseOffer, cursor: String?): AcademicPage<CourseSection> {
+        if (!has("selection.sections")) return native().sectionPage(course, cursor)
+        val page = invoke("selection.sections", JSONObject().put("roundId", course.scopeId).put("courseId", course.stableId)
+            .put("pageSize", 200).apply { cursor?.let { put("cursor", it) } })
+        val rows = PluginJson.objects(page.getJSONArray("items")).map {
+            if (it.getString("courseId") != course.stableId) throw AcademicException(AcademicStatus.PAGE_CHANGED, "教学班课程身份不匹配")
+            CourseSection(it.getString("id"), course.stableId, it.optString("name"), it.optString("teacher"), it.optString("time"), it.optString("location"), number(it,"capacity"), number(it,"selected"))
+        }
+        return AcademicPage(rows, page.optString("nextCursor").takeIf(String::isNotBlank))
+    }
+    override suspend fun listSections(course: CourseOffer): List<CourseSection> {
+        val rows = linkedMapOf<String, CourseSection>()
+        val cursors = mutableSetOf<String>()
+        var cursor: String? = null
+        do {
+            val page = sectionPage(course, cursor)
+            page.items.forEach { rows[it.stableId] = it }
+            cursor = page.nextCursor
+            if (rows.size > 10000 || cursor != null && (!cursors.add(cursor) || cursors.size >= 100))
+                throw AcademicException(AcademicStatus.PAGE_CHANGED, "教学班分页异常")
+        } while (cursor != null)
+        return rows.values.toList()
+    }
     override suspend fun selected(context: CourseContext): List<SelectedCourse> = if (has("selection.enrolled")) {
         check(context); pages("selection.enrolled").map(::enrollment)
     } else native().selected(context)

@@ -17,7 +17,7 @@
       "id": "org.zf.protocol.zf",
       "type": "zf",
       "asset": "zf.eduplugin",
-      "sha256": "c96e833f83c59019a97aa3a8588b2d23426d298ae6df44b18c1119350ae36965"
+      "sha256": "ba2b2fe446f2ef7fbbe7e63abe50fb79e7753d1dd9826a7d78fa5429ffd76184"
     },
     {
       "id": "org.zf.protocol.zf-old",
