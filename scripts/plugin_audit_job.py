@@ -3,6 +3,7 @@
 No submitted sources, reports or raw tool output are uploaded as Actions artifacts.
 """
 import hashlib,json,os,pathlib,re,subprocess,sys,tempfile,zipfile,io
+from check_plugin_platform import check_archive,BOOTSTRAP_VERSION
 ORIGIN='https://plugins.hidisiwa.xyz'
 
 def http(path,body=None,nonce=None):
@@ -37,9 +38,16 @@ def main():
         draft,nonce=task();http('/api/audit-runner/jobs/'+draft+'/start-failure',{'nonce':nonce});return
     draft,nonce=('', '') if self_test else task()
     metadata=json.loads(http('/api/audit-runner/runtime'))
+    if metadata.get('bootstrapVersion',1)!=BOOTSTRAP_VERSION:raise RuntimeError('TOOLCHAIN_BOOTSTRAP_VERSION')
     if metadata.get('url')!=ORIGIN+'/downloads/plugin-starter-v3.zip' or not re.fullmatch(r'[a-f0-9]{64}',metadata.get('sha256','')):raise RuntimeError('TOOLCHAIN_METADATA')
     data=http('/downloads/plugin-starter-v3.zip?audit='+metadata['sha256'])
     if hashlib.sha256(data).hexdigest()!=metadata['sha256']:raise RuntimeError('TOOLCHAIN_DIGEST')
+    lock=check_archive(data,metadata['contractVersion'],metadata['ruleVersion'])
+    if metadata.get('sdkVersion',lock['version'])!=lock['version'] or metadata.get('contractSha256',lock['sha256'])!=lock['sha256']:
+        raise RuntimeError('TOOLCHAIN_CONTRACT_MISMATCH')
+    public_receipt={'sdkVersion':lock['version'],'apiVersion':lock['apiVersion'],'contractVersion':metadata['contractVersion'],
+        'ruleVersion':metadata['ruleVersion'],'starterSha256':metadata['sha256'],'bootstrapVersion':BOOTSTRAP_VERSION}
+    print('Audit toolchain: '+json.dumps(public_receipt),flush=True)
     clean={'PATH':os.environ['PATH'],'LANG':'C.UTF-8'}
     with tempfile.TemporaryDirectory(prefix='plugin-audit-',dir=os.environ.get('RUNNER_TEMP')) as tmp:
         work=pathlib.Path(tmp);kit=work/'kit';kit.mkdir();extract_kit(data,kit)
@@ -50,10 +58,17 @@ def main():
         public=subprocess.run(['node','--input-type=module','-e',"import {readFileSync} from 'node:fs';import {createPublicKey} from 'node:crypto';process.stdout.write(createPublicKey(readFileSync(process.argv[1])).export({type:'spki',format:'der'}).toString('base64'));",str(key)],env=clean,capture_output=True,check=True,timeout=10).stdout.decode()
         if public!=metadata.get('signingPublicKey'):raise RuntimeError('SIGNING_IDENTITY_MISMATCH')
         if self_test:
-            result=subprocess.run(['node','--test','--test-concurrency=1','security/test-isolated.mjs'],cwd=kit,env=clean,capture_output=True,timeout=120)
+            files=['security/test-isolated.mjs']
+            for name in ['tests/course-pagination.test.mjs','tests/wiki-examples.test.mjs']:
+                if (kit/name).is_file():files.append(name)
+            result=subprocess.run(['node','--test','--test-reporter=tap','--test-concurrency=1',*files],cwd=kit,env=clean,capture_output=True,timeout=180)
             if result.returncode:raise RuntimeError('ISOLATED_SELF_TEST_FAILED')
-            print('Four public synthetic isolation checks passed; no submission processed.')
-            outcome='Public toolchain self-test passed (4 checks).'
+            count=re.search(rb'^# tests (\d+)$',result.stdout,re.M)
+            if not count:raise RuntimeError('SELF_TEST_COUNT_MISSING')
+            public_receipt['tests']=int(count[1]);public_receipt['passed']=True
+            pathlib.Path('audit-toolchain.json').write_text(json.dumps(public_receipt,indent=2)+'\n')
+            outcome=f"Public toolchain self-test passed ({public_receipt['tests']} checks); no submission processed."
+            print(outcome)
         else:
             config=work/'config.json';config.write_text(json.dumps({'origin':ORIGIN,'token':os.environ['AUDIT_QUEUE_TOKEN'],'keyFile':str(key),'tempRoot':tmp,'processLock':str(work/'process.lock'),'heavyLock':str(work/'heavy.lock'),'draftId':draft,'nonce':nonce}));config.chmod(0o600)
             subprocess.run(['python3','security/agent.py','--config',str(config),'--once'],cwd=kit,env=clean,check=True,capture_output=True,timeout=210)
@@ -62,7 +77,7 @@ def main():
             outcome={'passed':'Plugin checks passed. Human publication approval is still required.','failed':'Plugin checks failed. See the private website review for details.','cancelled':'Task superseded or expired; no publication performed.'}[state]
             print(outcome)
         if os.environ.get('GITHUB_STEP_SUMMARY'):
-            with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:summary.write(outcome+'\n\nSource, private reports, and signing keys are not uploaded to Actions artifacts.\n')
+            with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:summary.write(outcome+'\n\nSDK '+lock['version']+' / audit rules '+metadata['ruleVersion']+' / starter SHA-256 '+metadata['sha256']+'\n\nSource, private reports, and signing keys are not uploaded to Actions artifacts.\n')
 if __name__=='__main__':
     try:main()
     except Exception as error:

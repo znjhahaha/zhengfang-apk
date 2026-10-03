@@ -39,6 +39,14 @@ jobs:
           AUDIT_NONCE: ${{ inputs.nonce }}
           AUDIT_SELF_TEST: ${{ inputs.self_test }}
         run: python3 scripts/plugin_audit_job.py
+      - name: Preserve public toolchain self-test receipt
+        if: inputs.self_test
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-toolchain
+          path: audit-toolchain.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Record startup failure without exposing submitted source
         if: failure() && !inputs.self_test
         env:
