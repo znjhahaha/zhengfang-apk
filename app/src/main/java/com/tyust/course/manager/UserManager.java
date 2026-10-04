@@ -471,6 +471,7 @@ public class UserManager {
 
         if (appContext != null) {
             com.tyust.course.schedule.ScheduleReminderScheduler.get(appContext).clearAccount(storageKey);
+            GradeBrowsePreferences.from(appContext).removeAccount(storageKey);
         }
 
         List<AccountRecord> records = loadAccountRecords();

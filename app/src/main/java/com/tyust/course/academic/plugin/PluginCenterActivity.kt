@@ -536,7 +536,7 @@ class PluginCenterActivity : ComponentActivity() {
                 }
             }
         }
-        uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, title = { Text(if (AcademicProviderRegistry.installedOverride(pkg)) "卸载 ${pkg.manifest.name}？" else "停用 ${pkg.manifest.name}？") },
+        uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, scrollContent = true, title = { Text(if (AcademicProviderRegistry.installedOverride(pkg)) "卸载 ${pkg.manifest.name}？" else "停用 ${pkg.manifest.name}？") },
             confirmButton = { SystemDialogButton(destructive = true, onClick = { run { withContext(Dispatchers.IO) { AcademicProviderRegistry.removePlugin(pkg) }; refresh(); generation++ }; uninstall = null }) { Text(if (AcademicProviderRegistry.installedOverride(pkg)) "卸载" else "停用") } },
             dismissButton = { SystemDialogButton(onClick = { uninstall = null }) { Text("取消") } }) {
             Text(AcademicProviderRegistry.removalDescription(pkg))

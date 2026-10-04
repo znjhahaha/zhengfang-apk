@@ -65,6 +65,7 @@ fun AcademicCourseListRoute(school: SchoolConfig, isActive: Boolean = true) {
 @Composable
 private fun AcademicCourseListContent(school: SchoolConfig, cacheKey: String, isActive: Boolean) {
     if (!com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "selection.courses")) {
+        ReportInitialPageReady()
         AcademicCapabilityUnavailable("课程", "该学校尚未适配选课查询"); return
     }
     val context = LocalContext.current
@@ -77,6 +78,8 @@ private fun AcademicCourseListContent(school: SchoolConfig, cacheKey: String, is
     var selectedCategory by rememberSaveable(account) { mutableStateOf("") }
     val browser by rememberPageData("academic.browser.$cacheKey") { AcademicCourseBridge.browser(school, account, expectedSession) }
     val browserState by browser.state.collectAsState()
+    ReportInitialPageReady(browserState.courses.isNotEmpty() || browserState.error.isNotBlank() ||
+        (browserState.context != null && !browserState.loading))
     val courses = browserState.courses
     val loading = browserState.loading
     val error = browserState.error

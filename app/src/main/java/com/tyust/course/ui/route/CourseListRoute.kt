@@ -361,6 +361,7 @@ fun CourseListRoute(isActive: Boolean = true) {
     }
     
     // 🔧 交互锁：只有不在加载中 且 displayParams 包含关键参数时才允许展开详情
+    com.tyust.course.ui.system.ReportInitialPageReady(courses.isNotEmpty() || (hasInitializedRoute && !isLoading))
     com.tyust.course.ui.system.ReportPageContent(courses.isNotEmpty())
     val isDetailsReady = isDemoMode || (!isLoading && displayParams.containsKey("bklx_id"))
 

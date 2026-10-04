@@ -280,7 +280,7 @@ class PluginDeveloperActivity : ComponentActivity() {
             content = { Text("此操作会执行所选插件接口。模拟插件只修改模拟数据，真实服务可能改变账号记录。") },
             confirmButton = { SystemDialogButton(primary = true, onClick = { confirmWrite = false; runOperation(true) }) { Text("确认执行") } },
             dismissButton = { SystemDialogButton(onClick = { confirmWrite = false }) { Text("取消") } })
-        uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, title = { Text(if (AcademicProviderRegistry.installedOverride(pkg)) "卸载 ${pkg.manifest.name}？" else "停用 ${pkg.manifest.name}？") },
+        uninstall?.let { pkg -> SystemDialog(onDismissRequest = { uninstall = null }, scrollContent = true, title = { Text(if (AcademicProviderRegistry.installedOverride(pkg)) "卸载 ${pkg.manifest.name}？" else "停用 ${pkg.manifest.name}？") },
             confirmButton = { SystemDialogButton(primary = true, onClick = { uninstall = null; scope.launch {
                 busy = true
                 try { val installed = AcademicProviderRegistry.installedOverride(pkg)

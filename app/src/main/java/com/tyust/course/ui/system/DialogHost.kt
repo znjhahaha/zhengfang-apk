@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+internal const val DialogScrimAlpha = 0.22f
+
 enum class DialogPresentation { Center, Bottom, Page }
 class DialogHandle internal constructor(internal val key: String = java.util.UUID.randomUUID().toString())
 
@@ -183,7 +185,7 @@ fun DialogHost(state: DialogHostState, modifier: Modifier = Modifier) {
                     contentAlignment = if (bottom) Alignment.BottomCenter else Alignment.Center
                 ) {
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
-                        .background(Color.Black.copy(alpha = 0.22f))
+                        .background(Color.Black.copy(alpha = DialogScrimAlpha))
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                             onClick = { state.dismiss(dialog.handle) }).clearAndSetSemantics {})
                     Box(

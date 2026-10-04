@@ -230,4 +230,43 @@ class MaterialHeaderSurfaceTest {
             }
         }
     }
+
+    // Canvas verifies the live foreground, including glass's no-sample fallback.
+    // Actual EGL / RuntimeShader backdrop compositing needs device acceptance.
+    @Test fun gradeLabelsStayCenteredAndKeepForegroundInkThroughoutCollapse() {
+        val selected = mutableIntStateOf(0)
+        var accent = Color.Blue
+        val labels = listOf("学期", "总体", "考试")
+        compose.setContent {
+            Scene {
+                accent = readableAccent(palette.value)
+                MeasuredGradesHeader("15 门课程", labels, selected.intValue, { selected.intValue = it },
+                    progress.floatValue, null, true, true, false, {}, {}, { _, _ -> })
+            }
+        }
+        for (glass in listOf(false, true)) {
+            compose.runOnIdle { AppearanceSettingsManager.updateGlassEffect(glass) }
+            for (index in labels.indices) {
+                compose.onNodeWithText(labels[index]).performClick()
+                for (fraction in listOf(0f, 0.4f, 0.8f, 1f, 0.3f, 0f)) {
+                    compose.runOnIdle { progress.floatValue = fraction }
+                    compose.onAllNodesWithText(labels[index]).assertCountEquals(1)
+                    val label = compose.onNodeWithText(labels[index]).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                    val segments = compose.onNodeWithTag("grades-segments").fetchSemanticsNode().boundsInRoot
+                    val expectedCenter = segments.left + 5f * scale + (segments.width - 10f * scale) * (index + 0.5f) / 3f
+                    assertTrue("Label drifts inside its segment", abs(label.center.x - expectedCenter) < 2f * scale)
+                    assertTrue("Label drifts vertically", abs(label.center.y - segments.center.y) < 2f * scale)
+                    pixels { bitmap ->
+                        val ink = accent.toArgb()
+                        var count = 0
+                        for (y in label.top.toInt() until label.bottom.toInt()) for (x in label.left.toInt() until label.right.toInt()) {
+                            val pixel = bitmap.getPixel(x, y)
+                            if (listOf(0, 8, 16).all { shift -> abs(((pixel ushr shift) and 255) - ((ink ushr shift) and 255)) < 14 }) count++
+                        }
+                        assertTrue("Selected label must have foreground ink independently of glass ($count)", count > 10)
+                    }
+                }
+            }
+        }
+    }
 }

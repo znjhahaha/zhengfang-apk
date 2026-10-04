@@ -133,4 +133,56 @@ class InitialPageLoadTest {
         awaitWork { attempts.get() == 1 }
         awaitText("课程内容")
     }
+
+    @Test fun mountedPageWaitsForTerminalDataWithoutDuplicatingItsRequest() {
+        val ready = mutableStateOf(false)
+        val mounts = AtomicInteger()
+        compose.setContent { MaterialTheme {
+            InitialPageLoad("courses", "课程", true, true, {}, awaitContent = true) {
+                LaunchedEffect(Unit) { mounts.incrementAndGet() }
+                ReportInitialPageReady(ready.value)
+                Text("已加载课程")
+            }
+        } }
+        awaitWork { mounts.get() == 1 }
+        compose.onNodeWithTag("page-loading:课程").assertExists()
+        compose.onNodeWithText("已加载课程").assertDoesNotExist()
+        compose.runOnIdle { ready.value = true }
+        awaitText("已加载课程")
+        compose.waitForIdle()
+        compose.onNodeWithTag("page-loading:课程").assertDoesNotExist()
+        compose.runOnIdle { ready.value = false }
+        compose.onNodeWithText("已加载课程").assertIsDisplayed()
+        assertEquals(1, mounts.get())
+    }
+
+    @Test fun terminalErrorAndEmptyResultBothLeaveSkeleton() {
+        val terminal = mutableStateOf(false)
+        val failed = mutableStateOf(true)
+        compose.setContent { MaterialTheme {
+            InitialPageLoad("grades", "成绩", true, true, {}, awaitContent = true) {
+                ReportInitialPageReady(terminal.value)
+                Text(if (failed.value) "学校响应超时" else "本学期没有成绩")
+            }
+        } }
+        compose.onNodeWithTag("page-loading:成绩").assertExists()
+        compose.runOnIdle { terminal.value = true }
+        awaitText("学校响应超时")
+        compose.runOnIdle { failed.value = false }
+        awaitText("本学期没有成绩")
+        compose.onNodeWithTag("page-loading:成绩").assertDoesNotExist()
+    }
+
+    @Test fun cachedDataRevealsWithoutWaitingForSecondaryRequests() {
+        val waitingForDetails = mutableStateOf(true)
+        compose.setContent { MaterialTheme {
+            InitialPageLoad("courses", "课程", true, true, {}, awaitContent = true) {
+                ReportInitialPageReady(true)
+                Text("缓存课程")
+                if (waitingForDetails.value) Text("教学班加载中")
+            }
+        } }
+        awaitText("缓存课程")
+        compose.onNodeWithText("教学班加载中").assertIsDisplayed()
+    }
 }

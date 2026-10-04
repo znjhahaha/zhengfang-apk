@@ -427,6 +427,8 @@ fun ScheduleRoute(isActive: Boolean = true) {
     }
     var showWidgetPicker by rememberSaveable { mutableStateOf(false) }
     if (showWidgetPicker) com.tyust.course.ui.screen.ScheduleWidgetPicker { showWidgetPicker = false }
+    com.tyust.course.ui.system.ReportInitialPageReady(courses.isNotEmpty() || hasLocalSchedule ||
+        loadError.isNotBlank() || (hasInitializedRoute && !isLoading))
     com.tyust.course.ui.system.ReportPageContent(courses.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
     CompositionLocalProvider(com.tyust.course.ui.screen.LocalScheduleFocus provides focusRegistry) {

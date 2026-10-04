@@ -135,11 +135,11 @@ internal data class PagePrompt(val title: String, val message: String, val chall
         val valid = (p.choices.isEmpty() || choice != null) && fields.all { !it.optBoolean("required", true) || !values[it.getString("id")].isNullOrBlank() }
         SystemDialog(onDismissRequest = { p.result.complete(null) }, title = { Text(p.title) },
             confirmButton = {
-                if (p.directChoices) Row {
+                if (p.directChoices) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     p.choices.filter { it.first != "deny" }.reversed().forEach { (id, label) ->
-                        SystemDialogButton(onClick = { p.result.complete(JSONObject().put("choice", id)) }) { Text(label) }
+                        SystemDialogButton(modifier = Modifier.fillMaxWidth(), primary = id in setOf("remember", "allow"), onClick = { p.result.complete(JSONObject().put("choice", id)) }) { Text(label) }
                     }
-                } else SystemDialogButton(enabled = valid, onClick = { p.result.complete(if (p.choices.isNotEmpty()) JSONObject().put("choice", choice) else if (p.challenge == null) JSONObject() else JSONObject().put("values", JSONObject(values.toMap())).put("remember", save)) }) { Text("确认") }
+                } else SystemDialogButton(primary = true, enabled = valid, onClick = { p.result.complete(if (p.choices.isNotEmpty()) JSONObject().put("choice", choice) else if (p.challenge == null) JSONObject() else JSONObject().put("values", JSONObject(values.toMap())).put("remember", save)) }) { Text("确认") }
             },
             dismissButton = { SystemDialogButton(onClick = { p.result.complete(null) }) { Text(if (p.directChoices) "拒绝" else "取消") } }) {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -64,11 +64,11 @@ data class GlassAccessibilityMode(
     val highContrast: Boolean
 )
 
-/** Persistent glass tint: legibility comes from backdrop blur, not an opaque sheet. */
+/** Popup-only tint; permanent glass panels keep their existing optical material. */
 internal fun modalSurfaceAlpha(dark: Boolean, highContrast: Boolean): Float = when {
     highContrast -> 0.96f
-    dark -> 0.22f
-    else -> 0.18f
+    dark -> 0.84f
+    else -> 0.78f
 }
 
 @Composable

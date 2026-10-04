@@ -612,6 +612,8 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                     title = registeredPages.firstOrNull { it.id == route }?.title.orEmpty(),
                                     active = selectedPage == route,
                                     transitionFinished = navigationMotion.transitionFinished,
+                                    route = route,
+                                    awaitContent = route in setOf("app.courses", "app.grades", "app.schedule"),
                                     prepare = {
                                         if (!isDemoMode && route in setOf("app.courses", "app.grab", "app.grades", "app.schedule")) UserManager.getInstance().currentSchool?.let { school ->
                                             // Resolve and hash immutable generic protocol material off the UI thread.

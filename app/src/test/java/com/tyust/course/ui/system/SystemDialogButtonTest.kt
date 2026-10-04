@@ -104,4 +104,51 @@ class SystemDialogButtonTest {
         compose.onNodeWithText("允许并记住").performClick()
         compose.runOnIdle { assertEquals(1, remembered) }
     }
+
+    @Test fun popupOpacityMatchesReadableReferenceWithoutChangingPermanentMaterial() {
+        assertEquals(0.78f, modalSurfaceAlpha(false, false), 0f)
+        assertEquals(0.84f, modalSurfaceAlpha(true, false), 0f)
+        assertEquals(0.96f, modalSurfaceAlpha(false, true), 0f)
+        assertEquals(0.62f, GlassMaterials.resolve(GlassMaterialRole.Modal).surfaceAlpha, 0.001f)
+    }
+
+    @Test fun longScrollableDialogKeepsActionsVisibleAndTitleAlignedWithBody() {
+        var clicked = false
+        compose.setContent { MaterialTheme {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                Box(Modifier.height(460.dp).fillMaxWidth()) {
+                    GlassOverlayHost {
+                        SystemDialog(onDismissRequest = {}, scrollContent = true,
+                            title = { Text("确认操作", Modifier.testTag("modal-title")) },
+                            confirmButton = { SystemDialogButton({ clicked = true }, primary = true) { Text("继续") } }) {
+                            Text("第一段说明", Modifier.testTag("modal-body"))
+                            repeat(20) { Text("较长的操作影响说明 $it") }
+                        }
+                    }
+                }
+            }
+        } }
+        val title = compose.onNodeWithTag("modal-title").fetchSemanticsNode().boundsInRoot
+        val body = compose.onNodeWithTag("modal-body").fetchSemanticsNode().boundsInRoot
+        assertEquals(title.left, body.left, 1f)
+        compose.onNodeWithText("继续").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(clicked) }
+    }
+
+    @Test fun fallbackWindowUsesSameDimAsHostedDialog() {
+        var window: android.view.Window? = null
+        compose.setContent { MaterialTheme {
+            SystemDialog(onDismissRequest = {}) {
+                val view = LocalView.current
+                SideEffect { window = (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window }
+                Text("独立窗口")
+            }
+        } }
+        compose.onNodeWithText("独立窗口").assertIsDisplayed()
+        compose.runOnIdle {
+            val actual = requireNotNull(window)
+            assertEquals(DialogScrimAlpha, actual.attributes.dimAmount, 0.001f)
+            assertTrue(actual.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
+        }
+    }
 }

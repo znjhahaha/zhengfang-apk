@@ -98,17 +98,17 @@ class ServicePluginActivity : ComponentActivity() {
             }
         } else ServiceScreen(current)
         requestPrompt?.let { prompt ->
-            SystemDialog(onDismissRequest = { prompt.answer.complete(false) }, title = { Text("确认未审核端点") },
+            SystemDialog(scrollContent = true, onDismissRequest = { prompt.answer.complete(false) }, title = { Text("确认未审核端点") },
                 content = { Text("${prompt.method} ${prompt.url}\n此端点未由教务提供者声明为只读，可能改变服务器数据。仅允许本次请求？") },
                 confirmButton = { SystemDialogButton(primary = true, onClick = { prompt.answer.complete(true) }) { Text("仅本次") } },
                 dismissButton = { SystemDialogButton(onClick = { prompt.answer.complete(false) }) { Text("拒绝") } })
         }
         readStatePrompt?.let { prompt ->
-            SystemDialog(onDismissRequest = { prompt.answer.complete(null) }, title = { Text(prompt.rule.getString("title")) },
+            SystemDialog(scrollContent = true, onDismissRequest = { prompt.answer.complete(null) }, title = { Text(prompt.rule.getString("title")) },
                 content = { Text("允许此已审核的状态更新？记住后，刷新时不再重复询问。\n${prompt.rule.getString("method")} ${prompt.rule.getString("origin")}${prompt.rule.getString("path")}\n仅适用于当前账号、此端点及其审核过的参数范围。") },
                 confirmButton = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SystemDialogButton(onClick = { prompt.answer.complete(false) }) { Text("仅本次") }
-                    SystemDialogButton(onClick = { prompt.answer.complete(true) }) { Text("允许并记住") }
+                    SystemDialogButton(primary = true, onClick = { prompt.answer.complete(true) }) { Text("允许并记住") }
                 } }, dismissButton = { SystemDialogButton(onClick = { prompt.answer.complete(null) }) { Text("拒绝") } })
         }
     }
@@ -332,7 +332,7 @@ class ServicePluginActivity : ComponentActivity() {
             }
         }
         pendingDisclosure?.let { url ->
-            SystemDialog(onDismissRequest = { pendingDisclosure = null }, title = { Text("允许向网站提供个人数据") },
+            SystemDialog(scrollContent = true, onDismissRequest = { pendingDisclosure = null }, title = { Text("允许向网站提供个人数据") },
                 content = { Text("接收网站：$url。网站接收后，App 无法控制其后续使用。") },
                 confirmButton = { SystemDialogButton(primary = true, onClick = {
                     pendingDisclosure = null
@@ -345,15 +345,15 @@ class ServicePluginActivity : ComponentActivity() {
                 }) { Text("允许此网站") } }, dismissButton = { SystemDialogButton(onClick = { pendingDisclosure = null }) { Text("拒绝") } })
         }
         pendingAcademicAuthorization?.let { (description, answer) ->
-            SystemDialog(onDismissRequest = { answer.complete(null) }, title = { Text("授权使用教务登录") },
+            SystemDialog(scrollContent = true, onDismissRequest = { answer.complete(null) }, title = { Text("授权使用教务登录") },
                 content = { Text(description) }, confirmButton = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SystemDialogButton(onClick = { answer.complete("once") }) { Text("仅本次") }
-                    SystemDialogButton(onClick = { answer.complete("remember") }) { Text("允许并记住") }
+                    SystemDialogButton(primary = true, onClick = { answer.complete("remember") }) { Text("允许并记住") }
                 } }, dismissButton = { SystemDialogButton(onClick = { answer.complete(null) }) { Text("拒绝") } })
         }
         pendingAction?.let { action ->
             val declaration = ServicePluginContract.action(pkg.manifest, action.getString("actionId"))
-            SystemDialog(onDismissRequest = { pendingAction = null }, title = { Text(declaration.getString("title")) },
+            SystemDialog(scrollContent = true, onDismissRequest = { pendingAction = null }, title = { Text(declaration.getString("title")) },
                 content = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(declaration.getString("confirmation"))
                     val params = action.optJSONObject("params")
