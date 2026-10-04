@@ -344,7 +344,7 @@ private fun PickerLensLayer(
     val surfaceColor = if (popupSurface) wallpaperSurface.copy(
         // 菜单行铺在触发器采样范围之外的壁纸上，那里的明暗不受这次色调映射保证。
         alpha = if (customWallpaper) maxOf(wallpaperSurface.alpha, ReadableAnyBackdropAlpha)
-        else modalSurfaceAlpha(!isLightTheme, accessibility.highContrast)
+        else dropdownSurfaceAlpha(!isLightTheme, accessibility.highContrast)
     ) else if (customWallpaper) wallpaperSurface
     else Color.White.copy(alpha = surfaceAlpha)
 

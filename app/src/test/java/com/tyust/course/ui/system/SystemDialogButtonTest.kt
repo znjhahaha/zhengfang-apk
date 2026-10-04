@@ -109,6 +109,10 @@ class SystemDialogButtonTest {
         assertEquals(0.78f, modalSurfaceAlpha(false, false), 0f)
         assertEquals(0.84f, modalSurfaceAlpha(true, false), 0f)
         assertEquals(0.96f, modalSurfaceAlpha(false, true), 0f)
+        assertEquals(0.18f, dropdownSurfaceAlpha(false, false), 0f)
+        assertEquals(0.22f, dropdownSurfaceAlpha(true, false), 0f)
+        assertEquals(0.96f, dropdownSurfaceAlpha(false, true), 0f)
+        assertEquals(0.96f, dropdownSurfaceAlpha(true, true), 0f)
         assertEquals(0.62f, GlassMaterials.resolve(GlassMaterialRole.Modal).surfaceAlpha, 0.001f)
     }
 
