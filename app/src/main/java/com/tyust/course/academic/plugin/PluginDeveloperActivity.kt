@@ -130,6 +130,11 @@ class PluginDeveloperActivity : ComponentActivity() {
                     intent.getStringExtra(PluginCenterActivity.EXTRA_TARGET_SCHOOL)?.let { UserManager.getInstance().getSchoolById(it) }
                 else UserManager.getInstance().currentSchool
                 val current = school?.let { runCatching { AcademicProviderRegistry.resolve(it) }.getOrNull() }
+                InsetGroupedSection(header = "界面组件") {
+                    InsetGroupedRow(title = "玻璃与收起页面预览", subtitle = "模拟列表、搜索筛选与窗口适配", icon = Icons.Outlined.Preview,
+                        onClick = { startActivity(android.content.Intent(this@PluginDeveloperActivity, GlassBrowserPreviewActivity::class.java)) },
+                        showDivider = false, trailing = { ForwardIcon() })
+                }
                 InsetGroupedSection(header = "当前学校") {
                     InsetGroupedRow(title = school?.name ?: "尚未选择学校", icon = Icons.Outlined.School,
                         subtitle = current?.let { "${it.manifest.name} · ${it.manifest.version}" } ?: if (school?.academicProvider == "unconfigured") "未配置适配" else "内置适配 · 无需额外安装",
