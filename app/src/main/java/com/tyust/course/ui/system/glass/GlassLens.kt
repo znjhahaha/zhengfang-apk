@@ -646,6 +646,12 @@ fun interface GlassLensOpticsProvider {
     fun compute(widthPx: Float, heightPx: Float): GlassLensOptics
 }
 
+/** Draw-local handshake: a non-null anchor is not proof that any background was painted. */
+class GlassLensDrawState {
+    var hasBackground: Boolean by mutableStateOf(false)
+        internal set
+}
+
 /**
  * 在本元素上画折射。API 33+ 与 30- 上返回原 Modifier，由调用方走各自既有路径。
  *
@@ -666,26 +672,29 @@ fun Modifier.glassLens(
     anchor: GlassLensAnchor?,
     optics: GlassLensOpticsProvider,
     scale: GlassLensScale? = null,
-    shape: Shape? = null
+    shape: Shape? = null,
+    drawState: GlassLensDrawState? = null
 ): Modifier {
     if (anchor == null || !isGlassLensApplicable()) return this
-    return this then GlassLensElement(anchor, optics, scale, shape)
+    return this then GlassLensElement(anchor, optics, scale, shape, drawState)
 }
 
 private data class GlassLensElement(
     val anchor: GlassLensAnchor,
     val optics: GlassLensOpticsProvider,
     val scale: GlassLensScale?,
-    val shape: Shape?
+    val shape: Shape?,
+    val drawState: GlassLensDrawState?
 ) : ModifierNodeElement<GlassLensNode>() {
 
-    override fun create(): GlassLensNode = GlassLensNode(anchor, optics, scale, shape)
+    override fun create(): GlassLensNode = GlassLensNode(anchor, optics, scale, shape, drawState)
 
     override fun update(node: GlassLensNode) {
         node.anchor = anchor
         node.optics = optics
         node.scale = scale
         node.shape = shape
+        node.drawState = drawState
     }
 }
 
@@ -694,7 +703,8 @@ private class GlassLensNode(
     anchor: GlassLensAnchor,
     var optics: GlassLensOpticsProvider,
     var scale: GlassLensScale?,
-    var shape: Shape?
+    var shape: Shape?,
+    var drawState: GlassLensDrawState?
 ) : Modifier.Node(), DrawModifierNode, GlobalPositionAwareModifierNode {
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -782,8 +792,12 @@ private class GlassLensNode(
         invalidateDraw()
     }
 
+    private var paintedBackground = false
+
     override fun ContentDrawScope.draw() {
+        paintedBackground = false
         drawLens()
+        drawState?.hasBackground = paintedBackground
         drawContent()
     }
 
@@ -899,6 +913,7 @@ private class GlassLensNode(
                 canvas.drawBitmap(frame, srcRect, dstRect, paint)
             }
             canvas.restoreToCount(saved)
+            paintedBackground = true
             if (rendered.sourceGeneration == samplingFrame?.generation &&
                 rendered.sourceGeneration != anchor.timedSourceGeneration) {
                 anchor.timedSourceGeneration = rendered.sourceGeneration
@@ -1064,6 +1079,7 @@ private class GlassLensNode(
             }
         }
         canvas.restoreToCount(save)
+        paintedBackground = true
     }
 
     private fun updateClip(w: Int, h: Int, corners: GlassLensCorners, t: GlassLensTransform) {

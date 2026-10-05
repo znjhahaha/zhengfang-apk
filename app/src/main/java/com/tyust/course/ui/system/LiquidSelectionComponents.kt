@@ -71,6 +71,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Path
@@ -458,7 +459,8 @@ fun LiquidSegmentedControl(
     // Animated date labels stay live above the lens. Other controls keep labels
     // in a small optical overlay, independent of the more expensive page background.
     val segmentLabelsSnapshot = remember { GlassLensContentSnapshot() }
-    val segmentsBackdrop = rememberLayerBackdrop(onDraw = { segmentLabelsSnapshot.draw(this) })
+    val segmentsBackdrop = if (refractLabels) rememberLayerBackdrop(onDraw = { segmentLabelsSnapshot.draw(this) }) else null
+    val indicatorDrawState = remember { com.tyust.course.ui.system.glass.GlassLensDrawState() }
     val animationScope = rememberCoroutineScope()
     val accessibility = rememberGlassAccessibilityMode()
     val trackMaterial = GlassMaterials.resolve(
@@ -579,7 +581,7 @@ fun LiquidSegmentedControl(
             }
         )
         val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
-        val indicatorBackdrop = if (glassBackdrop != null && refractLabels) {
+        val indicatorBackdrop = if (glassBackdrop != null && segmentsBackdrop != null) {
             rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)
         } else {
             glassBackdrop
@@ -598,9 +600,7 @@ fun LiquidSegmentedControl(
             rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme, refractLabels,
                 freshness = LocalPageGlassFreshness.current,
                 rasterizeOverlayOnCpu = true,
-                overlaySource = { coords ->
-                    if (refractLabels) segmentLabelsSnapshot.draw(this, coords)
-                }) { coords ->
+                overlaySource = if (refractLabels) ({ coords -> segmentLabelsSnapshot.draw(this, coords) }) else null) { coords ->
                 with(glassBackdrop) { drawBackdrop(lensDensity, coords, null) }
             }
         } else {
@@ -749,7 +749,8 @@ fun LiquidSegmentedControl(
             scaleX = scale
             scaleY = scale
         }
-        val fallbackIndicatorColor = palette.solidSurface
+        val fallbackIndicatorColor = if (refractLabels) palette.solidSurface else
+            accent.copy(alpha = if (isLightTheme) .18f else .28f).compositeOver(palette.solidSurface)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -826,7 +827,7 @@ fun LiquidSegmentedControl(
             }
 
         if (glassBackdrop != null && indicatorBackdrop != null) {
-            if (refractLabels) {
+            if (segmentsBackdrop != null) {
             // 专供滑块折射采样的隐藏层：染成主色后，透镜里浮出的就是饱和蓝字，
             // 滑块表面因此可以做到几乎透明，不必靠白色填充去制造存在感。
             val labelTint = ColorFilter.tint(if (enabled) accent else palette.onSurface.copy(alpha = 0.38f))
@@ -907,7 +908,8 @@ fun LiquidSegmentedControl(
                         // 与下面 layerBlock **同一份**形变。不传的话按下时库的
                         // highlight 环按放大后的轮廓画，而折射还是原尺寸，
                         // 屏幕上是一圈白环浮在玻璃外面。
-                        scale = { _, _ -> segIndicatorScale(dragAnimation) }
+                        scale = { _, _ -> segIndicatorScale(dragAnimation) },
+                        drawState = indicatorDrawState
                     )
                     .drawBackdrop(
                     backdrop = indicatorBackdrop,
@@ -1007,7 +1009,7 @@ fun LiquidSegmentedControl(
                     },
                     onDrawBackdrop = { drawBackdrop ->
                         // API31/32 上背景已由 glassLens 以折射方式画过，不能再画一遍
-                        if (lensAnchor == null) drawBackdrop()
+                        if (lensAnchor == null || !indicatorDrawState.hasBackground) drawBackdrop()
                     },
                     onDrawSurface = {
                         val press = dragAnimation.pressProgress
@@ -1051,6 +1053,7 @@ fun LiquidSegmentedControl(
                             drawRect(Color.Black.copy(0.1f), alpha = 1f - press)
                             drawRect(Color.Black.copy(alpha = 0.03f * press))
                         }
+                        if (!refractLabels && enabled) drawRect(accent.copy(alpha = if (isLightTheme) .10f else .16f))
                     }
                 )
             )
