@@ -150,7 +150,7 @@ The page distinguishes enabled reminders from reminders the system can actually 
 
 ## Current source and SDK
 
-`main` includes host capabilities for **SDK 3.2.8 / API 3**. The current stable app is **1.0.101**. Each release retains its own version information. New capabilities are checked through manifest `requires` and `minAppVersionCode` fields; sharing the same API major version alone does not establish client compatibility.
+`main` includes host capabilities for **SDK 3.2.8 / API 3**. The current stable app is **1.0.103**. Each release retains its own version information. New capabilities are checked through manifest `requires` and `minAppVersionCode` fields; sharing the same API major version alone does not establish client compatibility.
 
 | Developer resource | Purpose |
 | --- | --- |

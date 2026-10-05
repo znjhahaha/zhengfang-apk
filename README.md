@@ -150,7 +150,7 @@ App 另附湖北汽车工业学院（金智）与山东石油化工学院（乘�
 
 ## 当前源码与 SDK
 
-`main` 包含 SDK 3.2.8 / API 3 对应的宿主能力，当前正式 App 为 1.0.101。现有 Release 保留各自版本信息；新增能力由清单的 `requires` 和 `minAppVersionCode` 检查，不能仅凭 API 主版本相同判断客户端可用。
+`main` 包含 SDK 3.2.8 / API 3 对应的宿主能力，当前正式 App 为 1.0.103。现有 Release 保留各自版本信息；新增能力由清单的 `requires` 和 `minAppVersionCode` 检查，不能仅凭 API 主版本相同判断客户端可用。
 
 | 开发入口 | 用途 |
 | --- | --- |
