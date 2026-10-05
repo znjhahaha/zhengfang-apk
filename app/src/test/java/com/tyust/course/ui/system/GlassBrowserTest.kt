@@ -63,7 +63,7 @@ class GlassBrowserTest {
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("query"), label = { Text("关键词") })
                     }
                     val filters: @Composable () -> Unit = {
-                        FilterChip(onlySchool, { onlySchool = !onlySchool }, label = { Text("仅本校") })
+                        GlassFilterCapsule("仅本校", { onlySchool = !onlySchool }, selected = onlySchool, toggle = true)
                     }
                     CollapsingGlassBrowser("插件中心", "学校教务与校园服务", if (tab == 0) a else b, {},
                         listOf("发现", "已安装"), tab, { tab = it }, panelActive = panel != null,
@@ -97,7 +97,9 @@ class GlassBrowserTest {
         setUp(); scroll(first, 10)
         val list = compose.onNodeWithTag("plugin-list").fetchSemanticsNode().boundsInRoot
         val window = compose.onNodeWithTag("browser-window").fetchSemanticsNode().boundsInRoot
-        assertTrue("List ratio ${list.height / window.height}", list.height >= window.height * .70f)
+        val header = compose.onNodeWithTag("browser-toolbar").fetchSemanticsNode().boundsInRoot
+        assertTrue("Unobscured list ratio", (window.bottom - header.bottom) >= window.height * .70f)
+        assertTrue("List continues behind toolbar", list.top < header.bottom)
         for (label in listOf("返回", "搜索插件", "筛选插件", "更多")) compose.onNodeWithContentDescription(label).assertIsDisplayed()
         compose.onNodeWithText("发现").assertIsDisplayed(); compose.onNodeWithText("已安装").assertIsDisplayed()
         compose.onNodeWithTag("browser-expanded").assertDoesNotExist()
@@ -141,7 +143,7 @@ class GlassBrowserTest {
         compose.onNodeWithContentDescription("筛选插件").performClick()
         compose.onNodeWithText("仅本校").performClick()
         restore.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("仅本校").assertIsSelected()
+        compose.onNodeWithText("仅本校").assertIsOn()
         compose.runOnIdle { assertEquals(BrowserPanel.Filters, activePanel); assertEquals(20, first.firstVisibleItemIndex); assertEquals(7, second.firstVisibleItemIndex) }
         compose.onNodeWithContentDescription("搜索插件").performClick()
         compose.onNodeWithTag("query").assertTextContains("图书馆")
@@ -155,7 +157,7 @@ class GlassBrowserTest {
         compose.onNodeWithContentDescription("关闭面板").performClick()
         compose.onNodeWithTag("plugin-list").assertIsDisplayed()
         compose.onNodeWithContentDescription("筛选插件").performClick()
-        compose.onNodeWithText("仅本校").assertIsSelected()
+        compose.onNodeWithText("仅本校").assertIsOn()
         compose.runOnIdle { assertEquals(1, requests); assertEquals(0, installs) }
     }
 

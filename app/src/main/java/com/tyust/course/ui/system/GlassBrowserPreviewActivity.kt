@@ -53,7 +53,7 @@ private fun BrowserPreview(dark: Boolean, onDarkChange: (Boolean) -> Unit, onBac
     val filters: @Composable () -> Unit = {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("全部", "教务适配", "校园服务", "通用工具").forEach { value ->
-                FilterChip(kind == value, { kind = value }, label = { Text(value) })
+                GlassFilterCapsule(value, { kind = value }, selected = kind == value)
             }
         }
         Text("所有条目均为本地模拟，不执行安装或学校请求。", style = MaterialTheme.typography.bodySmall)
@@ -70,7 +70,10 @@ private fun BrowserPreview(dark: Boolean, onDarkChange: (Boolean) -> Unit, onBac
                 actions = {
                     GlassSearchFilterPanel(panel, { focus.clearFocus(); panel = it }, reduceMotion = reduced,
                         search = search, filters = filters)
-                    TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "预览选项", { controls = true }) }
+                    SystemActionMenu("预览选项", listOf(SystemMenuAction("预览选项", Icons.Outlined.MoreHoriz, { controls = true })),
+                        expanded = panel == BrowserPanel.More,
+                        onExpandedChange = { if (it) panel = BrowserPanel.More else if (panel == BrowserPanel.More) panel = null },
+                        trigger = { toggle -> TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "预览选项", toggle) } })
                 }, expandedControls = { filters(); search() }) {
                 if (scenario == "加载中") item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("模拟加载中") }
                 if (scenario == "失败") item { Text("模拟目录加载失败"); SystemDialogButton({ scenario = "长列表" }) { Text("重试") } }

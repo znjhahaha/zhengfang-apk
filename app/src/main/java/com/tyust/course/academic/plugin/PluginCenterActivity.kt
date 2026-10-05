@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -94,7 +95,6 @@ class PluginCenterActivity : ComponentActivity() {
         var installedView by rememberSaveable { mutableStateOf(false) }
         var chooseProvider by remember { mutableStateOf(false) }
         var chooseSchool by remember { mutableStateOf(false) }
-        var menu by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         var catalogLoading by remember { mutableStateOf(false) }
         var catalogError by remember { mutableStateOf("") }
@@ -252,50 +252,41 @@ class PluginCenterActivity : ComponentActivity() {
 
         }
         val filterControls: @Composable () -> Unit = {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PluginDiscovery.Type.entries.forEach { option -> FilterChip(selected = type == option, onClick = { type = option }, label = { Text(option.label) }) }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AssistChip(onClick = { focus.clearFocus(); if (panel != null) { schoolAfterPanel = true; panel = null } else chooseSchool = true },
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("plugin-school"), shape = RoundedCornerShape(16.dp),
-                            colors = AssistChipDefaults.assistChipColors(containerColor = glassSurfaceColor(),
-                                labelColor = MaterialTheme.colorScheme.onSurface, leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-                            border = BorderStroke(0.5.dp, glassBorderColor()),
-                            leadingIcon = { Icon(Icons.Outlined.School, null, Modifier.size(16.dp)) },
-                            label = { Text(school?.name ?: "选择学校", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            trailingIcon = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp)) })
-                        FilterChip(selected = onlySchool, onClick = { onlySchool = !onlySchool }, enabled = school != null,
-                            modifier = Modifier.heightIn(min = 48.dp).testTag("plugin-school-filter"), shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(0.5.dp, if (onlySchool) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else glassBorderColor()),
-                            colors = FilterChipDefaults.filterChipColors(containerColor = glassSurfaceColor(),
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                selectedLeadingIconColor = MaterialTheme.colorScheme.primary),
-                            leadingIcon = if (!onlySchool) null else ({ Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }),
-                            label = { Text("仅本校") })
-                    }
+            FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PluginDiscovery.Type.entries.forEach { option ->
+                    GlassFilterCapsule(option.label, { type = option }, selected = type == option)
+                }
+            }
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassFilterCapsule(school?.name ?: "选择学校", {
+                    focus.clearFocus()
+                    if (panel != null) { schoolAfterPanel = true; panel = null } else chooseSchool = true
+                }, Modifier.testTag("plugin-school"), icon = Icons.Outlined.School, trailing = Icons.Outlined.ExpandMore)
+                GlassFilterCapsule("仅本校", { onlySchool = !onlySchool }, Modifier.testTag("plugin-school-filter"),
+                    selected = onlySchool, toggle = true, enabled = school != null)
+            }
         }
         CollapsingGlassBrowser(title = "插件中心", subtitle = "学校教务与校园服务", state = listState,
             onBack = { finish() }, tabs = listOf("发现", "已安装"), selectedTab = if (installedView) 1 else 0,
             onTabChange = { focus.clearFocus(); panel = null; installedView = it == 1 }, panelActive = panel != null,
             actions = {
                 GlassSearchFilterPanel(panel, { focus.clearFocus(); panel = it }, onClosed = {
-                    if (schoolAfterPanel) { schoolAfterPanel = false; chooseSchool = true }
+                    if (schoolAfterPanel) { schoolAfterPanel = false; if (panel == null) chooseSchool = true }
                 }, search = searchControls, filters = filterControls)
-            TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "更多", { menu = true }) }
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem(text = { Text("从文件安装") }, enabled = !busy,
-                    onClick = { menu = false; importer.launch(arrayOf("*/*")) })
-                DropdownMenuItem(text = { Text("刷新插件目录") }, enabled = !catalogLoading,
-                    onClick = { menu = false; loadCatalog() })
-                DropdownMenuItem(text = { Text("打开插件商店") }, onClick = { menu = false; web("/") })
-                DropdownMenuItem(text = { Text("导入、回滚与开发工具") }, onClick = {
-                    menu = false; developerTools.launch(Intent(this@PluginCenterActivity, PluginDeveloperActivity::class.java)
-                        .putExtra(EXTRA_TARGET_SCHOOL, targetSchoolId))
-                })
-                DropdownMenuItem(text = { Text("开发文档与交流群") }, onClick = { menu = false; web("/developers") })
-            }
+                SystemActionMenu("更多", listOf(
+                    SystemMenuAction("从文件安装", Icons.Outlined.FileOpen, { importer.launch(arrayOf("*/*")) }, enabled = !busy),
+                    SystemMenuAction("刷新插件目录", Icons.Outlined.Refresh, { loadCatalog() }, enabled = !catalogLoading),
+                    SystemMenuAction("打开插件商店", Icons.Outlined.Storefront, { web("/") }),
+                    SystemMenuAction("导入、回滚与开发工具", Icons.Outlined.Build, {
+                        developerTools.launch(Intent(this@PluginCenterActivity, PluginDeveloperActivity::class.java)
+                            .putExtra(EXTRA_TARGET_SCHOOL, targetSchoolId))
+                    }),
+                    SystemMenuAction("开发文档与交流群", Icons.Outlined.MenuBook, { web("/developers") })
+                ), expanded = panel == BrowserPanel.More,
+                    onExpandedChange = { if (it) { focus.clearFocus(); panel = BrowserPanel.More } else if (panel == BrowserPanel.More) panel = null },
+                    trigger = { toggle -> TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "更多", toggle) } })
             }, expandedControls = { filterControls(); searchControls() }) {
                     if (fromLogin) item("login") {
                         SystemDialogButton(onClick = {
