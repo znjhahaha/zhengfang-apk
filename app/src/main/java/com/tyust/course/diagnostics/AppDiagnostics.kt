@@ -88,6 +88,18 @@ object AppDiagnostics {
     fun markStage(context: Context, stage: String) {
         // Callers supply fixed operation labels, never user input.
         currentRun.put("stage", stage.take(80))
+        currentRun.remove("glassPanel")
+        write(context, "run.json", currentRun.toString())
+    }
+
+    /** Fixed internal labels only. Record transitions, never per-frame coordinates or user text. */
+    @Synchronized
+    internal fun markGlassPanel(context: Context, panel: String, phase: String, renderer: String, width: Int, height: Int) {
+        if (!installed.get()) return
+        if (panel !in setOf("plugin-search", "plugin-filter", "action-menu", "glass-panel") ||
+            phase !in setOf("waiting", "opening", "open", "closing") ||
+            renderer !in setOf("solid", "render-effect", "runtime-lens")) return
+        currentRun.put("glassPanel", "$panel / $phase / $renderer / ${width.coerceIn(0, 16384)}×${height.coerceIn(0, 16384)} px")
         write(context, "run.json", currentRun.toString())
     }
 
@@ -99,6 +111,7 @@ object AppDiagnostics {
             appendLine(environment())
             appendLine("操作：$operation")
             appendLine("阶段：${currentRun.optString("stage", "未知")}")
+            currentRun.optString("glassPanel").takeIf { it.isNotBlank() }?.let { appendLine("界面绘制：$it") }
             appendLine("记录线程：${if (Looper.myLooper() == Looper.getMainLooper()) "主线程" else "后台线程"}")
             appendLine()
             val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
@@ -152,6 +165,7 @@ object AppDiagnostics {
             appendLine("时间：${time(exit.timestamp)}")
             appendLine(previous.optString("environment", "版本信息不可用"))
             appendLine("阶段：${previous.optString("stage", "未知")}")
+            previous.optString("glassPanel").takeIf { it.isNotBlank() }?.let { appendLine("界面绘制：$it") }
             appendLine("系统原因：${if (exit.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) "原生崩溃" else "应用无响应"}")
             appendLine("退出状态：${exit.status}")
             appendLine()

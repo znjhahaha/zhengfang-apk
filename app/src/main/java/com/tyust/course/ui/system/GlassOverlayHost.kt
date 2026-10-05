@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.wrapContentSize
@@ -41,11 +42,13 @@ internal fun resolvePortalPlacement(anchor: Rect, safe: Rect, desiredBody: Float
     )
 }
 
-private class GlassPortalEntry(
+internal class GlassPortalEntry(
     val content: @Composable () -> Unit,
     val dismiss: () -> Unit,
     val onSpace: (Float, Boolean) -> Unit
 ) {
+    var bodyOnly = false
+    var controls by mutableStateOf(Rect.Zero)
     var anchor by mutableStateOf(Rect.Zero)
     var header by mutableFloatStateOf(0f)
     var rendered by mutableFloatStateOf(0f)
@@ -53,11 +56,11 @@ private class GlassPortalEntry(
     var preferredWidth by mutableStateOf<Float?>(null)
 }
 
-private class GlassPortalState {
+internal class GlassPortalState {
     val entries = mutableStateListOf<GlassPortalEntry>()
 }
 
-private val LocalGlassPortals = staticCompositionLocalOf<GlassPortalState?> { null }
+internal val LocalGlassPortals = staticCompositionLocalOf<GlassPortalState?> { null }
 
 /** Entries stay in this window, so optical source and target coordinates remain compatible. */
 @Composable
@@ -81,12 +84,21 @@ fun GlassOverlayHost(modifier: Modifier = Modifier, content: @Composable BoxScop
                         val placement = resolvePortalPlacement(entry.anchor, safe, entry.desiredBody, entry.header, entry.rendered, margin, entry.preferredWidth ?: entry.anchor.width)
                         SideEffect { entry.onSpace(placement.bodySpace, placement.opensUp) }
                         BackHandler(enabled = state.entries.lastOrNull() === entry) { entry.dismiss() }
-                        Box(Modifier.fillMaxSize().clickable(
-                            interactionSource = remember { MutableInteractionSource() }, indication = null,
-                            onClick = entry.dismiss
-                        ))
-                        Box(Modifier.offset {
-                            IntOffset((placement.x - window.left).roundToInt(), (placement.y - window.top).roundToInt())
+                        // Stable-anchor panels leave only their toolbar interactive. The rest
+                        // of the window consumes taps, including while the panel closes.
+                        val holes = if (entry.bodyOnly) entry.controls else Rect.Zero
+                        dismissRegions(window, holes).forEach { region ->
+                            Box(Modifier.offset { IntOffset((region.left - window.left).roundToInt(), (region.top - window.top).roundToInt()) }
+                                .size(with(density) { region.width.toDp() }, with(density) { region.height.toDp() })
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                    onClick = entry.dismiss))
+                        }
+                        val y = if (!entry.bodyOnly) placement.y else if (placement.opensUp)
+                            entry.anchor.top - margin - entry.rendered else entry.anchor.bottom + margin
+                        // onSpace above still runs at zero height; no optical body is composed
+                        // until both the host and the measured anchor are ready.
+                        if (entry.rendered > 1f) Box(Modifier.offset {
+                            IntOffset((placement.x - window.left).roundToInt(), (y - window.top).roundToInt())
                         }.requiredSize(with(density) { placement.width.toDp() }, with(density) { entry.rendered.toDp() })) {
                             entry.content()
                         }
@@ -149,4 +161,16 @@ internal fun AnchoredGlassPortal(
             Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(maxWidth, renderedHeight)) { movable() }
         }
     }
+}
+
+/** Four disjoint hit regions around a live toolbar; never forward a tap to page content. */
+internal fun dismissRegions(window: Rect, controls: Rect): List<Rect> {
+    val hole = controls.intersect(window)
+    if (hole.width <= 0f || hole.height <= 0f) return listOf(window)
+    return listOf(
+        Rect(window.left, window.top, window.right, hole.top),
+        Rect(window.left, hole.bottom, window.right, window.bottom),
+        Rect(window.left, hole.top, hole.left, hole.bottom),
+        Rect(hole.right, hole.top, window.right, hole.bottom)
+    ).filter { it.width > 0f && it.height > 0f }
 }
