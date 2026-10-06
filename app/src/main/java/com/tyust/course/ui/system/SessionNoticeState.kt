@@ -25,9 +25,16 @@ class SessionNoticeState {
         mutableState.value = next
     }
 
+    /** A deliberate retry can reopen this episode after the user previously chose later. */
+    fun request(expected: SessionToken) {
+        mutableState.value = SessionNoticeSnapshot(expected, shown = true, visible = true)
+    }
+
     fun dismiss(expected: SessionToken) {
         if (mutableState.value.token == expected) mutableState.value = mutableState.value.copy(visible = false)
     }
 }
 
 class SessionNoticeViewModel : ViewModel() { val notices = SessionNoticeState() }
+
+internal val LocalRequestSessionRecovery = androidx.compose.runtime.staticCompositionLocalOf<((SessionToken) -> Unit)?> { null }

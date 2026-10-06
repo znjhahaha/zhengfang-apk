@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -46,6 +47,9 @@ fun ScheduleScreen(
     isNextSemester: Boolean = false,
     onToggleSemester: () -> Unit = {},
     errorMessage: String = "",
+    loadIssue: ScheduleLoadIssue? = null,
+    hasCachedSchedule: Boolean = courses.isNotEmpty(),
+    onDismissIssue: () -> Unit = {},
     onRetry: () -> Unit = {},
     firstWeekDate: String? = null,
     weekRequestKey: String? = null,
@@ -63,6 +67,7 @@ fun ScheduleScreen(
     onWidgetClick: () -> Unit = {},
     now: Long? = null
 ) {
+    val issue = loadIssue ?: errorMessage.takeIf { it.isNotBlank() }?.let { ScheduleLoadIssue(ScheduleLoadIssue.Kind.Other, it) }
     val scope = rememberCoroutineScope()
     val reduced = rememberGlassAccessibilityMode().reduceMotion
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -135,11 +140,11 @@ fun ScheduleScreen(
         }
     }) { padding ->
         when {
-            isLoading && courses.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            isLoading && !hasCachedSchedule -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 GlassLoadingState(text = "正在同步课表…")
             }
-            errorMessage.isNotBlank() && courses.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
-                ScheduleNotice(errorMessage, "重新同步", onRetry)
+            issue != null && !hasCachedSchedule -> Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
+                ScheduleNotice(issue.message, issue.actionLabel, onRetry)
             }
             else -> Box(Modifier.fillMaxSize().then(
                 if (contentBackdrop != null) Modifier.layerBackdrop(contentBackdrop) else Modifier)) {
@@ -160,8 +165,19 @@ fun ScheduleScreen(
                         onShown = { week, day, scroll -> shownWeek = week; shownDay = day; activeScroll = scroll },
                         onScroll = { if (mode) dayOffset = it else weekOffset = it })
                 }
-                if (errorMessage.isNotBlank()) Surface(Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 12.dp), shape = MaterialTheme.shapes.medium) {
-                    Column(Modifier.padding(12.dp)) { Text(errorMessage, style = MaterialTheme.typography.bodySmall); TextButton(onClick = onRetry, enabled = !isLoading) { Text("重新同步") } }
+                if (issue != null && issue.visibleWithCache()) Box(Modifier.fillMaxSize()
+                    .padding(top = topInset, bottom = LocalAppOverlayBottomInset.current + 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Surface(Modifier.align(Alignment.TopCenter).heightIn(max = 180.dp)
+                    .testTag("schedule-refresh-notice"), shape = MaterialTheme.shapes.medium) {
+                    Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(12.dp)) {
+                        Text("已保留本地课表 · ${issue.message}", style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            TextButton(onClick = onRetry, enabled = !isLoading) { Text(issue.actionLabel) }
+                            TextButton(onClick = onDismissIssue) { Text("关闭") }
+                        }
+                    }
+                }
                 }
             }
         }

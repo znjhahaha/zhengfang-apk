@@ -543,6 +543,13 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             LocalDialogHost provides dialogHostState,
             LocalPageDataState provides pageData,
             LocalFloatingNotice provides tokenExpiredNotice,
+            com.tyust.course.ui.system.LocalRequestSessionRecovery provides { expected ->
+                if (sessionStore.isCurrent(expected)) {
+                    com.tyust.course.network.CourseApiClient.getInstance().notifyCookieExpired(expected)
+                    if (sessionStore.state.value.expired && recovery.token == expected && recovery.phase == RecoveryPhase.NeedsLogin)
+                        noticeModel.notices.request(expected)
+                }
+            },
             LocalNoticeAnchor provides noticeAnchorState,
             com.tyust.course.ui.system.glass.LocalPageGlassFreshness provides lensFreshness,
             com.tyust.course.ui.system.glass.LocalGlassLensAnchor provides appLensAnchor,

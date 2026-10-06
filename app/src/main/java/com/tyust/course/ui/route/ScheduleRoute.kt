@@ -126,7 +126,9 @@ fun ScheduleRoute(isActive: Boolean = true) {
     }
     var isLoading by remember { mutableStateOf(false) }
     var backgroundRefreshing by remember { mutableStateOf(false) }
-    var loadError by remember(routeAccountKey) { mutableStateOf("") }
+    var loadIssue by remember(routeAccountKey) { mutableStateOf<ScheduleLoadIssue?>(null) }
+    val requestRecovery = com.tyust.course.ui.system.LocalRequestSessionRecovery.current
+    val latestRecovery by rememberUpdatedState(requestRecovery)
     var studyLoadJob by remember(routeAccountKey) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var studyGeneration by remember(routeAccountKey) { mutableIntStateOf(0) }
     var periodTimes by remember(routeAccountKey) {
@@ -211,7 +213,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
         appliedCalendar = appliedCalendar
     )
     val latestSnapshotForCache by rememberUpdatedState(snapshotForCache)
-    val canCacheSnapshot by rememberUpdatedState(hasInitializedRoute && !isLoading && loadError.isBlank())
+    val canCacheSnapshot by rememberUpdatedState(hasInitializedRoute && !isLoading && hasLocalSchedule)
     DisposableEffect(routeAccountKey) {
         onDispose {
             if (canCacheSnapshot) {
@@ -262,7 +264,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
             val currentTerm = scheduleCache.currentTerm(account, school.id)
             val requestedTerm = if (isNextSemester) runCatching { currentTerm.next() }.getOrDefault(currentTerm) else currentTerm
             val cached = scheduleCache.selected(account, school.id, isNextSemester)
-            loadError = ""
+            loadIssue = null
             if (resolvedTermId != requestedTerm.id) {
                 courses = reloadCustomCourses(emptyList())
                 hasLocalSchedule = false
@@ -277,6 +279,13 @@ fun ScheduleRoute(isActive: Boolean = true) {
             val retained = hasLocalSchedule || courses.isNotEmpty()
             isLoading = !retained
             backgroundRefreshing = retained
+            if (sessions.state.value.expired) {
+                loadIssue = ScheduleLoadIssue.expired()
+                isLoading = false; backgroundRefreshing = false
+                if (manual) latestRecovery?.invoke(ticket.session)
+                    ?: CourseApiClient.getInstance().notifyCookieExpired(ticket.session)
+                return
+            }
             val mode = if (manual) ScheduleLoadMode.Manual else ScheduleLoadMode.Automatic
             val feedback = if (manual) com.tyust.course.manager.RequestFeedback.Interactive else com.tyust.course.manager.RequestFeedback.Silent
             val nextSemester = isNextSemester
@@ -300,7 +309,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
                             fresh
                         } catch (e: com.tyust.course.academic.AcademicException) {
                             if (e.status == com.tyust.course.academic.AcademicStatus.SESSION_EXPIRED)
-                                CourseApiClient.getInstance().notifyCookieExpired(ticket.session, feedback)
+                                CourseApiClient.getInstance().notifyCookieExpired(ticket.session, com.tyust.course.manager.RequestFeedback.Silent)
                             throw e
                         }
                     }
@@ -312,15 +321,13 @@ fun ScheduleRoute(isActive: Boolean = true) {
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) {
                     if (requests.isCurrent(ticket) && studyGeneration == generation) {
-                        val message = e.message ?: "课表同步失败，请重试"
-                        loadError = if (retained) "同步失败，已保留本地课表：$message" else message
-                        if (manual) {
-                            if (e is com.tyust.course.academic.AcademicException &&
-                                e.status == com.tyust.course.academic.AcademicStatus.SESSION_EXPIRED)
-                                CourseApiClient.getInstance().notifyCookieExpired(ticket.session,
-                                    com.tyust.course.manager.RequestFeedback.Interactive)
-                            GlassToaster.show(if (retained) "同步失败，已保留本地课表" else message)
+                        val issue = ScheduleLoadIssue.from(e)
+                        loadIssue = issue
+                        if (issue.kind == ScheduleLoadIssue.Kind.LoginExpired && manual) {
+                            latestRecovery?.invoke(ticket.session)
+                                ?: CourseApiClient.getInstance().notifyCookieExpired(ticket.session)
                         }
+
                     }
                 } finally {
                     if (requests.isCurrent(ticket) && studyGeneration == generation) {
@@ -428,7 +435,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
     var showWidgetPicker by rememberSaveable { mutableStateOf(false) }
     if (showWidgetPicker) com.tyust.course.ui.screen.ScheduleWidgetPicker { showWidgetPicker = false }
     com.tyust.course.ui.system.ReportInitialPageReady(courses.isNotEmpty() || hasLocalSchedule ||
-        loadError.isNotBlank() || (hasInitializedRoute && !isLoading))
+        loadIssue != null || (hasInitializedRoute && !isLoading))
     com.tyust.course.ui.system.ReportPageContent(courses.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
     CompositionLocalProvider(com.tyust.course.ui.screen.LocalScheduleFocus provides focusRegistry) {
@@ -436,7 +443,9 @@ fun ScheduleRoute(isActive: Boolean = true) {
         currentWeek = currentWeek,
         courses = courses,
         isLoading = isLoading,
-        errorMessage = loadError,
+        loadIssue = loadIssue,
+        hasCachedSchedule = hasLocalSchedule || courses.isNotEmpty(),
+        onDismissIssue = { loadIssue = null },
         onRetry = { loadSchedule(true) },
         periodTimes = periodTimes,
         periodCount = periodCount,
