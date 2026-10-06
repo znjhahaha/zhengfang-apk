@@ -69,12 +69,12 @@ private fun BrowserPreview(dark: Boolean, onDarkChange: (Boolean) -> Unit, onBac
                 onBack, listOf("发现", "已安装"), tab, { tab = it }, panelActive = panel != null,
                 actions = {
                     GlassSearchFilterPanel(panel, { focus.clearFocus(); panel = it }, reduceMotion = reduced,
+                        moreActions = listOf(SystemMenuAction("预览选项", Icons.Outlined.MoreHoriz, { controls = true })),
                         search = search, filters = filters)
-                    SystemActionMenu("预览选项", listOf(SystemMenuAction("预览选项", Icons.Outlined.MoreHoriz, { controls = true })),
-                        expanded = panel == BrowserPanel.More,
-                        onExpandedChange = { if (it) panel = BrowserPanel.More else if (panel == BrowserPanel.More) panel = null },
-                        trigger = { toggle -> TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "预览选项", toggle) } })
-                }, expandedControls = { filters(); search() }) {
+                }, expandedControls = {
+                    TextButton({ panel = BrowserPanel.Filters }) { Text("$kind · 全部学校") }
+                    if (query.isNotBlank()) TextButton({ panel = BrowserPanel.Search }) { Text("搜索：$query") }
+                }) {
                 if (scenario == "加载中") item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("模拟加载中") }
                 if (scenario == "失败") item { Text("模拟目录加载失败"); SystemDialogButton({ scenario = "长列表" }) { Text("重试") } }
                 val entries = if (scenario == "空列表" || scenario == "失败") emptyList() else

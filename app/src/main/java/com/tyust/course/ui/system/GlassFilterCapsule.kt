@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -49,13 +50,13 @@ internal fun GlassFilterCapsule(
         if (reduced) snap() else spring(dampingRatio = .9f, stiffness = 700f), label = "filter-shape")
     val surface by animateColorAsState(when {
         !enabled -> colors.surfaceContainerHigh
-        chosen -> colors.primary
+        chosen -> colors.primary.copy(alpha = .12f).compositeOver(colors.surface)
         accessibility.highContrast || !isBackdropSupported() -> colors.surfaceContainerHigh
         else -> appearance.surface
     }, if (reduced) snap() else spring(dampingRatio = 1f, stiffness = 1600f), label = "filter-surface")
     val foreground by animateColorAsState(when {
         !enabled -> colors.onSurfaceVariant.copy(alpha = .62f)
-        chosen -> colors.onPrimary
+        chosen -> colors.primary
         else -> if (overPanel || !isBackdropSupported()) colors.onSurface else appearance.onSurface
     }, if (reduced) snap() else spring(dampingRatio = 1f, stiffness = 1600f), label = "filter-text")
     val optics = rememberInteractiveOptics()
@@ -73,8 +74,8 @@ internal fun GlassFilterCapsule(
         }
     }.then(if (enabled && !reduced) optics.gestureModifier else Modifier)
         .glassChip(shape, dimmed = !enabled, pressProgress = { if (reduced) 0f else optics.pressProgress })
-        .clip(shape).background(surface).then(interaction).padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        .clip(shape).background(surface).then(interaction).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         // Reserve the check slot: changing selection must not reflow every chip.
         if (selected != null) {
             Icon(Icons.Outlined.Check, null, Modifier.size(18.dp).graphicsLayer { alpha = emphasis.coerceIn(0f, 1f) }, tint = foreground)

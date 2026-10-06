@@ -238,6 +238,7 @@ class PluginCenterActivity : ComponentActivity() {
 
         var panel by rememberSaveable { mutableStateOf<BrowserPanel?>(null) }
         var schoolAfterPanel by remember { mutableStateOf(false) }
+        var catalogDetail by rememberSaveable { mutableStateOf<String?>(null) }
         val searchControls: @Composable () -> Unit = {
                     GlassTextField(value = query, onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth().testTag("plugin-search"),
@@ -252,12 +253,14 @@ class PluginCenterActivity : ComponentActivity() {
 
         }
         val filterControls: @Composable () -> Unit = {
+            Text("插件类型", style = MaterialTheme.typography.labelLarge)
             FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PluginDiscovery.Type.entries.forEach { option ->
                     GlassFilterCapsule(option.label, { type = option }, selected = type == option)
                 }
             }
+            Text("学校范围", style = MaterialTheme.typography.labelLarge)
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassFilterCapsule(school?.name ?: "选择学校", {
@@ -272,10 +275,9 @@ class PluginCenterActivity : ComponentActivity() {
             onBack = { finish() }, tabs = listOf("发现", "已安装"), selectedTab = if (installedView) 1 else 0,
             onTabChange = { focus.clearFocus(); panel = null; installedView = it == 1 }, panelActive = panel != null,
             actions = {
-                GlassSearchFilterPanel(panel, { focus.clearFocus(); panel = it }, onClosed = {
+                GlassSearchFilterPanel(panel, { focus.clearFocus(); if (it != null) schoolAfterPanel = false; panel = it }, onClosed = {
                     if (schoolAfterPanel) { schoolAfterPanel = false; if (panel == null) chooseSchool = true }
-                }, search = searchControls, filters = filterControls)
-                SystemActionMenu("更多", listOf(
+                }, moreActions = listOf(
                     SystemMenuAction("从文件安装", Icons.Outlined.FileOpen, { importer.launch(arrayOf("*/*")) }, enabled = !busy),
                     SystemMenuAction("刷新插件目录", Icons.Outlined.Refresh, { loadCatalog() }, enabled = !catalogLoading),
                     SystemMenuAction("打开插件商店", Icons.Outlined.Storefront, { web("/") }),
@@ -284,10 +286,19 @@ class PluginCenterActivity : ComponentActivity() {
                             .putExtra(EXTRA_TARGET_SCHOOL, targetSchoolId))
                     }),
                     SystemMenuAction("开发文档与交流群", Icons.Outlined.MenuBook, { web("/developers") })
-                ), expanded = panel == BrowserPanel.More,
-                    onExpandedChange = { if (it) { focus.clearFocus(); panel = BrowserPanel.More } else if (panel == BrowserPanel.More) panel = null },
-                    trigger = { toggle -> TopBarActionRail { action(0, Icons.Outlined.MoreHoriz, "更多", toggle) } })
-            }, expandedControls = { filterControls(); searchControls() }) {
+                ), search = searchControls, filters = filterControls)
+            }, expandedControls = {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton({ panel = BrowserPanel.Filters }) { Text(type.label + " · " +
+                        if (onlySchool) (school?.name ?: "未选择学校") else "全部学校") }
+                    if (query.isNotBlank()) TextButton({ panel = BrowserPanel.Search }) {
+                        Text("搜索：$query", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (query.isNotBlank() || onlySchool || type != PluginDiscovery.Type.ALL) TextButton({
+                        query = ""; onlySchool = false; type = PluginDiscovery.Type.ALL
+                    }) { Text("清除条件") }
+                }
+            }) {
                     if (fromLogin) item("login") {
                         SystemDialogButton(onClick = {
                             if (school == null) chooseSchool = true else if (resolved?.isFailure == true) chooseProvider = true else finish()
@@ -296,16 +307,12 @@ class PluginCenterActivity : ComponentActivity() {
                         }
                     }
                     if (school != null) item("adapter") {
-                        SystemDialogButton(onClick = { chooseProvider = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Outlined.CheckCircle, null, Modifier.size(17.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("当前适配 · " + when {
+                        InsetGroupedSection {
+                            InsetGroupedRow(title = "当前适配 · " + when {
                                 resolved?.isFailure == true -> "请先选择"
                                 current != null -> current.manifest.name
                                 else -> "内置适配"
-                            }, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall)
-                            Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp))
+                            }, onClick = { chooseProvider = true })
                         }
                     }
                     if (message.isNotBlank()) item("message") {
@@ -376,8 +383,18 @@ class PluginCenterActivity : ComponentActivity() {
                             }, enabled = !busy,
                             actionTag = if (needsDownload) "catalog-install-$id" else "plugin-use-$id",
                             onAction = { if (needsDownload) install(entry) else pkg?.let(::use) },
-                            onDetails = pkg?.let { { selected = it } })
+                            onDetails = { if (pkg != null) selected = pkg else catalogDetail = entry.toString() })
                     }
+        }
+        catalogDetail?.let { json ->
+            val entry = remember(json) { JSONObject(json) }
+            SystemDialog(onDismissRequest = { catalogDetail = null }, title = { Text(entry.optString("name")) },
+                scrollContent = true, confirmButton = { SystemDialogButton({ catalogDetail = null }) { Text("完成") } }) {
+                Text(entry.optString("description"))
+                Detail("类型与范围", PluginDiscovery.typeLabel(entry) + " · " + PluginDiscovery.scope(entry, school))
+                Detail("版本", entry.optString("version"))
+                Detail("声明能力", PluginJson.strings(entry.optJSONArray("features")).joinToString("、").ifBlank { "未声明" })
+            }
         }
         if (chooseSchool) com.tyust.course.ui.screen.SchoolManagementDialog(
             selectedSchoolId = targetSchoolId, onDismiss = { chooseSchool = false },
@@ -543,10 +560,10 @@ class PluginCenterActivity : ComponentActivity() {
     ) {
         val colors = MaterialTheme.colorScheme
         SystemCard(modifier = Modifier.fillMaxWidth().testTag("plugin-${entry.getString("id")}"), contentPadding = PaddingValues(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(shape = RoundedCornerShape(12.dp), color = colors.primary.copy(alpha = 0.10f)) {
-                        Icon(Icons.Outlined.Extension, null, Modifier.padding(10.dp).size(22.dp), tint = colors.primary)
+                        Icon(Icons.Outlined.Extension, null, Modifier.padding(8.dp).size(20.dp), tint = colors.primary)
                     }
                     Column(Modifier.weight(1f).then(if (onDetails == null) Modifier else Modifier.clickable(onClick = onDetails))) {
                         Text(entry.optString("name", entry.getString("id")), style = MaterialTheme.typography.titleMedium,
@@ -558,21 +575,23 @@ class PluginCenterActivity : ComponentActivity() {
                 }
                 Text(entry.optString("description").ifBlank {
                     if (entry.optString("kind") in setOf("configuration", "independent", "extension")) "连接学校教务，查询课表与成绩" else "为校园生活添加更多服务"
-                }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val features = PluginJson.strings(entry.optJSONArray("features"))
                 if (features.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    features.forEach { feature ->
+                    features.take(2).forEach { feature ->
                         Surface(shape = RoundedCornerShape(8.dp), color = colors.primary.copy(alpha = 0.08f)) {
                             Text(feature, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelSmall, color = colors.primary)
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (features.size > 2) Text("另 ${features.size - 2} 项 · 查看详情", style = MaterialTheme.typography.labelSmall,
+                    modifier = if (onDetails == null) Modifier else Modifier.clickable(onClick = onDetails), color = colors.onSurfaceVariant)
+                FlowRow(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${entry.optString("version")} · $state", Modifier.weight(1f),
                         style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                    LiquidButton(onClick = onAction, enabled = enabled, contentColor = colors.primary,
-                        modifier = Modifier.testTag(actionTag), style = LiquidButtonStyle.Surface) {
+                    LiquidButton(onClick = onAction, enabled = enabled, style = LiquidButtonStyle.SolidSurface,
+                        minHeight = 48.dp, horizontalPadding = 12.dp, modifier = Modifier.testTag(actionTag)) {
                         Text(action, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     }
                 }
