@@ -38,10 +38,10 @@ fun SystemActionMenu(description: String, actions: List<SystemMenuAction>, modif
     fun setExpanded(value: Boolean) { if (onExpandedChange != null) onExpandedChange(value) else localExpanded = value }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var opensUp by remember { mutableStateOf(false) }
-    var space by remember { mutableFloatStateOf(Float.MAX_VALUE) }
+    var space by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val reduced = rememberGlassAccessibilityMode().reduceMotion
-    val motion = animateFloatAsState(if (isExpanded) 1f else 0f,
+    val motion = animateFloatAsState(if (isExpanded && space > 0f) 1f else 0f,
         if (reduced) snap() else if (isExpanded) com.tyust.course.ui.theme.MotionProfile.iconSpring()
         else tween(ModuleMotion.ExitMillis, easing = MotionEasing.Accelerate), label = "actionMenu")
     val progress = motion.value.coerceIn(0f, 1f)
@@ -51,28 +51,26 @@ fun SystemActionMenu(description: String, actions: List<SystemMenuAction>, modif
     val rowHeight = (48f * density.fontScale.coerceAtLeast(1f)).dp
     val desired = rowHeight * actions.size + 8.dp
     val bodyHeight = minOf(desired, with(density) { space.toDp() }).coerceAtLeast(0.dp)
+    val liveExpanded = rememberUpdatedState(isExpanded)
+    val liveActions = rememberUpdatedState(actions)
+    val liveBodyHeight = rememberUpdatedState(bodyHeight)
+    val liveOpensUp = rememberUpdatedState(opensUp)
     val menu: @Composable () -> Unit = {
         val backdrop = LocalModalBackdrop.current?.takeIf { isBackdropSupported() && LocalOverlayBody.current }
-        Box(Modifier.fillMaxWidth().height(bodyHeight * progress).clip(RoundedCornerShape(0.dp))) {
-            Column(Modifier.fillMaxWidth().height(bodyHeight).graphicsLayer {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(bodyHeight * progress).clip(RoundedCornerShape(0.dp))) {
+            val progress = motion.value.coerceIn(0f, 1f)
+            val bodyHeight = liveBodyHeight.value
+            val finalWidth = maxWidth
+            Column(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).width(finalWidth).requiredHeight(bodyHeight).graphicsLayer {
                     alpha = progress
                     scaleX = 0.96f + 0.04f * progress
                     scaleY = scaleX
-                    transformOrigin = TransformOrigin(1f, if (opensUp) 1f else 0f)
+                    transformOrigin = TransformOrigin(1f, if (liveOpensUp.value) 1f else 0f)
                 }.then(if (backdrop != null) Modifier.glassSheet(backdrop, 16.dp) else
                     Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)))
                 .clip(RoundedCornerShape(16.dp)).verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
-                actions.forEachIndexed { index, action ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = rowHeight).clickable(
-                        enabled = isExpanded && action.enabled, role = Role.Button, onClick = { if (pendingAction == null) { pendingAction = action.onClick; setExpanded(false) } }
-                    ).padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        val color = (if (action.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                            .copy(alpha = if (action.enabled) 1f else .38f)
-                        Text(action.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = color)
-                        ActionLineIcon(action.icon, null, Modifier.size(20.dp), tint = color)
-                    }
-                    if (index < actions.lastIndex) SystemDivider()
+                SystemActionMenuContent(liveActions.value, liveExpanded.value, rowHeight) { action ->
+                    if (pendingAction == null) { pendingAction = action.onClick; setExpanded(false) }
                 }
             }
         }
@@ -100,4 +98,24 @@ fun SystemActionMenu(description: String, actions: List<SystemMenuAction>, modif
             }
         }, body = menu
     )
+}
+
+/** Shared menu rows: the browser supplies its single overlay, schedule keeps its adapter. */
+@Composable
+internal fun ColumnScope.SystemActionMenuContent(
+    actions: List<SystemMenuAction>, enabled: Boolean, rowHeight: Dp = 48.dp,
+    onAction: (SystemMenuAction) -> Unit
+) {
+                actions.forEachIndexed { index, action ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = rowHeight).clickable(
+                        enabled = enabled && action.enabled, role = Role.Button, onClick = { onAction(action) }
+                    ).padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val color = (if (action.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                            .copy(alpha = if (action.enabled) 1f else .38f)
+                        Text(action.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = color)
+                        ActionLineIcon(action.icon, null, Modifier.size(20.dp), tint = color)
+                    }
+                    if (index < actions.lastIndex) SystemDivider()
+                }
 }

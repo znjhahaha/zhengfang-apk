@@ -32,6 +32,7 @@ internal fun AnchoredGlassOverlay(
     onClosed: () -> Unit = {},
     diagnosticTag: String = "glass-panel",
     phase: String = "open",
+    anchorBounds: Rect? = null,
     anchor: @Composable () -> Unit,
     body: @Composable () -> Unit
 ) {
@@ -57,6 +58,7 @@ internal fun AnchoredGlassOverlay(
         onDispose { if (active) dialogs?.endPortal() }
     }
     SideEffect {
+        if (anchorBounds != null) entry.anchor = anchorBounds
         entry.header = 0f
         entry.rendered = with(density) { renderedHeight.toPx() }
         entry.desiredBody = with(density) { desiredHeight.toPx() }
@@ -80,7 +82,7 @@ internal fun AnchoredGlassOverlay(
     }
     LaunchedEffect(active, registered) { if (!active && !registered) currentClosed() }
     Box(modifier.onGloballyPositioned {
-        entry.anchor = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+        if (anchorBounds == null) entry.anchor = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
     }) { anchor() }
 
     if (host == null && active) {

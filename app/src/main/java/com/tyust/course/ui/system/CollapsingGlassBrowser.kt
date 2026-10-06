@@ -76,7 +76,7 @@ internal fun CollapsingGlassBrowser(
     BoxWithConstraints(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(
         WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
     )).imePadding().testTag("browser-window")) {
-        CompositionLocalProvider(LocalBrowserPanelWidth provides minOf(400.dp, (minOf(maxWidth, 840.dp) - 80.dp).coerceAtLeast(1.dp))) {
+        CompositionLocalProvider(LocalBrowserPanelWidth provides minOf(400.dp, (minOf(maxWidth, 840.dp) - 24.dp).coerceAtLeast(1.dp))) {
             Box(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 840.dp)) {
                 Box(Modifier.fillMaxSize().focusProperties { canFocus = !blocked }
                     .then(if (blocked) Modifier.clearAndSetSemantics {} else Modifier)) {
@@ -84,7 +84,7 @@ internal fun CollapsingGlassBrowser(
                     .then(if (listLayer != null) Modifier.layerBackdrop(listLayer) else Modifier)
                     .testTag("plugin-list"),
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = status + headerHeight + 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item("browser-expanded-controls", contentType = "browser-controls") {
                         Column(Modifier.fillMaxWidth().testTag("browser-expanded"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(title, style = MaterialTheme.typography.headlineLarge)
@@ -97,10 +97,11 @@ internal fun CollapsingGlassBrowser(
                 }
                 Box(Modifier.fillMaxWidth().height(status + headerHeight).testTag("browser-toolbar")
                     .glassLensAnchor(lens)
-                    .pointerInput(Unit) {
-                        // The list draws behind this toolbar, but cannot receive its taps.
-                        awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Final).changes.forEach { it.consume() } }
-                    }) {
+) {
+                    // This sibling catches empty-toolbar taps without cancelling child gestures.
+                    Box(Modifier.matchParentSize().pointerInput(Unit) {
+                        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                    })
                     Box(Modifier.matchParentSize().then(if (slab != null) Modifier.layerBackdrop(slab) else Modifier)) {
                         StatusBarFrost(status + 1.dp, collapse, pageBackdrop)
                         HeaderGlassSlab(collapse, pageBackdrop, 26.dp,
