@@ -581,10 +581,13 @@ fun LiquidSegmentedControl(
             }
         )
         val indicatorHeight = (height - verticalPadding * 2).coerceAtLeast(1.dp)
-        val indicatorBackdrop = if (glassBackdrop != null && segmentsBackdrop != null) {
-            rememberCombinedBackdrop(glassBackdrop, segmentsBackdrop)
+        val materialBackdrop = if (!refractLabels && glassBackdrop != null)
+            com.tyust.course.ui.system.glass.SegmentMaterialSource(glassBackdrop, trackBackgroundColor)
+        else glassBackdrop
+        val indicatorBackdrop = if (materialBackdrop != null && segmentsBackdrop != null) {
+            rememberCombinedBackdrop(materialBackdrop, segmentsBackdrop)
         } else {
-            glassBackdrop
+            materialBackdrop
         }
 
         // API 31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 GlassLens.kt）。
@@ -597,17 +600,17 @@ fun LiquidSegmentedControl(
             // 标签带上选项文字：屏幕上同时有多个分段控件，且尺寸可能相同
             // （登录页的「密码登录/Cookie登录」与课程页的「可选/已选」都是 381x126），
             // 只按尺寸命名会互相覆盖。
-            rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme, refractLabels,
+            rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme, refractLabels, glassBackdrop,
                 freshness = LocalPageGlassFreshness.current,
                 rasterizeOverlayOnCpu = true,
                 overlaySource = if (refractLabels) ({ coords -> segmentLabelsSnapshot.draw(this, coords) }) else null) { coords ->
-                with(glassBackdrop) { drawBackdrop(lensDensity, coords, null) }
+                with(requireNotNull(materialBackdrop)) { drawBackdrop(lensDensity, coords, null) }
             }
         } else {
             null
         }
         // 把锚点交给外层的 glassLensAnchor（它需要外层那块不动的坐标）
-        SideEffect { segLensAnchor = lensAnchor }
+        SideEffect { lensAnchor?.requireCurrentSource = !refractLabels; segLensAnchor = lensAnchor }
         // The region refreshes both after selection and after the underlying page settles.
 
         // One visible label row owns gestures and semantics on every API level.
@@ -749,8 +752,7 @@ fun LiquidSegmentedControl(
             scaleX = scale
             scaleY = scale
         }
-        val fallbackIndicatorColor = if (refractLabels) palette.solidSurface else
-            accent.copy(alpha = if (isLightTheme) .18f else .28f).compositeOver(palette.solidSurface)
+        val fallbackIndicatorColor = palette.solidSurface
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -809,6 +811,11 @@ fun LiquidSegmentedControl(
                                     drawRoundRect(fallbackIndicatorColor, Offset(left, top),
                                         androidx.compose.ui.geometry.Size(w, h),
                                         androidx.compose.ui.geometry.CornerRadius(h / 2f))
+                                    if (!refractLabels) drawRoundRect(
+                                        palette.onSurface.copy(alpha = if (accessibility.highContrast) .65f else .18f),
+                                        Offset(left, top), androidx.compose.ui.geometry.Size(w, h),
+                                        androidx.compose.ui.geometry.CornerRadius(h / 2f),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(.75.dp.toPx()))
                                 }
                             }
                     }
@@ -1053,7 +1060,6 @@ fun LiquidSegmentedControl(
                             drawRect(Color.Black.copy(0.1f), alpha = 1f - press)
                             drawRect(Color.Black.copy(alpha = 0.03f * press))
                         }
-                        if (!refractLabels && enabled) drawRect(accent.copy(alpha = if (isLightTheme) .10f else .16f))
                     }
                 )
             )

@@ -114,6 +114,8 @@ class GlassLensAnchor internal constructor(
     internal var version by mutableIntStateOf(0)
         private set
 
+    internal var requireCurrentSource = false
+
     private var uploadedVersion = -1
     private var overlayVersion by mutableIntStateOf(0)
     private var uploadedOverlayVersion = -1
@@ -220,6 +222,8 @@ class GlassLensAnchor internal constructor(
         if (size.width <= 0 || size.height <= 0) return null
         val coords = coordinates?.takeIf { it.isAttached } ?: return null
         if (needsCapture(coords)) queueCapture()
+        if (requireCurrentSource && (sourceFrame?.geometry !=
+            GlassLensCaptureGeometry.from(coords).fitPixelBudget(maxCapturePixels) || sourceFrame?.sourceRevision != version)) return null
         return size
     }
 
@@ -273,7 +277,7 @@ class GlassLensAnchor internal constructor(
                 GlassLensCaptureObserver.onTiming?.invoke(tag, "record", System.nanoTime() - recordStarted)
                 val generation = ++uploadSequence
                 val queuedAt = System.nanoTime()
-                val recording = GlassLensCaptureFrame(generation, geometry, combined, queuedAt)
+                val recording = GlassLensCaptureFrame(generation, geometry, combined, queuedAt, version)
                 captureFrame = recording
                 uploadedVersion = version
                 uploadedOverlayVersion = overlayVersion
@@ -880,7 +884,9 @@ private class GlassLensNode(
         // Keep a completed optical frame until its replacement is ready. Switching
         // to a plain source on every background revision produces visible flashes.
         // The renderer separately rejects mismatched source/coordinate generations.
-        val rendered = if (renderer.failed) null else renderer.latestFrame
+        val rendered = if (renderer.failed) null else renderer.latestFrame?.takeIf {
+            !anchor.requireCurrentSource || it.sourceGeneration == samplingFrame?.generation
+        }
         val frame = rendered?.bitmap
         if (frame != null && !frame.isRecycled) {
             // 尺寸不一致时**拉伸**而不是丢弃：上一帧的尺寸在布局收敛或动画中经常

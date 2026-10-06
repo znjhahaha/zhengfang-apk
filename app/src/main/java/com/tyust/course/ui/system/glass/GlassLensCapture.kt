@@ -64,7 +64,8 @@ internal data class GlassLensCaptureFrame(
     val generation: Int,
     val geometry: GlassLensCaptureGeometry,
     val node: RenderNode,
-    val queuedAtNanos: Long = 0L
+    val queuedAtNanos: Long = 0L,
+    val sourceRevision: Int = 0
 )
 
 /** Freezes glyph draw commands while their Compose draw nodes are still attached. */
