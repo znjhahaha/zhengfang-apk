@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit, parse_qs
 from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -122,13 +123,33 @@ class DeliveryTests(unittest.TestCase):
             report=Path(root)/'report'; p=payload(); env={'test':'signed'}
             def prepare(apk,receipt,channel,directory,budget): directory.mkdir(parents=True); return []
             def fetch(url,target,*args,**kwargs):
-                if url.endswith('.json'): Path(target).write_text('{}')
+                if urlsplit(url).path.endswith('.json'): Path(target).write_text('{}')
                 return True
             with patch.object(d,'prepare_static',side_effect=prepare), patch.object(d,'deploy') as deploy, patch.object(d,'fetch',side_effect=fetch), patch.object(d,'sign_manifest',return_value=env), patch.object(d,'verify_manifest',return_value=p), patch.object(d,'payload_for',return_value=p):
                 d.deploy_release('unused',p,'test','notes',report,d.Budget(),rounds=3,publish_branch=False)
                 self.assertEqual(deploy.call_count,4)
             result=json.loads(report.read_text()); self.assertEqual(result['result'],'verified')
             self.assertEqual(len(result['stages']),3)
+    def test_new_manifest_verification_bypasses_previous_edge_cache(self):
+        with tempfile.TemporaryDirectory() as root:
+            report=Path(root)/'report'; current=payload(); old=dict(current,revision=99)
+            def prepare(apk,receipt,channel,directory,budget): directory.mkdir(parents=True); return []
+            def fetch(url,target,*args,**kwargs):
+                if urlsplit(url).path.endswith('.json'):
+                    fresh=parse_qs(urlsplit(url).query).get('revision')==[str(current['revision'])] and kwargs.get('revalidate')
+                    Path(target).write_text(json.dumps(current if fresh else old))
+                return True
+            with patch.object(d,'prepare_static',side_effect=prepare), patch.object(d,'deploy') as deploy, patch.object(d,'fetch',side_effect=fetch), patch.object(d,'sign_manifest',return_value=current), patch.object(d,'verify_manifest',side_effect=lambda raw,*args: json.loads(raw) if isinstance(raw,bytes) else raw), patch.object(d,'payload_for',return_value=current):
+                d.deploy_release('unused',current,'test','notes',report,d.Budget(),rounds=3,publish_branch=False)
+                self.assertEqual(deploy.call_count,4)
+            self.assertEqual(json.loads(report.read_text())['result'],'verified')
+    def test_metadata_revalidation_keeps_https_and_transfer_limits(self):
+        with tempfile.TemporaryDirectory() as root:
+            budget=Mock();budget.remaining.return_value=10;budget.run.return_value=b'200'
+            d.fetch('https://dl-test.hidisiwa.xyz/test.json?revision=100',Path(root)/'json',budget,revalidate=True)
+            command=budget.run.call_args.args[0]
+            self.assertIn('Cache-Control: no-cache',command)
+            self.assertIn('--max-filesize',command);self.assertIn('=https',command)
     def test_cf_failure_does_not_publish_manifest(self):
         with tempfile.TemporaryDirectory() as root:
             report=Path(root)/'report'

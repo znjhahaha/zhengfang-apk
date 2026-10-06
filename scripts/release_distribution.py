@@ -178,13 +178,15 @@ def ensure_forward(previous, incoming):
         raise DeliveryError('Refusing same-version APK replacement')
 
 
-def fetch(url, target, budget, expected=None, maximum=60, allow_missing=False):
+def fetch(url, target, budget, expected=None, maximum=60, allow_missing=False, revalidate=False):
     if not valid_url(url):
         raise DeliveryError('Unapproved public download URL')
     cap = expected['size'] if expected else 128 * 1024
     command = ['curl', '--silent', '--show-error', '--location', '--max-redirs', '5', '--proto', '=https', '--proto-redir', '=https',
         '--connect-timeout', '10', '--max-time', str(max(1, int(budget.remaining(maximum)))), '--speed-time', '20', '--speed-limit', '1',
         '--max-filesize', str(cap), '--header', 'Accept-Encoding: identity', '--output', str(target), '--write-out', '%{http_code}', url]
+    if revalidate:
+        command[-1:-1] = ['--header', 'Cache-Control: no-cache']
     status = budget.run(command, 'public-download:'+urlsplit(url).hostname, maximum=maximum).decode().strip()
     if status == '404' and allow_missing:
         Path(target).unlink(missing_ok=True); return False
@@ -520,7 +522,11 @@ def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publi
                 if announcements is not None:
                     (directory/'announcement.json').write_text(json.dumps(announcements, ensure_ascii=False))
                 def verify_published():
-                    fetch('https://'+HOSTS[channel]+'/'+channel+'.json', Path(d)/'manifest.json', budget)
+                    # Staging read the previous latest URL, which an edge may still
+                    # cache for 60 seconds after deployment. Verify this exact new
+                    # revision without weakening signature or payload equality checks.
+                    fetch('https://'+HOSTS[channel]+'/'+channel+'.json?revision='+str(payload['revision']),
+                        Path(d)/'manifest.json', budget, revalidate=True)
                     if verify_manifest((Path(d)/'manifest.json').read_bytes(), channel) != payload:
                         raise DeliveryError('Published manifest differs; GitHub metadata not advanced')
                 try:
