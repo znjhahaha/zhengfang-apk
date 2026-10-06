@@ -59,7 +59,7 @@ class PluginServiceAccounts(private val app: Context) {
     }
     fun remove(pkg: PluginPackage, serverId: String, accountId: String) = synchronized(lock) {
         server(pkg, serverId)
-        if (accountId != "default" && accounts(pkg.manifest.id, serverId).none { it.getString("id") == accountId }) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务账号不存在")
+        if (accountId != "default" && accountId != selected(pkg.manifest.id, serverId) && accounts(pkg.manifest.id, serverId).none { it.getString("id") == accountId }) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务账号不存在")
         advance(pkg.manifest.id)
         val legacyScope = "service:${pkg.manifest.id}:$serverId\u0000$accountId\u0000${pkg.manifest.id}\u0000${!pkg.official}"
         for (scope in listOf(legacyScope, legacyScope + "\u0000" + server(pkg, serverId).getString("origin"))) {
@@ -70,6 +70,11 @@ class PluginServiceAccounts(private val app: Context) {
             .putString("selected:${key(pkg.manifest.id, serverId)}", if (accountId == selected(pkg.manifest.id, serverId)) UUID.randomUUID().toString() else selected(pkg.manifest.id, serverId))
             .putStringSet("retiredProfiles", profiles).commit())
         revision.value++
+    }
+    /** Recheck after confirmation; never clear a newly selected account from a stale page. */
+    fun clearCurrent(pkg: PluginPackage, serverId: String, expectedAccount: String) = synchronized(lock) {
+        if (selected(pkg.manifest.id, serverId) != expectedAccount) throw PluginException(PluginErrorCode.STALE_CONTEXT, "网站账号已切换，请重新打开页面")
+        remove(pkg, serverId, expectedAccount)
     }
     fun clearPlugin(pkg: PluginPackage) = synchronized(lock) {
         advance(pkg.manifest.id)

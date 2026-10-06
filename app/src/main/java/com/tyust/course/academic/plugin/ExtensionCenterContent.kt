@@ -9,6 +9,8 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tyust.course.manager.UserManager
@@ -30,6 +32,32 @@ import org.json.JSONObject
     fun pin(page: PluginPage) { if (pinned.size < 5) registry.customize(pinned + page.id) else replace = page }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("服务中心", style = MaterialTheme.typography.headlineSmall)
+        Text("插件页面", style = MaterialTheme.typography.titleSmall)
+        val pluginPages = pages.filter { it.pluginId != null }
+        if (pluginPages.isEmpty()) Text("安装插件后可在这里打开页面，也可固定到主导航。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        pluginPages.forEach { page ->
+            val pkg = packages.firstOrNull { it.manifest.id == page.pluginId }
+            SystemCard(onClick = { open(page.id) }, contentPadding = PaddingValues(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(when (page.icon) {
+                        "book", "study" -> Icons.Outlined.MenuBook
+                        "tool", "settings" -> Icons.Outlined.Build
+                        "forum", "chat" -> Icons.Outlined.Forum
+                        else -> if (page.renderer == "web") Icons.Outlined.Language else Icons.Outlined.Extension
+                    }, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(page.title, style = MaterialTheme.typography.titleMedium)
+                        Text(pkg?.manifest?.json?.optString("description")?.takeIf { it.isNotBlank() } ?: pkg?.manifest?.name.orEmpty(),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    SystemActionMenu("管理页面", buildList {
+                        if (page.id !in pinned) add(SystemMenuAction("固定到主导航", Icons.Outlined.PushPin, { pin(page) }))
+                        add(SystemMenuAction("设为启动页", Icons.Outlined.Home, { registry.setStartup(page.id); GlassToaster.show("已设置启动页") }))
+                        add(SystemMenuAction("移除页面入口", Icons.Outlined.RemoveCircleOutline, { registry.unregister(requireNotNull(page.pluginId), page.id) }))
+                    })
+                }
+            }
+        }
         InsetGroupedSection(header = "主导航", footer = "最多五项，设置始终保留。移除入口不会删除服务器数据。") {
             pinned.forEachIndexed { index, route -> val page = registry.page(route) ?: return@forEachIndexed
                 InsetGroupedRow(title = page.title, subtitle = if (page.pluginId == null) "内置页面" else page.pluginId,
@@ -41,20 +69,15 @@ import org.json.JSONObject
             }
             InsetGroupedRow(title = "恢复默认导航", onClick = { registry.restoreDefaults() }, showDivider = false)
         }
-        InsetGroupedSection(header = "全部页面") {
-            pages.filter { it.pluginId != null || UserManager.getInstance().isLoggedIn }.forEach { page ->
-                var menu by remember(page.id) { mutableStateOf(false) }
-                InsetGroupedRow(title = page.title, subtitle = page.pluginId ?: "内置页面", icon = Icons.Outlined.Extension, onClick = { open(page.id) }, trailing = {
-                    Box { SystemIconButton(Icons.Outlined.MoreHoriz, "管理页面", { menu = true })
-                        DropdownMenu(menu, { menu = false }) {
-                            if (page.id !in pinned) DropdownMenuItem(text = { Text("固定到主导航") }, onClick = { menu = false; pin(page) })
-                            DropdownMenuItem(text = { Text("设为启动页") }, onClick = { menu = false; registry.setStartup(page.id); GlassToaster.show("已设置启动页") })
-                            if (page.pluginId != null) DropdownMenuItem(text = { Text("移除页面入口") }, onClick = { menu = false; registry.unregister(page.pluginId, page.id) })
-                        }
-                    }
+        if (UserManager.getInstance().isLoggedIn) InsetGroupedSection(header = "内置页面") {
+            pages.filter { it.pluginId == null }.forEach { page ->
+                InsetGroupedRow(title = page.title, onClick = { open(page.id) }, trailing = {
+                    SystemActionMenu("管理${page.title}", buildList {
+                        if (page.id !in pinned) add(SystemMenuAction("固定到主导航", Icons.Outlined.PushPin, { pin(page) }))
+                        add(SystemMenuAction("设为启动页", Icons.Outlined.Home, { registry.setStartup(page.id); GlassToaster.show("已设置启动页") }))
+                    })
                 })
             }
-            if (pages.none { it.pluginId != null }) InsetGroupedRow(title = "还没有插件页面", subtitle = "安装插件后，页面会先出现在这里，由你决定是否固定到导航。", showDivider = false)
         }
         val templates = packages.filter { PluginPages.available(it) && it.manifest.isNative }.flatMap { pkg ->
             pkg.manifest.contributes.optJSONArray("pages")?.let(PluginJson::objects).orEmpty().filter { p -> pages.none { it.pluginId == pkg.manifest.id && it.templateId == p.getString("id") } }.map { pkg to it }

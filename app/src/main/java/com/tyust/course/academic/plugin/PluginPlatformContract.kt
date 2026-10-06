@@ -42,13 +42,32 @@ object PluginPlatformContract {
         unique(c.optJSONArray("commands")); unique(c.optJSONArray("settings"))
         for (page in PluginJson.objects(c.getJSONArray("pages"))) {
             unique(page.optJSONArray("requires"), "name")
+            page.optJSONObject("web")?.let { web ->
+                if (page.optString("renderer") != "web" || m.optInt("minAppVersionCode", 0) < 107) invalid("网页设置需要网页页面与 minAppVersionCode 107")
+                for (origin in PluginJson.strings(web.optJSONArray("navigationOrigins"))) {
+                    val uri = runCatching { URI(origin) }.getOrNull() ?: invalid("无效网页跳转来源")
+                    if (uri.scheme != "https" || PluginWebPolicy.exactOrigin(origin) != origin || uri.rawPath.orEmpty().isNotEmpty() ||
+                        uri.rawQuery != null || uri.rawFragment != null || uri.port == 443 || uri.host != uri.host?.lowercase()) invalid("网页跳转需要准确的规范 HTTPS 来源")
+                }
+            }
             if (page.optString("renderer") == "web") {
                 val server = servers.firstOrNull { it.getString("id") == page.optString("serverId") } ?: invalid("网页需要声明服务器")
                 val path = page.optString("path", "/")
                 val uri = runCatching { URI(path) }.getOrNull() ?: invalid("无效网页路径")
-                if (!path.startsWith("/") || path.startsWith("//") || uri.rawAuthority != null || uri.rawFragment != null || path.contains('\\') || path.contains('%') || uri.normalize() != uri) invalid("无效网页路径")
+                if (!path.startsWith("/") || path.startsWith("//") || uri.rawAuthority != null || path.contains('\\') ||
+                    page.optJSONObject("web")?.optString("mode") != "browser" && (uri.rawFragment != null || path.contains('%') || uri.normalize() != uri)) invalid("无效网页路径")
                 val url = server.getString("origin") + path
-                PluginNetworkPolicy(manifest.network).requireAllowed(okhttp3.HttpUrl.Companion.run { url.toHttpUrl() }, "GET", "query", null)
+                val target = okhttp3.HttpUrl.Companion.run { url.toHttpUrl() }
+                if (page.optJSONObject("web")?.optString("mode") == "browser") {
+                    // A browser entry may contain an SPA fragment and encoded path. It
+                    // does not grant network.request, whose stricter policy is unchanged.
+                    if (manifest.network.none { rule ->
+                        val prefix = rule.getString("pathPrefix").trimEnd('/').ifEmpty { "/" }
+                        rule.getString("origin") == server.getString("origin") &&
+                            "GET" in PluginJson.strings(rule.getJSONArray("methods")) && "query" in PluginJson.strings(rule.getJSONArray("purposes")) &&
+                            (prefix == "/" || target.encodedPath == prefix || target.encodedPath.startsWith("$prefix/"))
+                    }) invalid("网页入口需要对应的来源声明")
+                } else PluginNetworkPolicy(manifest.network).requireAllowed(target, "GET", "query", null)
             } else {
                 if (page.has("path")) invalid("只有网页可以声明地址路径")
                 if (page.has("serverId") && servers.none { it.getString("id") == page.getString("serverId") }) invalid("原生服务页面需要已声明的服务器")

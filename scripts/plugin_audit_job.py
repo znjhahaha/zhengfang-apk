@@ -59,7 +59,7 @@ def main():
         if public!=metadata.get('signingPublicKey'):raise RuntimeError('SIGNING_IDENTITY_MISMATCH')
         if self_test:
             files=['security/test-isolated.mjs']
-            for name in ['tests/course-pagination.test.mjs','tests/wiki-examples.test.mjs']:
+            for name in ['tests/course-pagination.test.mjs','tests/wiki-examples.test.mjs','tests/web-browser.test.mjs']:
                 if (kit/name).is_file():files.append(name)
             result=subprocess.run(['node','--test','--test-reporter=tap','--test-concurrency=1',*files],cwd=kit,env=clean,capture_output=True,timeout=180)
             if result.returncode:raise RuntimeError('ISOLATED_SELF_TEST_FAILED')

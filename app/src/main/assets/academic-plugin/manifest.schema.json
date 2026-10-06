@@ -563,6 +563,30 @@
                   "additionalProperties": false
                 },
                 "maxItems": 64
+              },
+              "web": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "browser",
+                      "bridge"
+                    ]
+                  },
+                  "navigationOrigins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

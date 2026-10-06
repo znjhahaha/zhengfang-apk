@@ -112,7 +112,7 @@ object AcademicProviderRegistry {
         val metadata = if (pkg.official) store?.metadata(manifest.id) else null
         val aliases = listOf("matches", "aliases").flatMap { metadata?.optJSONArray(it)?.let(PluginJson::objects).orEmpty() }
         val declared = if (manifest.isNative) manifest.json.optJSONArray("matches")?.let(PluginJson::objects).orEmpty() else emptyList()
-        if (manifest.isNative && !manifest.isAcademic && declared.isEmpty() && aliases.isEmpty()) return true
+        if (manifest.isNative && !manifest.isAcademic && declared.isEmpty() && aliases.isEmpty() && !manifest.json.has("school")) return true
         return (aliases + declared + listOfNotNull(PluginSchoolMatcher.primary(manifest))).any { PluginSchoolMatcher.matches(it, school) }
     }
     private fun schoolPrefs() = app?.getSharedPreferences("plugin-school-bindings", Context.MODE_PRIVATE)

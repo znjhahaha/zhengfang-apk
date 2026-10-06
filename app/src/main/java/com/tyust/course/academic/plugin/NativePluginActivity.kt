@@ -27,7 +27,7 @@ class NativePluginActivity : ComponentActivity() {
             ?: PluginPages.registry.pages().firstOrNull { it.pluginId == pluginId }?.id.orEmpty()
         val first = if (initial.contains('/') || initial.isBlank()) initial else "$pluginId/$initial"
         val command = intent.getStringExtra("commandId")
-        setContent { CourseSelectorTheme { GlassWindowHost {
+        setContent { CourseSelectorTheme {
             var history by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(JSONArray().put(JSONObject().put("route", first).put("params", runCatching { JSONObject(intent.getStringExtra("pageParams") ?: "{}") }.getOrDefault(JSONObject())).put("command", command)).toString()) }
             val revision by PluginPages.revision.collectAsState()
             val frames = PluginJson.objects(JSONArray(history))
@@ -38,7 +38,7 @@ class NativePluginActivity : ComponentActivity() {
             fun back() { if (frames.size > 1) history = JSONArray(frames.dropLast(1)).toString() else finish() }
             BackHandler { back() }
             LaunchedEffect(revision) { if (activeCommand == null && page == null) { val remaining = frames.filter { PluginPages.registry.page(it.optString("route")) != null }; if (remaining.isEmpty()) finish() else history = JSONArray(remaining).toString() } }
-            GlassPageScaffold(title = page?.title ?: "插件工具", onBack = { back() }) { padding ->
+            val body: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit = { padding ->
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     PluginPageContent(route, onNavigate = { requested, params ->
                         val next = if (requested.contains('/') || requested.startsWith("app.")) requested else "$pluginId/$requested"
@@ -47,6 +47,9 @@ class NativePluginActivity : ComponentActivity() {
                     }, onBack = { back() }, commandId = activeCommand, pluginId = pluginId, params = frame.optJSONObject("params") ?: JSONObject())
                 }
             }
+            GlassWindowHost(capturePage = page?.renderer != "web") {
+            if (page?.renderer == "web") body(androidx.compose.foundation.layout.PaddingValues())
+            else GlassPageScaffold(title = page?.title ?: "插件工具", onBack = { back() }, content = body)
         } } }
     }
     companion object {

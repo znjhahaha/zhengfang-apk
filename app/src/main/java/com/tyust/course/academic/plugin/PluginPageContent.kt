@@ -56,7 +56,9 @@ internal data class PagePrompt(val title: String, val message: String, val chall
     val accounts = remember(context) { PluginServiceAccounts(context) }
     val serviceAccount = serverId?.let { accounts.selected(pkg.manifest.id, it) }
     val pageParams = JSONObject((page?.params ?: JSONObject()).toString()).apply { params.keys().forEach { put(it, params.get(it)) } }
-    val scopeKey = "${pkg.digest}:$route:$commandId:$serviceAccount:${academicState.token}:$accountRevision:${PluginJson.canonical(pageParams)}"
+    val independentBrowser = template?.optJSONObject("web")?.optString("mode") == "browser"
+    val academicScope = PluginWebPolicy.academicScope(template, academicState.token)
+    val scopeKey = "${pkg.digest}:$route:$commandId:$serviceAccount:${academicScope}:$accountRevision:${PluginJson.canonical(pageParams)}"
     key(scopeKey) {
         val owner: PluginPageRetainer = androidx.lifecycle.viewmodel.compose.viewModel()
         val app = context.applicationContext
@@ -64,7 +66,7 @@ internal data class PagePrompt(val title: String, val message: String, val chall
             val session = if (serverId != null) accounts.session(pkg, serverId)
                 else PluginLegacyData.session(app, pkg, UserManager.getInstance().currentSchool, UserManager.getInstance().currentAccountStorageKey)
             PluginPageLifetime(app, pkg, session) {
-                !session.retired && PluginServiceAccounts.revision.value == accountRevision && UserManager.getInstance().sessionState.state.value.token == academicState.token &&
+                !session.retired && PluginServiceAccounts.revision.value == accountRevision && (independentBrowser || UserManager.getInstance().sessionState.state.value.token == academicState.token) &&
                 PluginServiceAccounts(app).current(pkg, session) && AcademicProviderRegistry.isCurrentPackage(pkg.manifest.id, pkg.digest) && AcademicProviderRegistry.isEnabled(pkg.manifest.id) &&
                 (commandId != null || PluginPages.registry.page(route) != null) && (serverId == null || PluginServiceAccounts(app).selected(pkg.manifest.id, serverId) == serviceAccount)
             }
@@ -80,7 +82,7 @@ internal data class PagePrompt(val title: String, val message: String, val chall
             if ((activityContext as? android.app.Activity)?.isChangingConfigurations != true) owner.release(lifetime)
         } }
         if (page?.renderer == "web") {
-            PluginWebPage(pkg, page.copy(params = pageParams), session, interaction, active)
+            PluginWebPage(pkg, page.copy(params = pageParams), session, interaction, active, onBack, scopeKey)
         } else if (commandId != null) {
             var commandStarted by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(commandId) {

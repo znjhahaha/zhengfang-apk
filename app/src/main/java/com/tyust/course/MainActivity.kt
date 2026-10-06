@@ -464,12 +464,12 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
             null
         }
 
-        // 底栏位于该层外，只能单向采样壁纸与页面内容。
-        val navBarBackdrop = if (useGlass) {
-            rememberLayerBackdrop()
-        } else {
-            null
-        }
+        // WebView is excluded for the entire navigation overlap, including an outgoing
+        // web page. Glass chrome uses wallpaper; no Chromium display lists are replayed.
+        val webContentPresent = (navigationMotion.pages.keys.mapNotNull { routes.getOrNull(it) } + selectedPage)
+            .any { route -> registeredPages.any { it.id == route && it.renderer == "web" } }
+        val capturedPageBackdrop = if (useGlass && !webContentPresent) rememberLayerBackdrop() else null
+        val navBarBackdrop = capturedPageBackdrop ?: wallpaperBackdrop
 
         // 顶栏把底边写进这里，通知覆盖层据此落位，避免压住顶栏按钮
         val noticeAnchorState = remember { NoticeAnchorState() }
@@ -522,7 +522,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         val modalLensAnchor = if (navBarBackdrop != null) {
             com.tyust.course.ui.system.glass.rememberGlassLensRegion(
                 tag = "app-modal",
-                keys = arrayOf(selectedTab, session.token, dialogHostState.currentDialog),
+                keys = arrayOf(selectedTab, session.token, dialogHostState.currentDialog, navBarBackdrop),
                 freshness = lensFreshness,
                 // 壁纸同上，由锚点自己盯
                 drawSource = { coords ->
@@ -557,7 +557,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
         ) {
             Box(
                 modifier = Modifier.fillMaxSize().then(
-                    if (useGlass && navBarBackdrop != null) Modifier.layerBackdrop(navBarBackdrop)
+                    if (capturedPageBackdrop != null) Modifier.layerBackdrop(capturedPageBackdrop)
                     else Modifier
                 ).then(
                     // 全局折射区域的取景框：全屏。控件的采样点会跑到自己轮廓之外，

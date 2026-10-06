@@ -25,7 +25,7 @@ private val LocalGlassWindowOwner = staticCompositionLocalOf<android.view.View?>
 
 /** Each actual window owns its sources; pages inside that window reuse the provided locals. */
 @Composable
-fun GlassWindowHost(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun GlassWindowHost(modifier: Modifier = Modifier, capturePage: Boolean = true, content: @Composable BoxScope.() -> Unit) {
     val view = LocalView.current
     val appWallpaper = com.tyust.course.ui.theme.rememberAppWallpaperStyle()
     if (LocalGlassWindowOwner.current === view) {
@@ -33,8 +33,8 @@ fun GlassWindowHost(modifier: Modifier = Modifier, content: @Composable BoxScope
         return
     }
     val wallpaper = if (isBackdropSupported()) rememberLayerBackdrop() else null
-    val page = if (wallpaper != null) rememberLayerBackdrop() else null
-    val modal = if (wallpaper != null && page != null) rememberCombinedBackdrop(wallpaper, page) else null
+    val page = if (wallpaper != null && capturePage) rememberLayerBackdrop() else null
+    val modal = if (wallpaper != null && page != null) rememberCombinedBackdrop(wallpaper, page) else wallpaper
     val density = LocalDensity.current
     val dialogs = rememberDialogHostState()
     val controlAnchor = if (wallpaper != null) rememberGlassLensRegion("window-control") { coordinates ->

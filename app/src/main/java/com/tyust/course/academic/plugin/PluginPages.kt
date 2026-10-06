@@ -30,7 +30,7 @@ object PluginPages {
         val school = UserManager.getInstance().currentSchool
         return AcademicProviderRegistry.isEnabled(pkg.manifest.id) &&
             (school?.let { AcademicProviderRegistry.isEnabled(pkg.manifest.id, it) && AcademicProviderRegistry.matches(pkg, it) }
-                ?: (!pkg.manifest.isAcademic && (pkg.manifest.json.optJSONArray("matches")?.length() ?: 0) == 0)) &&
+                ?: (!pkg.manifest.isAcademic && !pkg.manifest.json.has("school") && (pkg.manifest.json.optJSONArray("matches")?.length() ?: 0) == 0)) &&
             runCatching { PluginPlatformContract.requireCompatible(pkg.manifest, com.tyust.course.BuildConfig.VERSION_CODE, capabilities()) }.isSuccess
     }
     fun refresh() {
