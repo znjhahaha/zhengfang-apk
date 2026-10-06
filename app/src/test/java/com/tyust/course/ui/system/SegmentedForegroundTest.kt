@@ -39,7 +39,7 @@ class SegmentedForegroundTest {
             SideEffect { view = current }
             MaterialTheme { Box(Modifier.fillMaxSize().background(Color.White)) {
                 LiquidSegmentedControl(labels, selected, { selected = it }, Modifier.width(width).testTag("segments"),
-                    refractLabels = false, showTrack = false)
+                    refractLabels = false, stableLabelRefraction = true, showTrack = false)
             } }
         }
         for (w in listOf(360.dp, 220.dp, 360.dp)) {

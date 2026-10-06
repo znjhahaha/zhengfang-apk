@@ -122,7 +122,7 @@ internal fun CollapsingGlassBrowser(
                             }
                             LiquidSegmentedControl(tabs, selectedTab, onTabChange, Modifier.fillMaxWidth()
                                 .then(if (blocked) Modifier.clearAndSetSemantics {} else Modifier)
-                                .testTag("plugin-tabs"), height = tabHeight, showTrack = false, refractLabels = false)
+                                .testTag("plugin-tabs"), height = tabHeight, showTrack = false, refractLabels = false, stableLabelRefraction = true)
                         }
                     }
                 }

@@ -677,10 +677,11 @@ fun Modifier.glassLens(
     optics: GlassLensOpticsProvider,
     scale: GlassLensScale? = null,
     shape: Shape? = null,
-    drawState: GlassLensDrawState? = null
+    drawState: GlassLensDrawState? = null,
+    drawPendingSource: Boolean = true
 ): Modifier {
     if (anchor == null || !isGlassLensApplicable()) return this
-    return this then GlassLensElement(anchor, optics, scale, shape, drawState)
+    return this then GlassLensElement(anchor, optics, scale, shape, drawState, drawPendingSource)
 }
 
 private data class GlassLensElement(
@@ -688,10 +689,11 @@ private data class GlassLensElement(
     val optics: GlassLensOpticsProvider,
     val scale: GlassLensScale?,
     val shape: Shape?,
-    val drawState: GlassLensDrawState?
+    val drawState: GlassLensDrawState?,
+    val drawPendingSource: Boolean
 ) : ModifierNodeElement<GlassLensNode>() {
 
-    override fun create(): GlassLensNode = GlassLensNode(anchor, optics, scale, shape, drawState)
+    override fun create(): GlassLensNode = GlassLensNode(anchor, optics, scale, shape, drawState, drawPendingSource)
 
     override fun update(node: GlassLensNode) {
         node.anchor = anchor
@@ -699,6 +701,7 @@ private data class GlassLensElement(
         node.scale = scale
         node.shape = shape
         node.drawState = drawState
+        node.drawPendingSource = drawPendingSource
     }
 }
 
@@ -708,7 +711,8 @@ private class GlassLensNode(
     var optics: GlassLensOpticsProvider,
     var scale: GlassLensScale?,
     var shape: Shape?,
-    var drawState: GlassLensDrawState?
+    var drawState: GlassLensDrawState?,
+    var drawPendingSource: Boolean
 ) : Modifier.Node(), DrawModifierNode, GlobalPositionAwareModifierNode {
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -877,7 +881,7 @@ private class GlassLensNode(
         updateClip(w, h, corners, t)
 
         if (useLiveSource) {
-            drawFallback(left, top, w, h, axes, t, optics.vibrancy, useLiveSource = true)
+            if (drawPendingSource) drawFallback(left, top, w, h, axes, t, optics.vibrancy, useLiveSource = true)
             return
         }
 
@@ -912,7 +916,7 @@ private class GlassLensNode(
                 // Only newly exposed pixels need the current, unrefracted source.
                 val uncovered = canvas.save()
                 canvas.clipOutPath(previousFrameClip)
-                drawFallback(left, top, w, h, axes, t, optics.vibrancy)
+                if (drawPendingSource) drawFallback(left, top, w, h, axes, t, optics.vibrancy)
                 canvas.restoreToCount(uncovered)
                 canvas.drawBitmap(frame, frameMatrix, paint)
             } else {
@@ -927,7 +931,7 @@ private class GlassLensNode(
                     System.nanoTime() - samplingFrame.queuedAtNanos)
             }
         } else {
-            drawFallback(left, top, w, h, axes, t, optics.vibrancy)
+            if (drawPendingSource) drawFallback(left, top, w, h, axes, t, optics.vibrancy)
         }
 
         // 元素级失败（如这台设备的 FBO 建不起来）：上面的 stale latest / 兜底已

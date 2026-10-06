@@ -87,7 +87,7 @@ internal fun MeasuredGradesHeader(
                 }
                 LiquidSegmentedControl(tabs, selected, onSelect,
                     modifier = Modifier.testTag("grades-segments"), height = 52.dp - 4.dp * p,
-                    refractLabels = false)
+                    refractLabels = false, stableLabelRefraction = true)
                 TopBarActionRail(modifier = Modifier.testTag("grades-actions")) {
                     action(0, Icons.Default.Share, "导出成绩", onShare, enabled = showShare && shareEnabled && !refreshing,
                         presence = share)

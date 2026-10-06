@@ -65,7 +65,7 @@ private fun BrowserPreview(dark: Boolean, onDarkChange: (Boolean) -> Unit, onBac
         LocalModalBackdrop provides LocalModalBackdrop.current.takeIf { glass }
     ) {
         MaterialTheme {
-            CollapsingGlassBrowser("组件预览", "收起页面与浮动面板 · 模拟数据", if (tab == 0) discovery else installed,
+            CollapsingGlassBrowser("组件预览", "文字透镜与浮动面板 · 模拟数据", if (tab == 0) discovery else installed,
                 onBack, listOf("发现", "已安装"), tab, { tab = it }, panelActive = panel != null,
                 actions = {
                     GlassSearchFilterPanel(panel, { focus.clearFocus(); panel = it }, reduceMotion = reduced,
