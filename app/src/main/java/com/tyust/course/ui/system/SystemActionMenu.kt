@@ -56,10 +56,12 @@ fun SystemActionMenu(description: String, actions: List<SystemMenuAction>, modif
     val liveBodyHeight = rememberUpdatedState(bodyHeight)
     val liveOpensUp = rememberUpdatedState(opensUp)
     val menu: @Composable () -> Unit = {
+        // Read presentation state in the overlay composition, including its outer
+        // measurement. A captured zero height can otherwise keep the first open hidden.
+        val progress = motion.value.coerceIn(0f, 1f)
+        val bodyHeight = liveBodyHeight.value
         val backdrop = LocalModalBackdrop.current?.takeIf { isBackdropSupported() && LocalOverlayBody.current }
         BoxWithConstraints(Modifier.fillMaxWidth().height(bodyHeight * progress).clip(RoundedCornerShape(0.dp))) {
-            val progress = motion.value.coerceIn(0f, 1f)
-            val bodyHeight = liveBodyHeight.value
             val finalWidth = maxWidth
             Column(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).width(finalWidth).requiredHeight(bodyHeight).graphicsLayer {
                     alpha = progress

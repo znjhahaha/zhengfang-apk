@@ -219,6 +219,13 @@ import org.json.JSONObject
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                         // shouldOverrideUrlLoading is not called for POST. Observe method only;
                         // never intercept bodies, cookies or headers, and never replay a POST on restore.
+                        if (request.isForMainFrame && !policy.allows(request.url.toString())) {
+                            // Enforce the same origin scope before a form request reaches
+                            // the network; onPageStarted alone can arrive too late.
+                            return WebResourceResponse("text/plain", "UTF-8", 403, "Navigation outside declared origins",
+                                mapOf("Cache-Control" to "no-store"),
+                                "此页面需在浏览器中继续，请通过网页选项打开。".byteInputStream())
+                        }
                         if (request.isForMainFrame && web === view) state.canReplay = request.method.equals("GET", true)
                         return null
                     }
