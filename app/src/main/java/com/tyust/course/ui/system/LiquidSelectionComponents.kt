@@ -1,5 +1,7 @@
 package com.tyust.course.ui.system
 
+import androidx.compose.ui.platform.testTag
+
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.scale
 
@@ -446,8 +448,6 @@ fun LiquidSegmentedControl(
     val optionCount = options.size
     val stableLabels = remember(options) { com.tyust.course.ui.system.glass.SegmentLabelSource(options.size) }
     var stableCoordinates by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
-    var stableLabelAnchor by remember { mutableStateOf<GlassLensAnchor?>(null) }
-    val stableDrawState = remember { com.tyust.course.ui.system.glass.GlassLensDrawState() }
     val clampedSelectedIndex = selectedIndex.coerceIn(0, optionCount - 1)
     val glassBackdrop = backdrop?.takeIf { isBackdropSupported() }
     val useGlass = glassBackdrop != null
@@ -499,7 +499,6 @@ fun LiquidSegmentedControl(
                 clip = false
             }
             .glassLensAnchor(segLensAnchor)
-            .glassLensAnchor(stableLabelAnchor)
             .onGloballyPositioned { stableCoordinates = it; stableLabels.resize(it.size) }
     ) {
         val density = LocalDensity.current
@@ -592,20 +591,26 @@ fun LiquidSegmentedControl(
         val materialBackdrop = if (!refractLabels && glassBackdrop != null)
             com.tyust.course.ui.system.glass.SegmentMaterialSource(glassBackdrop, trackBackgroundColor)
         else glassBackdrop
-        val indicatorBackdrop = if (materialBackdrop != null && segmentsBackdrop != null) {
+        val stableOptics = stableLabelRefraction && labelContent == null && useGlass && !accessibility.highContrast
+        val indicatorBackdrop = if (materialBackdrop != null && stableOptics) {
+            // Like the course tabs, disperse the composited material + tinted glyphs.
+            // Dispersing a transparent glyph texture separately mixes empty RGB with
+            // glyph coverage and creates dark/primary-colour fragments at the rim.
+            com.tyust.course.ui.system.glass.SegmentRefractionSource(materialBackdrop, stableLabels,
+                if (enabled) accent else palette.onSurface.copy(alpha = .38f))
+        } else if (materialBackdrop != null && segmentsBackdrop != null) {
             rememberCombinedBackdrop(materialBackdrop, segmentsBackdrop)
         } else {
             materialBackdrop
         }
 
-        val stableOptics = stableLabelRefraction && labelContent == null && useGlass && !accessibility.highContrast
-        val stableBackdrop = if (stableOptics) rememberLayerBackdrop(onDraw = { stableLabels.draw(this, accent) }) else null
-        if (stableBackdrop != null) Box(Modifier.fillMaxSize().clearAndSetSemantics { }.layerBackdrop(stableBackdrop))
-        val textLensAnchor = if (stableOptics) rememberGlassLensRegion("seg-labels-" + options.joinToString("_"),
-            stableLabels.revision, accent, maxCapturePixels = 400_000, rasterizeOverlayOnCpu = true) { _ -> stableLabels.draw(this, accent) } else null
-        SideEffect { textLensAnchor?.requireCurrentSource = true; stableLabelAnchor = textLensAnchor }
-        fun textFrameReady(): Boolean = stableOptics && stableLabels.ready &&
-            (hasRealLens || stableDrawState.hasBackground)
+        fun textFrameReady(): Boolean {
+            stableLabels.revision // Redraw the mask after fonts/layout change.
+            // Both the optical frame and its synchronous backdrop fallback now
+            // contain tinted glyphs. Leaving ordinary text inside the fallback
+            // would paint the original colour over it a second time.
+            return stableOptics && stableLabels.ready
+        }
         val textMask: androidx.compose.ui.graphics.drawscope.ContentDrawScope.() -> Unit = {
             val contentScope = this
             if (!textFrameReady()) drawContent() else {
@@ -624,17 +629,23 @@ fun LiquidSegmentedControl(
         // API 31/32：平台没有 AGSL，改用离屏 ES 2.0 做真折射（见 GlassLens.kt）。
         // 结构与 CapsuleNavigationBar 一致：锚点挂在**不随滑块移动**的外层，
         // 底图上传一次，滑块滑动时只改采样窗口。
-        // The background stays sharp; the separate label overlay keeps real text
-        // refraction without rereading the page whenever a glyph changes.
+        // Cache material and immutable glyphs separately, then composite them BEFORE
+        // a single optical pass, matching the course tabs on both platform paths.
         val lensDensity = LocalDensity.current
         val lensAnchor = if (glassBackdrop != null) {
             // 标签带上选项文字：屏幕上同时有多个分段控件，且尺寸可能相同
             // （登录页的「密码登录/Cookie登录」与课程页的「可选/已选」都是 381x126），
             // 只按尺寸命名会互相覆盖。
             rememberGlassLensRegion("seg-" + options.joinToString("_"), isLightTheme, refractLabels, glassBackdrop,
+                stableOptics, if (stableOptics) accent else null, enabled,
                 freshness = LocalPageGlassFreshness.current,
                 rasterizeOverlayOnCpu = true,
-                overlaySource = if (refractLabels) ({ coords -> segmentLabelsSnapshot.draw(this, coords) }) else null) { coords ->
+                overlaySource = when {
+                    stableOptics -> ({ _ -> stableLabels.draw(this,
+                        if (enabled) accent else palette.onSurface.copy(alpha = .38f)) })
+                    refractLabels -> ({ coords -> segmentLabelsSnapshot.draw(this, coords) })
+                    else -> null
+                }) { coords ->
                 with(requireNotNull(materialBackdrop)) { drawBackdrop(lensDensity, coords, null) }
             }
         } else {
@@ -758,7 +769,10 @@ fun LiquidSegmentedControl(
                         if (stableOptics && parent?.isAttached == true && child?.isAttached == true && layout != null) {
                             val before = stableLabels.revision
                             stableLabels.update(index, layout, parent.localPositionOf(child))
-                            if (before != stableLabels.revision) { stableDrawState.hasBackground = false; textLensAnchor?.invalidate() }
+                            if (before != stableLabels.revision) {
+                                indicatorDrawState.hasBackground = false
+                                lensAnchor?.invalidateOverlay()
+                            }
                         }
                     }
                     SideEffect { updateGlyph() }
@@ -930,6 +944,7 @@ fun LiquidSegmentedControl(
 
             Box(
                 modifier = indicatorBaseModifier
+                    .testTag("segment-background-lens")
                     // API31/32 真折射：画在 drawBackdrop 之前，所以它提供背景，
                     // 库那层的 surface / highlight / shadow 仍叠在上面。
                     .glassLens(
@@ -1110,26 +1125,6 @@ fun LiquidSegmentedControl(
                     }
                 )
             )
-        }
-
-        if (stableBackdrop != null) {
-            Box(indicatorBaseModifier
-                .glassLens(anchor = textLensAnchor, optics = { w, h ->
-                    glassLensOpticsFrom(indicatorMaterial, density, minOf(w,h)/2f, minOf(w,h),
-                        interactionProgress = dragAnimation.pressProgress,
-                        motionIntensity = motionIntensityFromVelocity(dragAnimation.velocity * segmentWidthPx, indicatorMaterial.optics.velocityForFullEffect),
-                        pressScalesRefraction = true, refractionFloor = refractionFloor, chromaticAberrationAtRest = false)
-                }, scale = { _, _ -> segIndicatorScale(dragAnimation) }, drawState = stableDrawState, drawPendingSource = false)
-                .then(if (hasRealLens && stableLabels.ready) Modifier.drawBackdrop(
-                    backdrop = stableBackdrop, shape = { Capsule() },
-                    effects = {
-                        val params = resolvePhysicalLens(this, indicatorMaterial, size.minDimension/2f, size.minDimension,
-                            interactionProgress = dragAnimation.pressProgress, enableBlur = false,
-                            allowChromaticAberration = false, pressScalesRefraction = true, refractionFloor = refractionFloor)
-                        if (params.useLens) lens(params.refractionHeightPx, params.refractionAmountPx, false)
-                    }, highlight = { null }, shadow = { null },
-                    layerBlock = { val t = segIndicatorScale(dragAnimation); scaleX = t.scaleX; scaleY = t.scaleY }
-                ) else Modifier))
         }
 
         // Child graphics layers animate without rerecording an ancestor Picture.
