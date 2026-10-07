@@ -15,13 +15,12 @@ enum class StartupPage(val route: String, val label: String) {
     }
 }
 
-/** App preference shared across accounts; activity restoration still retains its current page. */
+/** Legacy built-in preference, read only during migration to the page registry. */
 class StartupPagePreferences(private val preferences: SharedPreferences) {
-    fun read(): StartupPage = StartupPage.decode(runCatching { preferences.getString(KEY, null) }.getOrNull())
-
-    fun write(page: StartupPage) {
-        preferences.edit().putString(KEY, page.route).apply()
-    }
+    fun readExplicit(): StartupPage? = runCatching {
+        val value = preferences.getString(KEY, null)
+        StartupPage.entries.firstOrNull { it.route == value }
+    }.getOrNull()
 
     companion object {
         private const val KEY = "startup_page"

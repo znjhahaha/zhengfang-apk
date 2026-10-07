@@ -11,13 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.tyust.course.manager.StartupPage
+import com.tyust.course.academic.plugin.PluginPage
 import com.tyust.course.ui.system.SystemDialog
 import com.tyust.course.ui.system.SystemPicker
 import com.tyust.course.ui.system.SystemPrimaryButton
 
 @Composable
-fun StartupPageSettingsDialog(page: StartupPage, onPageChange: (StartupPage) -> Unit, onDismiss: () -> Unit) {
+fun StartupPageSettingsDialog(pages: List<PluginPage>, selectedRoute: String, onPageChange: (String) -> Unit, onDismiss: () -> Unit) {
     SystemDialog(
         onDismissRequest = onDismiss,
         title = { Text("启动首屏") },
@@ -25,10 +25,12 @@ fun StartupPageSettingsDialog(page: StartupPage, onPageChange: (StartupPage) -> 
     ) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("下次启动应用时，直接进入选择的页面。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val unavailable = pages.none { it.id == selectedRoute }
+            val options = if (unavailable) listOf(PluginPage(selectedRoute, "页面暂不可用，暂用课表")) + pages else pages
             SystemPicker(
-                options = StartupPage.entries.map { it.label },
-                selectedIndex = StartupPage.entries.indexOf(page),
-                onSelect = { onPageChange(StartupPage.entries[it]) },
+                options = options.map { it.title },
+                selectedIndex = options.indexOfFirst { it.id == selectedRoute },
+                onSelect = { if (!unavailable || it != 0) onPageChange(options[it].id) },
                 label = "首屏页面",
                 modifier = Modifier.fillMaxWidth().testTag("startup-page-picker")
             )

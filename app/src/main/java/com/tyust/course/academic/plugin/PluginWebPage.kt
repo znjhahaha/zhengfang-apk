@@ -150,7 +150,7 @@ import org.json.JSONObject
         ))
         })
     }) { padding ->
-    Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+    Column(Modifier.pluginWebViewport(padding)) {
         if (!supported || requireResume) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if (!supported) "当前网页组件暂不支持独立账号空间，可以在浏览器中继续使用。" else "网页已恢复，请重新打开入口继续。上次提交操作不会自动重发。")
@@ -282,12 +282,10 @@ import org.json.JSONObject
                 val restored = state.history?.takeIf { state.canReplay }?.let { runCatching { view.restoreState(it) }.getOrNull() }
                 if (restored == null) view.loadUrl(initialUrl)
                 else { state.ready(); state.back = view.canGoBack(); state.forward = view.canGoForward() }
-                view.isFocusableInTouchMode = true
             }
         }, update = { view ->
             val visible = state.firstContent && problem.isBlank()
-            view.isEnabled = visible; view.isFocusable = visible
-            view.importantForAccessibility = if (visible) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            view.updatePluginWebInput(visible)
         })
         }
         if (!state.firstContent) Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

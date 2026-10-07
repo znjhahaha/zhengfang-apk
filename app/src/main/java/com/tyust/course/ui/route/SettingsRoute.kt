@@ -38,7 +38,7 @@ import com.tyust.course.LoginActivity
 import com.tyust.course.login.PasswordLoginCallback
 import com.tyust.course.login.PasswordLoginGatewayFactory
 import com.tyust.course.manager.AppearanceSettingsManager
-import com.tyust.course.manager.StartupPagePreferences
+import com.tyust.course.academic.plugin.PluginPages
 import com.tyust.course.manager.UserManager
 import com.tyust.course.network.CourseApiClient
 import com.tyust.course.ui.screen.SettingsScreen
@@ -113,8 +113,10 @@ fun SettingsRoute(
     var showWallpaperDialog by remember { mutableStateOf(false) }
     var showThemeDialog by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var showStartupPageDialog by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    val startupPagePreferences = remember(context) { StartupPagePreferences.from(context) }
-    var startupPage by remember(startupPagePreferences) { mutableStateOf(startupPagePreferences.read()) }
+    val pageRevision by PluginPages.revision.collectAsState()
+    val startupPages = remember(pageRevision) { PluginPages.registry.pages() }
+    val startupRoute = remember(pageRevision) { PluginPages.registry.preferredStartup() }
+    val startupPageName = startupPages.firstOrNull { it.id == startupRoute }?.title ?: "页面暂不可用，暂用课表"
     val currentWallpaperName = com.tyust.course.manager.AppearanceSettingsManager.currentWallpaperName
     
     // Quota States
@@ -332,7 +334,7 @@ fun SettingsRoute(
         wallpaperName = currentWallpaperName,
         themeName = AppearanceSettingsManager.themeMode.label,
         onThemeSelect = { showThemeDialog = true },
-        startupPageName = startupPage.label,
+        startupPageName = startupPageName,
         onStartupPageSelect = { showStartupPageDialog = true },
         glassEffectEnabled = AppearanceSettingsManager.glassEffectEnabled,
         onGlassEffectChange = { AppearanceSettingsManager.updateGlassEffect(it) },
@@ -358,10 +360,10 @@ fun SettingsRoute(
     }
     if (showStartupPageDialog) {
         com.tyust.course.ui.screen.StartupPageSettingsDialog(
-            page = startupPage,
+            pages = startupPages,
+            selectedRoute = startupRoute,
             onPageChange = {
-                startupPagePreferences.write(it)
-                startupPage = it
+                PluginPages.registry.setStartup(it)
             },
             onDismiss = { showStartupPageDialog = false }
         )

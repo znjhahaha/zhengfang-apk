@@ -144,7 +144,6 @@ import com.tyust.course.ui.system.SystemSecondaryButton
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import com.tyust.course.manager.StartupPage
-import com.tyust.course.manager.StartupPagePreferences
 import com.tyust.course.ui.system.GlassRecipe
 import com.tyust.course.ui.system.glass.drawBlurred
 
@@ -165,7 +164,7 @@ class MainActivity : FragmentActivity() {
 
         UserManager.getInstance().init(this)
         PluginPages.refresh()
-        intent.getStringExtra("pageId")?.let { if (PluginPages.registry.page(it) != null) PluginPages.requested.value = it }
+        PluginPages.accept(intent, restoring = savedInstanceState != null)
         if (savedInstanceState == null) com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
         if (savedInstanceState == null) com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
 
@@ -224,7 +223,7 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra("pageId")?.let { if (PluginPages.registry.page(it) != null) PluginPages.requested.value = it }
+        PluginPages.accept(intent)
         com.tyust.course.schedule.CourseReminderNavigation.accept(intent)
         com.tyust.course.schedule.ScheduleWidgetNavigation.accept(intent)
     }
@@ -255,7 +254,6 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     val appWallpaper = com.tyust.course.ui.theme.rememberAppWallpaperStyle()
     val isDemoMode = remember { UserManager.getInstance().isDemoMode }
     val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
-    val startupPagePreferences = remember(context) { StartupPagePreferences.from(context) }
     val pageRevision by PluginPages.revision.collectAsState()
     val registeredPages = remember(pageRevision) { PluginPages.registry.pages() }
     val routes = registeredPages.map { it.id }
@@ -285,7 +283,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     // Resolve before creating the motion state so the first frame is already on the chosen page.
     var selectedPage by remember(pageData) {
         pageData.state("navigation.page") {
-            PluginPages.registry.startup("app.${startupPagePreferences.read().route}")
+            PluginPages.registry.startup()
         }
     }
     var pageHistory by remember(pageData) { pageData.state("navigation.history") { emptyList<String>() } }
@@ -298,7 +296,11 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
     val navigationMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedTab, currentAccountStorageKey + routes.joinToString(), accessibility.reduceMotion)
     val barMotion = com.tyust.course.ui.theme.rememberNavigationMotionState(selectedNavigationIndex, currentAccountStorageKey + items.joinToString { it.route }, accessibility.reduceMotion)
     val pageRequest by PluginPages.requested.collectAsState()
-    LaunchedEffect(pageRequest) { pageRequest?.let { openPage(it); PluginPages.requested.value = null } }
+    LaunchedEffect(pageRequest) { pageRequest?.let {
+        pageParameters = pageParameters + (it.route to it.params)
+        openPage(it.route)
+        PluginPages.consume(it)
+    } }
     LaunchedEffect(pageRevision, currentAccountStorageKey) {
         if (PluginPages.registry.page(selectedPage) == null) selectedPage = PluginPages.registry.fallback()
         pageHistory = pageHistory.filter { PluginPages.registry.page(it) != null }
@@ -613,16 +615,19 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                 }
                             ) { page ->
                               val route = routes.getOrElse(page) { PluginPages.registry.fallback() }
+                              val academicPage = route in setOf("app.courses", "app.grab", "app.grades", "app.schedule")
                               savedPages.SaveableStateProvider(route) {
-                                com.tyust.course.ui.system.InitialPageLoad(
-                                    key = "$route:${session.token}:$pageRevision",
+                                 com.tyust.course.ui.system.InitialPageLoad(
+                                    // Local settings/service pages need no provider preparation.
+                                    // Preference writes must not tear down their dialog or scroll state.
+                                    key = "$route:${session.token}:${if (academicPage) pageRevision else 0L}",
                                     title = registeredPages.firstOrNull { it.id == route }?.title.orEmpty(),
                                     active = selectedPage == route,
                                     transitionFinished = navigationMotion.transitionFinished,
                                     route = route,
                                     awaitContent = route in setOf("app.courses", "app.grades", "app.schedule"),
                                     prepare = {
-                                        if (!isDemoMode && route in setOf("app.courses", "app.grab", "app.grades", "app.schedule")) UserManager.getInstance().currentSchool?.let { school ->
+                                        if (!isDemoMode && academicPage) UserManager.getInstance().currentSchool?.let { school ->
                                             // Resolve and hash immutable generic protocol material off the UI thread.
                                             com.tyust.course.academic.plugin.AcademicProviderRegistry.operationProvider(school, when (route) {
                                                 "app.grades" -> "study.grades"

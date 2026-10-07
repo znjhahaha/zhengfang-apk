@@ -76,14 +76,14 @@ class ScheduleAgendaFlowDeviceTest {
             val previousTheme = AppearanceSettingsManager.themeMode
             val previousGlass = AppearanceSettingsManager.glassEffectEnabled
             val previousAnimator = ui.shell("settings get global animator_duration_scale").trim()
-            val startup = StartupPagePreferences.from(context)
-            val previousStartup = startup.read()
+            val startup = com.tyust.course.academic.plugin.PluginPages.registry
+            val previousStartup = startup.startup()
             val firstWeek = ScheduleDates.mondayOfWeek(System.currentTimeMillis()).apply { add(Calendar.DATE, -7) }
             try {
                 ui.onMain {
                     AppearanceSettingsManager.updateThemeMode(AppThemeMode.Light)
                     AppearanceSettingsManager.updateGlassEffect(true)
-                    startup.write(StartupPage.Schedule)
+                    startup.setStartup("app.schedule")
                     scheduler.updateTimeBase(account, term, ScheduleTimeBase(ScheduleTimeBase.dateFromMillis(firstWeek.timeInMillis)))
                 }
                 ui.navigate("课表")
@@ -222,7 +222,7 @@ class ScheduleAgendaFlowDeviceTest {
                     scheduler.updateTimeBase(account, term, previousCalendar ?: ScheduleTimeBase())
                     AppearanceSettingsManager.updateThemeMode(previousTheme)
                     AppearanceSettingsManager.updateGlassEffect(previousGlass)
-                    startup.write(previousStartup)
+                    startup.setStartup(previousStartup)
                 }
             }
         }

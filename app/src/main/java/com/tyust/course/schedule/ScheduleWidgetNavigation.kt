@@ -43,6 +43,8 @@ object ScheduleWidgetNavigation {
             ?: if (course == null) ScheduleWidgetAction.Today else ScheduleWidgetAction.Course
         requested = ScheduleWidgetRequest(data.getQueryParameter("account").orEmpty(), data.getQueryParameter("school").orEmpty(),
             data.getQueryParameter("term").orEmpty(), course, System.nanoTime(), action, data.getQueryParameter("startsAt")?.toLongOrNull())
+        intent.action = null
+        intent.data = null
     }
     fun matchesCurrentAccount(request: ScheduleWidgetRequest): Boolean = UserManager.getInstance().let {
         request.matches(it.currentAccountStorageKey, it.currentSchool?.id.orEmpty())

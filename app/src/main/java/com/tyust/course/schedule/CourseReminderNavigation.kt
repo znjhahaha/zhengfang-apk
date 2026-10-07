@@ -10,6 +10,7 @@ object CourseReminderNavigation {
         private set
     fun accept(intent: Intent?) {
         intent?.getStringExtra(ScheduleReminderScheduler.EXTRA_REMINDER_ID)?.takeIf { it.isNotBlank() }?.let { requestedId = it }
+        intent?.removeExtra(ScheduleReminderScheduler.EXTRA_REMINDER_ID)
     }
     fun consume() { requestedId = null }
 }

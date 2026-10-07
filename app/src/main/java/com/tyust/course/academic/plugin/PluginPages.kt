@@ -4,16 +4,19 @@ import android.content.Context
 import android.content.Intent
 import com.tyust.course.MainActivity
 import com.tyust.course.manager.UserManager
+import com.tyust.course.manager.StartupPagePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class PluginPageRequest(val route: String, val params: String)
+
 object PluginPages {
     private var app: Context? = null
     private val changed = MutableStateFlow(0L)
     val revision = changed.asStateFlow()
-    val requested = MutableStateFlow<String?>(null)
+    val requested = MutableStateFlow<PluginPageRequest?>(null)
     var registry = PluginPageRegistry()
         private set
     fun initialize(context: Context) {
@@ -24,6 +27,7 @@ object PluginPages {
             changed.value++
         }
         refresh()
+        registry.migrateStartup(StartupPagePreferences.from(context).readExplicit()?.let { "app.${it.route}" })
     }
     fun capabilities(): Map<String, Int> = app?.let { context -> PluginJson.objects(JSONArray(context.assets.open("academic-plugin/host-capabilities.json").bufferedReader().use { it.readText() })).associate { it.getString("name") to it.getInt("version") } }.orEmpty()
     fun available(pkg: PluginPackage): Boolean {
@@ -42,11 +46,26 @@ object PluginPages {
     fun open(context: Context, route: String, params: JSONObject = JSONObject()) {
         val page = registry.page(route) ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "页面已移除或插件已停用")
         if (page.pluginId == null) {
-            requested.value = route
             context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("pageId", route).putExtra("pageParams", params.toString()))
         } else {
             val pkg = AcademicProviderRegistry.packages().active(page.pluginId) ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "插件未安装")
             NativePluginActivity.open(context, pkg, page.id, params)
+        }
+    }
+    fun accept(intent: Intent?, restoring: Boolean = false) {
+        val request = takeRequest(intent) ?: return
+        if (!restoring && registry.page(request.route) != null) requested.value = request
+    }
+    fun consume(request: PluginPageRequest) { requested.compareAndSet(request, null) }
+
+    internal fun takeRequest(intent: Intent?): PluginPageRequest? {
+        val route = intent?.getStringExtra("pageId")
+        val params = intent?.getStringExtra("pageParams")
+        // Activity recreation and launcher history must not replay an old entry.
+        intent?.removeExtra("pageId")
+        intent?.removeExtra("pageParams")
+        return route?.takeIf { it.isNotBlank() }?.let {
+            PluginPageRequest(it, runCatching { JSONObject(params ?: "{}").toString() }.getOrDefault("{}"))
         }
     }
 }

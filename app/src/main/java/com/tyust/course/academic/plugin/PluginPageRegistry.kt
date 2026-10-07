@@ -32,8 +32,20 @@ class PluginPageRegistry(initial: JSONObject = JSONObject(), private val persist
         state.put("pinned", JSONArray(ids)); save()
     }
     @Synchronized fun restoreDefaults() { state.remove("pinned"); save() }
-    @Synchronized fun setStartup(id: String) { if (id !in catalog) invalid("启动页不可用"); state.put("startup", id); save() }
-    @Synchronized fun startup(legacy: String): String = state.optString("startup").takeIf { it in catalog } ?: legacy.takeIf { it in catalog } ?: fallback()
+    @Synchronized fun setStartup(id: String) {
+        if (id !in catalog) invalid("启动页不可用")
+        state.put("startup", id).put("startupPreferenceVersion", 1); save()
+    }
+    @Synchronized fun migrateStartup(legacy: String?) {
+        if (state.optInt("startupPreferenceVersion") >= 1) return
+        // The old settings screen could show an explicit choice while an older
+        // plugin choice silently won. Resolve that conflict once, then use one store.
+        val selected = legacy?.takeIf { id -> builtins.any { it.id == id } }
+            ?: state.optString("startup").takeIf { it.isNotBlank() } ?: SCHEDULE
+        state.put("startup", selected).put("startupPreferenceVersion", 1); save()
+    }
+    @Synchronized fun startup(): String = preferredStartup().takeIf { it in catalog } ?: SCHEDULE
+    @Synchronized fun preferredStartup(): String = state.optString("startup").ifBlank { SCHEDULE }
     @Synchronized fun fallback(): String = defaults.firstOrNull { it != SETTINGS && it in pinned() } ?: SETTINGS
     @Synchronized fun register(pluginId: String, templateId: String, instanceId: String, title: String? = null, params: JSONObject = JSONObject()): PluginPage {
         val manifest = manifests[pluginId]?.takeIf { pluginId in enabled } ?: invalid("插件已停用")
