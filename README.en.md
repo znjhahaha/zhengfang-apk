@@ -111,6 +111,8 @@ The app includes an update checker. If your school uses a special login flow or 
 
 ## Campus plugins
 
+**Version 1.0.109 adds general-purpose website plugins.** Configure an HTTPS URL with the SDK 3.2.9 `web-browser` template to open study tools, communities, and other websites without a school account. Multiple pages can appear in the service center or be pinned to navigation. Browser mode does not inject the host bridge, and website sessions are isolated by service account. Devices without the required WebView features use an external browser. See the [website plugin wiki](https://plugins.hidisiwa.xyz/wiki/web/) and [release notes](release-notes/v1.0.109.md).
+
 The plugin center has **Discover** and **Installed** views. Search by name, filter by school, inspect plugin details, and install or activate adapters. Cached catalog entries appear first and remain available if refreshing fails.
 
 School search combines saved schools with the signature-verified plugin catalog, showing compatibility and available providers. Selecting an adapter downloads and verifies it, requests authorization, and activates it before binding it to the school. If multiple candidates exist, you choose which to use. Existing custom addresses are preserved.

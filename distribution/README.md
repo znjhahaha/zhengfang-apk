@@ -1,6 +1,6 @@
 # App download distribution
 
-App delivery; API 3 / SDK 3.2.7 unchanged. Promote the verified test artifact when the user requests default-channel release. GitHub holds the official immutable APK; free Cloudflare Workers Static Assets holds verified copies. No R2 or paid fallback.
+App delivery; API 3 / SDK 3.2.9. Promote the verified test artifact when the user requests default-channel release. GitHub holds the official immutable APK; free Cloudflare Workers Static Assets holds verified copies. No R2 or paid fallback.
 
 ## Credentials
 
