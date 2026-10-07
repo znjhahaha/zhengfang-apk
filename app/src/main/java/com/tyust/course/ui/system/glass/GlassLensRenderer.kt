@@ -31,7 +31,8 @@ internal data class GlassLensParams(
     val corners: GlassLensCorners = GlassLensCorners.uniform(cornerRadiusPx),
     val sourceAxes: GlassLensSourceAxes = GlassLensSourceAxes(),
     val maxRenderPixels: Int = Int.MAX_VALUE,
-    val sourceGeneration: Int = 0
+    val sourceGeneration: Int = 0,
+    val sourceIdentity: GlassLensFrameIdentity? = null
 )
 
 internal data class GlassLensRenderedFrame(

@@ -115,6 +115,7 @@ class GlassLensAnchor internal constructor(
         private set
 
     internal var requireCurrentSource = false
+    internal var retainCompatibleBackground = false
 
     private var uploadedVersion = -1
     private var overlayVersion by mutableIntStateOf(0)
@@ -222,8 +223,14 @@ class GlassLensAnchor internal constructor(
         if (size.width <= 0 || size.height <= 0) return null
         val coords = coordinates?.takeIf { it.isAttached } ?: return null
         if (needsCapture(coords)) queueCapture()
-        if (requireCurrentSource && (sourceFrame?.geometry !=
-            GlassLensCaptureGeometry.from(coords).fitPixelBudget(maxCapturePixels) || sourceFrame?.sourceRevision != version)) return null
+        if (requireCurrentSource) {
+            val currentIdentity = GlassLensFrameIdentity(
+                GlassLensCaptureGeometry.from(coords).fitPixelBudget(maxCapturePixels), overlayVersion)
+            val compatible = canRetainLensFrame(sourceFrame?.identity, currentIdentity, retainCompatibleBackground)
+            if (sourceFrame?.geometry != currentIdentity.geometry ||
+                (!compatible && (sourceFrame?.sourceRevision != version ||
+                    (retainCompatibleBackground && sourceFrame?.overlayRevision != overlayVersion)))) return null
+        }
         return size
     }
 
@@ -277,7 +284,7 @@ class GlassLensAnchor internal constructor(
                 GlassLensCaptureObserver.onTiming?.invoke(tag, "record", System.nanoTime() - recordStarted)
                 val generation = ++uploadSequence
                 val queuedAt = System.nanoTime()
-                val recording = GlassLensCaptureFrame(generation, geometry, combined, queuedAt, version)
+                val recording = GlassLensCaptureFrame(generation, geometry, combined, queuedAt, version, overlayVersion)
                 captureFrame = recording
                 uploadedVersion = version
                 uploadedOverlayVersion = overlayVersion
@@ -889,7 +896,8 @@ private class GlassLensNode(
         // to a plain source on every background revision produces visible flashes.
         // The renderer separately rejects mismatched source/coordinate generations.
         val rendered = if (renderer.failed) null else renderer.latestFrame?.takeIf {
-            !anchor.requireCurrentSource || it.sourceGeneration == samplingFrame?.generation
+            !anchor.requireCurrentSource || it.sourceGeneration == samplingFrame?.generation ||
+                canRetainLensFrame(it.params.sourceIdentity, samplingFrame?.identity, anchor.retainCompatibleBackground)
         }
         val frame = rendered?.bitmap
         if (frame != null && !frame.isRecycled) {
@@ -966,7 +974,8 @@ private class GlassLensNode(
                 corners = corners,
                 sourceAxes = axes,
                 maxRenderPixels = optics.maxRenderPixels,
-                sourceGeneration = samplingFrame.generation
+                sourceGeneration = samplingFrame.generation,
+                sourceIdentity = samplingFrame.identity
             )
         )
     }

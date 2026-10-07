@@ -31,6 +31,46 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SegmentLabelSourceTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun tinyCoordinateNoiseIsIgnoredButRealMovementAndFontChangesInvalidate() {
+        val source = SegmentLabelSource(1)
+        lateinit var measurer: androidx.compose.ui.text.TextMeasurer
+        compose.setContent { measurer = androidx.compose.ui.text.rememberTextMeasurer() }
+        compose.runOnIdle {
+            source.resize(IntSize(240, 52))
+            val layout = measurer.measure("成绩", androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Normal))
+            val position = androidx.compose.ui.geometry.Offset(20f, 10f)
+            source.update(0, layout, position)
+            val revision = source.revision
+            repeat(100) { n ->
+                val noise = if (n % 2 == 0) .0001f else -.0001f
+                source.update(0, layout, position + androidx.compose.ui.geometry.Offset(noise, noise))
+            }
+            assertEquals(revision, source.revision)
+            source.update(0, layout, position + androidx.compose.ui.geometry.Offset(2f, 0f))
+            assertEquals(revision + 1, source.revision)
+            val bold = measurer.measure("成绩", androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.ExtraBold))
+            source.update(0, bold, position + androidx.compose.ui.geometry.Offset(2f, 0f))
+            assertEquals("Real font changes cannot reuse stale glyphs", revision + 2, source.revision)
+        }
+    }
+    @Test fun foregroundColourAnimationDoesNotInvalidateIdenticalTintedGlyphs() {
+        val source = SegmentLabelSource(1)
+        lateinit var measurer: androidx.compose.ui.text.TextMeasurer
+        compose.setContent { measurer = androidx.compose.ui.text.rememberTextMeasurer() }
+        compose.runOnIdle {
+            source.resize(IntSize(240, 52))
+            val original = measurer.measure("成绩", androidx.compose.ui.text.TextStyle(color = Color.Black))
+            source.update(0, original, androidx.compose.ui.geometry.Offset(20f, 10f))
+            val revision = source.revision
+            repeat(30) { frame ->
+                val tinted = measurer.measure("成绩", androidx.compose.ui.text.TextStyle(color = Color(frame / 30f, 0f, 1f)))
+                assertSame("This is a paint change, not a new paragraph layout", original.multiParagraph, tinted.multiParagraph)
+                source.update(0, tinted, androidx.compose.ui.geometry.Offset(20f, 10f))
+                assertEquals("Foreground colour must not continuously invalidate the accent-tinted optical source", revision, source.revision)
+            }
+        }
+    }
+
     @Test fun sharedTextLayoutProducesLocalPixelsAcrossResizeAndFontChanges() {
         val source = SegmentLabelSource(1)
         var width by mutableStateOf(240.dp)

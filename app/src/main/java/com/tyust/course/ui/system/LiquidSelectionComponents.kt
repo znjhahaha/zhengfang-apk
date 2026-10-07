@@ -652,7 +652,11 @@ fun LiquidSegmentedControl(
             null
         }
         // 把锚点交给外层的 glassLensAnchor（它需要外层那块不动的坐标）
-        SideEffect { lensAnchor?.requireCurrentSource = !refractLabels; segLensAnchor = lensAnchor }
+        SideEffect {
+            lensAnchor?.requireCurrentSource = !refractLabels
+            lensAnchor?.retainCompatibleBackground = stableOptics
+            segLensAnchor = lensAnchor
+        }
         // The region refreshes both after selection and after the underlying page settles.
 
         // One visible label row owns gestures and semantics on every API level.
@@ -770,7 +774,6 @@ fun LiquidSegmentedControl(
                             val before = stableLabels.revision
                             stableLabels.update(index, layout, parent.localPositionOf(child))
                             if (before != stableLabels.revision) {
-                                indicatorDrawState.hasBackground = false
                                 lensAnchor?.invalidateOverlay()
                             }
                         }
@@ -787,7 +790,9 @@ fun LiquidSegmentedControl(
                         } else {
                             MaterialTheme.typography.labelLarge
                         },
-                        fontWeight = if (selectionAmount >= 0.55f) {
+                        // A partial drag changes paint/optics, not glyph geometry.
+                        // Commit font weight once the user actually selects a tab.
+                        fontWeight = if (if (stableOptics) index == clampedSelectedIndex else selectionAmount >= 0.55f) {
                             FontWeight.ExtraBold
                         } else {
                             FontWeight.SemiBold
