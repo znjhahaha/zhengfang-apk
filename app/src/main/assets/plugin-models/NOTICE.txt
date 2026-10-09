@@ -1,0 +1,16 @@
+Slider gap recognition model
+
+Source: https://github.com/aquamarine5/ChaoxingSignFaker
+Source commit: 68f58448efaa926ce694a2b0d57024f5e7cf8208
+Original path: app/src/main/assets/captcha.ort
+Model contributor credited upstream: @0x77786d
+Upstream project: @aquamarine5 / Brainspark
+License: GNU Affero General Public License, version 3 (AGPL-3.0.txt).
+SHA-256: ce9623e1f58b46bc5e7485dffc6449d36255af5e9e2d877bb4db94e8c8b21ee7
+The model bytes are unmodified. The host inference adapter is implemented in
+PluginSliderModel.kt; the original application's implementation is not bundled.
+
+Runtime: Microsoft ONNX Runtime Android 1.29.0, MIT license.
+https://github.com/microsoft/onnxruntime
+
+The model runs locally. No image upload or remote recognition service is used.

@@ -199,9 +199,12 @@ fun CapsuleNavigationBar(
     lensFreshness: GlassLensFreshness? = null,
     modifier: Modifier = Modifier
 ) {
+    if (items.isEmpty()) return
     val useGlass = backdrop != null && isBackdropSupported()
+    val hasSelection = selectedTab in items.indices
+    val collapsed = minimized && hasSelection
     val reduced = rememberGlassAccessibilityMode().reduceMotion
-    val iconPlayback = rememberNavigationIconPlayback(items.size, selectedTab.coerceAtLeast(0), reduced)
+    val iconPlayback = rememberNavigationIconPlayback(items.size, selectedTab, reduced)
     val haptics = LocalHapticFeedback.current
     val selectTab: (Int) -> Unit = { index ->
         if (index != selectedTab) {
@@ -229,7 +232,7 @@ fun CapsuleNavigationBar(
             useGlass -> {
                 // 滚动最小化：整条玻璃横向收拢淡出，单胶囊液态弹出
                 val minimizeFraction by animateFloatAsState(
-                    targetValue = if (minimized) 1f else 0f,
+                    targetValue = if (collapsed) 1f else 0f,
                     animationSpec = MotionSpring.liquidSettle(),
                     label = "navMinimizeFraction"
                 )
@@ -246,20 +249,20 @@ fun CapsuleNavigationBar(
                         GlassNavigationBar(
                             items = items,
                             selectedTab = selectedTab,
-                            onTabSelect = { if (!minimized) selectTab(it) },
+                            onTabSelect = { if (!collapsed) selectTab(it) },
                             backdrop = requireNotNull(backdrop),
                             iconPlayback = iconPlayback,
                             lensFreshness = lensFreshness,
-                            enabled = !minimized
+                            enabled = !collapsed
                         )
                     }
                 }
-                if (minimizeFraction > 0.001f) {
+                if (minimizeFraction > 0.001f && hasSelection) {
                     MinimizedNavCapsule(
                         item = items.getOrElse(selectedTab) { items.first() },
                         iconPhase = { iconPlayback.phase(selectedTab.coerceAtLeast(0)) },
                         backdrop = requireNotNull(backdrop),
-                        onClick = { if (minimized) onExpandRequest() },
+                        onClick = { if (collapsed) onExpandRequest() },
                         modifier = Modifier.graphicsLayer {
                             val f = minimizeFraction
                             alpha = ((f - 0.35f) / 0.65f).fastCoerceIn(0f, 1f)
@@ -350,6 +353,7 @@ private fun GlassNavigationBar(
     enabled: Boolean = true
 ) {
     val tabsCount = items.size
+    val hasSelection = selectedTab in items.indices
     val navigationMotion = com.tyust.course.ui.theme.LocalNavigationMotion.current
     var gestureDragging by remember { mutableStateOf(false) }
     // 隐藏 tint 内容层：供选中透镜 combined 采样，避免只看到空雾
@@ -534,11 +538,11 @@ private fun GlassNavigationBar(
         }
 
         val animationScope = rememberCoroutineScope()
-        var currentIndex by remember { mutableIntStateOf(selectedTab) }
+        var currentIndex by remember { mutableIntStateOf(selectedTab.coerceIn(0, tabsCount - 1)) }
         val dampedDragAnimation = remember(animationScope, tabsCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
-                initialValue = selectedTab.toFloat(),
+                initialValue = selectedTab.coerceIn(0, tabsCount - 1).toFloat(),
                 valueRange = 0f..(tabsCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
@@ -572,12 +576,12 @@ private fun GlassNavigationBar(
         fun selectedPosition(): Float = if (gestureDragging) dampedDragAnimation.value else navigationMotion?.position ?: dampedDragAnimation.value
 
         LaunchedEffect(accessibility.reduceMotion, dampedDragAnimation) {
-            dampedDragAnimation.setReducedMotion(accessibility.reduceMotion, selectedTab.toFloat())
+            dampedDragAnimation.setReducedMotion(accessibility.reduceMotion, currentIndex.toFloat())
             if (accessibility.reduceMotion) offsetAnimation.snapTo(0f)
         }
 
         LaunchedEffect(selectedTab) {
-            if (currentIndex != selectedTab) {
+            if (hasSelection && currentIndex != selectedTab) {
                 currentIndex = selectedTab
                 dampedDragAnimation.animateToValue(selectedTab.toFloat())
             }
@@ -762,8 +766,8 @@ private fun GlassNavigationBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 items.forEachIndexed { index, item ->
-                    val selectionWeight = (1f - abs(selectedPosition() - index))
-                        .fastCoerceIn(0f, 1f)
+                    val selectionWeight = if (hasSelection) (1f - abs(selectedPosition() - index))
+                        .fastCoerceIn(0f, 1f) else 0f
                     NavTab(
                         item = item,
                         selected = selectedTab == index,
@@ -862,7 +866,7 @@ private fun GlassNavigationBar(
                     item = item,
                     selected = selectedTab == index,
                     accent = accentColor,
-                    selectionWeight = (1f - abs(selectedPosition() - index)).fastCoerceIn(0f, 1f),
+                    selectionWeight = if (hasSelection) (1f - abs(selectedPosition() - index)).fastCoerceIn(0f, 1f) else 0f,
                     iconPhase = { iconPlayback.phase(index) },
                     pressProgress = dampedDragAnimation.pressProgress * (1f - abs(selectedPosition() - index)).fastCoerceIn(0f, 1f),
                     onClick = null,
@@ -872,8 +876,9 @@ private fun GlassNavigationBar(
         }
 
         // 3) 选中透镜：缩放只在 layerBlock；API32 走离屏 GL 折射
-        Box(
+        if (hasSelection) Box(
             modifier = Modifier
+                .testTag("navigation-selection-indicator")
                 .padding(horizontal = barPadding)
                 .graphicsLayer {
                     translationX = selectedPosition() * tabWidth + panelOffset
@@ -1113,7 +1118,8 @@ private fun FallbackNavigationBar(
                     item = item,
                     selected = selectedTab == index,
                     accent = accentColor,
-                    selectionWeight = navigationMotion?.weight(index) ?: animateFloatAsState(if (selectedTab == index) 1f else 0f, tween(220), label = "fallbackSymbol-$index").value,
+                    selectionWeight = if (selectedTab !in items.indices) 0f else navigationMotion?.weight(index)
+                        ?: animateFloatAsState(if (selectedTab == index) 1f else 0f, tween(220), label = "fallbackSymbol-$index").value,
                     iconPhase = { iconPlayback.phase(index) },
                     onClick = { onTabSelect(index) }
                 )

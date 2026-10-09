@@ -5,7 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,15 +40,14 @@ class NativeServiceDeviceTest {
     private fun remove(pkg: PluginPackage) { AcademicProviderRegistry.packages().deactivate(pkg.manifest.id); AcademicProviderRegistry.reload() }
     private fun intent(pkg: PluginPackage) = Intent(app, ServicePluginActivity::class.java).putExtra("pluginId", pkg.manifest.id).putExtra("preview", true)
     private fun awaitTag(tag: String) = compose.waitUntil(15_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
-    private fun capture(name: String, dialog: Boolean = false) {
+    private fun capture(name: String) {
         val file = File(app.getExternalFilesDir(null), "plugin-ui/$name.png"); file.parentFile!!.mkdirs()
         if (android.os.Build.VERSION.SDK_INT < 26) {
             assertTrue(androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(file))
             return
         }
         // Capture the tested window; MuMu's default display can still show its launcher.
-        val root = if (dialog) compose.onNode(isDialog()) else compose.onRoot()
-        val bitmap = root.captureToImage().asAndroidBitmap()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         file.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
     }
     @Test fun nativeTicketsExpireOnSessionReplacementEpochChangeAndAccountRevocation() = runBlocking {
@@ -106,7 +105,7 @@ class NativeServiceDeviceTest {
                 for (label in listOf("扫描二维码", "选择文件", "演示通知", "演示日程")) {
                     compose.onNodeWithText(label, substring = false).performScrollTo().performClick()
                     compose.onNodeWithTag("service-native-allow").assertIsDisplayed()
-                    if (label == "选择文件") capture("native-file-consent", dialog = true)
+                    if (label == "选择文件") capture("native-file-consent")
                     compose.onNodeWithTag("service-native-deny").performClick()
                     compose.waitUntil(10_000) { compose.onAllNodesWithText("你已取消系统操作").fetchSemanticsNodes().isNotEmpty() }
                 }

@@ -14,6 +14,7 @@ object PluginPlatformContract {
             throw PluginException(PluginErrorCode.UNSUPPORTED, "当前 App 不满足插件的兼容要求")
     }
     fun validate(manifest: PluginManifest) {
+        PluginUserscriptPolicy.validate(manifest)
         val m = manifest.json
         unique(m.optJSONArray("requires"), "name")
         val viewportRequirements = PluginJson.objects(m.optJSONArray("requires") ?: JSONArray()) +
@@ -43,6 +44,7 @@ object PluginPlatformContract {
         for (page in PluginJson.objects(c.getJSONArray("pages"))) {
             unique(page.optJSONArray("requires"), "name")
             page.optJSONObject("web")?.let { web ->
+                if (web.has("urlParam") && (web.optString("mode") != "browser" || m.optInt("minAppVersionCode", 0) < 111)) invalid("参数化网页地址需要纯浏览模式与 App 111")
                 if (page.optString("renderer") != "web" || m.optInt("minAppVersionCode", 0) < 107) invalid("网页设置需要网页页面与 minAppVersionCode 107")
                 for (origin in PluginJson.strings(web.optJSONArray("navigationOrigins"))) {
                     val uri = runCatching { URI(origin) }.getOrNull() ?: invalid("无效网页跳转来源")

@@ -132,7 +132,7 @@ object AcademicProviderRegistry {
         if (!enabled) { PluginOperation.cancelPlugin(id); PluginAcademicSession.cancelProvider(id); PluginHttpClients.clearPlugin(id) }
         if (!enabled) app?.let { PluginAcademicSession.revoke(it, id); PluginDataGuard.revoke(it, id) }
         schoolPrefs()?.edit()?.putBoolean("disabled:global:$id", !enabled)?.commit()
-        if (!enabled) app?.let { NativePluginTasks.stopPlugin(it, id) }
+        if (!enabled) app?.let { NativePluginTasks.stopPlugin(it, id); PluginForegroundWork.stopPlugin(id, "interrupted"); PluginLegacyWebSessions.revoke(id) }
         providersChanged()
     }
     fun isCurrentPackage(id: String, digest: String): Boolean = (store?.activeDigest(id) ?: bundled[id]?.digest) == digest

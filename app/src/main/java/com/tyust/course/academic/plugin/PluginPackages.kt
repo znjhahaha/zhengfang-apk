@@ -189,9 +189,10 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         } ?: throw PluginException(PluginErrorCode.CONFLICT, "当前插件正在使用中")
     }
     private fun installedManifests() = (AcademicProviderRegistry.knownPackages() + list()).associateBy { it.manifest.id }.values.map { it.manifest }
-    private fun blocked(id: String, digest: String?) = PluginVersionLeases.busy(id) || NativePluginTasks.busy(context, id) ||
+    private fun blocked(id: String, digest: String?) = PluginVersionLeases.busy(id) || NativePluginTasks.busy(context, id) || PluginForegroundWork.busy(id) ||
         digest in PluginWorkflowJournal(PluginWorkflowFiles(context)).references()
     fun deactivate(id: String) {
+        PluginForegroundWork.stopPlugin(id, "interrupted")
         PluginOperation.cancelPlugin(id)
         PluginAcademicSession.cancelProvider(id)
         PluginHttpClients.clearPlugin(id)

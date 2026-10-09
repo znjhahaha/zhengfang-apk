@@ -1,0 +1,9 @@
+{
+  "manifest_version": 2,
+  "name": "Zhengfang isolated userscript runtime",
+  "version": "3.4.0.9",
+  "browser_specific_settings": {"gecko": {"id": "userscripts@zhengfang.local", "strict_min_version": "157.0"}},
+  "permissions": ["nativeMessaging", "geckoViewAddons", "cookies", "tabs", "webRequest", "webRequestBlocking", "<all_urls>"],
+  "background": {"scripts": ["background.js"], "persistent": true},
+  "user_scripts": {"api_script": "api.js"}
+}

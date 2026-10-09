@@ -4,6 +4,7 @@ import android.util.AtomicFile
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
@@ -22,6 +23,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+internal data class PluginUpload(val file: File, val name: String, val mime: String)
+
 /** Host-side authority. Values supplied by the JS context are never used for account selection. */
 class PluginHost(private val operation: PluginOperation, private val storageRoot: File, private val cookies: CookieJar = operation.session.cookies,
     private val captureToken: ((HttpUrl, String, String, Int, String) -> Unit)? = null,
@@ -30,10 +33,13 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     private val dataGuard: PluginDataGuard? = null,
     private val sharedSite: () -> Boolean = { false },
     private val sharedApproval: ((JSONObject) -> Boolean)? = null,
+    private val userscriptHeaders: Boolean = false,
+    private val requestGuard: ((HttpUrl, String, String, JSONObject?) -> Unit)? = null,
     private val sharedRequest: ((HttpUrl, String, String, JSONObject?) -> Unit)? = null) {
     private val cookiesForResponse: (HttpUrl) -> List<String> = { url -> cookies.loadForRequest(url).map { it.value } }
     private val policy = PluginNetworkPolicy(operation.manifest.network)
     private fun requestRule(url: HttpUrl, method: String, purpose: String, form: JSONObject?, authHeader: String? = null): JSONObject {
+        requestGuard?.invoke(url, method, purpose, form)
         if (!sharedSite()) return policy.requireAllowed(url, method, purpose, form, authHeader)
         check(sharedRequest != null)
         sharedRequest.invoke(url, method, purpose, form)
@@ -74,22 +80,24 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
     @Synchronized fun report(): List<JSONObject> = log.toList()
 
-    @Synchronized fun upload(payload: JSONObject, file: File, field: String): JSONObject {
+    @Synchronized internal fun upload(payload: JSONObject, upload: PluginUpload, field: String): JSONObject {
         operation.requireActive()
         if (!operation.manifest.isNative || operation.method != "host.effect") invalid("文件传输仅供原生宿主效果")
-        return http(payload, file, field)
+        return http(payload, upload, field)
     }
-    private fun http(payload: JSONObject, upload: File? = null, field: String = "file"): JSONObject {
+    private fun http(payload: JSONObject, upload: PluginUpload? = null, field: String = "file"): JSONObject {
         if (++requests > 100) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "网络请求次数超过上限")
         val purpose = payload.getString("purpose")
         if (purpose !in setOf("query", "auth", "mutation")) invalid("未知请求用途")
         if (purpose == "auth" && !operation.method.startsWith("auth.") && !(operation.manifest.isNative && operation.method == "host.effect" && "auth" in operation.manifest.permissions)) invalid("查询不能执行认证请求")
         var method = payload.optString("method", "GET")
-        if (method !in setOf("GET", "POST")) invalid("不支持的请求方法")
+        val scriptRequest = userscriptHeaders && operation.manifest.isNative && "userscripts" in operation.manifest.permissions && operation.method == "host.effect"
+        if (method !in setOf("GET", "POST") && !(method in setOf("PUT", "HEAD") && scriptRequest)) invalid("不支持的请求方法")
+        if (method == "HEAD" && purpose != "query") invalid("HEAD 只用于读取请求")
         var url = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效 URL")
         var form = payload.optJSONObject("form")
         if (payload.has("body") && form != null) invalid("body 和 form 不能同时使用")
-        if (method == "GET" && (payload.has("body") || form != null)) invalid("GET 不接受请求体")
+        if (method in setOf("GET", "HEAD") && (payload.has("body") || form != null)) invalid("$method 不接受请求体")
         val charsetName = payload.optString("charset", "UTF-8")
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
@@ -144,12 +152,28 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             if (supplied.keys().asSequence().any { it.equals(header, true) }) invalid("认证请求头不可重复")
             cookieToken(url).also { supplied.put(header, it) }
         } else null
+        val nativeReferer = !userscriptHeaders && operation.manifest.apiVersion == 3 && operation.manifest.isNative &&
+            operation.method == "host.effect" && operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty()
+                .any { it.optString("name") == "network.request" && it.optInt("version") >= 4 }
         val allowedHeaders = setOf("accept", "content-type", "x-requested-with") +
+            (if (nativeReferer) setOf("referer") else emptySet()) +
+            (if (scriptRequest) setOf("referer", "origin", "user-agent", "range", "accept-language", "dnt", "upgrade-insecure-requests",
+                "sec-ch-ua", "sec-ch-ua-arch", "sec-ch-ua-bitness", "sec-ch-ua-full-version", "sec-ch-ua-full-version-list",
+                "sec-ch-ua-mobile", "sec-ch-ua-model", "sec-ch-ua-platform", "sec-ch-ua-platform-version",
+                "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user") else emptySet()) +
             (if (operation.manifest.isService || operation.manifest.isNative || academicToken) setOf("authorization") else emptySet()) +
             (if (academicToken || scopedToken) setOf("x-token") else emptySet())
         val headerNames = supplied.keys().asSequence().map { it.lowercase() }.toList()
         if (headerNames.distinct().size != headerNames.size) invalid("请求头不可重复")
         supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
+        val referer = supplied.keys().asSequence().firstOrNull { it.equals("referer", true) }
+        if (nativeReferer && referer != null) {
+            val value = supplied.getString(referer)
+            if (value.length !in 1..2048 || value.any { it.code !in 33..126 }) invalid("无效 Referer")
+            val source = value.toHttpUrlOrNull() ?: invalid("无效 Referer")
+            // A reference page must itself be declared readable. Never bypass site consent.
+            policy.requireAllowed(source, "GET", "query", null)
+        }
         val authorization = supplied.keys().asSequence().firstOrNull { it.equals("authorization", true) }
         if (authorization != null) {
             val value = supplied.getString(authorization)
@@ -177,16 +201,16 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             val builder = Request.Builder().url(url).header("User-Agent", userAgent)
             if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
             supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
-            if (method == "POST") {
+            if (method in setOf("POST", "PUT")) {
                 val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {
                     form?.keys()?.forEach { addFormDataPart(it, form!!.getString(it)) }
-                    addFormDataPart(field, "upload", upload.asRequestBody("application/octet-stream".toMediaType()))
+                    addFormDataPart(field, upload.name, upload.file.asRequestBody(upload.mime.toMediaTypeOrNull() ?: "application/octet-stream".toMediaType()))
                 }.build() else if (form != null) FormBody.Builder(charset).apply {
                     form!!.keys().forEach { add(it, form!!.getString(it)) }
                 }.build() else payload.optString("body").toRequestBody(
                     supplied.optString("Content-Type", "application/x-www-form-urlencoded; charset=$charsetName").toMediaType())
-                builder.post(body)
-            }
+                builder.method(method, body)
+            } else builder.method(method, null)
             if (purpose == "mutation") {
                 if (approvedSharedWrite && sharedRequest != null) operation.markAuthorizedSharedWrite()
                 else operation.markMutation()
@@ -209,10 +233,13 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                     if (response.code in 300..399) {
                         if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
                         if (++redirected > 5) invalid("跳转次数超过上限")
-                        if (method == "POST" && response.code in setOf(307, 308)) invalid("不能自动重放 POST 跳转")
+                        if (method !in setOf("GET", "HEAD") && response.code in setOf(307, 308)) invalid("不能自动重放写入请求跳转")
                         val resolved = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
                         val next = PluginRedirects.upgradeToHttps(url, resolved, upgradeHttpRedirects)
-                        authScope?.requireAllowed(next, "GET")
+                        if (nativeReferer && referer != null && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
+                            supplied.remove(referer)
+                        val redirectedMethod = if (method == "HEAD") "HEAD" else "GET"
+                        authScope?.requireAllowed(next, redirectedMethod)
                         if ((authorization != null || token != null) && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
                             throw PluginException(PluginErrorCode.UNTRUSTED_URL, "认证令牌不能随跳转发送到其他站点")
                         if (boundToken != null && cookieToken(next) != boundToken)
@@ -223,9 +250,9 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         if (next.fragment != null && purpose != "auth") invalid("仅认证回调允许 URL 片段")
                         callbackFragment = next.encodedFragment
                         url = next.newBuilder().fragment(null).build()
-                        method = "GET"
+                        method = redirectedMethod
                         form = null
-                        sharedApproval?.invoke(JSONObject(payload.toString()).put("url", url.toString()).put("method", "GET").apply { remove("form"); remove("body") })
+                        sharedApproval?.invoke(JSONObject(payload.toString()).put("url", url.toString()).put("method", method).apply { remove("form"); remove("body") })
                     } else {
                         val stream = response.body?.source()
                         stream?.request(PluginLimits.RESPONSE_BYTES.toLong() + 1)

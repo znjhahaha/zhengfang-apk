@@ -2,9 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-sdk tools:overrideLibrary="org.mozilla.geckoview" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     
     <!-- 后台服务权限 -->
@@ -35,6 +39,12 @@
         tools:targetApi="31">
         <activity android:name=".diagnostics.ErrorReportActivity" android:exported="false" android:theme="@style/Theme.CourseSelector" />
         <activity android:name=".academic.plugin.NativePluginActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".academic.plugin.PluginUserscriptActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".academic.plugin.PluginEmbeddedBrowserActivity" android:exported="false" android:process=":plugin_embedded_browser" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".academic.plugin.PluginEmbeddedBrowserService" android:exported="false" android:process=":plugin_embedded_browser" />
+        <activity android:name=".academic.plugin.PluginLegacyWebActivity" android:exported="false" android:process=":plugin_legacy_web" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".academic.plugin.PluginLegacyWebService" android:exported="false" android:process=":plugin_legacy_web" />
+        <service android:name=".academic.plugin.PluginForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".academic.plugin.NativePluginJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
         <service android:name=".academic.plugin.PluginUpdateJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
 

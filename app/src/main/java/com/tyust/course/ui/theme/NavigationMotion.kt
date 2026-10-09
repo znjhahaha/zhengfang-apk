@@ -124,9 +124,10 @@ val LocalNavigationMotion = staticCompositionLocalOf<NavigationMotionState?> { n
 @Composable
 fun rememberNavigationMotionState(selected: Int, account: String, reduced: Boolean): NavigationMotionState {
     val scope = rememberCoroutineScope()
-    val state = remember(account, scope) { NavigationMotionState(selected, scope) }
+    val state = remember(account, scope) { NavigationMotionState(selected.coerceAtLeast(0), scope) }
     DisposableEffect(state) { onDispose { state.dispose() } }
-    LaunchedEffect(state, selected, reduced) { state.select(selected, reduced) }
+    // An unpinned plugin page has no bottom-bar selection. Retain the last real position.
+    LaunchedEffect(state, selected, reduced) { if (selected >= 0) state.select(selected, reduced) }
     return state
 }
 

@@ -102,6 +102,19 @@ class NativePluginVault(app: Context, namespace: String, private val legacyNames
         }.generateKey()
     }
     private fun path(name: String) = AtomicFile(File(root, PluginJson.sha256(name.toByteArray()) + ".json"))
+    internal fun sealRecord(name: String, value: ByteArray): ByteArray = synchronized(vaultLock) {
+        guard()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()); updateAAD((root.name + "record:" + name).toByteArray()) }
+        cipher.iv + cipher.doFinal(value)
+    }
+    internal fun openRecord(name: String, value: ByteArray): ByteArray = synchronized(vaultLock) {
+        guard()
+        try {
+            require(value.size >= 28)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value.copyOfRange(0, 12))); updateAAD((root.name + "record:" + name).toByteArray()) }
+            cipher.doFinal(value.copyOfRange(12, value.size))
+        } catch (_: Exception) { throw PluginException(PluginErrorCode.SESSION_EXPIRED, "本地记录无法解密") }
+    }
     fun put(name: String, value: JSONObject, persistent: Boolean = true): Unit = synchronized(vaultLock) {
         guard()
         if (value.toString().toByteArray().size > PluginLimits.STATE_BYTES) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "凭据超过容量限制")

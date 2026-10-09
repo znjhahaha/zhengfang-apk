@@ -4,9 +4,11 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // Kotlin 2.4 metadata requires R8 9.1.29 or newer; keep the existing AGP.
+        // Kotlin 2.4 metadata requires R8 9.1.29 or newer; compatible with the GeckoView 157 toolchain.
         classpath 'com.android.tools:r8:9.4.24'
-        classpath 'com.android.tools.build:gradle:8.13.2'
+        classpath 'com.android.tools.build:gradle:9.1.0'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20'
+        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.20'
         // Kotlin / Compose 编译器插件版本由 settings.gradle 的 pluginManagement 统一声明
     }
 }

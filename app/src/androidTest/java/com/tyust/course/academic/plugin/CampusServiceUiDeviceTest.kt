@@ -40,10 +40,10 @@ class CampusServiceUiDeviceTest {
                 compose.onNodeWithTag("service-block-profile").assertExists()
                 compose.onNodeWithText("完成排布").performScrollTo().performClick()
                 compose.onNodeWithText("报名演示活动").performScrollTo().performClick()
-                compose.onNodeWithText("确认操作").assertIsDisplayed()
+                compose.onNodeWithText("仅本次").assertIsDisplayed()
                 compose.onNodeWithText("取消").performClick()
                 compose.onNodeWithText("报名演示活动").performScrollTo().performClick()
-                compose.onNodeWithText("确认操作").performClick()
+                compose.onNodeWithText("仅本次").performClick()
                 compose.waitUntil(15_000) { compose.onAllNodesWithText("演示报名已完成").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithText("查看报名记录").performScrollTo().performClick()
                 compose.waitUntil(10_000) { compose.onAllNodesWithText("已报名").fetchSemanticsNodes().isNotEmpty() }

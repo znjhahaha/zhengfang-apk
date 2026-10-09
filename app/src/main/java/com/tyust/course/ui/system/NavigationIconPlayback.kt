@@ -27,16 +27,17 @@ class NavigationIconPlayback(count: Int, private val scope: CoroutineScope) {
             reduced = reduceMotion
             if (reduced) clocks.indices.forEach { stop(it) }
         }
-        if (selected == index) return
+        val next = index.takeIf { it in clocks.indices } ?: -1
+        if (selected == next) return
         // Finish the current gesture at its original speed. Interrupting only discards
         // queued feedback, so both the pose and its velocity remain continuous.
         if (selected >= 0) pending[selected] = false
-        selected = index
-        replay(index)
+        selected = next
+        if (next >= 0) replay(next)
     }
 
     fun replay(index: Int) {
-        if (reduced) return
+        if (reduced || index !in clocks.indices) return
         if (isRunning(index)) {
             pending[index] = true
             return

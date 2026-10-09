@@ -25,6 +25,8 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.webkit.*
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.tyust.course.academic.AcademicSession
@@ -47,8 +48,28 @@ import org.json.JSONObject
     val serverId = declaration.getString("serverId")
     val accounts = remember { PluginServiceAccounts(app) }
     val origin = accounts.server(pkg, serverId).getString("origin")
-    val policy = remember(scopeKey) { PluginWebPolicy(origin, declaration) }
+    if (PluginEmbeddedBrowser.enabled(pkg, serverId)) {
+        EmbeddedPluginWebPage(pkg, session, declaration, page.params, onClose, scopeKey)
+        return
+    }
+    val policy = remember(scopeKey) { runCatching { PluginWebPolicy(origin, declaration, page.params) }.getOrNull() }
+    if (policy == null) {
+        Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("网页地址不在插件声明的范围内")
+            SystemDialogButton(onClick = onClose) { Text("返回") }
+        }
+        return
+    }
     val initialUrl = policy.initialUrl
+    val legacy = remember(scopeKey) {
+        policy.browser && origin.startsWith("https://") && android.os.Build.VERSION.SDK_INT >= 28 &&
+            (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) ||
+                PluginLegacyWebSessions.enabled(app, accounts.profile(pkg, serverId, session.key.accountKey)))
+    }
+    if (legacy) {
+        LegacyPluginWebPage(pkg, session, declaration, page.params, active, onClose, scopeKey)
+        return
+    }
     val owner: PluginWebRetainer = androidx.lifecycle.viewmodel.compose.viewModel()
     val state = remember(scopeKey) { owner.obtain(scopeKey) }
     // A fresh process has no retained WebView history; never silently replay a submitted document.
@@ -153,7 +174,7 @@ import org.json.JSONObject
     Column(Modifier.pluginWebViewport(padding)) {
         if (!supported || requireResume) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (!supported) "当前网页组件暂不支持独立账号空间，可以在浏览器中继续使用。" else "网页已恢复，请重新打开入口继续。上次提交操作不会自动重发。")
+                Text(if (!supported) "当前 WebView 不支持独立网页登录，请更新 Android System WebView。外部浏览器的登录状态不会同步到插件；若插件提供账号密码登录，可返回使用该入口。" else "网页已恢复，请重新打开入口继续。上次提交操作不会自动重发。")
                 if (supported) SystemDialogButton(primary = true, onClick = { home() }) { Text("打开网页入口") }
                 SystemDialogButton(onClick = { external(initialUrl) }) { Text("在浏览器打开") }
             }
@@ -179,7 +200,7 @@ import org.json.JSONObject
             if (!state.firstContent || problem.isNotBlank()) Modifier.clearAndSetSemantics {} else Modifier), factory = { context ->
             WebView(context).also { view ->
                 web = view
-                val profile = ProfileStore.getInstance().getOrCreateProfile(accounts.profile(pkg, serverId))
+                val profile = PluginWebSessionCookies.profile(app, pkg, session, active)
                 WebViewCompat.setProfile(view, profile.name)
                 profile.cookieManager.setAcceptThirdPartyCookies(view, false)
                 view.settings.apply { javaScriptEnabled = true; domStorageEnabled = true; allowFileAccess = false; allowContentAccess = false; mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW; setSupportMultipleWindows(false); mediaPlaybackRequiresUserGesture = true }
@@ -302,5 +323,32 @@ import org.json.JSONObject
                 SystemDialogButton(onClick = { PluginPages.registry.customize(PluginPages.registry.pinned().map { if (it == id) page.id else it }); replace = false }) { Text(PluginPages.registry.page(id)?.title ?: id) }
             }
         }
+    }
+}
+
+@Composable
+private fun LegacyPluginWebPage(pkg: PluginPackage, session: AcademicSession, declaration: JSONObject,
+    params: JSONObject, active: () -> Boolean, onClose: () -> Unit, scopeKey: String) {
+    val app = LocalContext.current
+    var launched by rememberSaveable(scopeKey) { mutableStateOf(false) }
+    var attempt by remember { mutableIntStateOf(0) }
+    var message by remember { mutableStateOf(if (launched) "网页已结束，可重新打开入口继续" else "正在打开兼容网页…") }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { onClose() }
+    DisposableEffect(scopeKey) {
+        val lease = PluginVersionLeases.acquire(pkg.manifest.id)
+        onDispose { lease.close() }
+    }
+    LaunchedEffect(scopeKey, attempt) {
+        if (launched) return@LaunchedEffect
+        try {
+            val intent = PluginLegacyWebSessions.open(app, pkg, session, declaration, params, active)
+            if (active()) { launched = true; launcher.launch(intent) }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { message = e.message ?: "兼容网页打开失败，请重试" }
+    }
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(message)
+        SystemActionButton("重新打开", { launched = false; attempt++ })
+        SystemActionButton("返回", onClose)
     }
 }

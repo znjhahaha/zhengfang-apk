@@ -192,6 +192,7 @@ class LiquidInteractionDeviceTest {
         }
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test fun segmentedControlCancelsDragAndSupportsKeyboardActivation() {
         val selected = mutableIntStateOf(0)
         compose.setContent {
@@ -266,6 +267,45 @@ class LiquidInteractionDeviceTest {
             Settings.Secure.putString(resolver, "high_text_contrast_enabled", originalContrast)
             instrumentation.uiAutomation.dropShellPermissionIdentity()
         }
+    }
+
+    @Test fun anUnpinnedPluginHasNoIndicatorAndReturningToTabsKeepsTheLensInBounds() {
+        val selected = mutableIntStateOf(-1)
+        val minimized = mutableStateOf(true)
+        lateinit var motion: com.tyust.course.ui.theme.NavigationMotionState
+        compose.setContent {
+            CourseSelectorTheme {
+                motion = com.tyust.course.ui.theme.rememberNavigationMotionState(selected.intValue, "unlisted-plugin", false)
+                CompositionLocalProvider(com.tyust.course.ui.theme.LocalNavigationMotion provides motion) {
+                    GlassWindowHost {
+                        CapsuleNavigationBar(destinations, selected.intValue, { selected.intValue = it },
+                            minimized = minimized.value, modifier = Modifier.align(Alignment.BottomCenter))
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("main-navigation").assertIsDisplayed()
+        compose.onNodeWithTag("navigation-selection-indicator").assertDoesNotExist()
+        compose.onAllNodes(isSelected()).assertCountEquals(0)
+        compose.runOnIdle { minimized.value = false }
+        for (index in listOf(4, 1, 3)) {
+            compose.onNodeWithTag("main-navigation").performTouchInput {
+                click(Offset(width * (index + 0.5f) / destinations.size, centerY))
+            }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(index, selected.intValue) }
+            compose.onAllNodes(isSelected()).assertCountEquals(1)
+            val bar = compose.onNodeWithTag("main-navigation").fetchSemanticsNode().boundsInRoot
+            val indicator = compose.onNodeWithTag("navigation-selection-indicator").fetchSemanticsNode().boundsInRoot
+            assertTrue("Selected lens must remain inside the navigation track", indicator.center.x in bar.left..bar.right)
+            compose.runOnIdle { selected.intValue = -1 }
+            compose.onNodeWithTag("navigation-selection-indicator").assertDoesNotExist()
+            compose.onAllNodes(isSelected()).assertCountEquals(0)
+            compose.runOnIdle { assertEquals(index.toFloat(), motion.position, 0.002f) }
+        }
+        val file = java.io.File(compose.activity.getExternalFilesDir(null), "plugin-ui/navigation-unlisted.png")
+        file.parentFile!!.mkdirs()
+        file.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test fun thirtyRapidSelectionsEndOnLastPageWithOneSelectedTab() {

@@ -648,7 +648,9 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                         surveyUnreadCount = surveyFeed.unreadCount(System.currentTimeMillis())
                                     )
                                     "app.services" -> com.tyust.course.academic.plugin.ExtensionCenterContent(onOpen = { openPage(it) })
-                                    else -> com.tyust.course.academic.plugin.PluginPageContent(route, onNavigate = { next, params -> pageParameters = pageParameters + (next to params.toString()); openPage(next) }, onBack = { backPage() }, params = org.json.JSONObject(pageParameters[route] ?: "{}"))
+                                    else -> Box(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = com.tyust.course.ui.system.LocalAppOverlayBottomInset.current)) {
+                                        com.tyust.course.academic.plugin.PluginPageContent(route, onNavigate = { next, params -> pageParameters = pageParameters + (next to params.toString()); openPage(next) }, onBack = { backPage() }, params = org.json.JSONObject(pageParameters[route] ?: "{}"))
+                                    }
                                 }
                                 }
                                 }

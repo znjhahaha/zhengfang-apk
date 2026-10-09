@@ -125,4 +125,34 @@ class NativeCredentialIntegrationTest {
             } finally { host.close(); session.retire() }
         }
     }
+
+    @Test fun nativePhotoUploadPreservesTheChosenFilenameMimeAndMultipartFields() = runBlocking {
+        MockWebServer().use { server ->
+            server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
+            val origin = "http://127.0.0.1:${server.port}"
+            val pkg = pkg(origin)
+            pkg.manifest.json.getJSONArray("permissions").put("files")
+            pkg.manifest.network.single().getJSONArray("purposes").put("mutation")
+            val session = AcademicSession(AcademicSessionKey("plugin:test.native-login", "photo-upload"), origin)
+            val host = NativeCapabilityHost(app, pkg, session, interaction) { true }
+            try {
+                val photo = host.execute(effect("files.create", JSONObject().put("name", "checkin.jpg").put("mime", "image/jpeg")), NativeFlow(true)) as JSONObject
+                host.execute(effect("files.write", JSONObject().put("handle", photo.getString("handle"))
+                    .put("base64", Base64.getEncoder().encodeToString("synthetic-photo-bytes".toByteArray()))), NativeFlow(true))
+                val request = JSONObject().put("url", "$origin/upload").put("method", "POST").put("purpose", "mutation")
+                    .put("form", JSONObject().put("puid", "synthetic-user"))
+                server.enqueue(MockResponse().setBody("{\"objectId\":\"synthetic-photo\"}"))
+                val response = host.execute(effect("files.upload", JSONObject().put("handle", photo.getString("handle"))
+                    .put("field", "file").put("request", request)), NativeFlow(true)) as JSONObject
+                assertEquals(200, response.getInt("status"))
+                val sent = server.takeRequest(1, TimeUnit.SECONDS)!!
+                assertTrue(sent.getHeader("Content-Type")!!.startsWith("multipart/form-data; boundary="))
+                val body = sent.body.readUtf8()
+                assertTrue(body.contains("name=\"file\"; filename=\"checkin.jpg\""))
+                assertTrue(body.contains("Content-Type: image/jpeg"))
+                assertTrue(body.contains("name=\"puid\"")); assertTrue(body.contains("synthetic-user"))
+                assertTrue(body.contains("synthetic-photo-bytes")); assertFalse(body.contains(photo.getString("handle") + ".bin"))
+            } finally { host.close(); session.retire() }
+        }
+    }
 }

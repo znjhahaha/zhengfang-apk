@@ -62,7 +62,7 @@ class PluginSandboxDeviceTest {
     }
     @Test fun cancellationInterruptsAndStaleResultsCannotReturn() = runBlocking {
         val op = operation()
-        val job = launch { run("while(true){}", op) }
+        val job = launch { try { run("while(true){}", op) } finally { op.close() } }
         delay(400)
         withTimeout(5000) { job.cancelAndJoin() }
         try { op.requireActive(); fail("operation remained active") } catch (e: PluginException) { assertEquals(PluginErrorCode.CANCELLED, e.code) }

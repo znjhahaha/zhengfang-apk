@@ -606,6 +606,7 @@ class PluginCenterActivity : ComponentActivity() {
     private fun web(path: String) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AcademicProviderRegistry.OFFICIAL_WEBSITE + path))) }
     private fun permissionName(name: String) = mapOf("network" to "网络", "storage" to "隔离存储", "credentials" to "加密凭据", "session" to "会话",
         "files" to "文件", "device.clipboard" to "剪贴板", "device.haptics" to "触感", "tasks" to "后台任务", "notifications" to "通知",
+        "userscripts" to "原版脚本订阅与运行", "device.scan" to "扫码", "device.location" to "实际位置", "device.camera" to "拍照",
         "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制", "academic.session" to "使用本校教务登录",
         "academic.read" to "读取学业数据", "academic.write" to "导入课表")[name] ?: name
     private fun capabilityName(name: String) = mapOf("ui.init" to "原生页面", "ui.reduce" to "交互与状态", "task.run" to "后台流程", "data.query" to "数据提供者",

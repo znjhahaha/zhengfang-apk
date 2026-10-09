@@ -12,7 +12,7 @@ def check_archive(data, sdk_version, rule_version=None):
         entries=z.infolist()
         if len(entries)>3000 or sum(f.file_size for f in entries)>32*1024*1024:raise DeliveryError('Plugin toolchain archive too large')
         names=[f.filename for f in entries]
-        if len(names)!=len(set(names)) or any(pathlib.PurePosixPath(n).is_absolute() or '..' in pathlib.PurePosixPath(n).parts for n in names):
+        if len(names)!=len(set(names)) or any(pathlib.PurePosixPath(n).is_absolute() or '..' in pathlib.PurePosixPath(n).parts or '\\' in n or ':' in n for n in names):
             raise DeliveryError('Invalid plugin toolchain paths')
         lock=strict_json(z.read('sdk/api-lock.json'))
         if lock['version']!=sdk_version or lock['apiVersion']!=3 or lock!=strict_json(z.read('host-api/api-lock.json')):
@@ -20,7 +20,8 @@ def check_archive(data, sdk_version, rule_version=None):
         for file in ['sdk/package.json','host-api/package.json']:
             if strict_json(z.read(file))['version']!=sdk_version:raise DeliveryError('Plugin SDK package version mismatch')
         for name,expected in lock['sha256'].items():
-            if digest(z.read('host-api/'+name))!=expected or digest(z.read('sdk/'+pathlib.PurePosixPath(name).name))!=expected:
+            relative=name.removeprefix('assets/academic-plugin/')
+            if digest(z.read('host-api/'+name))!=expected or digest(z.read('sdk/'+relative))!=expected:
                 raise DeliveryError('Plugin contract bytes mismatch')
         if rule_version is not None:
             policy=z.read('cli/security-policy.mjs').decode()
@@ -35,10 +36,34 @@ def check_descriptor(metadata, app_root=ROOT):
     if metadata.get('apiVersion')!=3 or metadata.get('sdkVersion')!=metadata.get('contractVersion'):
         raise DeliveryError('Online SDK and audit contract disagree')
     if not re.fullmatch(r'3\.\d+\.\d+',str(metadata.get('sdkVersion',''))):raise DeliveryError('Invalid online SDK version')
-    for name in ['contract.schema.json','manifest.schema.json','host-sdk.js','host-capabilities.json']:
+    runtime_files=['contract.schema.json','manifest.schema.json','host-sdk.js','host-capabilities.json']
+    if tuple(map(int, metadata['sdkVersion'].split('.'))) >= (3,3,0):
+        runtime_files += ['userscript-bootstrap.js','userscript-network-guard.js']
+    if tuple(map(int, metadata['sdkVersion'].split('.'))) >= (3,4,0):
+        runtime_files += ['gecko/manifest.json','gecko/background.js','gecko/api.js','gecko/environment.js']
+    for name in runtime_files:
         expected=metadata.get('contractSha256',{}).get('assets/academic-plugin/'+name)
         if expected!=digest((pathlib.Path(app_root)/'app/src/main/assets/academic-plugin'/name).read_bytes()):
             raise DeliveryError('Online plugin SDK is not synchronized with App: '+name+'; complete spec/PLUGIN-PLATFORM-RELEASE.md')
+    return metadata
+
+def check_local(folder, output=None):
+    """Preflight a locally built portal. Official promotion still calls check_online."""
+    folder=pathlib.Path(folder)
+    metadata=check_descriptor(strict_json((folder/'downloads/platform-release.json').read_bytes()))
+    checks=strict_json((folder/'downloads/checksums.json').read_bytes())
+    wiki=strict_json((folder/'wiki/manifest.json').read_bytes())
+    if checks.get('sdkVersion')!=metadata['sdkVersion'] or wiki.get('sdkVersion')!=metadata['sdkVersion']:
+        raise DeliveryError('Local Wiki or downloads are stale')
+    for field,documented in [('version','appVersion'),('versionCode','appVersionCode'),('source','appSource'),('status','status')]:
+        if wiki.get(documented)!=metadata['app'][field]:raise DeliveryError('Local Wiki and release descriptor disagree')
+    for kind,name in [('starter','plugin-starter-v3.zip'),('sdk','plugin-sdk-v3.zip')]:
+        data=(folder/'downloads'/name).read_bytes()
+        if digest(data)!=metadata['downloads'][kind]['sha256'] or digest(data)!=checks[name]:raise DeliveryError('Local download digest mismatch')
+        lock=check_archive(data,metadata['sdkVersion'],metadata['ruleVersion'] if kind=='starter' else None)
+        if lock['sha256']!=metadata['contractSha256']:raise DeliveryError('Local contract descriptor mismatch')
+    if output:pathlib.Path(output).write_text(json.dumps({'verification':'local-only','metadata':metadata},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    print('Local SDK, Wiki, downloads, App assets and audit rules synchronized: '+metadata['sdkVersion']+'; online promotion NOT verified')
     return metadata
 
 def check_online(output=None):
@@ -69,5 +94,6 @@ def check_online(output=None):
     return metadata
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--output');args=parser.parse_args()
-    check_online(args.output)
+    parser=argparse.ArgumentParser();parser.add_argument('--output');parser.add_argument('--local-platform',help='Local portal dist preflight only; does not verify official promotion');args=parser.parse_args()
+    if args.local_platform:check_local(args.local_platform,args.output)
+    else:check_online(args.output)

@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -56,8 +57,8 @@ internal data class PagePrompt(val title: String, val message: String, val chall
     val accounts = remember(context) { PluginServiceAccounts(context) }
     val serviceAccount = serverId?.let { accounts.selected(pkg.manifest.id, it) }
     val pageParams = JSONObject((page?.params ?: JSONObject()).toString()).apply { params.keys().forEach { put(it, params.get(it)) } }
-    val independentBrowser = template?.optJSONObject("web")?.optString("mode") == "browser"
-    val academicScope = PluginWebPolicy.academicScope(template, academicState.token)
+    val independentBrowser = template?.optJSONObject("web")?.optString("mode") == "browser" || serverId != null && !pkg.manifest.contributes.optBoolean("academic")
+    val academicScope = if (independentBrowser) "service" else PluginWebPolicy.academicScope(template, academicState.token)
     val scopeKey = "${pkg.digest}:$route:$commandId:$serviceAccount:${academicScope}:$accountRevision:${PluginJson.canonical(pageParams)}"
     key(scopeKey) {
         val owner: PluginPageRetainer = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -97,7 +98,9 @@ internal data class PagePrompt(val title: String, val message: String, val chall
             val density = androidx.compose.ui.platform.LocalDensity.current
             val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
             DisposableEffect(lifecycle, lifetime) {
-                val observer = androidx.lifecycle.LifecycleEventObserver { _, _ -> lifetime.foreground = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, _ ->
+                    lifetime.foreground = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                }
                 lifecycle.addObserver(observer); lifetime.foreground = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
                 onDispose { lifecycle.removeObserver(observer); lifetime.foreground = false }
             }
@@ -108,15 +111,26 @@ internal data class PagePrompt(val title: String, val message: String, val chall
                     .put("widthClass", com.tyust.course.ui.system.windowWidthClass(width)).put("fontScale", density.fontScale)
                 if (lifetime.viewport?.toString() != viewport.toString()) { lifetime.viewport = viewport; if (lifetime.foreground) native.viewportChanged(viewport) }
             }), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (snapshot.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (snapshot.error.isNotBlank()) { Text(snapshot.error, color = MaterialTheme.colorScheme.error); SystemDialogButton(onClick = { native.open(route, pageParams) }) { Text("重试") } }
-                snapshot.view?.let { view -> NativePluginNode(view, host.files, Modifier.fillMaxSize()) { event, gesture -> native.event(snapshot.instance, event, gesture) } }
+                if (snapshot.error.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(snapshot.error, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    com.tyust.course.ui.system.SystemActionButton("重试", { native.open(route, pageParams) })
+                }
+                // A stable callback keeps unchanged plugin nodes skippable across reducer results.
+                val instance by rememberUpdatedState(snapshot.instance)
+                val emit = remember(native) { { event: JSONObject, gesture: Boolean -> native.event(instance, event, gesture) } }
+                Box(Modifier.fillMaxSize()) {
+                    snapshot.view?.let { view -> NativePluginNode(view, host.files, Modifier.fillMaxSize(), emit = emit) }
+                    // Overlay, not a layout row: toggling it must not shift the page on every reduce.
+                    if (snapshot.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter))
+                }
             }
         }
     }
 }
 
 @Composable private fun rememberPageInteraction(state: PageInteraction, pluginName: String, onNavigate: (String, JSONObject) -> Unit, onBack: () -> Unit): NativePluginInteraction {
+    NativePluginDeviceLaunchers(state)
+    NativePluginVisualPrompts(state)
     val view = LocalView.current
     var prompt by state::prompt
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { state.picker?.complete(it); state.picker = null }

@@ -90,12 +90,14 @@ class PluginCenterDeviceTest {
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo()
                 capture("catalog")
                 val beforeSearch = server.requestCount
+                compose.onNodeWithContentDescription("搜索插件").performClick()
                 compose.onNodeWithTag("plugin-search").performTextInput("找不到的学校")
                 compose.onNodeWithText("没有找到匹配的插件").assertExists()
                 compose.onNodeWithTag("plugin-search").performTextReplacement("模拟 适配")
                 compose.onNodeWithTag("catalog-install-$id").assertExists()
                 org.junit.Assert.assertEquals(beforeSearch, server.requestCount)
                 compose.onNodeWithTag("plugin-search").performTextClearance()
+                compose.onNodeWithContentDescription("搜索插件").performClick()
                 compose.onNodeWithTag("catalog-install-$id").performScrollTo().assertIsEnabled().performClick()
                 compose.waitUntil(15_000) { compose.onAllNodesWithText("确认安装").fetchSemanticsNodes().isNotEmpty() }
                 org.junit.Assert.assertNull(AcademicProviderRegistry.packages().active(id))

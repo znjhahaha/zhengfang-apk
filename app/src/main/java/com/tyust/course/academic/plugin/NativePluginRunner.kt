@@ -44,7 +44,7 @@ class NativeUiSession(
     private data class Pending(val instance: String, val event: JSONObject, val flow: NativeFlow, val init: Boolean = false, val params: JSONObject = JSONObject(), val queuedAt: Long = android.os.SystemClock.elapsedRealtime())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val events = Channel<Pending>(64)
-    private val queuedInputs = mutableMapOf<String, Pending>()
+    private val queuedInputs = NativeInputEvents<Pending> { previous, next -> previous.event.put("value", next.event.get("value")) }
     private val effects = mutableMapOf<String, Job>()
     private val mutableSnapshot = MutableStateFlow(NativeUiSnapshot())
     val snapshot = mutableSnapshot.asStateFlow()
@@ -55,11 +55,18 @@ class NativeUiSession(
     private var closed = false
     init {
         host.cancelEffects = { ids -> ids.forEach { effects[it]?.cancel() } }
+        if (pkg.manifest.permissions.any { it in setOf("userscripts", "tasks") }) scope.launch {
+            PluginForegroundWork.revision.collect {
+                val instance = mutableSnapshot.value.instance
+                if (instance.isNotBlank() && isCurrent(instance)) events.trySend(Pending(instance,
+                    JSONObject().put("type", "lifecycle").put("name", "tasks.changed"), NativeFlow(false)))
+            }
+        }
         scope.launch {
             for (pending in events) {
                 if (!isCurrent(pending.instance)) continue
                 android.util.Log.i("PluginUi", "version=${pkg.manifest.version} phase=queue_done elapsedMs=${android.os.SystemClock.elapsedRealtime() - pending.queuedAt}")
-                queuedInputs.entries.removeAll { it.value === pending }
+                queuedInputs.consumed(pending)
                 val before = mutableSnapshot.value
                 mutableSnapshot.value = before.copy(busy = true)
                 try {
@@ -95,14 +102,18 @@ class NativeUiSession(
     fun event(instance: String, event: JSONObject, userGesture: Boolean) {
         if (!isCurrent(instance)) return
         val nodeId = event.optString("nodeId")
+        var continuous = false
+        val flow = NativeFlow(userGesture)
         if (nodeId.isNotBlank()) {
             val node = mutableSnapshot.value.view?.let { NativePluginContract.findNode(it, nodeId) } ?: return
             if (!node.optBoolean("enabled", true) || event.optString("name") !in setOf(node.optString("event"), node.optString("onEnd"))) return
+            continuous = node.optString("type") in setOf("input", "slider") && event.optString("type") == "input"
+            flow.submission = runCatching { NativeSubmissionGrant.fromButton(pkg.manifest, node, event, userGesture) }.getOrNull()
         }
-        if (event.optString("type") == "input") queuedInputs[nodeId]?.let { it.event.put("value", event.get("value")); return }
-        val pending = Pending(instance, event, NativeFlow(userGesture))
-        if (events.trySend(pending).isSuccess) { if (event.optString("type") == "input") queuedInputs[nodeId] = pending }
-        else showError(PluginException(PluginErrorCode.RESOURCE_LIMIT, "操作过快，请稍后重试"))
+        val pending = Pending(instance, event, flow)
+        val key = if (continuous) instance + ":" + nodeId + ":" + event.optString("name") else null
+        if (!queuedInputs.offer(key, pending) { events.trySend(it).isSuccess })
+            showError(PluginException(PluginErrorCode.RESOURCE_LIMIT, "操作过快，请稍后重试"))
     }
     fun viewportChanged(value: JSONObject) {
         val serialized = value.toString()
@@ -113,9 +124,8 @@ class NativeUiSession(
         if (requirements.none { it.optString("name") == "ui.viewport" && it.optInt("version") == 1 }) return
         val instance = mutableSnapshot.value.instance
         if (!isCurrent(instance)) return
-        queuedInputs["viewport"]?.let { it.event.put("value", value); previousViewport = serialized; return }
         val pending = Pending(instance, JSONObject().put("type", "lifecycle").put("name", "viewport.changed").put("value", value), NativeFlow(false))
-        if (events.trySend(pending).isSuccess) { queuedInputs["viewport"] = pending; previousViewport = serialized }
+        if (queuedInputs.offer(instance + ":viewport", pending) { events.trySend(it).isSuccess }) previousViewport = serialized
     }
     fun menu(action: JSONObject) {
         val page = action.optString("pageId")

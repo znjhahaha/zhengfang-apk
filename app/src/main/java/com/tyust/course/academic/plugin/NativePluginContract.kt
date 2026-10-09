@@ -30,11 +30,12 @@ object NativePluginContract {
         fun walk(node: JSONObject, depth: Int) {
             if (depth > 16 || ids.size >= 2000) invalid("组件数量或嵌套超过限制")
             if (!ids.add(node.getString("id"))) invalid("组件 ID 重复")
-            if (node.getString("type") == "select") {
+            if (node.getString("type") in setOf("select", "segmented")) {
                 val values = PluginJson.objects(node.getJSONArray("options")).map { it.getString("value") }
                 if (values.distinct().size != values.size || node.getString("value") !in values) invalid("选择项或当前值无效")
             }
             if (node.getString("type") == "slider" && (node.getDouble("min") >= node.getDouble("max") || node.getDouble("value") !in node.getDouble("min")..node.getDouble("max"))) invalid("滑动条范围无效")
+            if (node.getString("type") == "pattern" && !PluginGesturePattern.valid(node.getString("value"))) invalid("九宫格手势包含无效或重复点")
             node.optJSONArray("children")?.let { children -> PluginJson.objects(children).forEach { walk(it, depth + 1) } }
         }
         walk(result.getJSONObject("view"), 0)
@@ -53,10 +54,17 @@ object NativePluginContract {
         return ids.toSet()
     }
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)
+
+    fun components(): JSONObject = JSONObject()
+        .put("types", JSONArray(listOf("column", "row", "box", "scroll", "list", "text", "image", "button",
+            "segmented", "listItem", "badge", "input", "pattern", "toggle", "select", "slider", "progress", "divider", "spacer", "canvas")))
+        .put("buttonVariants", JSONArray(listOf("primary", "secondary", "plain")))
+        .put("buttonSizes", JSONArray(listOf("regular", "compact")))
 }
 
 /** A completed effect ID cannot be replayed by a reducer in the same user interaction. */
 class NativeFlow(val userGesture: Boolean) {
+    internal var submission: NativeSubmissionGrant? = null
     private val ids = mutableSetOf<String>()
     private var uncertain = false
     private val startedAt = System.nanoTime()

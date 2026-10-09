@@ -60,11 +60,15 @@ internal class PluginPageLifetime(private val app: Context, private val pkg: Plu
 /** Launchers are attached by each composition; pending prompts and results survive rotation. */
 internal class PageInteraction : NativePluginInteraction {
     var prompt by mutableStateOf<PagePrompt?>(null)
+    var visualPrompt by mutableStateOf<PluginVisualPrompt?>(null)
     var picker: CompletableDeferred<Uri?>? = null
     var permission: CompletableDeferred<Boolean>? = null
     var pluginName = ""
     var launchFile: ((Array<String>) -> Unit)? = null
     var launchPermission: (() -> Unit)? = null
+    var launchDevice: ((String) -> Unit)? = null
+    var deviceResult: CompletableDeferred<JSONObject?>? = null
+    var photoUri: Uri? = null
     var navigateTo: ((String, JSONObject) -> Unit)? = null
     var goBack: (() -> Unit)? = null
     var hapticAction: (() -> Unit)? = null
@@ -90,8 +94,19 @@ internal class PageInteraction : NativePluginInteraction {
         val result = CompletableDeferred<Boolean>(); permission = result
         try { launch(); result.await() } finally { result.cancel(); if (permission === result) permission = null }
     }
+    override suspend fun device(kind: String): JSONObject? = gate.withLock {
+        val launch = launchDevice ?: throw PluginException(PluginErrorCode.CANCELLED, "页面暂不可交互")
+        val result = CompletableDeferred<JSONObject?>(); deviceResult = result
+        try { launch(kind); result.await() } finally { result.cancel(); if (deviceResult === result) deviceResult = null }
+    }
     override fun navigate(pageId: String, params: JSONObject) { navigateTo?.invoke(pageId, JSONObject(params.toString())) }
+    override suspend fun visual(kind: String, input: JSONObject, images: List<File>): JSONObject? = gate.withLock {
+        if (closed) throw CancellationException("Page closed")
+        val request = PluginVisualPrompt(kind, input, images)
+        visualPrompt = request
+        try { request.result.await() } finally { request.result.cancel(); if (visualPrompt === request) visualPrompt = null }
+    }
     override fun back() { goBack?.invoke() }
     override fun haptic() { hapticAction?.invoke() }
-    fun close() { closed = true; prompt?.result?.cancel(); picker?.cancel(); permission?.cancel(); prompt = null }
+    fun close() { closed = true; prompt?.result?.cancel(); visualPrompt?.result?.cancel(); visualPrompt = null; picker?.cancel(); permission?.cancel(); deviceResult?.cancel(); prompt = null }
 }
