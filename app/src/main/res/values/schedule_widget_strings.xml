@@ -2,9 +2,14 @@
     <string name="schedule_widget_name">双课程</string>
     <string name="schedule_widget_single_name">简洁单课</string>
     <string name="schedule_widget_timeline_name">今日时间轴</string>
+    <string name="schedule_widget_countdown_name">倒计时</string>
     <string name="schedule_widget_single_description">1×1 单课卡片，完整显示课名、教师，并保留时间和教室；拉大后文字更舒展。</string>
     <string name="schedule_widget_timeline_description">2×2 今日时间轴，完整显示课名和教师，突出当前与下一节；拉大可查看更多课程。</string>
     <string name="schedule_widget_description">2×1 双课卡片，并排显示两门课程的课名、教师、时间和教室，支持离线使用。</string>
+    <string name="schedule_widget_countdown_description">2×1 倒计时卡片，实时显示距上课或距下课还有多久，并保留课名、时间与教室。</string>
+    <string name="schedule_widget_countdown_heading">倒计时</string>
+    <string name="schedule_widget_countdown_label">距上课</string>
+    <string name="schedule_widget_countdown_preview">00:24:12</string>
     <string name="schedule_widget_heading">今日课表</string>
     <string name="schedule_widget_status">正在上课</string>
     <string name="schedule_widget_preview">高等数学</string>

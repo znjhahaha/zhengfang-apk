@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy widget-picker preview: some vendor launchers still read previewImage instead of previewLayout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="320dp"
+    android:viewportWidth="320" android:viewportHeight="320">
+    <path android:fillColor="#F4F4F7" android:pathData="M0,0 L320,0 L320,320 L0,320 Z" />
+    <path android:fillColor="#3B82F6" android:pathData="M26,0 L34,0 L34,320 L26,320 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M52,30 L214,30 L214,50 L52,50 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M52,62 L176,62 L176,76 L52,76 Z" />
+    <path android:fillColor="#3B82F6" android:pathData="M52,104 L60,104 L60,132 L52,132 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M76,104 L236,104 L236,124 L76,124 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M76,136 L200,136 L200,150 L76,150 Z" />
+    <path android:fillColor="#22C55E" android:pathData="M52,178 L60,178 L60,206 L52,206 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M76,178 L248,178 L248,198 L76,198 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M76,210 L204,210 L204,224 L76,224 Z" />
+    <path android:fillColor="#F59E0B" android:pathData="M52,252 L60,252 L60,280 L52,280 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M76,252 L228,252 L228,272 L76,272 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M76,284 L188,284 L188,298 L76,298 Z" />
+</vector>

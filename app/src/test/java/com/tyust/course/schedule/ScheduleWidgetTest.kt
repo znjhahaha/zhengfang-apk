@@ -40,6 +40,15 @@ class ScheduleWidgetTest {
     private val course = ScheduleCourseRecord("network:fixture", "大学体育", "教师", "体育馆", 1, 1, 1, "1-16周")
     private fun snapshot(account: String = "a") = ScheduleSnapshot(account, "school", "2026-2027-1", listOf(course), base, 1, true)
 
+    /** Vendor launchers (ColorOS and friends) enumerate providers themselves and skip non-exported receivers. */
+    @Test fun widgetReceiversStayExportedSoVendorLaunchersCanListThem() {
+        val pm = context.packageManager
+        ScheduleWidgetStyle.entries.forEach { style ->
+            val info = pm.getReceiverInfo(android.content.ComponentName(context, style.provider), 0)
+            assertTrue("${style.title} 的接收器必须是 exported", info.exported)
+        }
+    }
+
     @Before fun setup() { previousZone = TimeZone.getDefault(); TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai")) }
     @After fun teardown() { TimeZone.setDefault(previousZone); ScheduleWidgetNavigation.consume() }
 
@@ -257,8 +266,8 @@ class ScheduleWidgetTest {
         assertEquals("", repo.snapshot("a", "school", term.next().id).timeBase.firstWeekDate)
     }
 
-    @Test fun threeWidgetStylesKeepIndependentProvidersAndNeverFillTodayWithTomorrow() {
-        assertEquals(3, ScheduleWidgetStyle.entries.map { it.provider }.distinct().size)
+    @Test fun fourWidgetStylesKeepIndependentProvidersAndNeverFillTodayWithTomorrow() {
+        assertEquals(4, ScheduleWidgetStyle.entries.map { it.provider }.distinct().size)
         val today = course.copy(id = "today", startPeriod = 2, endPeriod = 2)
         val tomorrow = today.copy(id = "tomorrow", day = 2)
         val state = ScheduleWidgetState.from(snapshot().copy(courses = listOf(course, today, tomorrow)), now)
@@ -268,6 +277,70 @@ class ScheduleWidgetTest {
         assertNull(noClassesToday.primary)
         assertNull(noClassesToday.secondary)
         assertEquals("今天没有课程", noClassesToday.message)
+    }
+
+    @Test fun countdownTargetsTheNextBoundaryAndFollowsTheClassState() {
+        val before = SimpleDateFormat("yyyy-MM-dd HH:mm").parse("2026-09-07 07:40")!!.time
+        val upcoming = ScheduleWidgetState.from(snapshot(), before)
+        assertEquals("距上课", upcoming.countdownLabel)
+        assertEquals(upcoming.primary!!.occurrence.startsAt, upcoming.countdownAt)
+        val during = ScheduleWidgetState.from(snapshot(), now)
+        assertEquals("正在上课", during.primary?.status)
+        assertEquals("距下课", during.countdownLabel)
+        assertEquals(during.primary!!.occurrence.endsAt, during.countdownAt)
+        val idle = ScheduleWidgetState.from(snapshot().copy(courses = emptyList()), now)
+        assertNull(idle.primary)
+        assertNull(idle.countdownAt)
+        assertNull(ScheduleWidgetState.from(null, now).countdownAt)
+    }
+
+    @Test @Config(sdk = [33]) @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun countdownStyleRendersASelfUpdatingTimerBesideTheCourse() {
+        val state = ScheduleWidgetState.from(snapshot(), now)
+        for ((width, height) in listOf(130 to 56, 150 to 110, 280 to 128, 360 to 240)) {
+            val root = ScheduleWidgetRenderer.views(context, state, width, height, ScheduleWidgetStyle.Countdown)
+                .apply(context, FrameLayout(context)) as ViewGroup
+            val density = context.resources.displayMetrics.density
+            root.measure(View.MeasureSpec.makeMeasureSpec((width * density).toInt(), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec((height * density).toInt(), View.MeasureSpec.EXACTLY))
+            root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+            val size = "$width x $height"
+            assertCompleteLabel(root, R.id.widget_name, course.name)
+            assertEquals("$size timer box", View.VISIBLE, root.findViewById<View>(R.id.widget_countdown_box).visibility)
+            assertEquals("$size timer label", "距下课", root.findViewById<TextView>(R.id.widget_countdown_label).text.toString())
+            // The class details may yield their row on the smallest widget, but never render clipped.
+            val details = mapOf(R.id.widget_time to requireNotNull(state.primary).time, R.id.widget_location to course.location)
+            details.forEach { (id, label) ->
+                if (root.findViewById<View>(id).visibility == View.VISIBLE) assertCompleteLabel(root, id, label)
+            }
+            val timer = requireNotNull(root.findViewById<android.widget.Chronometer>(R.id.widget_countdown))
+            assertTrue(timer.isCountDown)
+            // Chronometer 的 base 必须落在开机时间轴上：倒计时显示的剩余时间要等于墙上时钟的剩余时间。
+            // 直接把 epoch 毫秒当 base 会变成几十万小时——这就是之前算错的原因。
+            val remainingOnWidget = timer.base - android.os.SystemClock.elapsedRealtime()
+            val remainingOnClock = requireNotNull(state.countdownAt) - System.currentTimeMillis()
+            assertTrue("$size countdown must use the uptime timebase: $remainingOnWidget vs $remainingOnClock",
+                kotlin.math.abs(remainingOnWidget - remainingOnClock) < 60_000L)
+            assertTrue("$size header", root.findViewById<View>(R.id.widget_header).isClickable)
+            assertTrue(root.findViewById<View>(R.id.widget_course).performClick())
+            ScheduleWidgetNavigation.accept(shadowOf(context as Application).nextStartedActivity)
+            assertEquals(course.id, ScheduleWidgetNavigation.requested?.course)
+        }
+    }
+
+    @Test @Config(sdk = [33])
+    fun countdownStyleShowsTheSameEmptyStatesAsTheOtherWidgets() {
+        for (snapshot in listOf(null, snapshot().copy(hasCache = false, courses = emptyList()),
+            snapshot().copy(timeBase = ScheduleTimeBase()), snapshot().copy(courses = emptyList()))) {
+            val state = ScheduleWidgetState.from(snapshot, now)
+            val root = ScheduleWidgetRenderer.views(context, state, 130, 56, ScheduleWidgetStyle.Countdown)
+                .apply(context, FrameLayout(context)) as ViewGroup
+            assertEquals(View.GONE, root.findViewById<View>(R.id.widget_courses).visibility)
+            assertEquals(View.GONE, root.findViewById<View>(R.id.widget_countdown_box).visibility)
+            assertEquals(View.VISIBLE, root.findViewById<View>(R.id.widget_empty).visibility)
+            assertEquals(state.message, root.findViewById<TextView>(R.id.widget_message).text.toString())
+            assertEquals(state.actionLabel, root.findViewById<TextView>(R.id.widget_action).text.toString())
+        }
     }
 
     @Test fun singleClassDayDoesNotBorrowTomorrowBeforeDuringOrAfterClass() {
