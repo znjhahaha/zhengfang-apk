@@ -111,7 +111,9 @@ The app includes an update checker. If your school uses a special login flow or 
 
 ## Campus plugins
 
-**Version 1.0.109 adds general-purpose website plugins.** Configure an HTTPS URL with the SDK 3.2.9 `web-browser` template to open study tools, communities, and other websites without a school account. Multiple pages can appear in the service center or be pinned to navigation. Browser mode does not inject the host bridge, and website sessions are isolated by service account. Devices without the required WebView features use an external browser. See the [website plugin wiki](https://plugins.hidisiwa.xyz/wiki/web/) and [release notes](release-notes/v1.0.109.md).
+**Stable releases support general-purpose website plugins.** Configure an HTTPS URL with the SDK's `web-browser` template to open study tools, communities, and other websites without a school account. Multiple pages can appear in the service center or be pinned to navigation. Browser mode does not inject the host bridge, and website sessions are isolated by service account. Devices without the required WebView features use an external browser. See the [website plugin wiki](https://plugins.hidisiwa.xyz/wiki/web/) and the [1.0.109 release notes](release-notes/v1.0.109.md).
+
+The host also isolates native plugin data per account and provides record queries, foreground tasks, and script management. The built-in browser restores sessions and isolates cookies. Plugins can declare subpage titles and back events (the optional `ui.navigation@1` capability); the host handles enter and exit transitions and the system back gesture.
 
 The plugin center has **Discover** and **Installed** views. Search by name, filter by school, inspect plugin details, and install or activate adapters. Cached catalog entries appear first and remain available if refreshing fails.
 
@@ -129,7 +131,7 @@ The **Source code and contributions for this version** section in plugin details
 
 **Jinzhi and Chengfang support reusable school configurations.** An adapter can inherit a base protocol and configure its school's academic portal, authentication entry point, and network scope. Jinzhi also requires the school's class period schedule. Extension plugins can supply capabilities where APIs or login flows differ.
 
-The app includes adapters for Hubei University of Automotive Technology (Jinzhi) and Shandong Institute of Petroleum and Chemical Technology (Chengfang), without requiring a separate import. Other schools need their own configuration and compatibility verification. The Chengfang base protocol currently does not support enrollment or withdrawal submissions. See the [six protocol families and migration guide](https://plugins.hidisiwa.xyz/docs/architecture-v3/PROTOCOLS.md) for capabilities and adaptation instructions.
+The app includes adapters for Hubei University of Automotive Technology (Jinzhi) and Shandong Institute of Petroleum and Chemical Technology (Chengfang), plus built-in configurations for the Chengdu College of University of Electronic Science and Technology of China (Shuwei EAMS) and Wuhan Vocational and Technical University (Chaoxing Smart Academic Affairs). None of them requires a separate import. Other schools need their own configuration and compatibility verification. The Chengfang base protocol currently does not support enrollment or withdrawal submissions. See the [six protocol families and migration guide](https://plugins.hidisiwa.xyz/docs/architecture-v3/PROTOCOLS.md) for capabilities and adaptation instructions.
 
 | What you want to do | Where to go |
 | --- | --- |
@@ -142,7 +144,7 @@ New submissions undergo automated checks and human publication review. Catalog s
 
 This repository contains the plugin runtime and protocol files used by the app. SDK generation sources and the plugin website are maintained separately.
 
-Contributions of school adapters and campus services are welcome. **Developer QQ group: 1074017033**. The [developer center](https://plugins.hidisiwa.xyz/developers) provides the SDK, templates, API documentation, and submission entry point. SDK **3.2.8** retains API major version **3**. The website guides authors through **Develop → Validate and package → Submit an update**. Platform sources are maintained in a separate repository; public documentation, reusable agent prompts, and both developer kits are available through the developer center. The [developer wiki](https://plugins.hidisiwa.xyz/wiki/) includes full tutorials and examples of correct and incorrect usage. This repository includes the app runtime and generated contract resources.
+Contributions of school adapters and campus services are welcome. **Developer QQ group: 1074017033**. The [developer center](https://plugins.hidisiwa.xyz/developers) provides the SDK, templates, API documentation, and submission entry point. SDK **3.6.0** retains API major version **3**. The website guides authors through **Develop → Validate and package → Submit an update**. Platform sources are maintained in a separate repository; public documentation, reusable agent prompts, and both developer kits are available through the developer center. The [developer wiki](https://plugins.hidisiwa.xyz/wiki/) includes full tutorials and examples of correct and incorrect usage. This repository includes the app runtime and generated contract resources.
 
 ## Set reminders for a whole term
 
@@ -150,9 +152,17 @@ In the timetable's **Class reminders** settings, enable or disable reminders for
 
 The page distinguishes enabled reminders from reminders the system can actually schedule. Check notification permissions, exact alarm permissions, and term timing when prompted. Missing times, past events, or system restrictions can prevent scheduling even when a reminder preference has been saved.
 
+## Update notes
+
+These are the main changes in recent stable releases; see the [changelog](CHANGELOG.md) for the complete history.
+
+- **1.0.113** — The APK is split into ARM64, ARM32, and universal ARM packages. The updater picks the package matching the device architecture, and older updaters upgrade smoothly through the universal package. It adds the Shuwei EAMS and Chaoxing Smart Academic Affairs protocols, with built-in configurations for the Chengdu College of University of Electronic Science and Technology of China (EAMS) and Wuhan Vocational and Technical University (Chaoxing Smart Academic Affairs).
+- **1.0.115** — Fixes a native crash when the stable build recognizes a jigsaw puzzle automatically: the ONNX classes and members that JNI looks up are retained, and CI verifies the obfuscated class names. It restores what 1.0.112-ui-preview had left out, including the login home layout, loading animations, class and holiday adjustments, widget appearance settings, map subpages, and domestic map sources.
+- **1.0.116** — Update information and script downloads for built-in userscripts now prefer our own domain, falling back to the original site when Greasy Fork is unreachable. Original author content and attribution are preserved; downloads are checked for digest, version, syntax, and runtime permissions, and the last working version is kept when an update fails.
+
 ## Current source and SDK
 
-`main` includes host capabilities for **SDK 3.2.8 / API 3**. The current stable app is **1.0.103**. Each release retains its own version information. New capabilities are checked through manifest `requires` and `minAppVersionCode` fields; sharing the same API major version alone does not establish client compatibility.
+`main` includes host capabilities for **SDK 3.6.0 / API 3**. The current stable app is **1.0.116**. Each release retains its own version information. New capabilities are checked through manifest `requires` and `minAppVersionCode` fields; sharing the same API major version alone does not establish client compatibility.
 
 | Developer resource | Purpose |
 | --- | --- |
