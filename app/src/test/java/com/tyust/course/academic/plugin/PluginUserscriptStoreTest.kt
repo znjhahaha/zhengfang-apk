@@ -22,14 +22,15 @@ import org.robolectric.annotation.Config
 class PluginUserscriptStoreTest {
     private val app get() = ApplicationProvider.getApplicationContext<Application>()
     private var version = "1.0.0"
+    private var metadataVersion: String? = null
     private var grant = "GM_getValue"
     private var offline = false
     private var active = true
     private val namespace = "synthetic-script-account"
-    private fun source() = """
+    private fun source(scriptVersion: String = version) = """
         // ==UserScript==
         // @name Synthetic original
-        // @version $version
+        // @version $scriptVersion
         // @grant $grant
         // @author Synthetic author
         // @license MIT
@@ -44,7 +45,7 @@ class PluginUserscriptStoreTest {
             "matches":[{"host":"course.test","pathPrefix":"/course"}],"connect":["course.test"],
             "adapter":{"settings":[{"key":"video","selector":"#video","type":"boolean"}]}}"""),
             PluginManifest(JSONObject("""{"id":"test.script","version":"1.0.0","apiVersion":3,"kind":"native","network":[{"origin":"https://course.test","pathPrefix":"/","methods":["GET"],"purposes":["query"]}]}"""))),
-        namespace, downloadOverride = { if (offline) throw IOException("synthetic offline") else source() },
+        namespace, downloadOverride = { url -> if (offline) throw IOException("synthetic offline") else source(if (url.endsWith(".meta.js")) metadataVersion ?: version else version) },
         syntaxOverride = syntax, keyProvider = { SecretKeySpec(ByteArray(32) { 3 }, "AES") }, active = { active })
 
     @Test fun updatesStayPendingAndRollbackRestoresSettingsWithoutImmediatelyReinstallingTheSameVersion() = runBlocking {
@@ -85,6 +86,14 @@ class PluginUserscriptStoreTest {
         val failure = runCatching { store.activate() }.exceptionOrNull()
         assertEquals(PluginErrorCode.BAD_SIGNATURE, (failure as PluginException).code)
         assertEquals("1.0.0", store.publicStatus().getString("version"))
+    }
+
+    @Test fun mismatchedMetadataAndSourceCannotReplaceTheInstalledOriginal() = runBlocking {
+        val store = store(); store.update(true); val original = store.activate()
+        version = "2.0.0"; metadataVersion = "3.0.0"; store.update()
+        assertEquals("", store.publicStatus().getString("pendingVersion"))
+        assertTrue(store.publicStatus().getString("updateMessage").contains("版本不一致"))
+        assertEquals(original.second, store.activate().second)
     }
 
     @Test fun accountRevocationWhileDownloadingCannotRecreateItsDeletedFiles() = runBlocking {

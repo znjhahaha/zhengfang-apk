@@ -10,12 +10,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import javax.crypto.SecretKey
 
 /** Downloads upstream originals only. No upstream source is shipped inside the App or plugin. */
@@ -28,6 +25,7 @@ internal class PluginUserscriptStore(app: Context, val policy: PluginUserscriptP
     private val record = AtomicFile(File(root, "subscription.json"))
     private val vault = NativePluginVault(app, namespace, keyProvider = keyProvider, guard = ::requireActive)
     private val mutex = locks.getOrPut(root.absolutePath) { Mutex() }
+    private val downloader = PluginUserscriptDownloader(policy, ::requireActive)
     private fun requireActive() { if (!active()) throw PluginException(PluginErrorCode.STALE_CONTEXT, "脚本账号或插件已改变") }
     fun metadata(): JSONObject = synchronized(lock) { requireActive(); if (record.baseFile.isFile) JSONObject(String(record.readFully())) else JSONObject().put("subscribed", false) }
     private fun save(value: JSONObject) = synchronized(lock) {
@@ -79,7 +77,7 @@ internal class PluginUserscriptStore(app: Context, val policy: PluginUserscriptP
             try {
                 val baseline = current.optJSONObject("current")
                 val updateUrl = baseline?.optString("updateUrl")?.takeIf { it.isNotBlank() } ?: policy.declaration.getString("updateUrl")
-                val remote = UserscriptMetadata.parse(download(updateUrl))
+                val remote = UserscriptMetadata.parse(download(updateUrl, retryRolledBack))
                 if (remote.version == current.optString("skippedVersion")) {
                     save(current.put("message", "已保留回退版本；手动检查更新可重试被回退的版本")); return@withContext publicStatus()
                 }
@@ -87,7 +85,7 @@ internal class PluginUserscriptStore(app: Context, val policy: PluginUserscriptP
                     save(current.put("message", "已是订阅的最新版本")); return@withContext publicStatus()
                 }
                 val downloadUrl = remote.one("downloadURL").ifBlank { baseline?.optString("downloadUrl") ?: policy.declaration.getString("downloadUrl") }
-                val source = download(downloadUrl)
+                val source = download(downloadUrl, retryRolledBack)
                 val parsed = UserscriptMetadata.validate(source, policy)
                 if (parsed.version != remote.version) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "更新元信息与脚本版本不一致")
                 if (syntaxOverride != null) syntaxOverride.invoke(source) else {
@@ -151,21 +149,10 @@ internal class PluginUserscriptStore(app: Context, val policy: PluginUserscriptP
             save(status.put("message", "已回退脚本和设置，下次任务生效")); publicStatus()
         }
     }
-    private fun download(value: String): String {
-        var url = policy.source(value)
+    private fun download(value: String, revalidate: Boolean): String {
+        val url = policy.source(value)
         downloadOverride?.let { requireActive(); return it(url.toString()) }
-        repeat(4) {
-            requireActive()
-            client.newCall(Request.Builder().url(url).header("User-Agent", "Zhengfang-Userscript/1").build()).execute().use { response ->
-                if (response.code in 300..399) { url = policy.source(url.resolve(response.header("Location").orEmpty())?.toString().orEmpty()) }
-                else {
-                    if (!response.isSuccessful) throw PluginException(PluginErrorCode.NETWORK_RETRYABLE, "脚本来源返回 ${response.code}")
-                    return response.body?.byteStream()?.use { String(it.readBytesBounded(2 * 1024 * 1024), Charsets.UTF_8) }
-                        ?: throw PluginException(PluginErrorCode.NETWORK_RETRYABLE, "脚本来源返回空内容")
-                }
-            }
-        }
-        throw PluginException(PluginErrorCode.UNTRUSTED_URL, "脚本更新跳转过多")
+        return downloader.download(url.toString(), revalidate)
     }
     companion object {
         /** Account removal shares the write lock, so a finishing download cannot recreate its cache. */
@@ -179,6 +166,5 @@ internal class PluginUserscriptStore(app: Context, val policy: PluginUserscriptP
         } else value?.toString()?.toDoubleOrNull()?.takeIf { it.isFinite() && it in setting.getDouble("min")..setting.getDouble("max") }
         private val lock = PluginServiceAccounts.lock
         private val locks = ConcurrentHashMap<String, Mutex>()
-        private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).callTimeout(25, TimeUnit.SECONDS).build()
     }
 }
