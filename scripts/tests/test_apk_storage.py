@@ -54,6 +54,62 @@ class ApkStorageTests(unittest.TestCase):
         self.assertEqual({entry['sha256'] for entry in files.values()}, {old['sha256'], new['sha256']})
         d.validate_download_index(files, self.site)
 
+    def test_complete_arm_sets_fit_the_channel_retention_policy(self):
+        packages = {}
+
+        def release(version, split=True):
+            def artifact(abi):
+                data = f'original signed {version} {abi}'.encode()
+                value = dict(versionName=f'1.0.{version}', versionCode=version,
+                             revision=version, size=len(data), sha256=hashlib.sha256(data).hexdigest())
+                packages[value['sha256']] = data
+                return value
+            value = artifact('universal')
+            if split:
+                value['artifacts'] = {abi: artifact(abi) for abi in d.ABI_FILES}
+            return value
+
+        current = release(114)
+        history = [release(113), release(112)]
+        legacy = release(98, split=False)
+        for _, filename, artifact in d.artifact_receipts(current):
+            (self.root/filename).write_bytes(packages[artifact['sha256']])
+
+        for channel, count in [('test', 7), ('stable', 9)]:
+            def fetch(url, target, _budget, expected=None, **kwargs):
+                if url.endswith('/history.json'):
+                    target.write_text(json.dumps(dict(releases=history)))
+                elif url.endswith(f'/{channel}.json'):
+                    target.write_text(json.dumps(history[0]))
+                elif expected:
+                    target.write_bytes(packages[expected['sha256']])
+                else:
+                    return False
+                return True
+
+            site = self.root/channel
+            pin = (legacy, legacy) if channel == 'test' else None
+            with self.subTest(channel=channel), \
+                 patch.object(d, 'cf_project_exists', return_value=True), \
+                 patch.object(d, 'fetch', side_effect=fetch), \
+                 patch.object(d, 'verify_manifest', side_effect=lambda value, *_: value), \
+                 patch.object(d, 'render_index', return_value='<p>Current release</p>'), \
+                 patch.object(d, 'migration_pin', return_value=pin):
+                d.prepare_static(self.root/'app-release.apk', current, channel, site, d.Budget())
+                files = json.loads(d.download_index(site).read_text())
+                self.assertEqual(len(files), count)
+                d.validate_download_index(files, site)
+                for entry in files.values():
+                    rebuilt = b''.join((site/part['path'].lstrip('/')).read_bytes() for part in entry['parts'])
+                    self.assertEqual(rebuilt, packages[entry['sha256']])
+
+    def test_download_index_stays_bounded_after_arm_retention_support(self):
+        for number in range(10):
+            self.stage(f'original signed package {number}'.encode())
+        files = json.loads(d.download_index(self.site).read_text())
+        with self.assertRaisesRegex(d.DeliveryError, 'Invalid download index'):
+            d.validate_download_index(files, self.site)
+
     def test_bad_original_digest_never_produces_a_download_index(self):
         self.source.write_bytes(b'wrong signed bytes')
         with self.assertRaisesRegex(d.DeliveryError, 'digest'):

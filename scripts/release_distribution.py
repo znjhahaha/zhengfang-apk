@@ -26,6 +26,9 @@ HOSTS = {'stable': 'dl.hidisiwa.xyz', 'test': 'dl-test.hidisiwa.xyz'}
 ALLOWED_HOSTS = set(HOSTS.values()) | {'github.com', 'raw.githubusercontent.com',
     'release-assets.githubusercontent.com', 'gh-proxy.com', 'ghproxy.net', 'gitee.com', 'raw.giteeusercontent.com'}
 ABI_FILES = {'arm64-v8a': 'app-arm64-v8a-release.apk', 'armeabi-v7a': 'app-armeabi-v7a-release.apk'}
+# Stable keeps the current and two previous sets (three APKs each). Test keeps
+# two sets plus the single legacy migration APK, so the same bound covers both.
+MAX_DOWNLOAD_INDEX_FILES = 3 * (1 + len(ABI_FILES))
 
 class DeliveryError(RuntimeError):
     pass
@@ -559,7 +562,7 @@ def deploy(directory, channel, budget):
 
 
 def validate_download_index(files, directory):
-    if not isinstance(files, dict) or not 1 <= len(files) <= 4:
+    if not isinstance(files, dict) or not 1 <= len(files) <= MAX_DOWNLOAD_INDEX_FILES:
         raise DeliveryError('Invalid download index')
     for path, entry in files.items():
         match = re.fullmatch(r'/releases/\d+\.\d+\.\d+/([a-f0-9]{64})/app-release\.apk', path)
