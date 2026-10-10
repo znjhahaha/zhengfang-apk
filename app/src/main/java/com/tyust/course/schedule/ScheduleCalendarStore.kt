@@ -3,9 +3,16 @@ package com.tyust.course.schedule
 import android.content.SharedPreferences
 import org.json.JSONObject
 
-internal class ScheduleCalendarStore(private val preferences: SharedPreferences) {
+/**
+ * [weekStart] is resolved on every access because the user can change the first weekday while the
+ * app runs; the stored anchor is always snapped back onto it.
+ */
+internal class ScheduleCalendarStore(
+    private val preferences: SharedPreferences,
+    private val weekStart: () -> ScheduleWeekStart = { ScheduleWeekStart.Default }
+) {
     private fun normalized(value: ScheduleTimeBase): ScheduleTimeBase = value.copy(
-        firstWeekDate = ScheduleDates.normalizeFirstWeekDate(value.firstWeekDate) ?: value.firstWeekDate
+        firstWeekDate = ScheduleDates.normalizeFirstWeekDate(value.firstWeekDate, weekStart()) ?: value.firstWeekDate
     )
 
     fun read(account: String, term: String): ScheduleTimeBase? = preferences.getString("calendar:$account|$term", null)?.let {
@@ -30,7 +37,7 @@ internal class ScheduleCalendarStore(private val preferences: SharedPreferences)
         val existing = read(account, currentTerm)
         // A period-only record or an earlier empty migration must not discard the old start date.
         // An explicitly saved start date and every other semester keep their own calendar.
-        if (ScheduleDates.firstMonday(legacy.firstWeekDate) == null || !existing?.firstWeekDate.isNullOrBlank()) return false
+        if (ScheduleDates.firstWeekDate(legacy.firstWeekDate) == null || !existing?.firstWeekDate.isNullOrBlank()) return false
         return write(account, currentTerm, legacy.copy(
             periodStarts = legacy.periodStarts + existing?.periodStarts.orEmpty(),
             periodEnds = legacy.periodEnds + existing?.periodEnds.orEmpty(),

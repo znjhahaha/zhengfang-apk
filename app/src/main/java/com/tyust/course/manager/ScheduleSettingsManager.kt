@@ -2,6 +2,8 @@ package com.tyust.course.manager
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.tyust.course.schedule.ScheduleDates
+import com.tyust.course.schedule.ScheduleWeekStart
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -24,6 +26,7 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         private const val KEY_PERIOD_TIMES = "period_times"
         private const val KEY_CUSTOM_COURSES = "custom_courses"
         private const val KEY_PERIOD_COUNT = "period_count"
+        private const val KEY_WEEK_START = "week_start"
         
         @Volatile
         private var instance: ScheduleSettingsManager? = null
@@ -106,6 +109,29 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
         }
 
     fun getSemesterStartDate(accountKey: String = accountStorageKey()): Long = getScopedLong(KEY_SEMESTER_START, 0L, accountKey)
+
+    // ============ 每周第一天 ============
+
+    var weekStart: ScheduleWeekStart
+        get() = getWeekStart()
+        set(value) {
+            if (weekStart == value) return
+            prefs?.edit()?.putString(scopedKey(KEY_WEEK_START), value.storageValue)?.remove(KEY_WEEK_START)?.apply()
+            revision++
+        }
+
+    fun getWeekStart(accountKey: String = accountStorageKey()): ScheduleWeekStart =
+        ScheduleWeekStart.decode(getScopedString(KEY_WEEK_START, accountKey))
+
+    /**
+     * Keeps the stored first-week date on the chosen weekday, so switching between Monday and
+     * Sunday moves week 1 instead of silently keeping the old column order.
+     */
+    fun realignSemesterStart(weekStart: ScheduleWeekStart): Long {
+        val current = semesterStartDate
+        if (current <= 0L) return current
+        return ScheduleDates.alignFirstWeekDate(current, weekStart).timeInMillis
+    }
     
     /**
      * 根据第一周日期计算当前是第几周

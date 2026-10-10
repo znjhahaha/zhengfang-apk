@@ -14,6 +14,15 @@ class ScheduleDisplayStoreTest {
         assertEquals(ScheduleDisplayPreferences(true, false, true), ScheduleDisplayStore(prefs, "fresh-launch").read("a"))
         assertEquals(ScheduleDisplayPreferences(), store.read("b"))
     }
+    @Test fun dateStripSwipeModeLastsAcrossSessionsAndStaysAccountScoped() {
+        val prefs = MemoryPreferences()
+        val store = ScheduleDisplayStore(prefs, "session-a")
+        assertFalse(store.read("a").stripSwipesWeeks)
+        store.write("a", store.read("a").copy(stripSwipesWeeks = true))
+        // A new Activity session resets the transient view, but the gesture choice is lasting.
+        assertTrue(ScheduleDisplayStore(prefs, "fresh-launch").read("a").stripSwipesWeeks)
+        assertFalse(ScheduleDisplayStore(prefs, "session-a").read("b").stripSwipesWeeks)
+    }
     @Test fun dateAndBothScrollPositionsRoundTripPerAccountAndSemester() {
         val prefs = MemoryPreferences()
         val store = ScheduleDisplayStore(prefs, "session-a")

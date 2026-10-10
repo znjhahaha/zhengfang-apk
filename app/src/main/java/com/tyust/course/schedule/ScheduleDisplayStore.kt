@@ -3,18 +3,21 @@ package com.tyust.course.schedule
 import android.content.SharedPreferences
 import org.json.JSONObject
 
-data class ScheduleDisplayPreferences(val dayView: Boolean = true, val showWeekend: Boolean = true, val compact: Boolean = false)
+data class ScheduleDisplayPreferences(val dayView: Boolean = true, val showWeekend: Boolean = true,
+    val compact: Boolean = false, val stripSwipesWeeks: Boolean = false)
 data class ScheduleViewPosition(val week: Int, val day: Int, val weekScroll: Int, val dayScroll: Int, val calendar: String)
 
-/** Only density/weekend are lasting preferences. A saved Activity session owns date, view and scroll. */
+/** Only density/weekend/date-strip gesture are lasting preferences. A saved Activity session owns date, view and scroll. */
 class ScheduleDisplayStore(private val prefs: SharedPreferences, private val session: String = "") {
     fun read(account: String) = ScheduleDisplayPreferences(
         if (session.isNotBlank() && prefs.getString("viewSession:$account", null) == session) prefs.getBoolean("day:$account", true) else true,
-        prefs.getBoolean("weekend:$account", true), prefs.getBoolean("compact:$account", false))
+        prefs.getBoolean("weekend:$account", true), prefs.getBoolean("compact:$account", false),
+        // Default keeps the historic behaviour: dragging the date strip walks the days of the shown week.
+        prefs.getBoolean("stripWeeks:$account", false))
     fun write(account: String, value: ScheduleDisplayPreferences) {
         if (account.isBlank()) return
         prefs.edit().putString("viewSession:$account", session).putBoolean("day:$account", value.dayView).putBoolean("weekend:$account", value.showWeekend)
-            .putBoolean("compact:$account", value.compact).apply()
+            .putBoolean("compact:$account", value.compact).putBoolean("stripWeeks:$account", value.stripSwipesWeeks).apply()
     }
     fun position(account: String, term: String): ScheduleViewPosition? = runCatching {
         val data = JSONObject(prefs.getString("position:$account|$term", null) ?: return null)
