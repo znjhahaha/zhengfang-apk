@@ -14,10 +14,13 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'znjhahaha/zhengfang-apk'
 STATIC_LIMIT = 25 * 1024 * 1024
+APK_LIMIT = 512 * 1024 * 1024
+CHUNK_SIZE = 20 * 1024 * 1024
 KEY_ID = 'app-update-2026-01'
 HOSTS = {'stable': 'dl.hidisiwa.xyz', 'test': 'dl-test.hidisiwa.xyz'}
 ALLOWED_HOSTS = set(HOSTS.values()) | {'github.com', 'raw.githubusercontent.com',
@@ -102,7 +105,7 @@ def validate_payload(p, channel=None):
         raise DeliveryError('Wrong release channel')
     if p.get('packageName') != 'com.tyust.course':
         raise DeliveryError('Wrong APK package')
-    for field, minimum, maximum in [('revision', 1, 2**63-1), ('versionCode', 1, 2**31-1), ('minSdk', 24, 1000), ('size', 1, 512*1024*1024)]:
+    for field, minimum, maximum in [('revision', 1, 2**63-1), ('versionCode', 1, 2**31-1), ('minSdk', 24, 1000), ('size', 1, APK_LIMIT)]:
         if type(p.get(field)) is not int or not minimum <= p[field] <= maximum:
             raise DeliveryError('Invalid manifest '+field)
     for field, pattern in [('sha256', r'[a-f0-9]{64}'), ('sourceSha', r'[a-f0-9]{40}'), ('buildId', r'[0-9]{1,24}'),
@@ -228,8 +231,23 @@ def inspect_apk(apk, budget):
         size=Path(apk).stat().st_size, sha256=digest(apk), signerSha256=official)
 
 
+def inspect_apk_packaging(apk):
+    if not 0 < Path(apk).stat().st_size <= APK_LIMIT:
+        raise DeliveryError('APK exceeds the 512 MiB update limit; compress native libraries before signing')
+    with zipfile.ZipFile(apk) as archive:
+        libraries = [entry for entry in archive.infolist() if entry.filename.startswith('lib/') and entry.filename.endswith('.so')]
+        if any(entry.compress_type != zipfile.ZIP_DEFLATED for entry in libraries):
+            raise DeliveryError('Release APK contains uncompressed native libraries; enable jniLibs.useLegacyPackaging')
+        abis = sorted({entry.filename.split('/')[1] for entry in libraries})
+        if abis != ['arm64-v8a', 'armeabi-v7a']:
+            raise DeliveryError('Release APK must contain exactly the arm64-v8a and armeabi-v7a native libraries')
+        return dict(nativeLibraries=len(libraries), nativeBytes=sum(entry.file_size for entry in libraries),
+            compressedNativeBytes=sum(entry.compress_size for entry in libraries), abis=abis)
+
+
 def create_receipt(apk, tests, source_sha, build_id, output, budget):
     info = inspect_apk(apk, budget)
+    info['packaging'] = inspect_apk_packaging(apk)
     counts = dict(tests=0, failures=0, errors=0, skipped=0)
     for xml in Path(tests).glob('TEST-*.xml'):
         root = ET.parse(xml).getroot()
@@ -373,10 +391,46 @@ def migration_pin(channel):
     return envelope, p
 
 
+def download_index(directory):
+    directory = Path(directory)
+    # Kept outside public assets; deploy embeds this immutable map in the Worker.
+    return directory.parent/(directory.name+'.downloads.json')
+
+
+def stage_apk(apk, receipt, channel, directory):
+    directory = Path(directory)
+    if type(receipt.get('size')) is not int or not 0 < receipt['size'] <= APK_LIMIT:
+        raise DeliveryError('APK exceeds the supported 512 MiB limit')
+    if not re.fullmatch(r'[a-f0-9]{64}', receipt.get('sha256', '')) or not re.fullmatch(r'\d+\.\d+\.\d+', receipt.get('versionName', '')):
+        raise DeliveryError('Invalid APK storage identity')
+    if Path(apk).stat().st_size != receipt['size']:
+        raise DeliveryError('APK size changed before staging')
+    path = urlsplit(cf_mirror(receipt, channel)['url']).path
+    if receipt['size'] <= STATIC_LIMIT:
+        target = directory/path.lstrip('/'); target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(apk, target)
+        if digest(target) != receipt['sha256']:
+            raise DeliveryError('APK digest changed before staging')
+        return
+    parts = []
+    checksum = hashlib.sha256()
+    with Path(apk).open('rb') as stream:
+        while data := stream.read(CHUNK_SIZE):
+            checksum.update(data)
+            part_path = f'/_apk/{receipt["sha256"]}/{len(parts):03d}.bin'
+            target = directory/part_path.lstrip('/'); target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            parts.append(dict(path=part_path, size=len(data)))
+    if checksum.hexdigest() != receipt['sha256'] or sum(part['size'] for part in parts) != receipt['size']:
+        raise DeliveryError('APK digest or size changed while staging')
+    index = download_index(directory)
+    files = strict_json(index.read_bytes()) if index.exists() else {}
+    files[path] = dict(size=receipt['size'], sha256=receipt['sha256'], parts=parts)
+    index.write_text(json.dumps(files, separators=(',', ':')))
+
+
 def prepare_static(apk, receipt, channel, directory, budget):
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
-    if Path(apk).stat().st_size > STATIC_LIMIT:
-        raise DeliveryError('STATIC_SIZE_LIMIT: free static mirror skipped; no paid fallback')
     host = 'https://'+HOSTS[channel]
     previous = []
     history_file = directory/'history.json'
@@ -410,14 +464,14 @@ def prepare_static(apk, receipt, channel, directory, budget):
     if pin and pin[1]['sha256'] != receipt['sha256'] and not any(p['sha256'] == pin[1]['sha256'] for _, p in previous):
         previous.append(pin)
     for envelope, p in previous:
-        mirror = cf_mirror(p, channel); target = directory/urlsplit(mirror['url']).path.lstrip('/')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fetch(mirror['url'], target, budget, expected=p)
+        mirror = cf_mirror(p, channel); retained = directory.parent/(p['sha256']+'.apk')
+        fetch(mirror['url'], retained, budget, expected=p)
+        stage_apk(retained, p, channel, directory)
+        retained.unlink()
     history_file.write_text(json.dumps(dict(releases=[e for e,p in previous])))
-    mirror = cf_mirror(receipt, channel); target = directory/urlsplit(mirror['url']).path.lstrip('/')
-    target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(apk, target)
+    stage_apk(apk, receipt, channel, directory)
     (directory/'style.css').write_text('body{font:16px system-ui;background:#f4f6f5;color:#20352d;margin:0}main{max-width:680px;margin:40px auto;padding:24px}a{color:#176c4d}pre,code{white-space:pre-wrap;overflow-wrap:anywhere}a{display:inline-block;padding:8px 0}')
-    (directory/'_headers').write_text('/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: default-src \'none\'; style-src \'self\'; frame-ancestors \'none\'\n/*.json\n  Cache-Control: public, max-age=60, must-revalidate\n/\n  Cache-Control: no-cache\n/releases/*\n  Cache-Control: public, max-age=31536000, immutable\n  Content-Type: application/vnd.android.package-archive\n  Content-Disposition: attachment; filename="app-release.apk"\n')
+    (directory/'_headers').write_text('/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: default-src \'none\'; style-src \'self\'; frame-ancestors \'none\'\n/*.json\n  Cache-Control: public, max-age=60, must-revalidate\n/\n  Cache-Control: no-cache\n/releases/*\n  Cache-Control: public, max-age=31536000, immutable\n  Content-Type: application/vnd.android.package-archive\n  Content-Disposition: attachment; filename="app-release.apk"\n/_apk/*\n  Cache-Control: public, max-age=31536000, immutable, no-transform\n  Content-Type: application/octet-stream\n')
     return previous
 
 
@@ -425,13 +479,47 @@ def deploy(directory, channel, budget):
     directory = Path(directory)
     if any(p.stat().st_size > STATIC_LIMIT for p in directory.rglob('*') if p.is_file()):
         raise DeliveryError('Static asset exceeds free 25 MiB limit')
-    # Config contains public identifiers only. No Worker JS, R2, database, or paid binding.
-    config = dict(name='academic-app-download'+('-test' if channel == 'test' else ''), compatibility_date='2026-10-01', workers_dev=False,
+    # Uses the existing free static assets service; no R2, database, or paid binding.
+    config = dict(name='academic-app-download'+('-test' if channel == 'test' else ''), compatibility_date='2026-09-25', workers_dev=False,
         routes=[dict(pattern=HOSTS[channel], custom_domain=True)],
         assets=dict(directory=str(directory.resolve()), not_found_handling='404-page'))
     with tempfile.TemporaryDirectory() as d:
+        index = download_index(directory)
+        if index.exists():
+            files = strict_json(index.read_bytes())
+            validate_download_index(files, directory)
+            worker = Path(d)/'worker.mjs'
+            module = (ROOT/'distribution/chunk-worker.mjs').as_posix()
+            worker.write_text('import { createDownloadWorker } from '+json.dumps(module)+';\nexport default createDownloadWorker('+json.dumps(files)+');\n')
+            config['main'] = str(worker)
+            config['assets'].update(binding='ASSETS', run_worker_first=['/releases/*'])
         path = Path(d)/'wrangler.json'; path.write_text(json.dumps(config))
         budget.run(['npx', '--no-install', 'wrangler', 'deploy', '--config', str(path)], 'cf-static-deploy', maximum=120, cwd=ROOT/'distribution')
+
+
+def validate_download_index(files, directory):
+    if not isinstance(files, dict) or not 1 <= len(files) <= 4:
+        raise DeliveryError('Invalid download index')
+    for path, entry in files.items():
+        match = re.fullmatch(r'/releases/\d+\.\d+\.\d+/([a-f0-9]{64})/app-release\.apk', path)
+        if not match or not isinstance(entry, dict) or entry.get('sha256') != match[1]:
+            raise DeliveryError('Invalid download identity')
+        if type(entry.get('size')) is not int or not STATIC_LIMIT < entry['size'] <= APK_LIMIT:
+            raise DeliveryError('Invalid chunked download size')
+        parts = entry.get('parts')
+        if not isinstance(parts, list) or not 1 <= len(parts) <= (APK_LIMIT + CHUNK_SIZE - 1)//CHUNK_SIZE:
+            raise DeliveryError('Invalid download parts')
+        total = 0
+        for number, part in enumerate(parts):
+            expected_path = f'/_apk/{match[1]}/{number:03d}.bin'
+            if not isinstance(part, dict) or part.get('path') != expected_path or type(part.get('size')) is not int or not 0 < part['size'] <= CHUNK_SIZE:
+                raise DeliveryError('Invalid download part')
+            target = Path(directory)/expected_path.lstrip('/')
+            if not target.is_file() or target.stat().st_size != part['size']:
+                raise DeliveryError('Download part is missing or truncated')
+            total += part['size']
+        if total != entry['size']:
+            raise DeliveryError('Download parts do not match APK size')
 
 
 def verify_with_recovery(action, check, report, budget):
@@ -481,20 +569,17 @@ def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publi
             # Keep time for proxies, signing and small metadata if optional CF stalls.
             cf_budget = Budget(budget.remaining(180 if channel == 'stable' else 280), clock=budget.clock)
             cf_budget.events = budget.events
-            if receipt['size'] <= STATIC_LIMIT:
-                try:
-                    previous = prepare_static(apk, receipt, channel, directory, cf_budget)
-                    for index in range(rounds):
-                        verify_with_recovery(lambda: deploy(directory, channel, cf_budget),
-                            lambda: fetch(cf_mirror(receipt, channel)['url'], Path(d)/'verify.apk', cf_budget, expected=receipt), report, cf_budget)
-                        report['stages'].append(dict(target='cf', round=index+1, status='verified'))
-                    mirrors.insert(0, cf_mirror(receipt, channel)); static_ok = True
-                except DeliveryError as e:
-                    report['stages'].append(dict(target='cf', status='failed', reason=str(e)))
-                    if channel == 'test':
-                        raise
-            else:
-                report['stages'].append(dict(target='cf', status='skipped', reason='25 MiB free asset limit'))
+            try:
+                previous = prepare_static(apk, receipt, channel, directory, cf_budget)
+                for index in range(rounds):
+                    verify_with_recovery(lambda: deploy(directory, channel, cf_budget),
+                        lambda: fetch(cf_mirror(receipt, channel)['url'], Path(d)/'verify.apk', cf_budget, expected=receipt), report, cf_budget)
+                    report['stages'].append(dict(target='cf', round=index+1, status='verified', storage='chunked' if receipt['size'] > STATIC_LIMIT else 'single'))
+                mirrors.insert(0, cf_mirror(receipt, channel)); static_ok = True
+            except DeliveryError as e:
+                report['stages'].append(dict(target='cf', status='failed', reason=str(e)))
+                if channel == 'test':
+                    raise
             for candidate in candidates[:-1]:
                 try:
                     fetch(candidate['url'], Path(d)/'candidate.apk', budget, expected=receipt, maximum=30)

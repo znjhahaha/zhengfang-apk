@@ -170,6 +170,10 @@ jobs:
       - name: Install fixed deployment CLI
         working-directory: distribution
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test APK storage and streaming delivery
+        run: |
+          python3 -m unittest discover -s scripts/tests
+          npm --prefix distribution test
       - name: Verify three uploads and publish test manifest
         timeout-minutes: 6
         env:

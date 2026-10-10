@@ -1,5 +1,6 @@
 import base64
 import copy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -170,7 +171,7 @@ class DeliveryTests(unittest.TestCase):
     def test_missing_history_preserves_current_latest_apk_during_staging(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root); apk=root/'new.apk'; apk.write_bytes(b'new')
-            new=payload(); old=dict(new,versionCode=97,versionName='1.0.97',sha256='c'*64,revision=99)
+            new=dict(payload(),sha256=hashlib.sha256(b'new').hexdigest()); old=dict(new,versionCode=97,versionName='1.0.97',sha256=hashlib.sha256(b'old').hexdigest(),revision=99)
             calls=[]
             def fetch(url,target,budget,expected=None,**kwargs):
                 calls.append(url)
@@ -180,8 +181,8 @@ class DeliveryTests(unittest.TestCase):
             with patch.object(d,'migration_pin',return_value=None), patch.object(d,'cf_project_exists',return_value=True), patch.object(d,'verify_manifest',side_effect=lambda e,c:e), patch.object(d,'fetch',side_effect=fetch):
                 previous=d.prepare_static(apk,new,'test',root/'site',d.Budget())
             self.assertEqual(len(previous),1)
-            self.assertTrue((root/'site/releases/1.0.97'/('c'*64)/'app-release.apk').exists())
-            self.assertTrue((root/'site/releases/1.0.98'/('a'*64)/'app-release.apk').exists())
+            self.assertTrue((root/'site/releases/1.0.97'/old['sha256']/'app-release.apk').exists())
+            self.assertTrue((root/'site/releases/1.0.98'/new['sha256']/'app-release.apk').exists())
             self.assertEqual(json.loads((root/'site/test.json').read_text())['versionCode'],97)
     def test_legacy_pin_is_the_signed_original_test98(self):
         envelope, p = d.migration_pin('test')
@@ -192,19 +193,19 @@ class DeliveryTests(unittest.TestCase):
     def test_new_tests_preserve_legacy98_even_after_it_leaves_recent_history(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root); apk=root/'new.apk'; apk.write_bytes(b'new')
-            new=dict(payload(),versionCode=102,versionName='1.0.102',revision=102)
-            current=dict(new,versionCode=101,versionName='1.0.101',revision=101,sha256='b'*64)
-            older=dict(new,versionCode=100,versionName='1.0.100',revision=100,sha256='c'*64)
-            pin=dict(new,versionCode=98,versionName='1.0.98',revision=98,sha256='d'*64)
+            new=dict(payload(),versionCode=102,versionName='1.0.102',revision=102,sha256=hashlib.sha256(b'new').hexdigest())
+            current=dict(new,versionCode=101,versionName='1.0.101',revision=101,sha256=hashlib.sha256(b'101').hexdigest())
+            older=dict(new,versionCode=100,versionName='1.0.100',revision=100,sha256=hashlib.sha256(b'100').hexdigest())
+            pin=dict(new,versionCode=98,versionName='1.0.98',revision=98,sha256=hashlib.sha256(b'098').hexdigest())
             def fetch(url,target,budget,expected=None,**kwargs):
                 if url.endswith('/history.json'): Path(target).write_text(json.dumps(dict(releases=[older])))
                 elif url.endswith('/test.json'): Path(target).write_text(json.dumps(current))
-                else: Path(target).write_bytes(b'old')
+                else: Path(target).write_bytes(f'{expected["versionCode"]:03d}'.encode())
                 return True
             with patch.object(d,'migration_pin',return_value=(pin,pin)), patch.object(d,'cf_project_exists',return_value=True), patch.object(d,'verify_manifest',side_effect=lambda e,c:e), patch.object(d,'fetch',side_effect=fetch):
                 previous=d.prepare_static(apk,new,'test',root/'site',d.Budget())
             self.assertEqual([p['versionCode'] for _,p in previous],[101,98])
-            self.assertTrue((root/'site/releases/1.0.98'/('d'*64)/'app-release.apk').exists())
+            self.assertTrue((root/'site/releases/1.0.98'/pin['sha256']/'app-release.apk').exists())
             self.assertFalse((root/'site/releases/1.0.100').exists())
             self.assertEqual(json.loads((root/'site/test.json').read_text())['versionCode'],101)
 
@@ -219,13 +220,13 @@ class DeliveryTests(unittest.TestCase):
     def test_retention_downloads_only_previous_two_stable_versions(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root); apk=root/'new.apk'; apk.write_bytes(b'new')
-            new=payload('stable')
-            old=[dict(new,versionCode=n,versionName='1.0.'+str(n),revision=n,sha256=str(n%10)*64) for n in [97,96,95]]
+            new=dict(payload('stable'),sha256=hashlib.sha256(b'new').hexdigest())
+            old=[dict(new,versionCode=n,versionName='1.0.'+str(n),revision=n,sha256=hashlib.sha256(f'{n:03d}'.encode()).hexdigest()) for n in [97,96,95]]
             def fetch(url,target,budget,expected=None,**kwargs):
                 if url.endswith('/history.json'): Path(target).write_text(json.dumps(dict(releases=old)))
                 elif url.endswith('/stable.json'): Path(target).write_text(json.dumps(old[0]))
                 elif url.endswith('/announcement.json'): Path(target).write_text('{"announcements":[]}')
-                else: Path(target).write_bytes(b'old')
+                else: Path(target).write_bytes(f'{expected["versionCode"]:03d}'.encode())
                 return True
             with patch.object(d,'cf_project_exists',return_value=True), patch.object(d,'verify_manifest',side_effect=lambda e,c:e), patch.object(d,'fetch',side_effect=fetch):
                 previous=d.prepare_static(apk,new,'stable',root/'site',d.Budget())
