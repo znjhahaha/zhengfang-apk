@@ -33,16 +33,27 @@ internal class WallpaperToneMap(
     val gridWidth: Int,
     val gridHeight: Int,
     sharpArgb: IntArray,
-    softArgb: IntArray
+    softArgb: IntArray,
+    sharpRangeArgb: IntArray? = null
 ) {
     val sharpArgb: IntArray = sharpArgb.copyOf()
     val softArgb: IntArray = softArgb.copyOf()
+
+    /**
+     * 每格最暗/最亮的像素，长度 `gridWidth * gridHeight * 2`（`[2i]` 最暗、`[2i + 1]` 最亮）。
+     *
+     * 照片里同一格常常既压着高光又压着暗部，只看均值会高估文字下方的实际反差：
+     * 实测「深色文字直接达标」的中灰格，落到格内那棵暗树上就只剩 1.5:1。
+     * 为旧数据保留 null——此时退回均值行为。
+     */
+    val sharpRangeArgb: IntArray? = sharpRangeArgb?.copyOf()
 
     init {
         require(sourceWidth > 0 && sourceHeight > 0)
         require(gridWidth > 0 && gridHeight > 0)
         require(this.sharpArgb.size == gridWidth * gridHeight)
         require(this.softArgb.size == gridWidth * gridHeight)
+        require(this.sharpRangeArgb == null || this.sharpRangeArgb.size == gridWidth * gridHeight * 2)
     }
 
     fun resolve(
@@ -64,15 +75,19 @@ internal class WallpaperToneMap(
 
     fun encode(): String {
         val count = gridWidth * gridHeight
-        val buffer = ByteBuffer.allocate(ToneMapHeaderBytes + count * 6)
+        val range = sharpRangeArgb
+        val version = if (range == null) ToneMapVersion else ToneMapVersionWithRange
+        val cellBytes = ToneMapCellBytes * if (range == null) 2 else 3
+        val buffer = ByteBuffer.allocate(ToneMapHeaderBytes + count * cellBytes)
         buffer.putInt(ToneMapMagic)
-        buffer.putInt(ToneMapVersion)
+        buffer.putInt(version)
         buffer.putInt(sourceWidth)
         buffer.putInt(sourceHeight)
         buffer.putInt(gridWidth)
         buffer.putInt(gridHeight)
         sharpArgb.forEach(buffer::putRgb)
         softArgb.forEach(buffer::putRgb)
+        range?.forEach(buffer::putRgb)
         return buffer.array().toByteString().base64()
     }
 
@@ -127,9 +142,17 @@ internal class WallpaperToneMap(
         }
 
         val dimFactor = 1f - dim * WallpaperDimMaximumAlpha
-        return indices.map { index ->
-            blendAndDim(sharpArgb[index], softArgb[index], blur, dimFactor)
+        val range = sharpRangeArgb
+        val samples = ArrayList<Int>(indices.size * 3)
+        indices.forEach { index ->
+            samples += blendAndDim(sharpArgb[index], softArgb[index], blur, dimFactor)
+            if (range != null) {
+                // 均值之外补上格内极值，文字压在照片的高光或暗部时才不会误判。
+                samples += blendAndDim(range[index * 2], softArgb[index], blur, dimFactor)
+                samples += blendAndDim(range[index * 2 + 1], softArgb[index], blur, dimFactor)
+            }
         }
+        return samples
     }
 
     private fun gridIndex(sourceX: Double, sourceY: Double): Int {
@@ -145,7 +168,8 @@ internal class WallpaperToneMap(
             gridWidth == other.gridWidth &&
             gridHeight == other.gridHeight &&
             sharpArgb.contentEquals(other.sharpArgb) &&
-            softArgb.contentEquals(other.softArgb)
+            softArgb.contentEquals(other.softArgb) &&
+            sharpRangeArgb.contentEquals(other.sharpRangeArgb)
 
     override fun hashCode(): Int {
         var result = sourceWidth
@@ -154,6 +178,7 @@ internal class WallpaperToneMap(
         result = 31 * result + gridHeight
         result = 31 * result + sharpArgb.contentHashCode()
         result = 31 * result + softArgb.contentHashCode()
+        result = 31 * result + (sharpRangeArgb?.contentHashCode() ?: 0)
         return result
     }
 
@@ -171,23 +196,37 @@ internal class WallpaperToneMap(
             val bytes = encoded?.decodeBase64()?.toByteArray() ?: return null
             if (bytes.size < ToneMapHeaderBytes) return null
             val buffer = ByteBuffer.wrap(bytes)
-            if (buffer.int != ToneMapMagic || buffer.int != ToneMapVersion) return null
+            if (buffer.int != ToneMapMagic) return null
+            val cellBytes = when (buffer.int) {
+                ToneMapVersion -> ToneMapCellBytes * 2
+                ToneMapVersionWithRange -> ToneMapCellBytes * 3
+                else -> return null
+            }
             val sourceWidth = buffer.int
             val sourceHeight = buffer.int
             val gridWidth = buffer.int
             val gridHeight = buffer.int
             val count = Math.multiplyExact(gridWidth, gridHeight)
             if (sourceWidth <= 0 || sourceHeight <= 0 || count <= 0 || count > 4096) return null
-            if (bytes.size != ToneMapHeaderBytes + count * 6) return null
+            if (bytes.size != ToneMapHeaderBytes + count * cellBytes) return null
             val sharp = IntArray(count) { buffer.readRgb() }
             val soft = IntArray(count) { buffer.readRgb() }
-            WallpaperToneMap(sourceWidth, sourceHeight, gridWidth, gridHeight, sharp, soft)
+            val range = if (cellBytes == ToneMapCellBytes * 3) {
+                IntArray(count * 2) { buffer.readRgb() }
+            } else {
+                null
+            }
+            WallpaperToneMap(sourceWidth, sourceHeight, gridWidth, gridHeight, sharp, soft, range)
         }.getOrNull()
     }
 }
 
 private const val ToneMapMagic = 0x57544D50
 private const val ToneMapVersion = 1
+
+/** v2 在 v1 的 sharp/soft 均值网格之后再存一份每格最暗/最亮像素。 */
+private const val ToneMapVersionWithRange = 2
+private const val ToneMapCellBytes = 6
 private const val ToneMapHeaderBytes = 24
 private const val WallpaperDimMaximumAlpha = 0.55f
 private const val DarkForeground = 0xFF1C1C1E.toInt()
@@ -329,20 +368,13 @@ internal fun buildWallpaperToneGrid(
     require(pixels.size == sourceWidth * sourceHeight)
     require(gridWidth > 0 && gridHeight > 0)
     return IntArray(gridWidth * gridHeight) { index ->
-        val column = index % gridWidth
-        val row = index / gridWidth
-        val left = (column * sourceWidth / gridWidth).coerceIn(0, sourceWidth - 1)
-        val right = (((column + 1) * sourceWidth + gridWidth - 1) / gridWidth)
-            .coerceIn(left + 1, sourceWidth)
-        val top = (row * sourceHeight / gridHeight).coerceIn(0, sourceHeight - 1)
-        val bottom = (((row + 1) * sourceHeight + gridHeight - 1) / gridHeight)
-            .coerceIn(top + 1, sourceHeight)
+        val bounds = toneCellBounds(index, sourceWidth, sourceHeight, gridWidth, gridHeight)
         var red = 0L
         var green = 0L
         var blue = 0L
         var count = 0L
-        for (y in top until bottom) {
-            for (x in left until right) {
+        for (y in bounds.top until bounds.bottom) {
+            for (x in bounds.left until bounds.right) {
                 val pixel = pixels[y * sourceWidth + x]
                 red += (pixel shr 16) and 0xFF
                 green += (pixel shr 8) and 0xFF
@@ -355,6 +387,68 @@ internal fun buildWallpaperToneGrid(
             (((green / count).toInt() and 0xFF) shl 8) or
             ((blue / count).toInt() and 0xFF)
     }
+}
+
+/**
+ * 每格最暗与最亮的像素，长度 `gridWidth * gridHeight * 2`。
+ *
+ * 照片的局部反差远大于格均值：一格同时压着天空和树叶时，均值是中灰而文字落到哪一侧都极端。
+ * 读可读性判断时把这两个极值也当作背景采样点，玻璃表面才会在这类区域自动加厚。
+ */
+internal fun buildWallpaperToneRange(
+    pixels: IntArray,
+    sourceWidth: Int,
+    sourceHeight: Int,
+    gridWidth: Int = WallpaperToneGridWidth,
+    gridHeight: Int = WallpaperToneGridHeight
+): IntArray {
+    require(sourceWidth > 0 && sourceHeight > 0)
+    require(pixels.size == sourceWidth * sourceHeight)
+    require(gridWidth > 0 && gridHeight > 0)
+    val cells = gridWidth * gridHeight
+    return IntArray(cells * 2) { slot ->
+        val index = slot / 2
+        val bounds = toneCellBounds(index, sourceWidth, sourceHeight, gridWidth, gridHeight)
+        var darkest = 0xFF000000.toInt()
+        var brightest = 0xFFFFFFFF.toInt()
+        var darkestLuminance = Double.MAX_VALUE
+        var brightestLuminance = -1.0
+        for (y in bounds.top until bounds.bottom) {
+            for (x in bounds.left until bounds.right) {
+                val pixel = pixels[y * sourceWidth + x] or (0xFF shl 24)
+                val luminance = relativeLuminance(pixel)
+                if (luminance < darkestLuminance) {
+                    darkestLuminance = luminance
+                    darkest = pixel
+                }
+                if (luminance > brightestLuminance) {
+                    brightestLuminance = luminance
+                    brightest = pixel
+                }
+            }
+        }
+        if (slot % 2 == 0) darkest else brightest
+    }
+}
+
+private class ToneCellBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+private fun toneCellBounds(
+    index: Int,
+    sourceWidth: Int,
+    sourceHeight: Int,
+    gridWidth: Int,
+    gridHeight: Int
+): ToneCellBounds {
+    val column = index % gridWidth
+    val row = index / gridWidth
+    val left = (column * sourceWidth / gridWidth).coerceIn(0, sourceWidth - 1)
+    val right = (((column + 1) * sourceWidth + gridWidth - 1) / gridWidth)
+        .coerceIn(left + 1, sourceWidth)
+    val top = (row * sourceHeight / gridHeight).coerceIn(0, sourceHeight - 1)
+    val bottom = (((row + 1) * sourceHeight + gridHeight - 1) / gridHeight)
+        .coerceIn(top + 1, sourceHeight)
+    return ToneCellBounds(left, top, right, bottom)
 }
 
 private fun relativeLuminance(argb: Int): Double {
