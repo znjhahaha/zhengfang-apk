@@ -89,6 +89,7 @@ import java.util.Locale
         scope.launch {
             try { results = PluginLocationSearch.search(text); if (results.isEmpty()) feedback = "没有找到，可缩短名称或在地图中选点" }
             catch (e: CancellationException) { throw e }
+            catch (e: PluginLocationSearch.Failure) { feedback = e.message.orEmpty() }
             catch (_: Exception) { feedback = "搜索暂不可用，可用当前位置、地图或坐标" }
             finally { searching = false }
         }

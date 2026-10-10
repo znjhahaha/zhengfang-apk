@@ -22,6 +22,8 @@ import com.tyust.course.ui.system.GlassLoadingIndicator
 import com.tyust.course.ui.system.SystemDialogButton
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
+import okhttp3.Cache
+import java.io.File
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -52,7 +54,7 @@ private fun PluginMapSurface(point: PluginCoordinates.Point?, focusRevision: Int
     val mapView = remember {
         runCatching {
             MapLibre.getInstance(context.applicationContext)
-            PluginMapNetwork.initialize()
+            PluginMapNetwork.initialize(context.applicationContext)
             // SurfaceView cannot participate reliably in a clipped, animated Compose page.
             object : MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true)) {
                 override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -88,7 +90,7 @@ private fun PluginMapSurface(point: PluginCoordinates.Point?, focusRevision: Int
                 }
                 val start = latestPoint
                 loaded.moveCamera(CameraUpdateFactory.newLatLngZoom(start?.let { LatLng(it.latitude, it.longitude) } ?: LatLng(35.0, 104.0), if (start == null) 3.0 else 17.0))
-                loaded.setStyle(Style.Builder().fromJson(PLUGIN_OSM_STYLE)) { if (!disposed) styleReady = true }
+                loaded.setStyle(Style.Builder().fromJson(PluginMapService.STYLE)) { if (!disposed) styleReady = true }
             }
         }
         onDispose {
@@ -151,14 +153,13 @@ internal class PluginMapLifecycle(
 
 private object PluginMapNetwork {
     private var initialized = false
-    @Synchronized fun initialize() {
+    @Synchronized fun initialize(context: android.content.Context) {
         if (initialized) return
         org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(OkHttpClient.Builder()
+            .cache(Cache(File(context.cacheDir, "plugin-map-tiles"), 32L * 1024 * 1024))
             .callTimeout(20, TimeUnit.SECONDS).addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder().header("User-Agent", PluginLocationSearch.USER_AGENT).build())
             }.build())
         initialized = true
     }
 }
-
-private const val PLUGIN_OSM_STYLE = """{"version":8,"sources":{"osm":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"maxzoom":19,"attribution":"© OpenStreetMap contributors"}},"layers":[{"id":"background","type":"background","paint":{"background-color":"#e8ecef"}},{"id":"osm","type":"raster","source":"osm"}]}"""

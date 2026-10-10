@@ -12,9 +12,10 @@ import org.json.JSONArray
 import java.util.concurrent.TimeUnit
 
 internal object PluginLocationSearch {
+    class Failure(message: String) : java.io.IOException(message)
     data class Place(val name: String, val point: PluginCoordinates.Point, val title: String, val address: String)
     val USER_AGENT = "ZhengfangCourse/${com.tyust.course.BuildConfig.VERSION_NAME} (https://github.com/znjhahaha/zhengfang-apk)"
-    private val client = OkHttpClient.Builder().callTimeout(12, TimeUnit.SECONDS).build()
+    private val client = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
     private val mutex = Mutex()
     private var requestedAt = 0L
     private val cache = linkedMapOf<String, List<Place>>()
@@ -29,8 +30,10 @@ internal object PluginLocationSearch {
         requestedAt = android.os.SystemClock.elapsedRealtime()
         val found = withContext(Dispatchers.IO) {
             client.newCall(Request.Builder().url(searchUrl(text)).header("User-Agent", USER_AGENT).build()).execute().use { response ->
-                check(response.isSuccessful)
-                parseResults(response.body?.byteStream()?.use { String(it.readBytesBounded(128 * 1024), Charsets.UTF_8) } ?: "[]")
+                if (!response.isSuccessful) throw Failure(PluginMapService.searchFailure(response.code))
+                val raw = response.body?.byteStream()?.use { String(it.readBytesBounded(128 * 1024), Charsets.UTF_8) }
+                    ?: throw Failure("地址搜索未返回结果，请稍后重试")
+                parseResults(raw)
             }
         }
         if (cache.size >= 16) cache.remove(cache.keys.first())
@@ -38,9 +41,8 @@ internal object PluginLocationSearch {
         found
     }
 
-    internal fun searchUrl(query: String) = "https://nominatim.openstreetmap.org/search".toHttpUrl().newBuilder()
-        .addQueryParameter("format", "jsonv2").addQueryParameter("q", query.trim().take(120))
-        .addQueryParameter("limit", "6").addQueryParameter("accept-language", "zh-CN").build()
+    internal fun searchUrl(query: String) = PluginMapService.SEARCH_URL.toHttpUrl().newBuilder()
+        .addQueryParameter("q", query.trim().take(120)).build()
 
     internal fun parseResults(raw: String): List<Place> = PluginJson.objects(JSONArray(raw)).mapNotNull { entry ->
         val latitude = entry.optString("lat").toDoubleOrNull() ?: return@mapNotNull null
