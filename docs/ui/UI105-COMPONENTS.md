@@ -1,5 +1,7 @@
 # UI105: stable overlays and plugin browser glass
 
+> **历史文档。** 本文描述 1.0.105（uipreview / SDK 3.2.8）的浮层与插件浏览玻璃，后续结构已被 [UI106 组件说明](UI106-COMPONENTS.md) 与 [UI107 文字透镜与通用网页](UI107-COMPONENTS.md) 取代。当前正式版为 1.0.116、宿主 SDK 为 3.6.0。原文保留。
+
 UI105 supersedes the UI104 browser layering described in UI104-COMPONENTS.md. App-internal only; SDK 3.2.8 / API 3 is unchanged.
 
 ## Ownership
