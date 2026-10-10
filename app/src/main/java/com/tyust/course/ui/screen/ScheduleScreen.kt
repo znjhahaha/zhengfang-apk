@@ -223,6 +223,8 @@ fun ScheduleGrid(
      */
     topInset: Dp = 0.dp,
     showWeekend: Boolean = true,
+    /** ISO days in display order; the first entry is the leftmost timetable column. */
+    dayOrder: List<Int> = (1..7).toList(),
     compact: Boolean = false,
     beforeGrid: @Composable () -> Unit = {},
     onCourseLongClick: (ScheduleCourseUi) -> Unit = {}
@@ -231,8 +233,11 @@ fun ScheduleGrid(
     val weeklyCourses = remember(courses, currentWeek) {
         courses.filter { isInWeek(it.weeks, currentWeek) }
     }
-    val days = if (showWeekend) 7 else 5
-    val visibleCourses = remember(weeklyCourses, days) { weeklyCourses.filter { it.day in 1..days } }
+    val columns = remember(dayOrder, showWeekend) {
+        if (showWeekend) dayOrder else dayOrder.filter { it != 6 && it != 7 }
+    }
+    val days = columns.size
+    val visibleCourses = remember(weeklyCourses, columns) { weeklyCourses.filter { it.day in columns } }
     val timeColumnWidth = scheduleTimeColumnWidth()
     val gridPadding = scheduleGridPadding()
     val density = LocalDensity.current
@@ -376,6 +381,7 @@ fun ScheduleGrid(
                         periodCount = periodCount,
                         periodHeight = periodHeight,
                         dayCount = days,
+                        dayOrder = columns,
                         periodTimes = periodTimes,
                         onCourseClick = onCourseClick,
                         onCourseLongClick = onCourseLongClick
@@ -523,11 +529,13 @@ fun TimetableLayout(
     periodHeight: Dp = SchedulePeriodHeight,
     modifier: Modifier = Modifier,
     dayCount: Int = 7,
+    /** ISO days in display order; column 0 is the first day of the teaching week. */
+    dayOrder: List<Int> = (1..7).toList(),
     periodTimes: List<PeriodTimeUi> = emptyList(),
     onCourseClick: (ScheduleCourseUi) -> Unit,
     onCourseLongClick: (ScheduleCourseUi) -> Unit = {}
 ) {
-    val entries = remember(courses, dayCount) { timetableEntries(courses.filter { it.day in 1..dayCount }) }
+    val entries = remember(courses, dayOrder) { timetableEntries(courses.filter { it.day in dayOrder }) }
     var selectedGroup by remember { mutableStateOf<List<ScheduleCourseUi>?>(null) }
     selectedGroup?.let { group ->
         com.tyust.course.ui.system.SystemDialog(onDismissRequest = { selectedGroup = null }, title = { Text("重叠课程") }) {
@@ -578,7 +586,7 @@ fun TimetableLayout(
         layout(width, (periodCount * pxPerPeriod).roundToInt()) {
             placeables.forEachIndexed { index, placeable ->
                 val course = entries[index].display
-                val dayIndex = (course.day - 1).coerceIn(0, dayCount - 1)
+                val dayIndex = dayOrder.indexOf(course.day).coerceIn(0, dayCount - 1)
                 val startPeriodIndex = (course.startPeriod - 1).coerceIn(0, periodCount - 1)
 
                 val x = (dayIndex * columnWidth).roundToInt() + cardInset

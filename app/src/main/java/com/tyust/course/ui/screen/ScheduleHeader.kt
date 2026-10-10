@@ -1,12 +1,17 @@
 package com.tyust.course.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -28,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -84,6 +90,7 @@ fun WeekHeaderCompact(
     firstWeekDate: String? = null,
     actualWeek: Int? = null,
     showWeekend: Boolean = true,
+    stripSwipesWeeks: Boolean = false,
     selectedDay: Int? = null,
     onDayClick: (Int) -> Unit = {},
     dayView: Boolean = false,
@@ -103,7 +110,7 @@ fun WeekHeaderCompact(
         registry?.register("header", focus)
         onDispose { registry?.remove("header", focus) }
     }
-    val anchor = firstWeekDate?.takeIf { ScheduleDates.firstMonday(it) != null }
+    val anchor = firstWeekDate?.takeIf { ScheduleDates.firstWeekDate(it) != null }
         ?: com.tyust.course.schedule.ScheduleTimeBase.dateFromMillis(ScheduleDates.mondayOfWeek(now).timeInMillis)
     val date = requireNotNull(ScheduleDates.date(anchor, currentWeek, selectedDay ?: 1))
     val weekday = ScheduleDates.dayAt(now)
@@ -154,7 +161,7 @@ fun WeekHeaderCompact(
                         AnimatedLineIcon(AnimatedIconSpec.Chevron, Modifier.size(14.dp), tint = appearance.onSurfaceVariant)
                     }
                     val weekStatus = when {
-                        ScheduleDates.firstMonday(firstWeekDate) == null -> "开学日期待设置"
+                        ScheduleDates.firstWeekDate(firstWeekDate) == null -> "开学日期待设置"
                         currentWeek < 1 -> "尚未开学"
                         currentWeek > ScheduleMaxWeeks -> "本学期已结束"
                         else -> null
@@ -196,9 +203,10 @@ fun WeekHeaderCompact(
                         }
                     }
                 }
-                ScheduleDateStrip(anchor, currentWeek, selectedDay ?: 1, if (showWeekend) 7 else 5,
-                    today = weekday.takeIf { currentWeek == actualWeek && !isNextSemester },
-                    backdrop = controlBackdrop, height = actionHeight - 8.dp, modifier = Modifier.weight(1f), onDayClick)
+                ScheduleDateStrip(anchor, currentWeek, selectedDay ?: 1, ScheduleDates.weekDayOrder(firstWeekDate, showWeekend),
+                    todayWeek = actualWeek.takeIf { !isNextSemester }, todayDay = weekday,
+                    backdrop = controlBackdrop, height = actionHeight - 8.dp, modifier = Modifier.weight(1f), onDayClick,
+                    swipeWeeks = stripSwipesWeeks, onWeekSwipe = onWeekSelect)
             }
         }
         }
@@ -235,24 +243,43 @@ internal fun ScheduleViewToggle(dayView: Boolean, onChange: (Boolean) -> Unit, b
     }
 }
 
+/** Zero-based page of the week strip; one page is exactly one week and never wraps. */
+internal fun stripWeekPage(week: Int): Int = (week - 1).coerceIn(0, ScheduleMaxWeeks - 1)
+
+/** The week a week-strip page shows; 1-based, clamped to the semester, never wrapped. */
+internal fun stripPageWeek(page: Int): Int = (page + 1).coerceIn(1, ScheduleMaxWeeks)
+
+/** Draws the seven dates of one week. When a pager owns the drag the row only resolves taps. */
 @Composable
-private fun ScheduleDateStrip(anchor: String, week: Int, selectedDay: Int, dayCount: Int, today: Int?,
-    backdrop: Backdrop?, height: androidx.compose.ui.unit.Dp, modifier: Modifier, onDayClick: (Int) -> Unit) {
+private fun ScheduleWeekRow(anchor: String, week: Int, selectedDay: Int, order: List<Int>, today: Int?,
+    backdrop: Backdrop?, height: androidx.compose.ui.unit.Dp, modifier: Modifier, tapsOnly: Boolean,
+    onDayClick: (Int) -> Unit) {
     val appearance = LocalWallpaperAppearanceColors.current
     val accent = readableAccent(appearance)
-    val labels = remember(dayCount) { (1..dayCount).map { "星期${"一二三四五六日"[it - 1]}" } }
+    val labels = remember(order) { order.map { "星期${"一二三四五六日"[it - 1]}" } }
+    val latestOrder by rememberUpdatedState(order)
+    val latestDayClick by rememberUpdatedState(onDayClick)
+    val tapModifier = if (!tapsOnly) modifier else modifier.pointerInput(Unit) {
+        detectTapGestures { offset ->
+            val current = latestOrder
+            val segment = size.width.toFloat() / current.size.coerceAtLeast(1)
+            val index = if (segment <= 0f) 0 else (offset.x / segment).toInt().coerceIn(0, current.lastIndex)
+            latestDayClick(current[index])
+        }
+    }
     // One retained lens source for the whole strip. Zero edge padding keeps every
     // date centered on its timetable column, including narrow and large-font layouts.
-    LiquidSegmentedControl(labels, selectedDay - 1, { onDayClick(it + 1) }, modifier,
+    LiquidSegmentedControl(labels, order.indexOf(selectedDay).coerceAtLeast(0), { onDayClick(order[it]) }, tapModifier,
+        gestures = !tapsOnly,
         backdrop = backdrop, height = height, edgePadding = 0.dp,
         verticalInset = 2.dp, restingRefraction = 0f, showTrack = false,
         refractLabels = false) { index, selection, color ->
-        val day = index + 1
+        val day = order[index]
         val date = requireNotNull(ScheduleDates.date(anchor, week, day))
         Column(Modifier.fillMaxSize().testTag("schedule-weekday-$day").semantics {
             if (today == day) stateDescription = "今天"
         }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("一二三四五六日"[index].toString(),
+            Text("一二三四五六日"[day - 1].toString(),
                 modifier = Modifier.fillMaxWidth().testTag("schedule-weekday-label-$day"),
                 style = ScheduleDateTypography, textAlign = TextAlign.Center,
                 fontSize = 11.sp, lineHeight = 15.sp, color = color, maxLines = 1)
@@ -263,6 +290,50 @@ private fun ScheduleDateStrip(anchor: String, week: Int, selectedDay: Int, dayCo
             Box(Modifier.padding(top = 2.dp).size(3.dp)
                 .background(if (today == day) accent else Color.Transparent, RoundedCornerShape(2.dp)))
         }
+    }
+}
+
+/**
+ * The date strip. By default it shows the selected week and its own drag walks the days of that
+ * week. In week mode it becomes a one-week-per-page pager: a swipe always turns exactly one week,
+ * the seven dates travel together as a single unit, and tapping a date still picks that day.
+ */
+@Composable
+private fun ScheduleDateStrip(anchor: String, week: Int, selectedDay: Int, order: List<Int>, todayWeek: Int?, todayDay: Int?,
+    backdrop: Backdrop?, height: androidx.compose.ui.unit.Dp, modifier: Modifier, onDayClick: (Int) -> Unit,
+    swipeWeeks: Boolean = false, onWeekSwipe: (Int) -> Unit = {}) {
+    if (!swipeWeeks) {
+        ScheduleWeekRow(anchor, week, selectedDay, order, todayDay?.takeIf { week == todayWeek },
+            backdrop, height, modifier, tapsOnly = false, onDayClick)
+        return
+    }
+    val pager = rememberPagerState(initialPage = stripWeekPage(week), pageCount = { ScheduleMaxWeeks })
+    val navigating = remember(pager) { mutableStateOf(false) }
+    val latestWeekSwipe by rememberUpdatedState(onWeekSwipe)
+    val motion = tween<Float>(com.tyust.course.ui.theme.MotionDuration.Medium,
+        easing = com.tyust.course.ui.theme.MotionEasing.Standard)
+    LaunchedEffect(pager, week) {
+        val target = stripWeekPage(week)
+        if (pager.currentPage == target && pager.currentPageOffsetFraction == 0f) return@LaunchedEffect
+        navigating.value = true
+        try { pager.animateScrollToPage(target, animationSpec = motion) } finally { navigating.value = false }
+    }
+    LaunchedEffect(pager) {
+        // Only a user scroll may write a week back upstream, and it always lands on one page.
+        var userScrolling = false
+        snapshotFlow { Triple(pager.isScrollInProgress, navigating.value, pager.settledPage) }
+            .collect { (scrolling, programmed, page) ->
+                if (programmed) userScrolling = false
+                else if (scrolling) userScrolling = true
+                else if (userScrolling) { userScrolling = false; latestWeekSwipe(stripPageWeek(page)) }
+            }
+    }
+    HorizontalPager(pager, modifier, overscrollEffect = null,
+        flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = motion),
+        beyondViewportPageCount = 0) { page ->
+        val pageWeek = stripPageWeek(page)
+        ScheduleWeekRow(anchor, pageWeek, selectedDay, order, todayDay?.takeIf { pageWeek == todayWeek },
+            backdrop, height, Modifier.fillMaxSize(), tapsOnly = true, onDayClick)
     }
 }
 

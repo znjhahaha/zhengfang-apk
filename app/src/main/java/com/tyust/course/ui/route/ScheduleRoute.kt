@@ -487,7 +487,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
                 GlassToaster.show("课表为空，无法导出")
             } else {
                 try {
-                    val semesterStart = ScheduleDates.firstMonday(displayedTimeBase?.firstWeekDate)
+                    val semesterStart = ScheduleDates.firstWeekDate(displayedTimeBase?.firstWeekDate)
                     if (semesterStart == null) {
                         GlassToaster.show("请先设置这个学期的第一周周一日期")
                         settingsTermOverride = null
@@ -564,6 +564,23 @@ fun ScheduleRoute(isActive: Boolean = true) {
                     val times = periodTimesFor(termTimeBase)
                     reminderScheduler.updateTimeBase(routeAccountKey, settingsTerm, ScheduleTimeBase(
                         ScheduleTimeBase.dateFromMillis(millis), times.associate { it.period to it.startTime }, times.associate { it.period to it.endTime }))
+                },
+                weekStart = settingsManager.getWeekStart(routeAccountKey),
+                onWeekStartChange = { chosen ->
+                    settingsManager.weekStart = chosen
+                    // Week 1 moves onto the chosen weekday, keeping the days the user already sees.
+                    val realignedDate = termTimeBase?.firstWeekDate?.takeIf { it.isNotBlank() }
+                        ?.let { ScheduleDates.normalizeFirstWeekDate(it, chosen) }
+                    val realigned = realignedDate?.let {
+                        runCatching { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).parse(it)?.time }.getOrNull()
+                    } ?: settingsManager.realignSemesterStart(chosen)
+                    if (realigned > 0L) {
+                        if (!isNextSemester && settingsTermOverride == null) settingsManager.semesterStartDate = realigned
+                        val times = periodTimesFor(termTimeBase)
+                        reminderScheduler.updateTimeBase(routeAccountKey, settingsTerm, ScheduleTimeBase(
+                            ScheduleTimeBase.dateFromMillis(realigned), times.associate { it.period to it.startTime }, times.associate { it.period to it.endTime }))
+                        if (!isNextSemester && settingsTerm == resolvedTermId) pendingToday = true
+                    }
                 },
                 onPeriodTimesChange = { times ->
                     if (!isNextSemester && settingsTermOverride == null) settingsManager.savePeriodTimes(times)
