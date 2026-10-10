@@ -3,7 +3,8 @@ package com.tyust.course.schedule
 import java.util.Calendar
 import java.util.TimeZone
 
-data class ScheduleOccurrence(val course: ScheduleCourseRecord, val startsAt: Long, val endsAt: Long)
+data class ScheduleOccurrence(val course: ScheduleCourseRecord, val startsAt: Long, val endsAt: Long,
+    val originalDate: String = "")
 data class ScheduleAgenda(
     val week: Int?,
     val today: List<ScheduleOccurrence>,
@@ -22,22 +23,7 @@ data class ScheduleAgenda(
             val tomorrow = (day.clone() as Calendar).apply { add(Calendar.DATE, 1) }.timeInMillis
             if (base == null || ScheduleDates.firstMonday(base.firstWeekDate, zone) == null)
                 return ScheduleAgenda(null, emptyList(), emptyList(), null, tomorrow, true)
-            fun time(value: String?): Pair<Int, Int>? {
-                val parts = value?.split(':')?.map { it.toIntOrNull() } ?: return null
-                return if (parts.size == 2 && parts[0] in 0..23 && parts[1] in 0..59) parts[0]!! to parts[1]!! else null
-            }
-            val occurrences = courses.distinctBy { it.id }.flatMap { course ->
-                val weeks = ScheduleWeeks.parse(course.weeks)
-                val start = time(base.periodStarts[course.startPeriod])
-                val end = time(base.periodEnds[course.endPeriod])
-                if (!weeks.valid || course.day !in 1..7 || start == null || end == null || course.endPeriod < course.startPeriod) emptyList()
-                else weeks.weeks.mapNotNull { week ->
-                    val date = ScheduleDates.date(base.firstWeekDate, week, course.day, zone) ?: return@mapNotNull null
-                    val startsAt = (date.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY, start.first); set(Calendar.MINUTE, start.second) }.timeInMillis
-                    val endsAt = date.apply { set(Calendar.HOUR_OF_DAY, end.first); set(Calendar.MINUTE, end.second) }.timeInMillis
-                    if (endsAt <= startsAt || endsAt < day.timeInMillis) null else ScheduleOccurrence(course, startsAt, endsAt)
-                }
-            }.sortedWith(compareBy<ScheduleOccurrence> { it.startsAt }.thenBy { it.course.id })
+            val occurrences = ScheduleOccurrenceResolver.resolve(courses, base, zone).filter { it.endsAt >= day.timeInMillis }
             val today = occurrences.filter { it.startsAt in day.timeInMillis until tomorrow }
             val current = today.filter { now in it.startsAt until it.endsAt }
             val upcoming = occurrences.filter { it.startsAt > now }

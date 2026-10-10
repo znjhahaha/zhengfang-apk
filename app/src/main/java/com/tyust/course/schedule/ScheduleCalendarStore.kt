@@ -33,7 +33,8 @@ internal class ScheduleCalendarStore(private val preferences: SharedPreferences)
         if (ScheduleDates.firstMonday(legacy.firstWeekDate) == null || !existing?.firstWeekDate.isNullOrBlank()) return false
         return write(account, currentTerm, legacy.copy(
             periodStarts = legacy.periodStarts + existing?.periodStarts.orEmpty(),
-            periodEnds = legacy.periodEnds + existing?.periodEnds.orEmpty()
+            periodEnds = legacy.periodEnds + existing?.periodEnds.orEmpty(),
+            adjustments = existing?.adjustments ?: legacy.adjustments
         ))
     }
 }

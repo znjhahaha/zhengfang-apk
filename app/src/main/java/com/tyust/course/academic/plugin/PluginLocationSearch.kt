@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 internal object PluginLocationSearch {
     data class Place(val name: String, val point: PluginCoordinates.Point, val title: String, val address: String)
-    const val USER_AGENT = "ZhengfangCourse/1.0.112 (https://github.com/znjhahaha/zhengfang-apk)"
+    val USER_AGENT = "ZhengfangCourse/${com.tyust.course.BuildConfig.VERSION_NAME} (https://github.com/znjhahaha/zhengfang-apk)"
     private val client = OkHttpClient.Builder().callTimeout(12, TimeUnit.SECONDS).build()
     private val mutex = Mutex()
     private var requestedAt = 0L

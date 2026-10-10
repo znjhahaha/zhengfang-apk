@@ -6,10 +6,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.tyust.course.academic.plugin.*
@@ -23,10 +29,12 @@ private data class PendingSchoolInstall(val pkg: PluginPackage, val school: Scho
 @Composable
 fun SchoolSearchPicker(schools: List<SchoolConfig>, selected: SchoolConfig?, enabled: Boolean,
     onSelected: (SchoolConfig) -> Unit, onAdded: () -> Unit, onAddManually: (String) -> Unit,
-    onManage: () -> Unit) {
+    onManage: () -> Unit, subtitle: String? = null) {
     var open by remember { mutableStateOf(false) }
-    SystemSecondaryButton(text = selected?.name ?: "搜索学校", onClick = { open = true },
-        enabled = enabled, modifier = Modifier.fillMaxWidth())
+    InsetGroupedRow(title = selected?.name ?: "搜索学校", subtitle = subtitle ?: "搜索或切换学校",
+        icon = Icons.Default.School, showDivider = false, enabled = enabled, onClick = { open = true },
+        modifier = Modifier.fillMaxWidth().testTag("login-school-picker"),
+        trailing = { Icon(Icons.Default.ChevronRight, "切换学校") })
     if (open) SchoolSearchDialog(schools, onDismiss = { open = false }, onSelected = {
         onSelected(it); open = false
     }, onAdded = onAdded, onAddManually = { open = false; onAddManually(it) },
@@ -122,35 +130,42 @@ private fun SchoolSearchDialog(schools: List<SchoolConfig>, onDismiss: () -> Uni
                 leadingIcon = Icons.Default.Search, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { submit() }))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SystemDialogButton(onClick = ::submit, enabled = query.isNotBlank() && !busy) { Text("搜索") }
-                SystemDialogButton(onClick = { manual(query.trim()) }) { Text("手动添加") }
-                SystemDialogButton(onClick = { cancel(); onManage() }) { Text("管理学校") }
+                SystemActionButton("搜索", ::submit, icon = Icons.Default.Search, enabled = query.isNotBlank() && !busy)
+                SystemActionButton("手动添加", { manual(query.trim()) }, icon = Icons.Default.Add)
+                SystemActionButton("管理学校", { cancel(); onManage() }, icon = Icons.Default.Settings)
             }
             if (loading) Text("正在查询学校适配，本地学校仍可选择…", style = MaterialTheme.typography.bodySmall)
             problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            if (!loading && !verified) SystemDialogButton(onClick = { reload++ }) { Text("重试目录查询") }
+            if (!loading && !verified) SystemActionButton("重试目录查询", { reload++ })
             if (busy) Text("正在处理适配；可关闭面板取消学校切换。", style = MaterialTheme.typography.bodySmall)
             if (rows.isEmpty() && verified && !loading) Text("没有匹配学校，点击搜索可添加。")
             rows.forEach { row ->
-                InsetGroupedSection(header = row.school.name) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(PluginSchoolMatcher.endpoint(row.school).toString(), style = MaterialTheme.typography.bodySmall)
-                        if (row.configured) SystemDialogButton(onClick = { cancel(); onSelected(row.school) }, enabled = !busy) { Text("选择已配置学校") }
-                        if (row.builtin && !row.configured) SystemDialogButton(onClick = {
+                InsetGroupedSection(header = row.school.name,
+                    footer = PluginSchoolMatcher.endpoint(row.school).toString() +
+                        if (row.providers.size > 1) " · 选择一个适配提供者" else "") {
+                    val last = row.providers.size - 1
+                    if (row.configured) InsetGroupedRow(title = "使用已配置学校", subtitle = "保留当前地址与适配",
+                        icon = Icons.Default.School, enabled = !busy, showDivider = last >= 0,
+                        onClick = { cancel(); onSelected(row.school) },
+                        trailing = { Icon(Icons.Default.ChevronRight, null) })
+                    if (row.builtin && !row.configured) InsetGroupedRow(title = "使用内置适配", subtitle = "随 App 提供，无需安装",
+                        icon = Icons.Default.School, enabled = !busy, showDivider = last >= 0,
+                        onClick = {
                             cancel()
                             val manager = UserManager.getInstance()
                             val existing = PluginSchoolSearch.existing(manager.supportedSchools, row.school)
                             val target = existing ?: row.school
                             if (existing == null) manager.addCustomSchool(target)
                             onAdded(); onSelected(target)
-                        }, enabled = !busy) { Text("选择内置适配") }
-                        if (row.providers.size > 1) Text("选择一个适配提供者", style = MaterialTheme.typography.bodySmall)
-                        row.providers.forEach { provider ->
-                            val status = if (provider.installed) "已安装" else provider.incompatibleReason ?: "可安装"
-                            SystemDialogButton(onClick = { choose(row, provider) }, enabled = !busy && (provider.installed || provider.incompatibleReason == null)) {
-                                Text("${provider.name} ${provider.version} · $status")
-                            }
-                        }
+                        }, trailing = { Icon(Icons.Default.ChevronRight, null) })
+                    row.providers.forEachIndexed { index, provider ->
+                        val status = if (provider.installed) "已安装" else provider.incompatibleReason ?: "可安装"
+                        val available = provider.installed || provider.incompatibleReason == null
+                        InsetGroupedRow(title = provider.name, subtitle = "${provider.version} · $status",
+                            icon = Icons.Default.Extension, enabled = !busy && available, showDivider = index < last,
+                            onClick = { choose(row, provider) },
+                            trailing = { if (available) Text(if (provider.installed) "选择" else "安装",
+                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) })
                     }
                 }
             }

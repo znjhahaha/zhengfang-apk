@@ -16,12 +16,13 @@ internal object ReminderJson {
 
     fun reminder(value: CourseReminder) = JSONObject().apply {
         put("account", value.key.account); put("term", value.key.term); put("course", course(value.course))
-        put("enabled", value.enabled); put("lead", value.leadMinutes); put("revision", value.revision)
+        put("enabled", value.enabled); put("lead", value.leadMinutes); put("revision", value.revision); put("customLead", value.customLead)
     }
     fun reminder(value: JSONObject): CourseReminder {
         val course = course(value.getJSONObject("course"))
         return CourseReminder(CourseReminderKey(value.getString("account"), value.getString("term"), course.id), course,
-            value.optBoolean("enabled"), value.optInt("lead", 15), value.optLong("revision", 1))
+            value.optBoolean("enabled"), value.optInt("lead", 15), value.optLong("revision", 1),
+            value.optBoolean("customLead", value.optInt("lead", 15) != 15))
     }
     fun encode(values: List<CourseReminder>): String = JSONArray().apply { values.forEach { put(reminder(it)) } }.toString()
     fun decode(value: String?): List<CourseReminder> = runCatching {
@@ -31,6 +32,7 @@ internal object ReminderJson {
 
     fun timeBase(value: ScheduleTimeBase) = JSONObject().apply {
         put("date", value.firstWeekDate)
+        put("adjustments", ScheduleAdjustmentJson.encode(value.adjustments))
         put("starts", JSONObject().apply { value.periodStarts.forEach { (period, time) -> put(period.toString(), time) } })
         put("ends", JSONObject().apply { value.periodEnds.forEach { (period, time) -> put(period.toString(), time) } })
     }
@@ -39,6 +41,7 @@ internal object ReminderJson {
         val ends = value.optJSONObject("ends") ?: JSONObject()
         return ScheduleTimeBase(value.optString("date"), starts.keys().asSequence().mapNotNull { key ->
             key.toIntOrNull()?.let { it to starts.optString(key) }
-        }.toMap(), ends.keys().asSequence().mapNotNull { key -> key.toIntOrNull()?.let { it to ends.optString(key) } }.toMap())
+        }.toMap(), ends.keys().asSequence().mapNotNull { key -> key.toIntOrNull()?.let { it to ends.optString(key) } }.toMap(),
+            ScheduleAdjustmentJson.decode(value.optJSONObject("adjustments")))
     }
 }

@@ -3,7 +3,7 @@ package com.tyust.course.schedule
 /** A one-time action over a complete term snapshot; it is never an opt-in default for future courses. */
 object SemesterReminders {
     fun update(current: List<CourseReminder>, account: String, term: String,
-        courses: List<ScheduleCourseRecord>, enabled: Boolean): List<CourseReminder> {
+        courses: List<ScheduleCourseRecord>, enabled: Boolean, defaultLead: Int = 15): List<CourseReminder> {
         if (account.isBlank() || term.isBlank() || courses.isEmpty()) return current
         val result = current.associateByTo(linkedMapOf()) { it.key }
         for (course in courses.distinctBy { it.id }) {
@@ -12,7 +12,7 @@ object SemesterReminders {
             val old = result[key]
             if (old == null && !enabled) continue
             if (old?.enabled == enabled && old.course == course) continue
-            result[key] = CourseReminder(key, course, enabled, old?.leadMinutes ?: 15, (old?.revision ?: 0) + 1)
+            result[key] = CourseReminder(key, course, enabled, old?.leadMinutes ?: defaultLead, (old?.revision ?: 0) + 1, old?.customLead ?: false)
         }
         return result.values.toList()
     }

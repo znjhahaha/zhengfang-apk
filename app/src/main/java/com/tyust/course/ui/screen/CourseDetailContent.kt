@@ -53,7 +53,8 @@ data class CourseDetailUiState(
 fun CourseDetailContent(
     ui: CourseDetailUiState, sheet: ScheduleBottomSheetState, onClose: () -> Unit,
     onReminderChanged: (Boolean) -> Unit, onPermission: () -> Unit,
-    onConfigureTime: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit
+    onConfigureTime: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit,
+    extraActions: @Composable () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val density = LocalDensity.current
@@ -170,6 +171,7 @@ fun CourseDetailContent(
                             if (ui.needsTime) SystemSecondaryButton("设置学期时间", onConfigureTime, Modifier.fillMaxWidth())
                         }
                     }
+                    extraActions()
                     Spacer(Modifier.height(2.dp))
                 }
                 if (course.isCustom) {

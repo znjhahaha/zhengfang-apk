@@ -620,7 +620,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                  com.tyust.course.ui.system.InitialPageLoad(
                                     // Local settings/service pages need no provider preparation.
                                     // Preference writes must not tear down their dialog or scroll state.
-                                    key = "$route:${session.token}:${if (academicPage) pageRevision else 0L}",
+                                    key = com.tyust.course.schedule.schedulePageEntryKey(route, currentAccountStorageKey, session.token.toString(), if (academicPage) pageRevision else 0L),
                                     title = registeredPages.firstOrNull { it.id == route }?.title.orEmpty(),
                                     active = selectedPage == route,
                                     transitionFinished = navigationMotion.transitionFinished,

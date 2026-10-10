@@ -44,6 +44,7 @@ class ScheduleReminderScheduler private constructor(private val context: Context
         const val ACTION = "com.tyust.course.action.COURSE_REMINDER"
         const val CHANNEL = "course_reminders"
         const val EXTRA_REMINDER_ID = "course_reminder_id"
+        const val EXTRA_STARTS_AT = "course_reminder_starts_at"
         const val EXTRA_REVISION = "course_reminder_revision"
         const val EXTRA_TRIGGER = "course_reminder_trigger"
         @Volatile private var instance: ScheduleReminderScheduler? = null
@@ -88,7 +89,7 @@ class ScheduleReminderScheduler private constructor(private val context: Context
     fun setEnabled(key: CourseReminderKey, course: ScheduleCourseRecord, enabled: Boolean) {
         val current = records()
         val old = current.firstOrNull { it.key == key }
-        val updated = CourseReminder(key, course, enabled, old?.leadMinutes ?: 15, (old?.revision ?: 0) + 1)
+        val updated = CourseReminder(key, course, enabled, old?.leadMinutes ?: defaultLead(key.account), (old?.revision ?: 0) + 1, old?.customLead ?: false)
         save(current.filter { it.key != key } + updated)
         reconcile()
     }
@@ -98,7 +99,7 @@ class ScheduleReminderScheduler private constructor(private val context: Context
         // A UI callback from the previous account cannot create intent for the new session.
         if (account != activeAccount() || account.isBlank() || term.isBlank() || courses.isEmpty()) return false
         val old = records()
-        val updated = SemesterReminders.update(old, account, term, courses, enabled)
+        val updated = SemesterReminders.update(old, account, term, courses, enabled, defaultLead(account))
         if (updated != old) { save(updated); reconcile() }
         return true
     }
@@ -152,8 +153,32 @@ class ScheduleReminderScheduler private constructor(private val context: Context
 
     fun timeBase(account: String, term: String): ScheduleTimeBase? = calendars.read(account, term)
 
+    fun defaultLead(account: String): Int = preferences.getInt("default-lead:$account", 15).coerceIn(0, 1440)
+
+    @Synchronized fun setDefaultLead(account: String, minutes: Int) {
+        require(minutes in 0..1440 && account.isNotBlank())
+        preferences.edit().putInt("default-lead:$account", minutes).apply()
+        save(records().map { if (it.key.account == account && !it.customLead)
+            it.copy(leadMinutes = minutes, revision = it.revision + 1) else it })
+        reconcile()
+    }
+
+    @Synchronized fun setLead(key: CourseReminderKey, course: ScheduleCourseRecord, minutes: Int?) {
+        require(minutes == null || minutes in 0..1440)
+        val old = find(key) ?: CourseReminder(key, course)
+        save(records().filterNot { it.key == key } + old.copy(leadMinutes = minutes ?: defaultLead(key.account),
+            customLead = minutes != null, revision = old.revision + 1))
+        reconcile()
+    }
+
+    fun updateAdjustments(account: String, term: String, value: ScheduleAdjustments) {
+        val base = timeBase(account, term) ?: ScheduleTimeBase()
+        if (calendars.write(account, term, base.copy(adjustments = value))) { revision++; reconcile() }
+    }
+
     fun updateTimeBase(account: String, term: String, value: ScheduleTimeBase) {
-        if (!calendars.write(account, term, value)) return
+        val retained = value.copy(adjustments = timeBase(account, term)?.adjustments ?: value.adjustments)
+        if (!calendars.write(account, term, retained)) return
         revision++
         reconcile()
     }
@@ -247,12 +272,14 @@ class ScheduleReminderScheduler private constructor(private val context: Context
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 data = Uri.Builder().scheme("course-reminder").authority("open").appendPath(id).build()
                 putExtra(EXTRA_REMINDER_ID, id)
+                putExtra(EXTRA_STARTS_AT, plan.startsAt)
                 putExtra("pageId", com.tyust.course.academic.plugin.PluginPageRegistry.SCHEDULE)
             }
             val content = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val course = occurrence(record, plan.startsAt)?.course ?: record.course
             val notification = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_course_reminder)
-                .setContentTitle("${record.course.name} · 即将上课")
-                .setContentText(listOf(record.course.location, "第 ${record.course.startPeriod}-${record.course.endPeriod} 节").filter { it.isNotBlank() }.joinToString(" · "))
+                .setContentTitle("${course.name} · 即将上课")
+                .setContentText(listOf(course.location, "第 ${course.startPeriod}-${course.endPeriod} 节").filter { it.isNotBlank() }.joinToString(" · "))
                 .setContentIntent(content).setAutoCancel(true).setOnlyAlertOnce(true).build()
             try { NotificationManagerCompat.from(context).notify(id, 1, notification) } catch (_: SecurityException) { }
         }
@@ -260,6 +287,8 @@ class ScheduleReminderScheduler private constructor(private val context: Context
     }
 
     fun findById(id: String): CourseReminder? = records().firstOrNull { it.key.storageId == id && it.key.account == activeAccount() }
+    fun occurrence(reminder: CourseReminder, startsAt: Long): ScheduleOccurrence? =
+        CourseReminderPlanner.occurrence(reminder, timeBase(reminder.key.account, reminder.key.term), startsAt)
     override fun onActivityResumed(activity: Activity) { reconcile() }
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
     override fun onActivityStarted(activity: Activity) = Unit

@@ -28,7 +28,7 @@ import java.util.Locale
 open class ScheduleWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = ScheduleWidgetUpdater.update(context)
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) = ScheduleWidgetUpdater.update(context)
-    override fun onDeleted(context: Context, ids: IntArray) = ScheduleWidgetUpdater.update(context)
+    override fun onDeleted(context: Context, ids: IntArray) { ids.forEach { ScheduleWidgetAppearances.delete(context, it) }; ScheduleWidgetUpdater.update(context) }
     override fun onDisabled(context: Context) = ScheduleWidgetUpdater.update(context)
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
@@ -42,9 +42,9 @@ class ScheduleSingleWidgetProvider : ScheduleWidgetProvider()
 class ScheduleTimelineWidgetProvider : ScheduleWidgetProvider()
 
 enum class ScheduleWidgetStyle(val title: String, val description: String, val provider: Class<out AppWidgetProvider>) {
-    Single("简洁单课", "1×1 · 完整课名与教师，保留时间、地点", ScheduleSingleWidgetProvider::class.java),
-    Double("双课程", "2×1 · 两课并排，课名、教师完整显示", ScheduleWidgetProvider::class.java),
-    Timeline("课程时间轴", "2×2 · 完整课名与教师，拉大查看更多课程", ScheduleTimelineWidgetProvider::class.java)
+    Single("简洁单课", "1×1 · 课名、时间与地点，放大查看更多", ScheduleSingleWidgetProvider::class.java),
+    Double("双课程", "2×1 · 两张课程卡，放大补充教师与状态", ScheduleWidgetProvider::class.java),
+    Timeline("课程时间轴", "2×2 · 今日时间轴，拉大查看更多课程", ScheduleTimelineWidgetProvider::class.java)
 }
 
 /** Only local cache reads and an inexact, non-wakeup boundary alarm; never performs authentication. */
@@ -67,7 +67,7 @@ object ScheduleWidgetUpdater {
         started = true
         val app = context.applicationContext
         val refresh = Runnable { update(app) }
-        for (name in listOf("schedule_cache", "schedule_settings", "course_reminders", "course_selector_prefs", "appearance_settings")) {
+        for (name in listOf("schedule_cache", "schedule_settings", "course_reminders", "course_selector_prefs", "appearance_settings", ScheduleWidgetAppearances.PREFS)) {
             val prefs = app.getSharedPreferences(name, Context.MODE_PRIVATE)
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
                 handler.removeCallbacks(refresh)
@@ -99,7 +99,7 @@ object ScheduleWidgetUpdater {
         val state = ScheduleWidgetState.from(activeSnapshot(context), now)
         ids.forEach { (id, style) ->
             val options = manager.getAppWidgetOptions(id)
-            manager.updateAppWidget(id, ScheduleWidgetRenderer.responsiveViews(context, state, options, style))
+            manager.updateAppWidget(id, ScheduleWidgetRenderer.responsiveViews(context, state, options, style, ScheduleWidgetAppearances.read(context, id)))
         }
         cancel(context)
         state.agenda?.let { agenda ->

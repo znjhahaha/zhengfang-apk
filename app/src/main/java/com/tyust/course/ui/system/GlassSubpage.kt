@@ -16,7 +16,8 @@ fun GlassSubpage(onDismiss: () -> Unit, content: @Composable (close: () -> Unit)
         DisposableEffect(host) {
             val owner = host.show({ currentDismiss() }, DialogPresentation.Page, saveableKey = saveableKey) {
                 CompositionLocalProvider(LocalAppOverlayBottomInset provides 0.dp, LocalFloatingNotice provides null) {
-                    GlassWindowHost { currentContent { host.dismiss(handle) } }
+                    // A page covers its parent and samples its own wallpaper, even in one window.
+                    GlassWindowHost(isolatePage = true) { currentContent { host.dismiss(handle) } }
                 }
             }
             handle = owner

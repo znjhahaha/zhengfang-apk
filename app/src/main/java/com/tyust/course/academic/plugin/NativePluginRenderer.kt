@@ -46,6 +46,7 @@ import com.tyust.course.ui.system.SystemCard
 import com.tyust.course.ui.system.SystemCompactSegmentedControl
 import com.tyust.course.ui.system.SystemSegmentedControl
 import com.tyust.course.ui.system.SystemPicker
+import com.tyust.course.ui.system.GlassFormField
 import kotlinx.coroutines.flow.distinctUntilChanged
 import org.json.JSONArray
 import org.json.JSONObject
@@ -65,12 +66,16 @@ class NativeNodeData(val json: JSONObject) {
 }
 
 private val LocalNativeListStates = staticCompositionLocalOf<SaveableStateHolder?> { null }
+private val LocalNativeListNamespace = staticCompositionLocalOf { "" }
+private val LocalNativeInputValues = compositionLocalOf<Map<String, Any>> { emptyMap() }
 
 @Composable
-fun NativePluginNode(node: JSONObject, files: NativePluginFiles?, modifier: Modifier = Modifier, enabled: Boolean = true, emit: (JSONObject, Boolean) -> Unit) {
+fun NativePluginNode(node: JSONObject, files: NativePluginFiles?, modifier: Modifier = Modifier, enabled: Boolean = true,
+    inputValues: Map<String, Any> = emptyMap(), listStates: SaveableStateHolder? = null,
+    listNamespace: String = "", emit: (JSONObject, Boolean) -> Unit) {
     val data = remember(node) { NativeNodeData(node) }
-    val lists = rememberSaveableStateHolder()
-    CompositionLocalProvider(LocalNativeListStates provides lists) {
+    val lists = listStates ?: rememberSaveableStateHolder()
+    CompositionLocalProvider(LocalNativeListStates provides lists, LocalNativeListNamespace provides listNamespace, LocalNativeInputValues provides inputValues) {
         NativePluginNode(data, files, modifier, enabled, emit)
     }
 }
@@ -131,7 +136,7 @@ fun NativePluginNode(data: NativeNodeData, files: NativePluginFiles?, modifier: 
             }
             "segmented" -> {
                 val options = PluginJson.objects(node.getJSONArray("options"))
-                val supplied = node.getString("value")
+                val supplied = LocalNativeInputValues.current[id] as? String ?: node.getString("value")
                 val index = options.indexOfFirst { it.getString("value") == supplied }.coerceAtLeast(0)
                 val select: (Int) -> Unit = { i -> event(options[i].getString("value"), eventType = "input") }
                 if (node.optString("size") == "compact") SystemCompactSegmentedControl(options.map { it.getString("label") }, index, select, modifier = m.fillMaxWidth(), enabled = active)
@@ -151,30 +156,30 @@ fun NativePluginNode(data: NativeNodeData, files: NativePluginFiles?, modifier: 
             }
             "badge" -> Box(m) { NativeBadge(node.getString("text"), toneColor(node.optString("tone"))) }
             "input" -> {
-                val supplied = node.getString("value")
-                var value by remember(id) { mutableStateOf(supplied) }
-                var focused by remember(id) { mutableStateOf(false) }
-                LaunchedEffect(supplied, focused) { if (!focused) value = supplied }
-                OutlinedTextField(value, { if (it.length <= 8000) { value = it; event(it, eventType = "input") } }, modifier = m.onFocusChanged { focused = it.isFocused },
-                    enabled = active, label = { Text(node.getString("label")) }, placeholder = { Text(node.optString("placeholder")) }, singleLine = node.optString("inputType") != "multiline",
+                val supplied = LocalNativeInputValues.current[id] as? String ?: node.getString("value")
+                GlassFormField(supplied, { if (it.length <= 8000) event(it, eventType = "input") }, modifier = m,
+                    enabled = active, label = node.getString("label"), placeholder = node.optString("placeholder"), singleLine = node.optString("inputType") != "multiline",
                     keyboardOptions = KeyboardOptions(keyboardType = when (node.optString("inputType")) { "number" -> KeyboardType.Decimal; "password" -> KeyboardType.Password; else -> KeyboardType.Text }),
-                    visualTransformation = if (node.optString("inputType") == "password") PasswordVisualTransformation() else VisualTransformation.None)
+                    password = node.optString("inputType") == "password")
             }
-            "pattern" -> NativeGesturePattern(node.getString("label"), node.getString("value"), active, m) { event(it, eventType = "input") }
+            "pattern" -> NativeGesturePattern(node.getString("label"), LocalNativeInputValues.current[id] as? String ?: node.getString("value"), active, m) { event(it, eventType = "input") }
             "toggle" -> Row(m.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(node.getString("label"), Modifier.weight(1f)); LiquidSwitch(node.getBoolean("value"), { event(it, eventType = "input") }, enabled = active)
+                Text(node.getString("label"), Modifier.weight(1f)); LiquidSwitch(LocalNativeInputValues.current[id] as? Boolean ?: node.getBoolean("value"), { event(it, eventType = "input") }, enabled = active)
             }
             "select" -> {
                 val options = PluginJson.objects(node.getJSONArray("options"))
                 SystemPicker(options.map { it.getString("label") },
-                    options.indexOfFirst { it.getString("value") == node.getString("value") }.takeIf { it >= 0 },
+                    options.indexOfFirst { it.getString("value") == (LocalNativeInputValues.current[id] as? String ?: node.getString("value")) }.takeIf { it >= 0 },
                     { event(options[it].getString("value"), eventType = "input") }, modifier = m.fillMaxWidth(),
                     label = node.getString("label"), enabled = active)
             }
             "slider" -> Column(m) {
-                val supplied = node.getDouble("value").toFloat()
-                var current by remember(id, supplied) { mutableFloatStateOf(supplied) }
-                Text(node.getString("label")); LiquidSlider({ current }, { current = it; event(it.toDouble(), eventType = "input") }, enabled = active, valueRange = node.getDouble("min").toFloat()..node.getDouble("max").toFloat(), steps = node.optInt("steps", 0))
+                val supplied = (LocalNativeInputValues.current[id] as? Number)?.toFloat() ?: node.getDouble("value").toFloat()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(node.getString("label"), Modifier.weight(1f))
+                    Text(java.math.BigDecimal.valueOf(supplied.toDouble()).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString(), style = MaterialTheme.typography.labelLarge)
+                }
+                LiquidSlider({ supplied }, { event(it.toDouble(), eventType = "input") }, enabled = active, valueRange = node.getDouble("min").toFloat()..node.getDouble("max").toFloat(), steps = node.optInt("steps", 0))
             }
             "progress" -> Column(m, verticalArrangement = Arrangement.spacedBy(8.dp)) { if (node.has("label")) Text(node.getString("label")); LinearProgressIndicator(progress = { node.getDouble("value").toFloat() }, modifier = Modifier.fillMaxWidth()) }
             "divider" -> HorizontalDivider(m)
@@ -207,7 +212,8 @@ fun NativePluginNode(data: NativeNodeData, files: NativePluginFiles?, modifier: 
 @Composable
 private fun NativeListState(id: String, content: @Composable () -> Unit) {
     val states = LocalNativeListStates.current
-    if (states == null) content() else states.SaveableStateProvider(id, content)
+    // Different pages may declare the same node ID and coexist during the return animation.
+    if (states == null) content() else states.SaveableStateProvider(LocalNativeListNamespace.current + "/" + id, content)
 }
 
 @Composable

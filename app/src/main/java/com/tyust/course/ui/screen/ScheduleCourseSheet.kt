@@ -23,7 +23,7 @@ import java.util.Locale
 @Composable
 fun ScheduleCourseSheet(course: ScheduleCourseUi, account: String, term: String,
     allCourses: List<ScheduleCourseUi>, onDismiss: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit,
-    onConfigureTime: () -> Unit, sourceCenterX: Float? = null, sourceBounds: Rect? = null, currentWeek: Int = 0) {
+    onConfigureTime: () -> Unit, sourceCenterX: Float? = null, sourceBounds: Rect? = null, currentWeek: Int = 0, originalCourse: ScheduleCourseUi = course, onAdjust: (() -> Unit)? = null) {
     val host = LocalDialogHost.current
     val ownHost = rememberDialogHostState()
     val targetHost = host ?: ownHost
@@ -36,7 +36,7 @@ fun ScheduleCourseSheet(course: ScheduleCourseUi, account: String, term: String,
     val currentDelete by rememberUpdatedState(onDelete)
     val body: @Composable () -> Unit = {
         ScheduleCourseSheetContent(course, account, term, allCourses, sheet, close, onEdit,
-            { deleteAfterExit = true; close() }, onConfigureTime, sourceCenterX, currentWeek)
+            { deleteAfterExit = true; close() }, onConfigureTime, sourceCenterX, currentWeek, originalCourse, onAdjust)
     }
     val currentBody by rememberUpdatedState(body)
     DisposableEffect(targetHost, course.id) {
@@ -55,10 +55,11 @@ fun ScheduleCourseSheet(course: ScheduleCourseUi, account: String, term: String,
 @Composable
 private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String, term: String,
     allCourses: List<ScheduleCourseUi>, state: ScheduleBottomSheetState, close: () -> Unit,
-    onEdit: () -> Unit, onDelete: () -> Unit, onConfigureTime: () -> Unit, sourceCenterX: Float?, currentWeek: Int) {
+    onEdit: () -> Unit, onDelete: () -> Unit, onConfigureTime: () -> Unit, sourceCenterX: Float?, currentWeek: Int, originalCourse: ScheduleCourseUi, onAdjust: (() -> Unit)?) {
     val context = LocalContext.current
     val scheduler = remember(context) { ScheduleReminderScheduler.get(context) }
     val revision = scheduler.revision
+    var showLead by remember { mutableStateOf(false) }
     val key = remember(account, term, course.id) { CourseReminderKey(account, term, course.id) }
     val record = remember(key, revision) { scheduler.find(key) }
     val status = remember(key, revision) { scheduler.status(key) }
@@ -84,7 +85,7 @@ private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String
         CourseDetailUiState(course, conflicts, record?.enabled == true, term.isNotBlank(), description,
             record?.enabled == true && status.availability == ReminderAvailability.NeedsPermission,
             status.availability == ReminderAvailability.NeedsTime, !ScheduleWeeks.parse(course.weeks).valid, sourceCenterX, timeRange, currentWeek),
-        state, close, onReminderChanged = { scheduler.setEnabled(key, course.record(), it) },
+        state, close, onReminderChanged = { scheduler.setEnabled(key, originalCourse.record(), it) },
         onPermission = {
             val permissions = scheduler.permissions()
             if (!permissions.notifications && Build.VERSION.SDK_INT >= 33 &&
@@ -97,6 +98,12 @@ private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String
                 else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
                 runCatching { context.startActivity(intent) }
             }
-        }, onConfigureTime, onEdit, onDelete
+        }, onConfigureTime, onEdit, onDelete, extraActions = {
+            InsetGroupedRow(title = "提前提醒", subtitle = (record?.leadMinutes ?: scheduler.defaultLead(account)).toString() + " 分钟" + if (record?.customLead == true) " · 此课程" else " · 跟随默认",
+                onClick = { showLead = true })
+            if (onAdjust != null) InsetGroupedRow(title = "调整这次课程", subtitle = course.occurrenceDate ?: "选择日期后设置停课或调课", showDivider = false, onClick = onAdjust)
+        }
     )
+    if (showLead) ReminderLeadPicker(record?.leadMinutes ?: scheduler.defaultLead(account), allowDefault = true,
+        onDismiss = { showLead = false }, onSave = { scheduler.setLead(key, originalCourse.record(), it) })
 }

@@ -83,26 +83,29 @@ internal data class ScheduleWidgetState(
 }
 
 internal object ScheduleWidgetRenderer {
+    private val courseColors = listOf(0xFF5C6BC0, 0xFF42A5F5, 0xFF66BB6A, 0xFFFFA726,
+        0xFFAB47BC, 0xFFEF5350, 0xFF26C6DA, 0xFF8D6E63).map { it.toInt() }
+    private fun courseColor(id: String) = courseColors[ScheduleIdentity.colorIndex(id, courseColors.size)]
     /** Use the launcher's actual size alternatives, including both legacy orientations. */
     fun responsiveViews(context: Context, state: ScheduleWidgetState, options: android.os.Bundle,
-                        style: ScheduleWidgetStyle): RemoteViews {
+                        style: ScheduleWidgetStyle, appearance: ScheduleWidgetAppearance = ScheduleWidgetAppearance()): RemoteViews {
         if (android.os.Build.VERSION.SDK_INT >= 31) {
             @Suppress("DEPRECATION")
             val sizes = options.getParcelableArrayList<android.util.SizeF>(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_SIZES)
                 .orEmpty().filter { it.width.isFinite() && it.height.isFinite() && it.width > 0 && it.height > 0 }.distinct().take(16)
             if (sizes.isNotEmpty()) return RemoteViews(sizes.associateWith {
-                views(context, state, it.width.toInt(), it.height.toInt(), style)
+                views(context, state, it.width.toInt(), it.height.toInt(), style, appearance)
             })
         }
         val minW = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, if (style == ScheduleWidgetStyle.Single) 56 else 130).coerceAtLeast(1)
         val minH = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, if (style == ScheduleWidgetStyle.Timeline) 130 else 56).coerceAtLeast(1)
         val maxW = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, minW).coerceAtLeast(minW)
         val maxH = options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minH).coerceAtLeast(minH)
-        return RemoteViews(views(context, state, maxW, minH, style), views(context, state, minW, maxH, style))
+        return RemoteViews(views(context, state, maxW, minH, style, appearance), views(context, state, minW, maxH, style, appearance))
     }
 
     fun views(context: Context, state: ScheduleWidgetState, width: Int = 176, height: Int = 88,
-              style: ScheduleWidgetStyle = ScheduleWidgetStyle.Double): RemoteViews {
+              style: ScheduleWidgetStyle = ScheduleWidgetStyle.Double, appearance: ScheduleWidgetAppearance = ScheduleWidgetAppearance()): RemoteViews {
         val config = AppThemeCoordinator.wrapContext(context).resources.configuration
         val dark = config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         val primaryColor = if (dark) 0xFFF1F4F8.toInt() else 0xFF1D2433.toInt()
@@ -110,7 +113,7 @@ internal object ScheduleWidgetRenderer {
         val accentColor = if (dark) 0xFF88BFFF.toInt() else 0xFF0069D9.toInt()
         val scale = config.fontScale.coerceAtLeast(1f)
         if (style == ScheduleWidgetStyle.Timeline)
-            return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor)
+            return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor).also { applyAppearance(context, it, appearance, dark) }
         val views = RemoteViews(context.packageName, if (style == ScheduleWidgetStyle.Single) R.layout.schedule_widget_single else R.layout.schedule_widget)
         val two = style == ScheduleWidgetStyle.Double
         val padding = if (height < 100 || width < 100) 6 else 10
@@ -118,11 +121,17 @@ internal object ScheduleWidgetRenderer {
         views.setViewPadding(R.id.widget_root, (padding * density).toInt(), (padding * density).toInt(),
             (padding * density).toInt(), (padding * density).toInt())
         views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
-        val columnWidth = (width - padding * 2 - if (two) 13 else 0) / if (two) 2f else 1f
-        val fitter = ScheduleWidgetTextFitter(context, columnWidth * density)
+        val cardPadding = if (height < 80) 2 else 5
+        val columnWidth = (width - padding * 2 - if (two) 9 else 0) / (if (two) 2f else 1f) - cardPadding * 2
+        for (id in listOf(R.id.widget_course, R.id.widget_next)) {
+            views.setInt(id, "setBackgroundResource", if (dark) R.drawable.schedule_widget_card_dark else R.drawable.schedule_widget_card_light)
+            val px = (cardPadding * density).toInt(); views.setViewPadding(id, px, px, px, px)
+        }
+        val showTeacher = height >= 120 && columnWidth >= 100
+        val fitter = ScheduleWidgetTextFitter(context, (columnWidth - 14).coerceAtLeast(1f) * density)
         val headerHeight = fitter.height(listOf(ScheduleWidgetText(state.heading, 12f, bold = true))) + fitter.dp(2f)
         val footerHeight = fitter.height(listOf(ScheduleWidgetText(state.summary, 12f))) + fitter.dp(6f)
-        val compactTime = columnWidth < 116 * scale
+        val compactTime = columnWidth + cardPadding * 2 < 116 * scale
         fun fields(item: ScheduleWidgetCourse?): List<ScheduleWidgetText> {
             val time = when {
                 item == null -> "查看课表"
@@ -132,7 +141,7 @@ internal object ScheduleWidgetRenderer {
             val room = item?.location.orEmpty()
             return listOf(
                 ScheduleWidgetText(item?.name ?: "暂无后续", 14f, bold = true),
-                ScheduleWidgetText(item?.course?.teacher?.ifBlank { "教师待定" }.orEmpty(), 11f, margin = 2f),
+                ScheduleWidgetText(if (showTeacher) item?.course?.teacher?.ifBlank { "教师待定" }.orEmpty() else "", 11f, margin = 2f),
                 ScheduleWidgetText(time, 11f, margin = 3f, singleLine = true),
                 ScheduleWidgetText(room, 11f, margin = 2f)
             )
@@ -140,7 +149,7 @@ internal object ScheduleWidgetRenderer {
         val required = listOfNotNull(state.primary, state.secondary.takeIf { two }).map(::fields)
         var showHeader = height >= 154 * scale && width >= 150 * scale
         var showFooter = state.primary != null && height >= 232 * scale && width >= 160 * scale
-        fun bodyPixels() = fitter.dp((height - padding * 2).toFloat()) -
+        fun bodyPixels() = fitter.dp((height - padding * 2 - cardPadding * 2).toFloat()) -
             (if (showHeader) headerHeight else 0) - (if (showFooter) footerHeight else 0)
         // Optional labels yield their space before any required text is made smaller.
         if (required.any { !fitter.fits(it, bodyPixels()) }) showFooter = false
@@ -185,7 +194,7 @@ internal object ScheduleWidgetRenderer {
             views.setTextViewText(status, item?.status.orEmpty())
             views.setTextViewTextSize(status, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
             views.visible(name, true)
-            views.visible(teacher, item != null)
+            views.visible(teacher, item != null && showTeacher)
             views.visible(room, item != null)
             views.visible(status, showStatus)
             views.setContentDescription(container, item?.let { "${it.dateLabel} ${it.status}，${it.name}，${it.course.teacher.ifBlank { "教师待定" }}，${it.time}，${it.location}" }
@@ -193,6 +202,10 @@ internal object ScheduleWidgetRenderer {
         }
         row(state.primary, R.id.widget_course, R.id.widget_name, R.id.widget_teacher, R.id.widget_location, R.id.widget_time, R.id.widget_status)
         row(state.secondary, R.id.widget_next, R.id.widget_next_name, R.id.widget_next_teacher, R.id.widget_next_location, R.id.widget_next_time, R.id.widget_next_status)
+        for ((id, item) in listOf(R.id.widget_course_dot to state.primary, R.id.widget_next_dot to state.secondary)) {
+            views.visible(id, item != null)
+            item?.let { views.setTextColor(id, courseColor(it.course.id)) }
+        }
         val rootIntent = pending(context, state, if (style == ScheduleWidgetStyle.Single) state.primary?.occurrence else null,
             if (state.primary == null) state.action else ScheduleWidgetAction.Today)
         views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
@@ -203,6 +216,7 @@ internal object ScheduleWidgetRenderer {
         views.setOnClickPendingIntent(R.id.widget_action, pending(context, state, action = state.action))
         // The entire empty panel performs the same action as its label.
         views.setContentDescription(R.id.widget_empty, "${state.message}，${state.actionLabel}")
+        applyAppearance(context, views, appearance, dark)
         return views
     }
 
@@ -226,7 +240,7 @@ internal object ScheduleWidgetRenderer {
         views.removeAllViews(R.id.widget_timeline_rows)
         val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(state.now))
         val next = state.agenda?.upcoming?.firstOrNull()
-        val fitter = ScheduleWidgetTextFitter(context, (width - 34) * context.resources.displayMetrics.density)
+        val fitter = ScheduleWidgetTextFitter(context, (width - 42) * context.resources.displayMetrics.density)
         val headerHeight = fitter.height(listOf(ScheduleWidgetText("今日时间轴", 12f, bold = true))) + fitter.dp(6f)
         val footerHeight = fitter.height(listOf(ScheduleWidgetText("课表", 12f))) + fitter.dp(6f)
         var showHeader = height >= 100 * scale
@@ -282,6 +296,9 @@ internal object ScheduleWidgetRenderer {
         views.setOnClickPendingIntent(R.id.widget_header, pending(context, state))
         for (item in rows) {
             val row = RemoteViews(context.packageName, R.layout.schedule_widget_timeline_row)
+            row.setInt(R.id.widget_course, "setBackgroundResource", if (dark) R.drawable.schedule_widget_card_dark else R.drawable.schedule_widget_card_light)
+            val pad = (4 * context.resources.displayMetrics.density).toInt()
+            row.setViewPadding(R.id.widget_course, pad, pad, pad, pad)
             val past = item.endsAt <= state.now
             val highlighted = status(item) in listOf("进行中", "下一节")
             val fields = fields(item)
@@ -298,7 +315,7 @@ internal object ScheduleWidgetRenderer {
             row.setTextColor(R.id.widget_location, secondary)
             row.setTextColor(R.id.widget_teacher, secondary)
             row.setTextColor(R.id.widget_status, if (highlighted) accent else secondary)
-            row.setInt(R.id.widget_timeline_dot, "setBackgroundColor", if (highlighted) accent else secondary)
+            row.setTextColor(R.id.widget_timeline_dot, courseColor(item.course.id))
             row.setInt(R.id.widget_course, "setMinimumHeight", rowPixels.coerceAtLeast(0))
             row.visible(R.id.widget_location, true)
             row.visible(R.id.widget_status, showStatus)
@@ -319,6 +336,11 @@ internal object ScheduleWidgetRenderer {
         val total = state.agenda?.today?.size ?: 0
         views.setTextViewText(R.id.widget_footer, if (total > rows.size) "今日 $total 堂 · 点按查看全部" else state.summary.ifBlank { "点按查看课表" })
         return views
+    }
+
+    private fun applyAppearance(context: Context, views: RemoteViews, appearance: ScheduleWidgetAppearance, dark: Boolean) {
+        views.setInt(R.id.widget_root, "setBackgroundResource", 0)
+        views.setImageViewBitmap(R.id.widget_background, ScheduleWidgetAppearances.bitmap(context, appearance, dark))
     }
 
     private fun RemoteViews.visible(id: Int, show: Boolean) = setViewVisibility(id, if (show) View.VISIBLE else View.GONE)

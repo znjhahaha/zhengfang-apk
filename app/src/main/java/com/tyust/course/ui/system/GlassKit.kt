@@ -356,7 +356,8 @@ fun GlassTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     minHeight: Dp = 48.dp,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    isError: Boolean = false
+    isError: Boolean = false,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -392,6 +393,7 @@ fun GlassTextField(
             ),
         enabled = enabled,
         singleLine = singleLine,
+        maxLines = maxLines,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         visualTransformation = visualTransformation,
@@ -507,7 +509,7 @@ fun GlassLoadingState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        GlassLoadingIndicator()
+        PageLoadingIcon()
         WallpaperCaption(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }

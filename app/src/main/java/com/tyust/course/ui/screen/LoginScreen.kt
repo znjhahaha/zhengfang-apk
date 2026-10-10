@@ -167,25 +167,32 @@ fun LoginScreen(
             .testTag("login-screen")
             .semantics { contentDescription = "login-screen" }
     ) {
-
+        val metrics = com.tyust.course.ui.system.rememberScreenMetrics()
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Inside verticalScroll the column is unbounded, so Arrangement.Center only
+        // takes effect once it is at least as tall as the viewport.
+        val viewport = maxHeight
         Column(
             modifier = Modifier
-                .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .heightIn(min = viewport)
+                .wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 680.dp)
+                .padding(horizontal = 24.dp)
+                .padding(top = metrics.tall(72.dp, 44.dp), bottom = metrics.tall(32.dp, 16.dp)),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             // App Icon
             AnimatedVisibility(
                 visible = visible,
-                enter = androidx.compose.animation.scaleIn(initialScale = 0.9f, animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow, dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(300))
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(com.tyust.course.R.mipmap.ic_launcher),
+                        painter = androidx.compose.ui.res.painterResource(com.tyust.course.R.drawable.ic_app_logo),
                         contentDescription = null,
                         modifier = Modifier.size(64.dp)
                     )
@@ -224,16 +231,9 @@ fun LoginScreen(
                             )
                             
                             // Settings button
-                            IconButton(
-                                onClick = { showEditSchoolDialog = true },
-                                modifier = Modifier.align(Alignment.CenterEnd).size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "编辑学校配置",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            Box(Modifier.align(Alignment.CenterEnd)) {
+                                com.tyust.course.ui.system.SystemIconButton(Icons.Default.Settings, "编辑学校配置",
+                                    { showEditSchoolDialog = true }, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         
@@ -285,14 +285,9 @@ fun LoginScreen(
                         SchoolSearchPicker(schools, selectedSchool, enabled = !isLoading,
                             onSelected = { selectedSchool = it; onSchoolSelected(it) }, onAdded = onSchoolAdded,
                             onAddManually = { addSchoolName = it; showAddSchoolDialog = true },
-                            onManage = { showSchoolManagement = true })
-                        Text(
-                            text = if (selectedSchoolIndex == null) com.tyust.course.academic.AcademicCapabilities.FOUR_SYSTEMS
-                                else com.tyust.course.academic.AcademicCapabilities.name(schools[selectedSchoolIndex].academicSystem),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                        )
+                            onManage = { showSchoolManagement = true },
+                            subtitle = if (selectedSchoolIndex == null) com.tyust.course.academic.AcademicCapabilities.FOUR_SYSTEMS
+                                else com.tyust.course.academic.AcademicCapabilities.name(schools[selectedSchoolIndex].academicSystem))
                         if (onSchoolPlugins != null) {
                             val providerLabel = remember(selectedSchool, pluginRevision) {
                                 selectedSchool?.let { school ->
@@ -527,35 +522,21 @@ fun LoginScreen(
                             )
                         }
                         
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        TextButton(
-                            onClick = onSchoolAdaptation,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "申请 / 查看统一登录适配",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = NeuPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        com.tyust.course.ui.system.SystemSecondaryButton(text = "管理本机绑定名额", onClick = onManageBindings, enabled = !isLoading, modifier = Modifier.fillMaxWidth())
-                        TextButton(onClick = onServiceCenter, modifier = Modifier.fillMaxWidth()) { Text("打开服务中心与通用工具") }
-                        // Demo Mode Button
-                        TextButton(
-                            onClick = { onDemoMode() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "体验只读演示模式",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        com.tyust.course.ui.system.InsetGroupedSection {
+                            InsetGroupedRow(title = "统一登录适配", subtitle = "申请或查看本校适配进度",
+                                icon = Icons.Default.AutoAwesome, onClick = onSchoolAdaptation,
+                                trailing = { Icon(Icons.Default.ChevronRight, null) })
+                            InsetGroupedRow(title = "本机绑定名额", subtitle = "查看与释放已绑定的学生账号",
+                                icon = Icons.Default.Info, enabled = !isLoading, onClick = onManageBindings,
+                                trailing = { Icon(Icons.Default.ChevronRight, null) })
+                            InsetGroupedRow(title = "服务中心与通用工具", subtitle = "无需登录即可使用",
+                                icon = Icons.Default.Extension, onClick = onServiceCenter,
+                                trailing = { Icon(Icons.Default.ChevronRight, null) })
+                            InsetGroupedRow(title = "体验只读演示模式", subtitle = "使用演示数据浏览全部功能",
+                                icon = Icons.Default.Visibility, showDivider = false, onClick = { onDemoMode() },
+                                trailing = { Icon(Icons.Default.ChevronRight, null) })
                         }
                 }
 
@@ -578,6 +559,7 @@ fun LoginScreen(
                     letterSpacing = 0.sp
                 )
             }
+        }
         }
 
     }

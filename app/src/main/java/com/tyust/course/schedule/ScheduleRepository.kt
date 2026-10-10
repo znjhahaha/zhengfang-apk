@@ -36,7 +36,7 @@ class ScheduleRepository(private val context: Context,
         val calendar = store.read(account, term)
         return ScheduleTimeBase(calendar?.firstWeekDate.orEmpty(),
             periods.associate { it.period to it.startTime } + calendar?.periodStarts.orEmpty(),
-            periods.associate { it.period to it.endTime } + calendar?.periodEnds.orEmpty())
+            periods.associate { it.period to it.endTime } + calendar?.periodEnds.orEmpty(), calendar?.adjustments ?: ScheduleAdjustments())
     }
     companion object {
         fun mergeCustom(network: List<ScheduleCourseRecord>, custom: List<ScheduleSettingsManager.CustomCourse>): List<ScheduleCourseRecord> =

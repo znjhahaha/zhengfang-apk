@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.tyust.course.ui.screen.ScheduleCourseUi
+import com.tyust.course.schedule.*
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -43,7 +44,8 @@ object ICalExporter {
         courses: List<ScheduleCourseUi>,
         semesterStartDate: Calendar,
         totalWeeks: Int = 20,
-        periodTimes: Map<Int, Pair<String, String>> = defaultPeriodTimes
+        periodTimes: Map<Int, Pair<String, String>> = defaultPeriodTimes,
+        adjustments: ScheduleAdjustments = ScheduleAdjustments()
     ): String {
         val sb = StringBuilder()
         
@@ -71,50 +73,25 @@ object ICalExporter {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date())
         
-        courses.forEach { course ->
-            // 解析周次
-            val weekList = parseWeeks(course.weeks, totalWeeks)
-            if (weekList.isEmpty()) return@forEach
-            
-            // 获取上课时间
-            if (course.day !in 1..7 || course.startPeriod < 1 || course.endPeriod < course.startPeriod) return@forEach
-            val startTime = periodTimes[course.startPeriod]?.first ?: return@forEach
-            val endTime = periodTimes[course.endPeriod]?.second ?: return@forEach
-            val validTime = Regex("(?:[01]\\d|2[0-3]):[0-5]\\d")
-            if (!validTime.matches(startTime) || !validTime.matches(endTime)) return@forEach
-            val startTimeStr = startTime.replace(":", "") + "00"
-            val endTimeStr = endTime.replace(":", "") + "00"
-            
-            // 为每个上课周生成单独的事件（最大兼容性）
-            weekList.forEach { week ->
-                val eventDate = semesterStartDate.clone() as Calendar
-                // 移动到对应周
-                eventDate.add(Calendar.DAY_OF_YEAR, (week - 1) * 7)
-                // The time base is Monday; Sunday is six days later, never the preceding day.
-                eventDate.add(Calendar.DAY_OF_YEAR, course.day - 1)
-                
-                val eventDateStr = dateFormat.format(eventDate.time)
-                
-                // 生成 VEVENT
-                sb.appendLine("BEGIN:VEVENT")
-                sb.appendLine("UID:course-${com.tyust.course.schedule.ScheduleIdentity.digest(course.id)}-$eventDateStr@tyust.edu.cn")
-                sb.appendLine("DTSTAMP:$now")
-                sb.appendLine("DTSTART;TZID=Asia/Shanghai:${eventDateStr}T$startTimeStr")
-                sb.appendLine("DTEND;TZID=Asia/Shanghai:${eventDateStr}T$endTimeStr")
-                sb.appendLine("SUMMARY:${escapeText(course.name)}")
-                if (course.location.isNotEmpty()) {
-                    sb.appendLine("LOCATION:${escapeText(course.location)}")
-                }
-                val description = buildString {
-                    if (course.teacher.isNotEmpty()) append("授课教师: ${course.teacher}")
-                    append(if (isNotEmpty()) "\n" else "")
-                    append("第${week}周")
-                }
-                sb.appendLine("DESCRIPTION:${escapeText(description)}")
-                sb.appendLine("END:VEVENT")
-            }
+        val base = ScheduleTimeBase(ScheduleTimeBase.dateFromMillis(semesterStartDate.timeInMillis, semesterStartDate.timeZone),
+            periodTimes.mapValues { it.value.first }, periodTimes.mapValues { it.value.second }, adjustments)
+        val records = courses.map { it.record().copy(weeks = ScheduleWeeks.parse(it.weeks).weeks.filter { week -> week <= totalWeeks }.joinToString(",")) }
+        val timestamp = SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.ROOT).apply { timeZone = semesterStartDate.timeZone }
+        ScheduleOccurrenceResolver.resolve(records, base, semesterStartDate.timeZone).forEach { item ->
+            val course = item.course
+            val identityDate = item.originalDate.replace("-", "")
+            sb.appendLine("BEGIN:VEVENT")
+            sb.appendLine("UID:course-" + ScheduleIdentity.digest(course.id) + "-" + identityDate + "@tyust.edu.cn")
+            sb.appendLine("DTSTAMP:" + now)
+            sb.appendLine("DTSTART;TZID=Asia/Shanghai:" + timestamp.format(Date(item.startsAt)))
+            sb.appendLine("DTEND;TZID=Asia/Shanghai:" + timestamp.format(Date(item.endsAt)))
+            sb.appendLine("SUMMARY:" + escapeText(course.name))
+            if (course.location.isNotEmpty()) sb.appendLine("LOCATION:" + escapeText(course.location))
+            val week = ScheduleDates.weekIndexAt(base.firstWeekDate, item.startsAt, semesterStartDate.timeZone)
+            sb.appendLine("DESCRIPTION:" + escapeText("授课教师: " + course.teacher + "\n第" + week + "周"))
+            sb.appendLine("END:VEVENT")
         }
-        
+
         sb.appendLine("END:VCALENDAR")
         return sb.toString()
     }
@@ -149,10 +126,11 @@ object ICalExporter {
         courses: List<ScheduleCourseUi>,
         semesterStartDate: Calendar,
         totalWeeks: Int = 20,
-        periodTimes: Map<Int, Pair<String, String>> = defaultPeriodTimes
+        periodTimes: Map<Int, Pair<String, String>> = defaultPeriodTimes,
+        adjustments: ScheduleAdjustments = ScheduleAdjustments()
     ) {
         try {
-            val icsContent = generateICalContent(courses, semesterStartDate, totalWeeks, periodTimes)
+            val icsContent = generateICalContent(courses, semesterStartDate, totalWeeks, periodTimes, adjustments)
             
             // 保存到临时文件
             val fileName = "课表_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.ics"

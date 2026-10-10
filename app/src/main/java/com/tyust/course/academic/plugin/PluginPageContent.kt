@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal data class PagePrompt(val title: String, val message: String, val challenge: JSONObject?, val result: CompletableDeferred<JSONObject?>, val choices: List<Pair<String, String>> = emptyList(), val image: File? = null, val directChoices: Boolean = false, val values: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String> = mutableStateMapOf())
 
 /** Shared by a pinned main page and the standalone plugin page activity. */
-@Composable fun PluginPageContent(route: String, onNavigate: (String, JSONObject) -> Unit, onBack: () -> Unit, commandId: String? = null, pluginId: String? = null, params: JSONObject = JSONObject()) {
+@Composable fun PluginPageContent(route: String, onNavigate: (String, JSONObject) -> Unit, onBack: () -> Unit, commandId: String? = null, pluginId: String? = null, params: JSONObject = JSONObject(), standalone: Boolean = false) {
     val context = LocalContext.current
     val revision by PluginPages.revision.collectAsState()
     val accountRevision by PluginServiceAccounts.revision.collectAsState()
@@ -105,25 +105,16 @@ internal data class PagePrompt(val title: String, val message: String, val chall
                 onDispose { lifecycle.removeObserver(observer); lifetime.foreground = false }
             }
             val snapshot by native.snapshot.collectAsState()
-            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).then(Modifier.onSizeChanged { size ->
+            val viewportModifier = Modifier.onSizeChanged { size ->
                 val width = size.width / density.density; val height = size.height / density.density
                 val viewport = JSONObject().put("widthDp", width).put("heightDp", height)
                     .put("widthClass", com.tyust.course.ui.system.windowWidthClass(width)).put("fontScale", density.fontScale)
                 if (lifetime.viewport?.toString() != viewport.toString()) { lifetime.viewport = viewport; if (lifetime.foreground) native.viewportChanged(viewport) }
-            }), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (snapshot.error.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(snapshot.error, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    com.tyust.course.ui.system.SystemActionButton("重试", { native.open(route, pageParams) })
-                }
-                // A stable callback keeps unchanged plugin nodes skippable across reducer results.
-                val instance by rememberUpdatedState(snapshot.instance)
-                val emit = remember(native) { { event: JSONObject, gesture: Boolean -> native.event(instance, event, gesture) } }
-                Box(Modifier.fillMaxSize()) {
-                    snapshot.view?.let { view -> NativePluginNode(view, host.files, Modifier.fillMaxSize(), emit = emit) }
-                    // Overlay, not a layout row: toggling it must not shift the page on every reduce.
-                    if (snapshot.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter))
-                }
             }
+            val instance by rememberUpdatedState(snapshot.instance)
+            val emit = remember(native) { { event: JSONObject, gesture: Boolean -> native.event(instance, event, gesture) } }
+            NativePluginPageSurface(snapshot, host.files, page?.title ?: pkg.manifest.name, standalone, viewportModifier,
+                onExit = onBack, onRetry = { native.open(route, pageParams) }, emit = emit)
         }
     }
 }
@@ -165,8 +156,8 @@ internal data class PagePrompt(val title: String, val message: String, val chall
                     RadioButton(selected = choice == id, onClick = { choice = id }); SystemDialogButton(onClick = { choice = id }) { Text(label) }
                 } }
                 fields.forEach { field -> val id = field.getString("id")
-                    OutlinedTextField(values[id].orEmpty(), { if (it.length <= 2000) values[id] = it }, label = { Text(field.getString("label")) },
-                        visualTransformation = if (field.optString("type") == "password") PasswordVisualTransformation() else VisualTransformation.None, singleLine = true)
+                    com.tyust.course.ui.system.GlassFormField(values[id].orEmpty(), { if (it.length <= 2000) values[id] = it }, label = field.getString("label"),
+                        modifier = Modifier.fillMaxWidth(), password = field.optString("type") == "password")
                 }
                 if (p.challenge?.optBoolean("remember") == true) Row { Checkbox(save, { save = it }); Text("为此服务账号加密保存") }
             }

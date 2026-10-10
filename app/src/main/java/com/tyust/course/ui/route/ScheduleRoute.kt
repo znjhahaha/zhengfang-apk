@@ -153,6 +153,10 @@ fun ScheduleRoute(isActive: Boolean = true) {
     
     // Dialog State
     var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
+    var showAdjustments by rememberSaveable { mutableStateOf(false) }
+    var adjustmentCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var adjustmentDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailOccurrenceDate by rememberSaveable { mutableStateOf<String?>(null) }
     var detailId by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var quickCourseId by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var detailSourceBounds by remember(routeAccountKey) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -160,6 +164,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
     var resolvedTermId by rememberSaveable(routeAccountKey) { mutableStateOf(restoredSnapshot?.termId.orEmpty()) }
     var appliedCalendar by rememberSaveable(routeAccountKey) { mutableStateOf(restoredSnapshot?.appliedCalendar) }
     var notificationCourseJson by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
+    var notificationStartsAt by rememberSaveable(routeAccountKey) { mutableStateOf<Long?>(null) }
     var settingsTermOverride by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var deletedCourseJson by rememberSaveable(routeAccountKey) { mutableStateOf<String?>(null) }
     var deletedRemindersJson by rememberSaveable(routeAccountKey) { mutableStateOf("[]") }
@@ -195,6 +200,8 @@ fun ScheduleRoute(isActive: Boolean = true) {
             detailSourceBounds = null
             reminderScheduler.findById(reminderRequest)?.let {
                 notificationCourseJson = ReminderJson.reminder(it).toString()
+                notificationStartsAt = CourseReminderNavigation.requestedStartsAt
+                detailOccurrenceDate = notificationStartsAt?.let(ScheduleTimeBase::dateFromMillis)
                 detailId = it.course.id
             }
             CourseReminderNavigation.consume()
@@ -420,7 +427,8 @@ fun ScheduleRoute(isActive: Boolean = true) {
                 detailId = request.course
                 request.startsAt?.let { startsAt ->
                     currentWeek = ScheduleDates.weekIndexAt(displayedTimeBase.firstWeekDate, startsAt) ?: currentWeek
-                    selectedDay = courses.first { it.id == request.course }.day
+                    selectedDay = ScheduleDates.dayAt(startsAt)
+                    detailOccurrenceDate = ScheduleTimeBase.dateFromMillis(startsAt)
                     todayRequest++
                 }
             } else GlassToaster.show("这节课已更新，请查看当前课表")
@@ -442,7 +450,9 @@ fun ScheduleRoute(isActive: Boolean = true) {
     ScheduleScreen(
         currentWeek = currentWeek,
         courses = courses,
+        adjustments = displayedTimeBase.adjustments,
         isLoading = isLoading,
+        backgroundRefreshing = backgroundRefreshing,
         loadIssue = loadIssue,
         hasCachedSchedule = hasLocalSchedule || courses.isNotEmpty(),
         onDismissIssue = { loadIssue = null },
@@ -466,6 +476,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
             // Freeze the tapped card before pager neighbours or sheet layout update their bounds.
             detailSourceBounds = focusRegistry.bounds(it.id)
             detailId = it.id
+            detailOccurrenceDate = it.occurrenceDate
         },
         onCourseLongClick = { quickCourseId = it.id },
         onAddClick = { editingId = java.util.UUID.randomUUID().toString() },
@@ -487,7 +498,8 @@ fun ScheduleRoute(isActive: Boolean = true) {
                         courses = courses,
                         semesterStartDate = semesterStart,
                         totalWeeks = ScheduleMaxWeeks,
-                        periodTimes = periodTimes.associate { it.period to (it.startTime to it.endTime) }
+                        periodTimes = periodTimes.associate { it.period to (it.startTime to it.endTime) },
+                        adjustments = displayedTimeBase.adjustments
                     )
                     GlassToaster.show("课表已导出，可导入到系统日历中查看")
                     }
@@ -525,6 +537,9 @@ fun ScheduleRoute(isActive: Boolean = true) {
         com.tyust.course.ui.system.GlassSubpage(onDismiss = { showSettingsDialog = false; settingsTermOverride = null }) { close ->
             ScheduleSettingsScreen(
                 manager = settingsManager,
+                defaultLead = reminderScheduler.defaultLead(routeAccountKey),
+                onDefaultLead = { reminderScheduler.setDefaultLead(routeAccountKey, it) },
+                onAdjustments = { adjustmentCourseId = null; showAdjustments = true },
                 reminderAccountLabel = UserManager.getInstance().username.ifBlank { "当前登录账号" },
                 reminderTerm = settingsTerm,
                 reminderSummary = reminderScheduler.semesterSummary(routeAccountKey, settingsTerm,
@@ -574,10 +589,19 @@ fun ScheduleRoute(isActive: Boolean = true) {
     
     val notificationCourse = notificationCourseJson?.let { runCatching { ReminderJson.reminder(JSONObject(it)) }.getOrNull() }
     val detailTerm = notificationCourse?.key?.term ?: resolvedTermId
-    val selectedDetail = courses.firstOrNull { it.id == detailId && detailTerm == resolvedTermId } ?: notificationCourse?.course?.let {
+    val detailBaseCourse = courses.firstOrNull { it.id == detailId && detailTerm == resolvedTermId }
+    val notificationBaseUi = notificationCourse?.course?.let {
         ScheduleCourseUi(it.name, it.teacher, it.location, it.day, it.startPeriod, it.endPeriod, it.weeks,
             courseColors[ScheduleIdentity.colorIndex(it.id, courseColors.size)], it.custom, if (it.custom) it.id.removePrefix("custom:") else "", id = it.id, details = it.details)
     }
+    val notificationOccurrence = notificationCourse?.let { record -> notificationStartsAt?.let { reminderScheduler.occurrence(record, it) } }
+    val notificationDisplayUi = notificationOccurrence?.let { occurrence -> notificationBaseUi?.copy(
+        day = ScheduleDates.dayAt(occurrence.startsAt), startPeriod = occurrence.course.startPeriod, endPeriod = occurrence.course.endPeriod,
+        location = occurrence.course.location, occurrenceDate = ScheduleTimeBase.dateFromMillis(occurrence.startsAt), originalOccurrenceDate = occurrence.originalDate)
+    } ?: notificationBaseUi
+    val selectedDetail = (detailBaseCourse?.let { original -> detailOccurrenceDate?.let { date ->
+        com.tyust.course.ui.screen.resolvedScheduleUi(courses, displayedTimeBase).firstOrNull { it.id == original.id && it.occurrenceDate == date }
+    } ?: original }) ?: notificationDisplayUi
     courses.firstOrNull { it.id == quickCourseId }?.let { course ->
         val reminderKey = CourseReminderKey(routeAccountKey, resolvedTermId, course.id)
         val enabled = reminderScheduler.find(reminderKey)?.enabled == true
@@ -588,7 +612,7 @@ fun ScheduleRoute(isActive: Boolean = true) {
                 reminderScheduler.setEnabled(reminderKey, course.record(), !enabled)
                 val availability = reminderScheduler.status(reminderKey).availability
                 if (!enabled && availability != ReminderAvailability.Scheduled) {
-                    notificationCourseJson = null; detailSourceBounds = null; detailId = course.id
+                    notificationCourseJson = null; detailSourceBounds = null; detailId = course.id; detailOccurrenceDate = null
                 } else GlassToaster.show(if (enabled) "已关闭提醒" else "已开启课前提醒")
             },
             onCopy = {
@@ -601,6 +625,8 @@ fun ScheduleRoute(isActive: Boolean = true) {
     }
     selectedDetail?.let { course ->
         com.tyust.course.ui.screen.ScheduleCourseSheet(course, routeAccountKey, detailTerm, if (detailTerm == resolvedTermId) courses else listOf(course),
+            originalCourse = detailBaseCourse ?: notificationBaseUi ?: course,
+            onAdjust = { adjustmentCourseId = course.id; adjustmentDate = course.originalOccurrenceDate; showAdjustments = true },
             sourceCenterX = detailSourceBounds?.center?.x,
             sourceBounds = detailSourceBounds, currentWeek = currentWeek,
             onDismiss = { detailId = null; detailSourceBounds = null; notificationCourseJson = null; focusRegistry.restore(course.id) },
@@ -616,6 +642,13 @@ fun ScheduleRoute(isActive: Boolean = true) {
                 notificationCourseJson = null
                 focusRegistry.restore(course.id)
             })
+    }
+    if (showAdjustments) com.tyust.course.ui.system.GlassSubpage(onDismiss = { showAdjustments = false }) { close ->
+        com.tyust.course.ui.screen.ScheduleAdjustmentsScreen(courses, displayedTimeBase, periodCount,
+            adjustmentDate.takeIf { adjustmentCourseId != null } ?: ScheduleDates.date(displayedTimeBase.firstWeekDate, currentWeek, selectedDay)?.let {
+                ScheduleTimeBase.dateFromMillis(it.timeInMillis)
+            } ?: ScheduleTimeBase.dateFromMillis(System.currentTimeMillis()), adjustmentCourseId,
+            onSave = { reminderScheduler.updateAdjustments(routeAccountKey, resolvedTermId, it) }, onClose = close)
     }
     editingId?.let { id ->
         val initial = customCourses.firstOrNull { it.id == id } ?: ScheduleSettingsManager.CustomCourse(

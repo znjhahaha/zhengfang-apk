@@ -5,4 +5,6 @@
     android:targetCellWidth="2" android:targetCellHeight="1"
     android:initialLayout="@layout/schedule_widget" android:previewLayout="@layout/schedule_widget"
     android:description="@string/schedule_widget_description"
+    android:configure="com.tyust.course.schedule.ScheduleWidgetAppearanceActivity"
+    android:widgetFeatures="reconfigurable|configuration_optional"
     android:resizeMode="horizontal|vertical" android:updatePeriodMillis="1800000" android:widgetCategory="home_screen" />

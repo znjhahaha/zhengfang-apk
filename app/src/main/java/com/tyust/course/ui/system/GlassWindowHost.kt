@@ -25,10 +25,10 @@ private val LocalGlassWindowOwner = staticCompositionLocalOf<android.view.View?>
 
 /** Each actual window owns its sources; pages inside that window reuse the provided locals. */
 @Composable
-fun GlassWindowHost(modifier: Modifier = Modifier, capturePage: Boolean = true, content: @Composable BoxScope.() -> Unit) {
+fun GlassWindowHost(modifier: Modifier = Modifier, capturePage: Boolean = true, isolatePage: Boolean = false, content: @Composable BoxScope.() -> Unit) {
     val view = LocalView.current
     val appWallpaper = com.tyust.course.ui.theme.rememberAppWallpaperStyle()
-    if (LocalGlassWindowOwner.current === view) {
+    if (LocalGlassWindowOwner.current === view && !isolatePage) {
         Box(modifier.fillMaxSize()) { content() }
         return
     }

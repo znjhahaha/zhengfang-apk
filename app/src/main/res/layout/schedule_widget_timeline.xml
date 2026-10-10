@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_surface" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/schedule_widget_outline" android:clipToOutline="true">
+    <ImageView android:id="@+id/widget_background" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:contentDescription="@null" />
+<LinearLayout
     android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:padding="8dp" android:background="@drawable/schedule_widget_light">
     <LinearLayout android:id="@+id/widget_header" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -20,3 +25,5 @@
     </LinearLayout>
     <TextView android:id="@+id/widget_footer" style="@style/ScheduleWidgetMetadata" android:visibility="gone" android:paddingTop="6dp" />
 </LinearLayout>
+
+</FrameLayout>

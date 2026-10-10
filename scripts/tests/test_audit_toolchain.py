@@ -34,6 +34,10 @@ class PublicAuditCoverageTests(unittest.TestCase):
         files = self_test_files(self.kit, '3.5.0')
         self.assertEqual(len(files), 9)
         self.assertEqual(len(set(files)), len(files))
+        with self.assertRaisesRegex(RuntimeError, 'SELF_TEST_FILES_MISSING'):
+            self_test_files(self.kit, '3.6.0')
+        self.add_file('tests/native-navigation.test.mjs')
+        self.assertIn('tests/native-navigation.test.mjs', self_test_files(self.kit, '3.6.0'))
         (self.kit/'tests/chaoxing-academic.test.mjs').unlink()
         with self.assertRaisesRegex(RuntimeError, 'SELF_TEST_FILES_MISSING'):
             self_test_files(self.kit, '3.5.1')

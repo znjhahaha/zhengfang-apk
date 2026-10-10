@@ -29,7 +29,7 @@ internal fun SystemFormPage(
                 }
             }
         }) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 680.dp).fillMaxSize().verticalScroll(rememberScrollState())
                     .padding(horizontal = PagePadding, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp), content = content)

@@ -44,11 +44,11 @@ class NativePluginActivity : ComponentActivity() {
                         val next = if (requested.contains('/') || requested.startsWith("app.")) requested else "$pluginId/$requested"
                         if (next.startsWith("$pluginId/")) history = JSONArray((frames + JSONObject().put("route", next).put("params", params)).takeLast(32)).toString()
                         else PluginPages.open(this@NativePluginActivity, next, params)
-                    }, onBack = { back() }, commandId = activeCommand, pluginId = pluginId, params = frame.optJSONObject("params") ?: JSONObject())
+                    }, onBack = { back() }, commandId = activeCommand, pluginId = pluginId, params = frame.optJSONObject("params") ?: JSONObject(), standalone = true)
                 }
             }
             GlassWindowHost(capturePage = page?.renderer != "web") {
-            if (page?.renderer == "web") body(androidx.compose.foundation.layout.PaddingValues())
+            if (page?.renderer == "web" || activeCommand == null) body(androidx.compose.foundation.layout.PaddingValues())
             else GlassPageScaffold(title = page?.title ?: "插件工具", onBack = { back() }, content = body)
         } } }
     }

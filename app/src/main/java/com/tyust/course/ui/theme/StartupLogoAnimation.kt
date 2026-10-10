@@ -82,6 +82,7 @@ object StartupLogoAnimation {
         private var animator: ValueAnimator? = null
         private var finish: (() -> Unit)? = null
         private var finished = false
+        private var ending = false
 
         init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
 
@@ -106,9 +107,16 @@ object StartupLogoAnimation {
         }
 
         private fun complete() {
+            if (finished || ending) return
+            ending = true
+            fraction = 1f
+            contentProgress = 1f
+            invalidate()
+        }
+
+        private fun releaseAfterDraw() {
             if (finished) return
             finished = true
-            contentProgress = 1f
             finish?.invoke()
             finish = null
         }
@@ -119,9 +127,12 @@ object StartupLogoAnimation {
             paint.alpha = ((1f - StartupChoreography.content(milliseconds)) * 255).toInt()
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
             renderer.draw(canvas, bounds, milliseconds)
+            // The transparent terminal frame is submitted before removing this view.
+            // This avoids combining the final content update and decor relayout in one frame.
+            if (ending) post { releaseAfterDraw() }
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) { animator?.cancel(); complete() }
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) { animator?.cancel(); complete(); releaseAfterDraw() }
             return false
         }
 

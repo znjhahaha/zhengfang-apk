@@ -75,7 +75,7 @@ fun InitialPageLoad(key: String, title: String, active: Boolean, transitionFinis
         if (mounted) key(store, key) {
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = reveal }
                 .then(if (!entered) Modifier.clearAndSetSemantics { } else Modifier)) {
-                CompositionLocalProvider(LocalPageReadiness provides readiness,
+                CompositionLocalProvider(LocalPageReadiness provides readiness, LocalLoadingRoute provides route, LocalLoadingActive provides active,
                     LocalModuleEntrance provides if (retainedEntry) inheritedEntrance else null) { content() }
             }
         }
@@ -88,13 +88,13 @@ fun InitialPageLoad(key: String, title: String, active: Boolean, transitionFinis
                         while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
                     }
                 })
-                PageSkeleton(route, title, error, onRetry = { retry++ })
+                CompositionLocalProvider(LocalLoadingActive provides active) { PageSkeleton(route, title, error, onRetry = { retry++ }) }
             }
         }
     }
 }
 
-/** Static shapes share the real screens' content insets; no shimmer or secondary loading spinner. */
+/** Stable placeholders preserve layout while the destination's own icon indicates progress. */
 @Composable
 private fun PageSkeleton(route: String, title: String, error: Boolean, onRetry: () -> Unit) {
     val heading = when (route) { "app.grades" -> "成绩与考试"; "app.grab" -> "抢课工作台"; else -> title }
@@ -105,7 +105,10 @@ private fun PageSkeleton(route: String, title: String, error: Boolean, onRetry: 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = PagePadding)
         .testTag("page-loading:$title"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.padding(top = 10.dp)) {
-            Text(heading, fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(heading, Modifier.weight(1f), fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+                if (!error) PageLoadingIcon(route, Modifier.size(36.dp))
+            }
             Spacer(Modifier.height(6.dp))
             Block(Modifier.width(112.dp).height(18.dp))
         }

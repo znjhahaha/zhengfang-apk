@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -116,6 +117,8 @@ fun LiquidSlider(
     // 手势期间外部值不许再驱动动画：调用方会把我们刚发出的值原路送回来，
     // 两条路径同时对一个 Animatable 发 animateTo 会互相抢占，胶囊就卡住。
     var isDragging by remember { mutableStateOf(false) }
+    val latestValue by rememberUpdatedState(value)
+    val latestOnValueChange by rememberUpdatedState(onValueChange)
     val dampedDragAnimation = remember(animationScope, valueRange) {
         DampedDragAnimation(
             animationScope = animationScope,
@@ -134,9 +137,9 @@ fun LiquidSlider(
         dampedDragAnimation.setReducedMotion(accessibility.reduceMotion, value())
     }
     LaunchedEffect(dampedDragAnimation) {
-        snapshotFlow { value() }
-            .collectLatest { current ->
-                if (!isDragging && dampedDragAnimation.targetValue != current) {
+        snapshotFlow { latestValue() to isDragging }
+            .collectLatest { (current, dragging) ->
+                if (!dragging && dampedDragAnimation.targetValue != current) {
                     dampedDragAnimation.animateToValue(current)
                 }
             }
@@ -210,7 +213,7 @@ fun LiquidSlider(
                                 dampedDragAnimation.press(down.uptimeMillis)
                                 val initial = valueAt(down.position.x)
                                 dampedDragAnimation.updateValue(initial, down.uptimeMillis)
-                                onValueChange(initial)
+                                latestOnValueChange(initial)
                                 // 值一变环境背景就可能整张变（蒙版/模糊滑块改的
                                 // 就是壁纸本身），底图要跟着重拍。限频在
                                 // GlassLensFreshness 里。
@@ -218,7 +221,7 @@ fun LiquidSlider(
                                 drag(down.id) { change ->
                                     val target = valueAt(change.position.x)
                                     dampedDragAnimation.updateValue(target, change.uptimeMillis)
-                                    onValueChange(target)
+                                    latestOnValueChange(target)
                                     lensFreshness?.onScroll()
                                     change.consume()
                                 }

@@ -86,6 +86,13 @@ internal val LightColorScheme = lightColorScheme(
     surface = NeuSurface,
     onSurface = NeuOnSurface,
     surfaceVariant = NeuInsetBackground,
+    // Unset containers fall back to Material's lavender defaults (#ECE6F0),
+    // which tinted every solid secondary button. Keep them neutral iOS fills.
+    surfaceContainerLowest = SurfaceWhite,
+    surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF6F6F8),
+    surfaceContainer = androidx.compose.ui.graphics.Color(0xFFF0F0F3),
+    surfaceContainerHigh = IOSFillLight,
+    surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFE2E2E7),
     onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF51545A),
     outline = NeuDarkShadow,
     outlineVariant = NeuDivider,

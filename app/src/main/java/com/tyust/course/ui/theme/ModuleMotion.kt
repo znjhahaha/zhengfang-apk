@@ -7,6 +7,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 
 /** A navigation-owned timeline; lazy items never own or restart entrance animations. */
@@ -35,13 +37,25 @@ object ModuleMotion {
 @Composable
 fun Modifier.moduleEntrance(group: Int, progress: (() -> Float)? = null): Modifier {
     val timeline = progress ?: LocalModuleEntrance.current ?: return this
-    return graphicsLayer {
-        // Let HWUI composite the animated content layer. ModulateAlpha can retain
-        // transparent nested text display lists on API 31/32 until a later scroll.
-        // Optical backgrounds/shadows belong to sibling surfaces, not this layer.
+    // Auto clips an alpha layer to its raster bounds. Reserve transparent pixels
+    // for the card's shadow without changing its measured size or placement.
+    // ModulateAlpha avoids that clip but regresses nested text on API 31/32.
+    return layout { measurable, constraints ->
+        val outset = 24.dp.roundToPx()
+        val placeable = measurable.measure(constraints.offset(outset * 2, outset * 2))
+        layout((placeable.width - outset * 2).coerceAtLeast(0), (placeable.height - outset * 2).coerceAtLeast(0)) {
+            placeable.place(-outset, -outset)
+        }
+    }.graphicsLayer {
         compositingStrategy = CompositingStrategy.Auto
         val p = ModuleMotion.progress(timeline(), group)
         alpha = p
         translationY = 16.dp.toPx() * (1f - p)
+    }.layout { measurable, constraints ->
+        val outset = 24.dp.roundToPx()
+        val placeable = measurable.measure(constraints.offset(-outset * 2, -outset * 2))
+        layout(placeable.width + outset * 2, placeable.height + outset * 2) {
+            placeable.place(outset, outset)
+        }
     }
 }

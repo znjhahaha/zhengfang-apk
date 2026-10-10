@@ -297,7 +297,7 @@ class ScheduleWidgetTest {
     }
 
     @Test @Config(sdk = [33]) @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun everyMinimumSizeKeepsFullNameTeacherTimeAndRoomVisibleWithLargeFontsAndBothThemes() {
+    fun minimumSizesPrioritizeNameTimeRoomAndLargerSizesAddTeacherAcrossThemes() {
         val longCourse = course.copy(name = "跨学科联合研讨与实验课程", teacher = "张文博、李思远",
             location = "主校区 明理教学楼 B302（实验机房）")
         val state = ScheduleWidgetState.from(snapshot().copy(courses = listOf(longCourse,
@@ -325,7 +325,7 @@ class ScheduleWidgetTest {
                         if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collect(view.getChildAt(i))
                     }
                     collect(root)
-                    assertTrue("$style $width/$height font=$font $theme lost required fields", visible.size >= if (style == ScheduleWidgetStyle.Double) 8 else 4)
+                    assertTrue("$style $width/$height font=$font $theme lost required fields", visible.size >= (if (style == ScheduleWidgetStyle.Timeline || height >= 92 && width >= 80) 4 else 3) * (if (style == ScheduleWidgetStyle.Double) 2 else 1))
                     for (text in visible) {
                         val rect = android.graphics.Rect(0, 0, text.width, text.height)
                         root.offsetDescendantRectToMyCoords(text, rect)
