@@ -8,7 +8,7 @@ import org.junit.Test
 import java.util.TimeZone
 
 class ScheduleICalTest {
-    private val monday = ScheduleDates.firstMonday("2026-09-07", TimeZone.getTimeZone("Asia/Shanghai"))!!
+    private val monday = ScheduleDates.firstWeekDate("2026-09-07", TimeZone.getTimeZone("Asia/Shanghai"))!!
     private val course = ScheduleCourseUi("数学", "老师", "A101", 7, 1, 2, "1-3周(单),4周", Color.Blue, id = "network:stable")
 
     @Test fun sundayMixedWeeksAndConfiguredTimesMatchTheTimetable() {

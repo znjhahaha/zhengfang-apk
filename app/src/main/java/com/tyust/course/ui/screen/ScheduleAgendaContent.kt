@@ -55,7 +55,7 @@ internal fun ScheduleDayList(
         .padding(start = 16.dp, end = 16.dp, top = topInset + 12.dp, bottom = LocalAppOverlayBottomInset.current + 24.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
         when {
-            ScheduleDates.firstMonday(firstWeekDate) == null ->
+            ScheduleDates.firstWeekDate(firstWeekDate) == null ->
                 ScheduleNotice("设置开学日期后显示当天课程", "设置开学日期", onCalendar)
             week !in 1..ScheduleMaxWeeks -> ScheduleNotice(if (week < 1) "尚未开学，当天没有课程" else "本学期已结束")
             else -> {

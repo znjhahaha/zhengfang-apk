@@ -30,7 +30,9 @@ class CourseReminderPlannerTest {
         assertEquals(ReminderAvailability.NeedsPermission, status(p = ReminderPermissions(false, true)))
         assertEquals(ReminderAvailability.NeedsPermission, status(p = ReminderPermissions(true, false)))
         assertEquals(ReminderAvailability.NeedsTime, status(b = null))
-        assertEquals(ReminderAvailability.NeedsTime, status(b = base.copy(firstWeekDate = "2026-09-08")))
+        assertEquals(ReminderAvailability.NeedsTime, status(b = base.copy(firstWeekDate = "not-a-date")))
+        // A teaching week may start on any weekday now, so a Tuesday anchor still schedules its Monday course one week later.
+        assertEquals(ReminderAvailability.Scheduled, status(b = base.copy(firstWeekDate = "2026-09-08")))
         assertEquals(ReminderAvailability.InvalidWeeks, status(reminder.copy(course = course.copy(weeks = "待定"))))
         assertEquals(ReminderAvailability.InactiveAccount, status(account = "other"))
     }
