@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import re
-from release_distribution import Budget, DeliveryError, REPO, ROOT, gh_api, inspect_apk
+from release_distribution import Budget, DeliveryError, REPO, ROOT, gh_api, inspect_apk, verify_artifact_set, artifact_receipts
 
 
 def verify_run(run, receipt):
@@ -24,12 +24,14 @@ def download_test_run(run_id, directory, budget):
         raise DeliveryError('Invalid workflow run ID')
     run = gh_api(f'repos/{REPO}/actions/runs/{run_id}', budget)
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
-    budget.run(['gh', 'run', 'download', str(run_id), '--repo', REPO, '--name', 'release-apk', '--dir', str(directory)], 'download-tested-artifact', 60)
+    budget.run(['gh', 'run', 'download', str(run_id), '--repo', REPO, '--name', 'release-apk', '--dir', str(directory)], 'download-tested-artifact', 180)
     receipt = json.loads((directory/'receipt.json').read_text())
     verify_run(run, receipt)
     actual = inspect_apk(directory/'app-release.apk', budget)
     if any(actual[key] != receipt.get(key) for key in actual):
         raise DeliveryError('Test artifact does not match receipt')
+    if receipt.get('versionCode', 0) >= 113:
+        verify_artifact_set(directory/'app-release.apk', receipt, budget)
     from reuse_test_artifact import validate_origin, APK_INPUTS
     if receipt.get('deliveryRunId'):
         origin = gh_api(f'repos/{REPO}/actions/runs/{receipt['buildId']}', budget)
@@ -76,19 +78,20 @@ def promote(run_id, directory, budget):
     if release is None:
         release = gh_api(f'repos/{REPO}/releases', budget, 'POST', dict(tag_name=tag, name='Release '+tag, draft=True,
             prerelease=False, body=(directory/'release-notes.txt').read_text()))
-    def current_asset():
+    def current_asset(filename):
         current = gh_api(f'repos/{REPO}/releases/{release["id"]}', budget)
-        return next((a for a in current.get('assets', []) if a.get('name') == 'app-release.apk'), None)
-    asset = current_asset()
-    if asset is None:
-        try:
-            budget.run(['gh', 'release', 'upload', tag, str(directory/'app-release.apk'), '--repo', REPO], 'github-apk-upload', 120)
-        except DeliveryError:
-            if current_asset() is None:
-                raise
-        asset = current_asset()
-    if not asset or asset.get('digest') != 'sha256:'+receipt['sha256'] or asset.get('size') != receipt['size']:
-        raise DeliveryError('Existing GitHub APK differs; it will not be overwritten')
+        return next((a for a in current.get('assets', []) if a.get('name') == filename), None)
+    for _, filename, artifact in artifact_receipts(receipt):
+        asset = current_asset(filename)
+        if asset is None:
+            try:
+                budget.run(['gh', 'release', 'upload', tag, str(directory/filename), '--repo', REPO], 'github-apk-upload', 120)
+            except DeliveryError:
+                if current_asset(filename) is None:
+                    raise
+            asset = current_asset(filename)
+        if not asset or asset.get('digest') != 'sha256:'+artifact['sha256'] or asset.get('size') != artifact['size']:
+            raise DeliveryError('Existing GitHub APK differs; it will not be overwritten')
     # Receipt and notes are immutable companions used by standalone repair tasks.
     companions = {a['name']:a for a in gh_api(f'repos/{REPO}/releases/{release["id"]}', budget).get('assets', [])}
     for name in ['receipt.json', 'release-notes.txt']:
@@ -107,7 +110,7 @@ def promote(run_id, directory, budget):
 
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--run-id', required=True); parser.add_argument('--directory', type=Path, default=Path('promoted'))
-    args = parser.parse_args(); promote(args.run_id, args.directory, Budget(360))
+    args = parser.parse_args(); promote(args.run_id, args.directory, Budget(600))
 
 if __name__ == '__main__':
     main()

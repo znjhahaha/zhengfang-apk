@@ -25,6 +25,7 @@ KEY_ID = 'app-update-2026-01'
 HOSTS = {'stable': 'dl.hidisiwa.xyz', 'test': 'dl-test.hidisiwa.xyz'}
 ALLOWED_HOSTS = set(HOSTS.values()) | {'github.com', 'raw.githubusercontent.com',
     'release-assets.githubusercontent.com', 'gh-proxy.com', 'ghproxy.net', 'gitee.com', 'raw.giteeusercontent.com'}
+ABI_FILES = {'arm64-v8a': 'app-arm64-v8a-release.apk', 'armeabi-v7a': 'app-armeabi-v7a-release.apk'}
 
 class DeliveryError(RuntimeError):
     pass
@@ -123,6 +124,14 @@ def validate_payload(p, channel=None):
         ids.add(m['id'])
         if not isinstance(m.get('name'), str) or not 1 <= len(m['name']) <= 40 or not valid_url(m.get('url', '')):
             raise DeliveryError('Invalid mirror URL')
+    if 'artifacts' in p:
+        artifacts = p['artifacts']
+        if not isinstance(artifacts, dict) or not 1 <= len(artifacts) <= 2 or not set(artifacts) <= set(ABI_FILES):
+            raise DeliveryError('Invalid ABI artifact map')
+        for artifact in artifacts.values():
+            if not isinstance(artifact, dict) or not {'size', 'sha256', 'mirrors'} <= artifact.keys():
+                raise DeliveryError('Incomplete ABI artifact')
+            validate_payload({**{k:v for k,v in p.items() if k != 'artifacts'}, **{k:artifact[k] for k in ['size', 'sha256', 'mirrors']}})
     return p
 
 
@@ -177,8 +186,20 @@ def ensure_forward(previous, incoming):
         raise DeliveryError('Refusing metadata rollback')
     if incoming['revision'] == previous['revision'] and incoming != previous:
         raise DeliveryError('Manifest revision conflict')
-    if incoming['versionCode'] == previous['versionCode'] and any(previous[k] != incoming[k] for k in ['size', 'sha256']):
+    if incoming['versionCode'] == previous['versionCode'] and artifact_identities(previous) != artifact_identities(incoming):
         raise DeliveryError('Refusing same-version APK replacement')
+
+
+def artifact_identities(receipt):
+    return {'universal': (receipt['size'], receipt['sha256']), **{abi: (a['size'], a['sha256']) for abi, a in receipt.get('artifacts', {}).items()}}
+
+
+def artifact_receipts(receipt):
+    """Only the fixed ABI filenames may be read or uploaded, never a path from metadata."""
+    yield 'universal', 'app-release.apk', {k:v for k,v in receipt.items() if k != 'artifacts'}
+    for abi, filename in ABI_FILES.items():
+        if abi in receipt.get('artifacts', {}):
+            yield abi, filename, {**{k:v for k,v in receipt.items() if k != 'artifacts'}, **receipt['artifacts'][abi], 'fileName': filename}
 
 
 def fetch(url, target, budget, expected=None, maximum=60, allow_missing=False, revalidate=False):
@@ -231,7 +252,7 @@ def inspect_apk(apk, budget):
         size=Path(apk).stat().st_size, sha256=digest(apk), signerSha256=official)
 
 
-def inspect_apk_packaging(apk):
+def inspect_apk_packaging(apk, abi=None):
     if not 0 < Path(apk).stat().st_size <= APK_LIMIT:
         raise DeliveryError('APK exceeds the 512 MiB update limit; compress native libraries before signing')
     with zipfile.ZipFile(apk) as archive:
@@ -239,8 +260,9 @@ def inspect_apk_packaging(apk):
         if any(entry.compress_type != zipfile.ZIP_DEFLATED for entry in libraries):
             raise DeliveryError('Release APK contains uncompressed native libraries; enable jniLibs.useLegacyPackaging')
         abis = sorted({entry.filename.split('/')[1] for entry in libraries})
-        if abis != ['arm64-v8a', 'armeabi-v7a']:
-            raise DeliveryError('Release APK must contain exactly the arm64-v8a and armeabi-v7a native libraries')
+        if abis != ([abi] if abi else sorted(ABI_FILES)):
+            raise DeliveryError('Release APK native architectures differ from the requested artifact' if abi else
+                'Release APK must contain exactly the arm64-v8a and armeabi-v7a native architectures')
         return dict(nativeLibraries=len(libraries), nativeBytes=sum(entry.file_size for entry in libraries),
             compressedNativeBytes=sum(entry.compress_size for entry in libraries), abis=abis)
 
@@ -248,6 +270,15 @@ def inspect_apk_packaging(apk):
 def create_receipt(apk, tests, source_sha, build_id, output, budget):
     info = inspect_apk(apk, budget)
     info['packaging'] = inspect_apk_packaging(apk)
+    if info['versionCode'] >= 113:
+        info['artifacts'] = {}
+        for abi, filename in ABI_FILES.items():
+            sibling = Path(apk).parent/filename
+            value = inspect_apk(sibling, budget)
+            if any(value[k] != info[k] for k in ['packageName', 'versionCode', 'versionName', 'minSdk', 'signerSha256']):
+                raise DeliveryError('ABI artifacts must share version, package and official certificate')
+            value['packaging'] = inspect_apk_packaging(sibling, abi)
+            info['artifacts'][abi] = value
     counts = dict(tests=0, failures=0, errors=0, skipped=0)
     for xml in Path(tests).glob('TEST-*.xml'):
         root = ET.parse(xml).getroot()
@@ -258,6 +289,21 @@ def create_receipt(apk, tests, source_sha, build_id, output, budget):
     info.update(sourceSha=source_sha, buildId=str(build_id), repository=REPO, tests=counts)
     Path(output).write_text(json.dumps(info, indent=2)+'\n')
     return info
+
+
+def verify_artifact_set(apk, receipt, budget):
+    if receipt.get('versionCode', 0) >= 113 and set(receipt.get('artifacts', {})) != set(ABI_FILES):
+        raise DeliveryError('Release 113+ requires both ARM artifacts and the universal compatibility APK')
+    for abi, filename, expected in artifact_receipts(receipt):
+        file = Path(apk) if abi == 'universal' else Path(apk).parent/filename
+        actual = inspect_apk(file, budget)
+        if any(actual[k] != expected.get(k) for k in actual):
+            raise DeliveryError('APK does not match its build receipt: '+abi)
+        if receipt.get('artifacts'):
+            if any(actual[k] != receipt[k] for k in ['packageName', 'versionCode', 'versionName', 'minSdk', 'signerSha256']):
+                raise DeliveryError('Mixed release artifacts')
+            if inspect_apk_packaging(file, None if abi == 'universal' else abi) != expected.get('packaging'):
+                raise DeliveryError('APK packaging differs from its receipt: '+abi)
 
 
 def gh_api(path, budget, method='GET', data=None, missing=False):
@@ -299,11 +345,16 @@ def publish_updates(envelope, budget, extra=None):
         gh_api(f'repos/{REPO}/git/refs', budget, 'POST', dict(ref='refs/heads/updates', sha=commit['sha']))
 
 
-def payload_for(receipt, channel, notes, mirrors, revision=None, force=False):
-    return dict(channel=channel, revision=revision or int(time.time()*1000),
+def payload_for(receipt, channel, notes, mirrors, revision=None, force=False, artifact_mirrors=None):
+    result = dict(channel=channel, revision=revision or int(time.time()*1000),
         **{k: receipt[k] for k in ['packageName', 'versionCode', 'versionName', 'minSdk', 'size', 'sha256', 'sourceSha', 'buildId']},
         releaseNotes=notes, forceUpdate=bool(force), mirrors=mirrors,
         publishedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+    if receipt.get('artifacts'):
+        if not artifact_mirrors or set(artifact_mirrors) != set(receipt['artifacts']):
+            raise DeliveryError('Every ABI needs verified download mirrors')
+        result['artifacts'] = {abi: {**{k:a[k] for k in ['size', 'sha256']}, 'mirrors': artifact_mirrors[abi]} for abi,a in receipt['artifacts'].items()}
+    return result
 
 
 def cf_mirror(receipt, channel):
@@ -312,7 +363,10 @@ def cf_mirror(receipt, channel):
 
 
 def apk_candidates(receipt):
-    original = f'https://github.com/{REPO}/releases/download/v{receipt["versionName"]}/app-release.apk'
+    filename = receipt.get('fileName', 'app-release.apk')
+    if filename not in ['app-release.apk', *ABI_FILES.values()]:
+        raise DeliveryError('Unrecognized release filename')
+    original = f'https://github.com/{REPO}/releases/download/v{receipt["versionName"]}/{filename}'
     return [dict(id='gh-proxy', name='备用线路一', url='https://gh-proxy.com/'+original),
         dict(id='ghproxy-net', name='备用线路二', url='https://ghproxy.net/'+original), dict(id='github', name='GitHub 原始下载', url=original)]
 
@@ -320,6 +374,11 @@ def apk_candidates(receipt):
 def render_index(payload):
     title = '教务助手测试包' if payload['channel'] == 'test' else '教务助手下载'
     links = ''.join('<p><a href="'+html.escape(m['url'], quote=True)+'">'+html.escape(m['name'])+'</a></p>' for m in payload['mirrors'])
+    if payload.get('artifacts'):
+        links = '<h2>ARM 通用兼容包</h2>' + links
+        for abi, artifact in reversed(list(payload['artifacts'].items())):
+            label = 'ARM64' if abi == 'arm64-v8a' else 'ARM32'
+            links = '<h2>'+label+' · '+format(artifact['size']/1048576, '.2f')+' MiB</h2>'+''.join('<p><a href="'+html.escape(m['url'], quote=True)+'">'+html.escape(m['name'])+'</a></p>' for m in artifact['mirrors'])+links
     return ('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<link rel="stylesheet" href="/style.css"><title>'+title+'</title><main><h1>'+title+'</h1><p>v'+html.escape(payload['versionName'])+
         ' · '+format(payload['size']/1048576, '.2f')+' MiB</p><pre>'+html.escape(payload['releaseNotes'])+'</pre>'+links+
@@ -448,7 +507,7 @@ def prepare_static(apk, receipt, channel, directory, budget):
     if exists and fetch(host+'/'+channel+'.json', latest, budget, allow_missing=True, maximum=20):
         old_envelope = strict_json(latest.read_bytes())
         old = verify_manifest(old_envelope, channel)
-        if receipt['versionCode'] < old['versionCode'] or (receipt['versionCode'] == old['versionCode'] and receipt['sha256'] != old['sha256']):
+        if receipt['versionCode'] < old['versionCode'] or (receipt['versionCode'] == old['versionCode'] and artifact_identities(receipt) != artifact_identities(old)):
             raise DeliveryError('Refusing older or conflicting static deployment')
         if old['sha256'] != receipt['sha256'] and not any(p['sha256'] == old['sha256'] for _,p in previous):
             previous.append((old_envelope, old))
@@ -464,12 +523,14 @@ def prepare_static(apk, receipt, channel, directory, budget):
     if pin and pin[1]['sha256'] != receipt['sha256'] and not any(p['sha256'] == pin[1]['sha256'] for _, p in previous):
         previous.append(pin)
     for envelope, p in previous:
-        mirror = cf_mirror(p, channel); retained = directory.parent/(p['sha256']+'.apk')
-        fetch(mirror['url'], retained, budget, expected=p)
-        stage_apk(retained, p, channel, directory)
-        retained.unlink()
+        for _, _, artifact in artifact_receipts(p):
+            mirror = cf_mirror(artifact, channel); retained = directory.parent/(artifact['sha256']+'.apk')
+            fetch(mirror['url'], retained, budget, expected=artifact)
+            stage_apk(retained, artifact, channel, directory)
+            retained.unlink()
     history_file.write_text(json.dumps(dict(releases=[e for e,p in previous])))
-    stage_apk(apk, receipt, channel, directory)
+    for abi, filename, artifact in artifact_receipts(receipt):
+        stage_apk(apk if abi == 'universal' else Path(apk).parent/filename, artifact, channel, directory)
     (directory/'style.css').write_text('body{font:16px system-ui;background:#f4f6f5;color:#20352d;margin:0}main{max-width:680px;margin:40px auto;padding:24px}a{color:#176c4d}pre,code{white-space:pre-wrap;overflow-wrap:anywhere}a{display:inline-block;padding:8px 0}')
     (directory/'_headers').write_text('/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: default-src \'none\'; style-src \'self\'; frame-ancestors \'none\'\n/*.json\n  Cache-Control: public, max-age=60, must-revalidate\n/\n  Cache-Control: no-cache\n/releases/*\n  Cache-Control: public, max-age=31536000, immutable\n  Content-Type: application/vnd.android.package-archive\n  Content-Disposition: attachment; filename="app-release.apk"\n/_apk/*\n  Cache-Control: public, max-age=31536000, immutable, no-transform\n  Content-Type: application/octet-stream\n')
     return previous
@@ -557,6 +618,8 @@ def verify_with_recovery(action, check, report, budget, settle_delays=()):
 
 
 def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publish_branch=True, key_file=None, force=False, publish_announcements=True):
+    if receipt.get('artifacts'):
+        return deploy_artifact_set(apk, receipt, channel, notes, output, budget, rounds, publish_branch, key_file, force, publish_announcements)
     if not 1 <= rounds <= 3:
         raise DeliveryError('Invalid verification round count')
     report = dict(channel=channel, apk=receipt['sha256'], stages=[], events=budget.events, result='incomplete')
@@ -653,6 +716,70 @@ def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publi
         Path(output).write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n')
 
 
+def deploy_artifact_set(apk, receipt, channel, notes, output, budget, rounds=1, publish_branch=True, key_file=None, force=False, publish_announcements=True):
+    """Stage and fully verify all original APKs before advertising any new signed manifest."""
+    report = dict(channel=channel, apk=receipt['sha256'], artifacts=artifact_identities(receipt), stages=[], events=budget.events, result='incomplete')
+    try:
+        if not 1 <= rounds <= 3 or set(receipt['artifacts']) != set(ABI_FILES):
+            raise DeliveryError('A complete ARM artifact set and bounded rounds are required')
+        verify_artifact_set(apk, receipt, budget)
+        previous_payload = None
+        if publish_branch:
+            old = gh_api(f'repos/{REPO}/contents/{channel}.json?ref=updates', budget, missing=True)
+            if old:
+                previous_payload = verify_manifest(base64.b64decode(old['content']), channel)
+                if receipt['versionCode'] < previous_payload['versionCode'] or receipt['versionCode'] == previous_payload['versionCode'] and artifact_identities(receipt) != artifact_identities(previous_payload):
+                    raise DeliveryError('Refusing older or conflicting artifact set')
+        mirrors = {abi: [] for abi, _, _ in artifact_receipts(receipt)}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'site'
+            if channel == 'stable':
+                for abi, _, artifact in artifact_receipts(receipt):
+                    official = apk_candidates(artifact)[-1]
+                    fetch(official['url'], Path(tmp)/(abi+'.apk'), budget, expected=artifact)
+                    mirrors[abi].append(official)
+                    report['stages'].append(dict(target='github', abi=abi, status='verified'))
+            previous = prepare_static(apk, receipt, channel, directory, budget)
+            def verify_files():
+                for abi, _, artifact in artifact_receipts(receipt):
+                    fetch(cf_mirror(artifact, channel)['url'], Path(tmp)/(abi+'.apk'), budget, expected=artifact)
+            for index in range(rounds):
+                verify_with_recovery(lambda: deploy(directory, channel, budget), verify_files, report, budget, settle_delays=(3, 8, 15))
+                for abi, _, artifact in artifact_receipts(receipt):
+                    report['stages'].append(dict(target='cf', abi=abi, round=index+1, status='verified', size=artifact['size'], sha256=artifact['sha256']))
+            for abi, _, artifact in artifact_receipts(receipt):
+                mirrors[abi].insert(0, cf_mirror(artifact, channel))
+            payload = payload_for(receipt, channel, notes, mirrors['universal'], force=force,
+                artifact_mirrors={abi:mirrors[abi] for abi in ABI_FILES})
+            ensure_forward(previous_payload, payload)
+            envelope = sign_manifest(payload, key_file)
+            latest = directory/(channel+'.json')
+            if latest.exists():
+                ensure_forward(verify_manifest(latest.read_bytes(), channel), payload)
+            announcements = merged_announcements(payload, budget) if channel == 'stable' and publish_announcements else None
+            latest.write_text(json.dumps(envelope, separators=(',', ':')))
+            (directory/'history.json').write_text(json.dumps(dict(releases=[envelope]+[e for e, _ in previous])))
+            (directory/'index.html').write_text(render_index(payload), encoding='utf-8')
+            if announcements is not None:
+                (directory/'announcement.json').write_text(json.dumps(announcements, ensure_ascii=False), encoding='utf-8')
+            def verify_published():
+                target = Path(tmp)/'manifest.json'
+                fetch('https://'+HOSTS[channel]+'/'+channel+'.json?revision='+str(payload['revision']), target, budget, revalidate=True)
+                if verify_manifest(target.read_bytes(), channel) != payload:
+                    raise DeliveryError('Published artifact manifest differs; branch not advanced')
+            verify_with_recovery(lambda: deploy(directory, channel, budget), verify_published, report, budget, settle_delays=(5, 15, 30))
+            if publish_branch:
+                publish_updates(envelope, budget, {'announcement.json':announcements} if announcements is not None else None)
+            report['manifest'] = envelope; report['result'] = 'verified'
+            return envelope
+    except Exception as error:
+        report['result'] = 'failed'; report['reason'] = str(error) if isinstance(error, DeliveryError) else type(error).__name__
+        raise
+    finally:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
@@ -661,14 +788,12 @@ def main():
     static = sub.add_parser('deploy'); static.add_argument('--apk', type=Path, required=True); static.add_argument('--receipt', type=Path, required=True)
     static.add_argument('--channel', choices=HOSTS, required=True); static.add_argument('--notes', type=Path, required=True); static.add_argument('--output', type=Path, required=True)
     static.add_argument('--rounds', type=int, default=1); static.add_argument('--key-file', type=Path); static.add_argument('--no-publish-branch', action='store_true'); static.add_argument('--force-update', action='store_true')
-    args = parser.parse_args(); budget = Budget()
+    args = parser.parse_args(); budget = Budget(900)
     try:
         if args.command == 'receipt':
             create_receipt(args.apk, args.tests, args.source, args.build_id, args.output, budget)
         else:
-            r = strict_json(args.receipt.read_bytes()); actual = inspect_apk(args.apk, budget)
-            if any(actual[k] != r[k] for k in actual):
-                raise DeliveryError('Receipt does not match APK')
+            r = strict_json(args.receipt.read_bytes()); verify_artifact_set(args.apk, r, budget)
             deploy_release(args.apk, r, args.channel, args.notes.read_text(), args.output, budget, args.rounds, not args.no_publish_branch, args.key_file, args.force_update)
     except (DeliveryError, ValueError, KeyError) as e:
         print('Delivery failed: '+str(e))

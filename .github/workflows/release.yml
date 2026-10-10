@@ -106,7 +106,9 @@ jobs:
           BUILD_ID: ${{ github.run_id }}
         run: |
           mkdir -p delivery
-          cp app/build/outputs/apk/release/app-release.apk delivery/app-release.apk
+          cp app/build/outputs/apk/release/app-universal-release.apk delivery/app-release.apk
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk delivery/
+          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk delivery/
           cp release-notes.txt delivery/release-notes.txt
           python3 scripts/release_distribution.py receipt --apk delivery/app-release.apk --tests app/build/test-results/testDebugUnitTest --source "$SOURCE_SHA" --build-id "$BUILD_ID" --output delivery/receipt.json
       - name: Upload signed test artifact
@@ -146,7 +148,7 @@ jobs:
     if: inputs.deploy_test_mirror
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
     concurrency:
@@ -175,7 +177,7 @@ jobs:
           python3 -m unittest discover -s scripts/tests
           npm --prefix distribution test
       - name: Verify three uploads and publish test manifest
-        timeout-minutes: 6
+        timeout-minutes: 16
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

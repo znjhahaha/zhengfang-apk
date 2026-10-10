@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 data class SchoolSearchProvider(val id: String, val name: String, val version: String,
     val school: SchoolConfig, val incompatibleReason: String? = null, val installed: Boolean = false)
-data class SchoolSearchResult(val school: SchoolConfig, val configured: Boolean, val providers: List<SchoolSearchProvider>)
+data class SchoolSearchResult(val school: SchoolConfig, val configured: Boolean, val providers: List<SchoolSearchProvider>, val builtin: Boolean = false)
 
 object PluginSchoolSearch {
     fun catalog(entries: List<JSONObject>, appVersion: Int, capabilities: Map<String, Int>,
@@ -33,6 +33,12 @@ object PluginSchoolSearch {
     fun merge(query: String, local: List<SchoolConfig>, remote: List<SchoolSearchProvider>,
         installed: List<SchoolSearchProvider> = emptyList()): List<SchoolSearchResult> {
         val rows = local.distinctBy { it.id }.map { SchoolSearchResult(it, true, emptyList()) }.toMutableList()
+        for (profile in com.tyust.course.academic.AcademicSchoolProfiles.profiles) {
+            val school = profile.school()
+            val index = rows.indexOfFirst { PluginSchoolMatcher.key(it.school) == PluginSchoolMatcher.key(school) }
+            if (index >= 0) rows[index] = rows[index].copy(builtin = true)
+            else if (rows.none { it.school.id == school.id }) rows += SchoolSearchResult(school, false, emptyList(), builtin = true)
+        }
         // Active, verified packages remain selectable even when a newer release needs another host.
         val providers = (remote + installed).associateBy { it.id }.values
         for (provider in providers) {

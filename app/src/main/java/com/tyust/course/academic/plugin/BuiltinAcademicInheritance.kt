@@ -16,11 +16,13 @@ object BuiltinAcademicInheritance {
     }
     fun configuration(manifest: PluginManifest): JSONObject? {
         if (manifest.baseProvider?.removePrefix("builtin.") in GenericAcademicProtocols.providers) {
-            if (manifest.json.has("builtinConfig")) invalid("这类协议使用学校配置，不接受金智/乘方的 builtinConfig")
-            return GenericAcademicProtocols.configuration(SchoolConfig.fromJson(manifest.school))
+            if (manifest.baseProvider in setOf("builtin.eams", "builtin.chaoxing_academic") &&
+                (manifest.apiVersion != 3 || manifest.json.optInt("minAppVersionCode") < 113)) invalid("新增教务协议需要 API 3 与最低版本 113")
+            val school = SchoolConfig.fromJson(manifest.school).apply { academicSystem = manifest.baseProvider!!.removePrefix("builtin.") }
+            return GenericAcademicProtocols.configuration(school, manifest.json.optJSONObject("builtinConfig"))
         }
         if (manifest.baseProvider !in providers) {
-            if (manifest.json.has("builtinConfig")) invalid("builtinConfig 仅用于金智或乘方继承")
+            if (manifest.json.has("builtinConfig")) invalid("builtinConfig 仅用于支持配置的内置教务继承")
             return null
         }
         if (manifest.apiVersion != 3 || manifest.kind !in setOf("configuration", "extension")) invalid("金智或乘方继承需要 API 3")

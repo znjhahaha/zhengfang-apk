@@ -37,6 +37,7 @@ fun UpdateDialog(manager: UpdateManager = UpdateManager.getInstance(LocalContext
         dismissButton = { SystemSecondaryButton(text = if (active) "后台继续" else "稍后", onClick = onDismiss, modifier = Modifier.fillMaxWidth()) }
     ) {
         Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("当前渠道：" + if (state.testChannel) "测试版" else "正式版", style = MaterialTheme.typography.bodySmall)
             Text(state.message.ifBlank { "检查版本与下载进度" }, color = if (state.errorCode.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.check == UpdateManager.Check.CACHED) Text("当前为缓存信息，无法确认是否已有更新版本。", style = MaterialTheme.typography.bodySmall)
             val versionLabel = when {
@@ -46,6 +47,7 @@ fun UpdateDialog(manager: UpdateManager = UpdateManager.getInstance(LocalContext
             }
             Text(versionLabel, style = MaterialTheme.typography.titleMedium)
             if (canDownload && info != null) {
+                Text("${info.artifactLabel} · ${"%.1f".format(info.size / 1048576.0)} MiB", style = MaterialTheme.typography.bodySmall)
                 if (info.forceUpdate) Text("此版本包含重要更新，请尽快安装", color = MaterialTheme.colorScheme.error)
                 if (info.releaseNotes.isNotBlank()) Text(info.releaseNotes, style = MaterialTheme.typography.bodyMedium)
             }

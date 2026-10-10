@@ -24,6 +24,12 @@ internal object UpdateFixtures {
             .put("payload", Base64.getEncoder().encodeToString(bytes)).put("signature", Base64.getEncoder().encodeToString(signature)).toString()
     }
     fun manifest(p: JSONObject = payload()) = UpdateManifestVerifier.verify(envelope(p.toString()), keys, p.getString("channel"))
+    fun splitPayload() = payload().put("artifacts", JSONObject().apply {
+        for ((abi, marker) in listOf("arm64-v8a" to "c", "armeabi-v7a" to "d")) put(abi, JSONObject()
+            .put("size", if (abi == "arm64-v8a") 4 else 3).put("sha256", marker.repeat(64))
+            .put("mirrors", JSONArray().put(JSONObject().put("id", "cf").put("name", abi)
+                .put("url", "https://dl.hidisiwa.xyz/releases/98/$abi.apk"))))
+    })
 }
 
 class UpdateManifestTest {
@@ -75,5 +81,45 @@ class UpdateManifestTest {
         assertNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(UpdateFixtures.payload().put("revision", 99))), previous))
         assertNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(UpdateFixtures.payload().put("revision", 101).put("versionCode", 97))), previous))
         assertNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(UpdateFixtures.payload().put("revision", 101).put("sha256", "c".repeat(64)))), previous))
+    }
+    @Test fun signedArtifactsPreferArm64AndKeepOldClientUniversalFields() {
+        val original = UpdateFixtures.manifest(UpdateFixtures.splitPayload())
+        val arm64 = original.forDevice(listOf("armeabi-v7a", "arm64-v8a"))
+        assertEquals("arm64-v8a", arm64.selectedAbi); assertEquals(4L, arm64.size)
+        assertEquals("c".repeat(64), arm64.sha256)
+        assertTrue(arm64.mirrors.single().url.endsWith("/arm64-v8a.apk"))
+        assertEquals(original.envelope, arm64.envelope)
+        assertEquals("armeabi-v7a", original.forDevice(listOf("armeabi-v7a")).selectedAbi)
+        assertNull(original.selectedAbi); assertEquals(6L, original.size); assertEquals("a".repeat(64), original.sha256)
+        assertNotEquals(original.identity, arm64.identity)
+        rejected { original.forDevice(listOf("x86_64")) }
+        val legacy = UpdateFixtures.manifest()
+        assertSame(legacy, legacy.forDevice(listOf("arm64-v8a")))
+    }
+    @Test fun artifactTamperingAndInvalidArchitectureCannotEnterVerifiedManifest() {
+        val payload = UpdateFixtures.splitPayload()
+        val signed = JSONObject(UpdateFixtures.envelope(payload.toString()))
+        payload.getJSONObject("artifacts").getJSONObject("arm64-v8a").put("sha256", "f".repeat(64))
+        signed.put("payload", Base64.getEncoder().encodeToString(payload.toString().toByteArray()))
+        rejected { UpdateManifestVerifier.verify(signed.toString(), UpdateFixtures.keys, "stable") }
+        for ((key, value) in listOf("size" to 0, "sha256" to "invalid", "mirrors" to JSONArray())) {
+            val bad = UpdateFixtures.splitPayload()
+            bad.getJSONObject("artifacts").getJSONObject("arm64-v8a").put(key, value)
+            rejected { UpdateFixtures.manifest(bad) }
+        }
+        val bad = UpdateFixtures.splitPayload()
+        bad.getJSONObject("artifacts").put("x86_64", bad.getJSONObject("artifacts").getJSONObject("arm64-v8a"))
+        rejected { UpdateFixtures.manifest(bad) }
+    }
+    @Test fun sameVersionCannotReplaceOrRemoveSplitArtifactButCanRefreshMirrors() {
+        val previous = UpdateFixtures.manifest(UpdateFixtures.splitPayload())
+        val changed = UpdateFixtures.splitPayload().put("revision", 101)
+        changed.getJSONObject("artifacts").getJSONObject("armeabi-v7a").put("sha256", "f".repeat(64))
+        assertNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(changed)), previous))
+        assertNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(UpdateFixtures.payload().put("revision", 101))), previous))
+        val mirrors = UpdateFixtures.splitPayload().put("revision", 101)
+        mirrors.getJSONObject("artifacts").getJSONObject("arm64-v8a").getJSONArray("mirrors").getJSONObject(0)
+            .put("url", "https://dl.hidisiwa.xyz/new/arm64.apk")
+        assertNotNull(UpdateManifestVerifier.choose(listOf(UpdateFixtures.manifest(mirrors)), previous))
     }
 }

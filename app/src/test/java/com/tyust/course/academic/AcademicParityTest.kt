@@ -69,9 +69,10 @@ class AcademicParityTest {
         catch (_: CancellationException) { }
     }
 
-    @Test fun supportNamesIncludeJinzhiAndChengfangAndPreserveLegacyNewZfMapping() {
+    @Test fun supportNamesIncludeAllEightProtocolsAndPreserveLegacyNewZfMapping() {
         assertEquals(setOf(AcademicSystem.ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD,
-            AcademicSystem.JINZHI, AcademicSystem.CHENGFANG), AcademicCapabilities.systems.map { it.system }.toSet())
+            AcademicSystem.JINZHI, AcademicSystem.CHENGFANG, AcademicSystem.EAMS, AcademicSystem.CHAOXING_ACADEMIC),
+            AcademicCapabilities.systems.map { it.system }.toSet())
         assertEquals("新正方", AcademicCapabilities.name("legacy_zf"))
         assertTrue(AcademicCapabilities.ACCOUNT_LIMIT.contains("3"))
     }

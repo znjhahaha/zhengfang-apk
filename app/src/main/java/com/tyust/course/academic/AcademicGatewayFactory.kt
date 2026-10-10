@@ -19,7 +19,8 @@ object AcademicGatewayFactory {
 
     /** Auto-detection opts into this flow but cannot create an adapter yet. */
     fun hasSelectedAdapter(school: SchoolConfig): Boolean = AcademicProviderRegistry.hasBinding(school) || when (AcademicSystem.fromId(school.academicSystem)) {
-        AcademicSystem.ZF, AcademicSystem.LEGACY_ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD -> true
+        AcademicSystem.ZF, AcademicSystem.LEGACY_ZF, AcademicSystem.ZF_OLD, AcademicSystem.QZ, AcademicSystem.QZ_OLD,
+        AcademicSystem.EAMS, AcademicSystem.CHAOXING_ACADEMIC -> true
         else -> false
     }
 
@@ -64,12 +65,12 @@ object AcademicGatewayFactory {
             else sessions.session(school.id, accountStorageKey, school.fullBasePath)
         if (username.isNotBlank()) session.username = username
         if (!replace && session.cookieHeader().isNotBlank()) return
-        val url = (school.getFullBasePath().trimEnd('/') + "/").toHttpUrlOrNull() ?: return
+        val url = school.getFullBasePath().trimEnd('/').toHttpUrlOrNull() ?: return
         val parsed = header.split(';').mapNotNull { part ->
             val separator = part.indexOf('=')
             if (separator <= 0) return@mapNotNull null
             runCatching { Cookie.Builder().name(part.substring(0, separator).trim())
-                .value(part.substring(separator + 1).trim()).hostOnlyDomain(url.host).path(url.encodedPath)
+                .value(part.substring(separator + 1).trim()).hostOnlyDomain(url.host).path(url.encodedPath.trimEnd('/').ifBlank { "/" })
                 .apply { if (url.isHttps) secure() }.build() }.getOrNull()
         }
         session.cookies.saveFromResponse(url, parsed)
@@ -80,6 +81,13 @@ object AcademicGatewayFactory {
 
     fun loginUrl(school: SchoolConfig): String {
         com.tyust.course.academic.plugin.BundledAcademicProviders.matching(school)?.let { return it.loginUrl }
+        if (school.academicType() in setOf(AcademicSystem.EAMS, AcademicSystem.CHAOXING_ACADEMIC)) {
+            val supplied = runCatching { AcademicProviderRegistry.resolve(school)?.manifest?.json?.optJSONObject("builtinConfig") }.getOrNull()
+            val options = com.tyust.course.academic.plugin.GenericAcademicProtocols.configuration(school, supplied).getJSONObject("protocolOptions")
+            options.optString("loginUrl").takeIf { it.isNotBlank() }?.let { return it }
+            return school.fullBasePath.trimEnd('/') + if (school.academicType() == AcademicSystem.EAMS)
+                options.optString("loginPath", "/login.action") else "?sfjrxk=1"
+        }
         if (school.academicType() == AcademicSystem.QZ) com.tyust.course.academic.plugin.GenericAcademicProtocols.configuration(school).optString("casServiceUrl").takeIf { it.isNotBlank() }?.let { return it }
         val path = when (AcademicSystem.fromId(school.academicSystem)) {
             AcademicSystem.ZF -> "xtgl/login_slogin.html"
@@ -94,6 +102,7 @@ object AcademicGatewayFactory {
 
     fun detectAndApply(school: SchoolConfig, html: String): AcademicSystem? {
         val detected = com.tyust.course.academic.plugin.BundledAcademicProviders.matching(school)?.system
+            ?: AcademicSchoolProfiles.detect(school.fullBasePath)?.system
             ?: SystemDetector.classify(html) ?: return null
         school.academicSystem = detected.id
         school.detectionSource = "automatic"

@@ -81,7 +81,7 @@ android {
         targetSdk 34
         versionCode code
         versionName name
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+        if (!isReleaseTask) { ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } }
         buildConfigField "String", "FEEDBACK_SIGNING_SECRET", quoteForBuildConfig(feedbackSigningSecret)
         buildConfigField "boolean", "UI_PREVIEW", "false"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -95,6 +95,15 @@ android {
                 keyAlias releaseKeyAlias
                 keyPassword releaseKeyPassword
             }
+        }
+    }
+
+    splits {
+        abi {
+            enable isReleaseTask
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk true
         }
     }
 
@@ -140,6 +149,8 @@ android {
         // Compress native libraries for release and debug as well as previews.
         // Android extracts the device's libraries when installing the APK.
         jniLibs.useLegacyPackaging = true
+        // AGP's universal split also includes dependency ABIs outside splits.include.
+        jniLibs.excludes += ['**/x86/**', '**/x86_64/**']
     }
     
     compileOptions {

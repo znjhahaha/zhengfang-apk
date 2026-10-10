@@ -17,14 +17,30 @@ class UpdateFailure(val code: String, message: String) : Exception(message)
 internal fun updateError(code: String, message: String): Nothing = throw UpdateFailure(code, message)
 
 data class UpdateMirror(val id: String, val name: String, val url: String)
+data class UpdateArtifact(val size: Long, val sha256: String, val mirrors: List<UpdateMirror>)
 data class UpdateManifest(
     val channel: String, val revision: Long, val packageName: String,
     val versionCode: Int, val versionName: String, val minSdk: Int,
     val releaseNotes: String, val forceUpdate: Boolean, val size: Long,
     val sha256: String, val mirrors: List<UpdateMirror>, val sourceSha: String,
-    val buildId: String, val publishedAt: String, val envelope: String
+    val buildId: String, val publishedAt: String, val envelope: String,
+    val artifacts: Map<String, UpdateArtifact> = emptyMap(), val selectedAbi: String? = null
 ) {
-    val identity get() = "$channel:$versionCode:$sha256:$size"
+    val identity get() = "$channel:$versionCode:$sha256:$size" + (selectedAbi?.let { ":$it" } ?: "")
+    val artifactLabel get() = when (selectedAbi) { "arm64-v8a" -> "ARM64"; "armeabi-v7a" -> "ARM32"; else -> "ARM 通用兼容包" }
+    fun forAbi(abi: String?): UpdateManifest {
+        require(selectedAbi == null) { "Select from the original signed manifest" }
+        if (abi == null) return this
+        val artifact = artifacts[abi] ?: updateError("APK_ABI", "更新清单未提供当前架构的安装包")
+        return copy(size = artifact.size, sha256 = artifact.sha256, mirrors = artifact.mirrors, selectedAbi = abi)
+    }
+    fun forDevice(supportedAbis: List<String>): UpdateManifest {
+        if (artifacts.isEmpty()) return this
+        val abi = listOf("arm64-v8a", "armeabi-v7a").firstOrNull { it in supportedAbis && it in artifacts }
+        if (abi != null) return forAbi(abi)
+        if (supportedAbis.any { it in setOf("arm64-v8a", "armeabi-v7a") }) return this
+        updateError("APK_ABI", "当前设备不支持此版本的 ARM 安装包")
+    }
     fun isInstallCandidate(currentCode: Int, sdk: Int, testCurrent: Boolean = false): Boolean =
         minSdk <= sdk && (versionCode > currentCode || (testCurrent && channel == "test" && versionCode == currentCode))
 }
@@ -130,17 +146,32 @@ object UpdateManifestVerifier {
             val published = p.getString("publishedAt"); require(published.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")))
             val notes = p.getString("releaseNotes"); require(notes.length <= 20000)
             require(p.get("forceUpdate") is Boolean)
-            val mirrors = p.getJSONArray("mirrors"); require(mirrors.length() in 1..8)
-            val ids = mutableSetOf<String>()
-            val entries = (0 until mirrors.length()).map { i ->
+            fun mirrorEntries(mirrors: JSONArray): List<UpdateMirror> {
+              require(mirrors.length() in 1..8)
+              val ids = mutableSetOf<String>()
+              return (0 until mirrors.length()).map { i ->
                 val m = mirrors.getJSONObject(i); val id = m.getString("id"); val label = m.getString("name")
                 require(id.matches(Regex("[a-z0-9-]{1,32}")) && ids.add(id) && label.length in 1..40)
                 val url = m.getString("url"); require(validUrl(url))
                 UpdateMirror(id, label, url)
+              }
             }
+            val entries = mirrorEntries(p.getJSONArray("mirrors"))
+            val artifacts = if (p.has("artifacts")) {
+                val values = p.getJSONObject("artifacts")
+                require(values.length() in 1..2)
+                values.keys().asSequence().associateWith { abi ->
+                    require(abi in setOf("arm64-v8a", "armeabi-v7a"))
+                    val value = values.getJSONObject(abi)
+                    val size = value.get("size"); require(size is Long || size is Int)
+                    require((size as Number).toLong() in 1..512L * 1024 * 1024)
+                    val digest = value.getString("sha256"); require(digest.matches(Regex("[a-f0-9]{64}")))
+                    UpdateArtifact(size.toLong(), digest, mirrorEntries(value.getJSONArray("mirrors")))
+                }
+            } else emptyMap()
             return UpdateManifest(channel, integer("revision", 1, Long.MAX_VALUE), p.getString("packageName"),
                 code, name, integer("minSdk", 24, 1000).toInt(), notes, p.getBoolean("forceUpdate"),
-                integer("size", 1, 512L * 1024 * 1024), sha, entries, source, build, published, text)
+                integer("size", 1, 512L * 1024 * 1024), sha, entries, source, build, published, text, artifacts)
         } catch (e: UpdateFailure) { throw e }
         catch (_: Exception) { updateError("MANIFEST_INVALID", "更新清单无效或不兼容") }
     }
@@ -158,6 +189,7 @@ object UpdateManifestVerifier {
         previous == null || (it.channel == previous.channel && it.revision >= previous.revision &&
             (it.revision != previous.revision || it.copy(envelope = "") == previous.copy(envelope = "")) &&
             it.versionCode >= previous.versionCode && (it.versionCode != previous.versionCode ||
-                (it.sha256 == previous.sha256 && it.size == previous.size)))
+                (it.sha256 == previous.sha256 && it.size == previous.size &&
+                    it.artifacts.mapValues { (_, a) -> a.sha256 to a.size } == previous.artifacts.mapValues { (_, a) -> a.sha256 to a.size })))
     }.maxWithOrNull(compareBy<UpdateManifest> { it.revision }.thenBy { it.versionCode })
 }

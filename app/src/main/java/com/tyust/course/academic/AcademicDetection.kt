@@ -34,6 +34,9 @@ object AcademicDetection {
             return@withContext AcademicDetectionResult(AcademicDetectionStatus.SUCCESS,
                 com.tyust.course.academic.plugin.BundledAcademicProviders.address(it), it.system)
         }
+        AcademicSchoolProfiles.detect(input)?.let {
+            return@withContext AcademicDetectionResult(AcademicDetectionStatus.SUCCESS, it.address, it.system)
+        }
         val initial = input.trim().let { if (it.contains("://")) it else "https://$it" }
         var reachable = false
         var lastFailure: Throwable? = null

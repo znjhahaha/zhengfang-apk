@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Download an existing official APK once and repair one delivery target, without Gradle."""
+"""Download verified official release artifacts and repair one target, without Gradle."""
 import argparse
 import json
 import os
 from pathlib import Path
 import re
 from release_distribution import (Budget, DeliveryError, REPO, gh_api, fetch, digest,
-    inspect_apk, verify_manifest, deploy_release)
+    ABI_FILES, inspect_apk, verify_artifact_set, verify_manifest, deploy_release, strict_json)
 
 
 def existing_release(tag, directory, budget):
@@ -30,10 +30,23 @@ def existing_release(tag, directory, budget):
     receipt.update(sourceSha=commit, buildId=str(release['id']))
     if 'receipt.json' in assets:
         fetch(assets['receipt.json']['browser_download_url'], directory/'receipt.json', budget)
-        stored = json.loads((directory/'receipt.json').read_text())
+        stored = strict_json((directory/'receipt.json').read_bytes())
         if any(stored.get(k) != receipt[k] for k in receipt if k != 'buildId'):
             raise DeliveryError('Archived receipt differs from release artifact')
         receipt = stored
+    elif receipt['versionCode'] >= 113:
+        raise DeliveryError('ARM split releases require their archived build receipt')
+    if receipt['versionCode'] >= 113:
+        if set(receipt.get('artifacts', {})) != set(ABI_FILES):
+            raise DeliveryError('Archived receipt must contain both ARM artifacts')
+        for abi, filename in ABI_FILES.items():
+            split = assets.get(filename, {})
+            expected = receipt['artifacts'][abi]
+            if (split.get('digest') != 'sha256:'+expected.get('sha256', '') or
+                    split.get('size') != expected.get('size')):
+                raise DeliveryError('GitHub ARM asset differs from archived receipt: '+abi)
+            fetch(split['browser_download_url'], directory/filename, budget, expected=expected)
+        verify_artifact_set(apk, receipt, budget)
     notes = release.get('body', '').strip()
     if 'release-notes.txt' in assets:
         fetch(assets['release-notes.txt']['browser_download_url'], directory/'release-notes.txt', budget)
@@ -50,7 +63,7 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('repair/report.json'))
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    budget = Budget(180 if args.target == 'gitee-attachment' else 360)
+    budget = Budget(300 if args.target == 'gitee-attachment' else 720)
     report = dict(target=args.target, tag=args.tag, result='incomplete')
     try:
         if args.target == 'metadata':

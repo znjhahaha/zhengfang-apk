@@ -5,37 +5,49 @@
       "id": "cn.edu.huat.neweas",
       "type": "jinzhi",
       "asset": "jinzhi.eduplugin",
-      "sha256": "2a3534b60534410f94d275d3abd6672bad0a69cb7e72b132127b85ec028c84d8"
+      "sha256": "a9da49243082d50997e0f685b1cf424723898f89cc08044182a08263e774100c"
     },
     {
       "id": "cn.edu.sdipct.chengfang",
       "type": "chengfang",
       "asset": "chengfang.eduplugin",
-      "sha256": "ba27c7c6e8e47322f1386bfe7c907520411903f975f5f88ad6fddb8fc9c17d00"
+      "sha256": "9caa9ef4fd0442a42c2d6a49be96fd55d1ad73712f1cc9ebb2c841150b675601"
     },
     {
       "id": "org.zf.protocol.zf",
       "type": "zf",
       "asset": "zf.eduplugin",
-      "sha256": "ba2b2fe446f2ef7fbbe7e63abe50fb79e7753d1dd9826a7d78fa5429ffd76184"
+      "sha256": "6522f5d0c9ab3cd15bdbe2cce0950ee9998e977d605d8865642293b255459564"
     },
     {
       "id": "org.zf.protocol.zf-old",
       "type": "zf_old",
       "asset": "zf_old.eduplugin",
-      "sha256": "9c4a59ba678ee587178a9e49360477e729d74caa9255bb5374160135457ae778"
+      "sha256": "e9bad634bae30ac21a4da3e5a317df9111a85d92ef36a6b10a3932e24d7627a8"
     },
     {
       "id": "org.zf.protocol.qz",
       "type": "qz",
       "asset": "qz.eduplugin",
-      "sha256": "c01fae881e8dad03eced70090942a41b4811b73cda97f941e9fe5ddae48f93bf"
+      "sha256": "c1a8ede748b007abb2f61174828e61e037b8c1cd26fd38baa5528d5ab45fca68"
     },
     {
       "id": "org.zf.protocol.qz-old",
       "type": "qz_old",
       "asset": "qz_old.eduplugin",
-      "sha256": "8fda43e8b242e66a624d94ab6d4a75c8951d39f239e1a43e35fd2f9e4e0a2642"
+      "sha256": "af51cbf14eb94e57744d9ef68a09c115366c7cb789653f18709823268176e0e4"
+    },
+    {
+      "id": "org.zf.protocol.eams",
+      "type": "eams",
+      "asset": "eams.eduplugin",
+      "sha256": "136dd40b36c0d95f06cc6d5e64896169ace2a0b58207ead86938513d83a3a8e9"
+    },
+    {
+      "id": "org.zf.protocol.chaoxing-academic",
+      "type": "chaoxing_academic",
+      "asset": "chaoxing_academic.eduplugin",
+      "sha256": "ec4826d407197dc82a7e8f676abc036ca63e84eefb15972f92c4f6a3749095c3"
     }
   ]
 }

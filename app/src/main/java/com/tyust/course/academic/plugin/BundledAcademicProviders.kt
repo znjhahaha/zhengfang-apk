@@ -18,7 +18,9 @@ object BundledAcademicProviders {
         Definition("org.zf.protocol.zf", AcademicSystem.ZF, "school.example.test", "", ""),
         Definition("org.zf.protocol.zf-old", AcademicSystem.ZF_OLD, "school.example.test", "", ""),
         Definition("org.zf.protocol.qz", AcademicSystem.QZ, "school.example.test", "", ""),
-        Definition("org.zf.protocol.qz-old", AcademicSystem.QZ_OLD, "school.example.test", "", "")
+        Definition("org.zf.protocol.qz-old", AcademicSystem.QZ_OLD, "school.example.test", "", ""),
+        Definition("org.zf.protocol.eams", AcademicSystem.EAMS, "school.example.test", "", ""),
+        Definition("org.zf.protocol.chaoxing-academic", AcademicSystem.CHAOXING_ACADEMIC, "school.example.test", "", "")
     )
 
     fun detect(input: String): Definition? {

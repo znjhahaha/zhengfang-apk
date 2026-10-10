@@ -27,8 +27,8 @@ class UpdateManagerTest {
         File(app.filesDir, "app-updates").deleteRecursively()
     }
     @After fun cleanup() { manager?.close() }
-    private fun create(server: MockWebServer): UpdateManager = UpdateManager(app, UpdateFixtures.keys,
-        { listOf(server.url("/manifest").toString()) }, { it.startsWith(server.url("/").toString()) }).also { manager = it }
+    private fun create(server: MockWebServer, abis: List<String> = listOf("arm64-v8a", "armeabi-v7a")): UpdateManager = UpdateManager(app, UpdateFixtures.keys,
+        { listOf(server.url("/manifest").toString()) }, { it.startsWith(server.url("/").toString()) }, { abis }).also { manager = it }
     private fun awaitCheck(manager: UpdateManager) = runBlocking {
         withTimeout(8000) { manager.state.first { it.check !in setOf(UpdateManager.Check.IDLE, UpdateManager.Check.CHECKING) } }
     }
@@ -109,6 +109,47 @@ class UpdateManagerTest {
         val file = File(app.cacheDir, "fake.apk").apply { writeText("bad") }
         val m = create(server)
         assertThrows(UpdateFailure::class.java) { m.verifyApk(UpdateFixtures.manifest(), file) }
+    } }
+    @Test fun freshCheckOffersDeviceArtifactAndStoresOriginalSignedEnvelope() { MockWebServer().use { server ->
+        val payload = UpdateFixtures.splitPayload().put("versionCode", 1000).put("versionName", "1.0.1000")
+        val envelope = UpdateFixtures.envelope(payload.toString())
+        server.enqueue(MockResponse().setBody(envelope))
+        val m = create(server, listOf("armeabi-v7a")); m.checkForUpdate(true)
+        val result = awaitCheck(m)
+        assertEquals("armeabi-v7a", result.manifest!!.selectedAbi); assertEquals(3L, result.manifest!!.size)
+        val cached = UpdateManifestVerifier.verify(File(app.filesDir, "app-updates/stable-manifest.json").readText(), UpdateFixtures.keys, "stable")
+        assertNull(cached.selectedAbi); assertEquals(6L, cached.size)
+    } }
+    @Test fun savedArm32DownloadDoesNotChangeToArm64OnResume() { MockWebServer().use { server ->
+        val raw = UpdateFixtures.manifest(UpdateFixtures.splitPayload().put("versionCode", 1000))
+        val selected = raw.forAbi("armeabi-v7a")
+        val dir = File(app.filesDir, "app-updates").apply { mkdirs() }
+        File(dir, "task.json").writeText(org.json.JSONObject().put("envelope", raw.envelope).put("channel", "stable")
+            .put("artifactAbi", "armeabi-v7a").put("artifactIdentity", selected.identity).toString())
+        File(dir, "download.part").writeText("ab")
+        val m = create(server)
+        val value = runBlocking { withTimeout(5000) { m.state.first { it.phase == UpdateManager.Phase.PAUSED } } }
+        assertEquals("armeabi-v7a", value.manifest!!.selectedAbi); assertEquals(2L, value.bytes)
+    } }
+    @Test fun oldUpdaterTaskRetainsUniversalDownloadEvenWhenSplitManifestExists() { MockWebServer().use { server ->
+        val raw = UpdateFixtures.manifest(UpdateFixtures.splitPayload().put("versionCode", 1000))
+        val dir = File(app.filesDir, "app-updates").apply { mkdirs() }
+        File(dir, "task.json").writeText(org.json.JSONObject().put("envelope", raw.envelope).put("channel", "stable").toString())
+        File(dir, "download.part").writeText("abc")
+        val m = create(server)
+        val value = runBlocking { withTimeout(5000) { m.state.first { it.phase == UpdateManager.Phase.PAUSED } } }
+        assertNull(value.manifest!!.selectedAbi); assertEquals(6L, value.manifest!!.size)
+    } }
+    @Test fun mismatchedSavedArtifactNeverResumesPartialDownload() { MockWebServer().use { server ->
+        val raw = UpdateFixtures.manifest(UpdateFixtures.splitPayload().put("versionCode", 1000))
+        val dir = File(app.filesDir, "app-updates").apply { mkdirs() }
+        File(dir, "task.json").writeText(org.json.JSONObject().put("envelope", raw.envelope).put("channel", "stable")
+            .put("artifactAbi", "armeabi-v7a").put("artifactIdentity", raw.forAbi("arm64-v8a").identity).toString())
+        File(dir, "download.part").writeText("ab")
+        server.enqueue(MockResponse().setBody(raw.envelope))
+        val m = create(server); m.checkForUpdate(true)
+        assertEquals(UpdateManager.Phase.IDLE, awaitCheck(m).phase)
+        assertEquals(0L, m.state.value.bytes)
     } }
 
 }

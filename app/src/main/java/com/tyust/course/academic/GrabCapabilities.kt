@@ -32,7 +32,9 @@ data class GrabCapabilities(
         internal const val UNVERIFIED_CHENGFANG = "f4bdd3e5e3e6fe30ba8a00f3892ad9fd65a56e9e32f50876d5cc45102d46ec1b"
         // CLI whitespace minification changes the archive digest without implementing noMutation.
         private val unverifiedChengfangDigests = setOf(UNVERIFIED_CHENGFANG,
-            "ba27c7c6e8e47322f1386bfe7c907520411903f975f5f88ad6fddb8fc9c17d00")
+            "ba27c7c6e8e47322f1386bfe7c907520411903f975f5f88ad6fddb8fc9c17d00",
+            // Rebuilt with SDK 3.5.0; the reviewed provider still uses noMutation.
+            "9caa9ef4fd0442a42c2d6a49be96fd55d1ad73712f1cc9ebb2c841150b675601")
         internal val selectionOperations = setOf("selection.catalog", "selection.courses", "selection.sections", "selection.select")
 
         internal fun evaluate(system: AcademicSystem?, plugin: Boolean, operations: Set<String>,

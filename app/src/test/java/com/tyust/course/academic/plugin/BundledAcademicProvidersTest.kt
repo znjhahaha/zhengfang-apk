@@ -14,7 +14,7 @@ class BundledAcademicProvidersTest {
 
     @Test fun packagesAreCompleteValidatedProgramsBundledWithApp() {
         val packages = BundledAcademicProviders.load { File(assets, it).readBytes() }
-        assertEquals(6, packages.size)
+        assertEquals(8, packages.size)
         for ((_, pkg) in packages) {
             assertTrue(pkg.bundled)
             assertFalse(pkg.official) // Bundling does not forge a catalog signature.

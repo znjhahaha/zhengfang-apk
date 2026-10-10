@@ -20,7 +20,11 @@ object AcademicCapabilities {
         AcademicSystemSupport(AcademicSystem.JINZHI, "金智", "已内置湖北汽车工业学院统一认证与教务适配。",
             "支持学期、课表、作息、成绩、考试及选课查询；选退操作受学校开放时间与权限限制。其他学校需对应适配。"),
         AcademicSystemSupport(AcademicSystem.CHENGFANG, "乘方", "已内置山东石油化工学院适配，请使用统一认证密码完成学校网页登录。",
-            "支持学期、课表、作息、成绩、考试和已选查询。当前该校选退提交尚未验证，请使用学校网页；其他学校需对应适配。")
+            "支持学期、课表、作息、成绩、考试和已选查询。当前该校选退提交尚未验证，请使用学校网页；其他学校需对应适配。"),
+        AcademicSystemSupport(AcademicSystem.EAMS, "树维 EAMS", "支持教务账密、图片验证码及学校统一认证；学校定制通过插件扩展。",
+            "支持学期、课表、成绩、考试、培养方案查询和选退课；开放范围以学校实际接口为准。"),
+        AcademicSystemSupport(AcademicSystem.CHAOXING_ACADEMIC, "超星智慧教务", "使用学校统一认证完成网页登录，与学习通账号独立。",
+            "支持学期、课表、校历、成绩、考试与选退课；学校未提供或未开放的能力明确提示。")
     )
     val selectableSystems: List<AcademicSystem> = listOf(AcademicSystem.AUTO) + systems.map { it.system }
     fun selectionIndex(id: String?): Int = selectableSystems.indexOf(system(id) ?: AcademicSystem.AUTO).coerceAtLeast(0)

@@ -12,7 +12,7 @@ data class AcademicAddress(val protocol: String, val domain: String, val basePat
             val feature = Regex("/(?:framework|xtgl|xsxk|xsxkkc|xk|xkgl)(?:/|$)").find(path)
             val root = when {
                 feature != null -> path.substring(0, feature.range.first)
-                Regex("\\.(?:aspx|jsp|htmlx?|do)$", RegexOption.IGNORE_CASE).containsMatchIn(path) -> path.substringBeforeLast('/', "")
+                Regex("\\.(?:aspx|jsp|htmlx?|do|action)$", RegexOption.IGNORE_CASE).containsMatchIn(path) -> path.substringBeforeLast('/', "")
                 else -> path
             }
             AcademicAddress(uri.scheme, uri.host.lowercase() + if (uri.port >= 0) ":${uri.port}" else "", root)

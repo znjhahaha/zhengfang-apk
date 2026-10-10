@@ -9,6 +9,7 @@ enum class AcademicSystem(val id: String, val serial: Boolean) {
     QZ_OLD("qz_old", true),
     JINZHI("jinzhi", true),
     CHENGFANG("chengfang", true),
+    EAMS("eams", true), CHAOXING_ACADEMIC("chaoxing_academic", true),
     AUTO("auto", true), LEGACY_ZF("legacy_zf", false);
 
     companion object { fun fromId(id: String?): AcademicSystem? = values().firstOrNull { it.id == id } }

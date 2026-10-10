@@ -7,6 +7,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PluginSchoolSearchTest {
+    @Test fun knownSchoolsAreSelectableOfflineAndDoNotReplaceCustomConfiguration() {
+        val row = PluginSchoolSearch.merge("武汉职业", emptyList(), emptyList()).single()
+        assertTrue(row.builtin); assertFalse(row.configured)
+        assertEquals("/admin", row.school.basePath)
+        assertEquals("chaoxing_academic", row.school.academicSystem)
+        val custom = com.tyust.course.academic.AcademicSchoolProfiles.profiles.last().school().apply { basePath = "/custom" }
+        val preserved = PluginSchoolSearch.merge("武汉职业", listOf(custom), emptyList()).single()
+        assertSame(custom, preserved.school); assertTrue(preserved.configured); assertFalse(preserved.builtin)
+    }
     private fun school(id: String = "sample", path: String = "/jw") = SchoolConfig.fromJson(JSONObject()
         .put("id", id).put("name", "示例大学").put("protocol", "https").put("domain", "jw.example.test").put("basePath", path))
     private fun release(version: String = "1.0.0", minApp: Int = 0) = JSONObject().put("version", version)

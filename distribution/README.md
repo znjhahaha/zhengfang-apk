@@ -1,6 +1,6 @@
 # App download distribution
 
-App delivery; API 3 / SDK 3.4.0. Promote the verified test artifact when the user requests default-channel release. GitHub holds the official immutable APK; free Cloudflare Workers Static Assets holds verified copies. No R2 or paid fallback.
+App delivery; API 3 / SDK 3.5.0. Promote the verified test artifacts when the user requests default-channel release. GitHub holds the official immutable APKs; free Cloudflare Workers Static Assets holds verified copies. No R2 or paid fallback.
 
 ## Credentials
 
@@ -13,6 +13,8 @@ Cloudflare token: account Workers Scripts Edit and Account Settings Read, zone W
 ## Workflows
 
 Release APKs contain compressed native libraries for `arm64-v8a` and `armeabi-v7a` only. The receipt step checks both architecture coverage and compression before uploading the artifact.
+
+From 1.0.113 every build produces `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, and `app-release.apk` (the ARM universal compatibility package). All share the same version, source and official signer. The signed payload's optional `artifacts` map contains the size, SHA-256 and mirrors for each ABI; the original top-level fields still describe the universal APK for older clients. New clients prefer ARM64, then ARM32, and bind persisted downloads to their chosen artifact. Build receipts, reuse, promotion, repair and retained history preserve and verify the complete set before advertising the new manifest.
 
 - `release.yml`: manual signed test build; `reuse_run_id` reuses a successful original build after checking unchanged APK inputs, and `sync_test_gitee` explicitly publishes an isolated Gitee test attachment; no tag or official Release. Test mirror runs three deployment/full-download verification rounds, then publishes `test.json` to the test host and the `updates` branch. `legacy_test_bridge` is an explicit one-time opt-in to offer the verified test APK through old-client version.json with a clear test notice and forceUpdate=false. It does not promote a formal GitHub Release or publish stable signed metadata. Artifact retention seven days; the outer Actions ZIP is uncompressed, while native libraries inside the APK are compressed before signing. The build receipt rejects uncompressed native libraries or an APK over the existing 512 MiB updater limit. Retry only the failed mirror job when the original APK and its build inputs are unchanged.
 - `promote-release.yml`: after user acceptance and unchanged tested APK inputs are in main, promote by successful test run ID. Download the original artifact, verify receipt/signature/digest/checks, create immutable official tag and Release. No Gradle/signing. Stable mirrors and Gitee small metadata are separate jobs. Attachment upload is off.

@@ -44,6 +44,9 @@ object SystemDetector {
                 form.select("input[name=userAccount], input[name=userPassword], input[name=encoded]").size >= 3
         }
         return when {
+            (lower.contains("上海树维") || lower.contains("beangle")) &&
+                (lower.contains("beangle-ui") || lower.contains("login.action") || lower.contains("loginext.action")) -> AcademicSystem.EAMS
+            lower.contains("powered by chaoxing") && (lower.contains("/admin/") || lower.contains("/xsd/")) -> AcademicSystem.CHAOXING_ACADEMIC
             lower.contains("default2.aspx") && (lower.contains("txtkeymodulus") || lower.contains("checkcode")) -> AcademicSystem.ZF_OLD
             lower.contains("login_getpublickey") || (lower.contains("csrftoken") && lower.contains("xtgl")) -> AcademicSystem.ZF
             Regex("\\b(?:var|let|const)\\s+scode\\b").containsMatchIn(lower) && Regex("\\b(?:var|let|const)\\s+sxh\\b").containsMatchIn(lower) && lower.contains("logintoxk") -> AcademicSystem.QZ

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -36,7 +36,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Repair mirrors from existing immutable APK
         if: inputs.target == 'mirrors'
-        timeout-minutes: 6
+        timeout-minutes: 13
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

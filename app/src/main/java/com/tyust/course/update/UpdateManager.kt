@@ -28,7 +28,8 @@ import java.util.concurrent.TimeUnit
 class UpdateManager internal constructor(private val context: Context,
     private val testKeys: Map<String, java.security.PublicKey>? = null,
     private val testSources: ((String) -> List<String>)? = null,
-    private val allowedUrl: (String) -> Boolean = UpdateManifestVerifier::validUrl) {
+    private val allowedUrl: (String) -> Boolean = UpdateManifestVerifier::validUrl,
+    private val deviceAbis: () -> List<String> = { Build.SUPPORTED_ABIS.toList() }) {
     enum class Check { IDLE, CHECKING, AVAILABLE, UP_TO_DATE, FAILED, CACHED }
     enum class Phase { IDLE, PREPARING, CONNECTING, DOWNLOADING, SWITCHING, WAITING_NETWORK, PAUSED, VERIFYING, READY, FAILED, CANCELLED }
     data class State(val manifest: UpdateManifest? = null, val check: Check = Check.IDLE,
@@ -155,7 +156,7 @@ class UpdateManager internal constructor(private val context: Context,
                     }
                     if (channel != selected) return@launch
                     val chosen = UpdateManifestVerifier.choose(results.toList(), previous)
-                    val value = chosen ?: previous
+                    val value = (chosen ?: previous)?.forDevice(deviceAbis())
                     if (chosen != null) write(cacheFile(selected), chosen.envelope)
                     val available = value != null && value.versionCode > getCurrentVersionCode() && value.minSdk <= Build.VERSION.SDK_INT
                     val canRemind = value?.let { it.forceUpdate || now - prefs.getLong("later:${it.channel}:${it.versionCode}", 0) >= DAY } ?: false
@@ -170,7 +171,7 @@ class UpdateManager internal constructor(private val context: Context,
                             errorCode = if (activeTask) s.errorCode else if (chosen == null) "CHECK_FAILED" else "")
                     }
                     } catch (e: CancellationException) { throw e }
-                    catch (_: Exception) { if (channel == selected) mutable.update { it.copy(check = Check.FAILED, message = "检查更新失败，请重试", errorCode = "CHECK_FAILED") } }
+                    catch (e: Exception) { if (channel == selected) mutable.update { it.copy(check = Check.FAILED, message = (e as? UpdateFailure)?.message ?: "检查更新失败，请重试", errorCode = (e as? UpdateFailure)?.code ?: "CHECK_FAILED") } }
                 }
             }
         }
@@ -278,6 +279,7 @@ class UpdateManager internal constructor(private val context: Context,
     }
     @Suppress("DEPRECATION") internal fun verifyApk(manifest: UpdateManifest, file: File) {
         if (file.length() != manifest.size || UpdateTransfer.digest(file) != manifest.sha256) updateError("APK_HASH", "安装包完整性校验失败，已停止安装")
+        if (manifest.artifacts.isNotEmpty()) UpdateApkAbi.verify(file, manifest.selectedAbi, deviceAbis())
         val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val apk = context.packageManager.getPackageArchiveInfo(file.path, flags) ?: updateError("APK_IDENTITY", "无法识别安装包")
         if (apk.packageName != manifest.packageName || versionCode(apk) != manifest.versionCode.toLong() || apk.versionName != manifest.versionName)
@@ -316,6 +318,7 @@ class UpdateManager internal constructor(private val context: Context,
     private fun persistTask() {
         val manifest = task ?: return
         val json = org.json.JSONObject().put("envelope", manifest.envelope).put("channel", manifest.channel)
+            .put("artifactAbi", manifest.selectedAbi ?: "universal").put("artifactIdentity", manifest.identity)
             .put("mirror", taskMirror ?: "").put("etag", taskEtag ?: "").put("ready", mutable.value.phase == Phase.READY)
         write(taskRecord, json.toString())
     }
@@ -323,7 +326,11 @@ class UpdateManager internal constructor(private val context: Context,
     private fun restoreTask() {
         runCatching {
             val json = UpdateJson.parse(taskRecord.readFully().toString(Charsets.UTF_8))
-            val manifest = UpdateManifestVerifier.verify(json.getString("envelope"), keys, channel)
+            val original = UpdateManifestVerifier.verify(json.getString("envelope"), keys, channel)
+            val abi = json.optString("artifactAbi", "universal").takeUnless { it == "universal" }
+            if (abi != null && abi !in deviceAbis()) updateError("APK_ABI", "设备架构与上次下载不一致")
+            val manifest = original.forAbi(abi)
+            if (json.has("artifactIdentity") && json.getString("artifactIdentity") != manifest.identity || abi != null && !json.has("artifactIdentity")) updateError("APK_IDENTITY", "下载记录与签名安装包不一致")
             if (manifest.versionCode < getCurrentVersionCode() || (manifest.versionCode == getCurrentVersionCode() && manifest.channel != "test")) { partial.delete(); completed.delete(); taskRecord.delete(); return }
             task = manifest; taskMirror = json.optString("mirror").ifBlank { null }; taskEtag = json.optString("etag").ifBlank { null }
             val ready = completed.exists() && runCatching { verifyApk(manifest, completed) }.isSuccess

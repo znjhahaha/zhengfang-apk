@@ -136,6 +136,14 @@ private fun SchoolSearchDialog(schools: List<SchoolConfig>, onDismiss: () -> Uni
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(PluginSchoolMatcher.endpoint(row.school).toString(), style = MaterialTheme.typography.bodySmall)
                         if (row.configured) SystemDialogButton(onClick = { cancel(); onSelected(row.school) }, enabled = !busy) { Text("选择已配置学校") }
+                        if (row.builtin && !row.configured) SystemDialogButton(onClick = {
+                            cancel()
+                            val manager = UserManager.getInstance()
+                            val existing = PluginSchoolSearch.existing(manager.supportedSchools, row.school)
+                            val target = existing ?: row.school
+                            if (existing == null) manager.addCustomSchool(target)
+                            onAdded(); onSelected(target)
+                        }, enabled = !busy) { Text("选择内置适配") }
                         if (row.providers.size > 1) Text("选择一个适配提供者", style = MaterialTheme.typography.bodySmall)
                         row.providers.forEach { provider ->
                             val status = if (provider.installed) "已安装" else provider.incompatibleReason ?: "可安装"

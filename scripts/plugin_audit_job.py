@@ -32,6 +32,18 @@ def task():
     if not re.fullmatch(r'[A-Za-z0-9_-]{16}',draft) or not re.fullmatch(r'[A-Za-z0-9_-]{20,100}',nonce):raise RuntimeError('TASK_INPUT_INVALID')
     return draft,nonce
 
+def self_test_files(kit,sdk_version):
+    files=['security/test-isolated.mjs']
+    for name in ['tests/course-pagination.test.mjs','tests/wiki-examples.test.mjs','tests/web-browser.test.mjs']:
+        if (kit/name).is_file():files.append(name)
+    if tuple(map(int,sdk_version.split('.'))) >= (3,5,0):
+        files += ['tests/eams.test.mjs','tests/chaoxing-academic.test.mjs',
+            'tests/new-academic-templates.test.mjs','tests/protocol-platform.test.mjs',
+            'tests/platform-release.test.mjs','tests/userscript-head.test.mjs',
+            'tests/native-pattern.test.mjs','tests/gecko-runtime.test.mjs']
+    if any(not (kit/name).is_file() for name in files):raise RuntimeError('SELF_TEST_FILES_MISSING')
+    return files
+
 def main():
     self_test=os.environ.get('AUDIT_SELF_TEST')=='true'
     if '--failure' in sys.argv:
@@ -58,14 +70,12 @@ def main():
         public=subprocess.run(['node','--input-type=module','-e',"import {readFileSync} from 'node:fs';import {createPublicKey} from 'node:crypto';process.stdout.write(createPublicKey(readFileSync(process.argv[1])).export({type:'spki',format:'der'}).toString('base64'));",str(key)],env=clean,capture_output=True,check=True,timeout=10).stdout.decode()
         if public!=metadata.get('signingPublicKey'):raise RuntimeError('SIGNING_IDENTITY_MISMATCH')
         if self_test:
-            files=['security/test-isolated.mjs']
-            for name in ['tests/course-pagination.test.mjs','tests/wiki-examples.test.mjs','tests/web-browser.test.mjs']:
-                if (kit/name).is_file():files.append(name)
+            files=self_test_files(kit,lock['version'])
             result=subprocess.run(['node','--test','--test-reporter=tap','--test-concurrency=1',*files],cwd=kit,env=clean,capture_output=True,timeout=180)
             if result.returncode:raise RuntimeError('ISOLATED_SELF_TEST_FAILED')
             count=re.search(rb'^# tests (\d+)$',result.stdout,re.M)
             if not count:raise RuntimeError('SELF_TEST_COUNT_MISSING')
-            public_receipt['tests']=int(count[1]);public_receipt['passed']=True
+            public_receipt['tests']=int(count[1]);public_receipt['testFiles']=files;public_receipt['passed']=True
             pathlib.Path('audit-toolchain.json').write_text(json.dumps(public_receipt,indent=2)+'\n')
             outcome=f"Public toolchain self-test passed ({public_receipt['tests']} checks); no submission processed."
             print(outcome)
