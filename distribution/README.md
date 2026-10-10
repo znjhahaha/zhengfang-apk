@@ -22,7 +22,7 @@ Release APKs contain compressed native libraries for `arm64-v8a` and `armeabi-v7
 
 The old-client Gitee `version.json` migration entry remains on 1.0.98. New clients use signed `stable.json` / `app-update-stable.json`, which can advance independently (including 1.0.99). Promotion defaults `preserve_legacy_entry=true`, writing only the Gitee signed manifest; do not point the legacy file at a different version unless the user requests changing the migration route. Keep the immutable test98 APK while that entry references it.
 
-Publication serializes per channel. GitHub ref updates are non-forced and enforce version/revision monotonicity. A failed/lost upload response is checked against public content before retry, at most one retry. Gitee attachment upload is attempted once. All subprocesses have deadlines; CLI output is captured and redacted, reports contain stage/time/status only.
+Publication serializes per channel. GitHub ref updates are non-forced and enforce version/revision monotonicity. A failed/lost upload response is checked against public content before retry, at most one retry. Successful deployments allow bounded read retries for edge propagation before repeating the write; the full signed payload must still match exactly. APK digest failures remain immediate, and reports preserve the specific public verification error. Gitee attachment upload is attempted once. All subprocesses and propagation waits share the task deadline; CLI output is captured and redacted, reports contain stage/time/status and safe failure descriptions only.
 
 ## Mirror layout
 

@@ -522,7 +522,7 @@ def validate_download_index(files, directory):
             raise DeliveryError('Download parts do not match APK size')
 
 
-def verify_with_recovery(action, check, report, budget):
+def verify_with_recovery(action, check, report, budget, settle_delays=()):
     """Never repeat a write before checking whether its response alone was lost."""
     for attempt in range(2):
         failure = None
@@ -530,16 +530,30 @@ def verify_with_recovery(action, check, report, budget):
             action()
         except DeliveryError as e:
             failure = e
-        try:
-            check()
-            return
-        except DeliveryError as verification_error:
-            if 'digest or size mismatch' in str(verification_error):
-                raise
-            if attempt or (failure and any(word in str(failure) for word in ['10000', '10001', '10002', '10003', '10004', '10005', '10006', '9109', 'Authentication', 'permission', 'limit'])):
-                raise failure or DeliveryError('Public verification failed')
-            report['stages'].append(dict(target='cf', status='retry', reason='Public result not verified'))
-            budget.remaining(1)
+        verification_error = None
+        for read_attempt in range(len(settle_delays)+1):
+            try:
+                check()
+                return
+            except DeliveryError as error:
+                verification_error = error
+                if 'digest or size mismatch' in str(error):
+                    raise
+                if failure and any(word in str(failure) for word in ['10000', '10001', '10002', '10003', '10004', '10005', '10006', '9109', 'Authentication', 'permission', 'limit']):
+                    raise failure
+                pending = str(error).startswith('Published manifest differs;') or re.fullmatch(
+                    r'Public download returned HTTP (404|408|425|429|500|502|503|504)', str(error))
+                if not pending or read_attempt == len(settle_delays):
+                    break
+                delay = settle_delays[read_attempt]
+                if budget.remaining(delay+1) < delay+1:
+                    raise error
+                report['stages'].append(dict(target='cf', status='waiting', seconds=delay, reason=str(error)))
+                time.sleep(delay)
+        if attempt:
+            raise failure or verification_error
+        report['stages'].append(dict(target='cf', status='retry', reason=str(verification_error)))
+        budget.remaining(1)
 
 
 def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publish_branch=True, key_file=None, force=False, publish_announcements=True):
@@ -573,7 +587,8 @@ def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publi
                 previous = prepare_static(apk, receipt, channel, directory, cf_budget)
                 for index in range(rounds):
                     verify_with_recovery(lambda: deploy(directory, channel, cf_budget),
-                        lambda: fetch(cf_mirror(receipt, channel)['url'], Path(d)/'verify.apk', cf_budget, expected=receipt), report, cf_budget)
+                        lambda: fetch(cf_mirror(receipt, channel)['url'], Path(d)/'verify.apk', cf_budget, expected=receipt), report, cf_budget,
+                        settle_delays=(3, 8, 15))
                     report['stages'].append(dict(target='cf', round=index+1, status='verified', storage='chunked' if receipt['size'] > STATIC_LIMIT else 'single'))
                 mirrors.insert(0, cf_mirror(receipt, channel)); static_ok = True
             except DeliveryError as e:
@@ -615,7 +630,8 @@ def deploy_release(apk, receipt, channel, notes, output, budget, rounds=1, publi
                     if verify_manifest((Path(d)/'manifest.json').read_bytes(), channel) != payload:
                         raise DeliveryError('Published manifest differs; GitHub metadata not advanced')
                 try:
-                    verify_with_recovery(lambda: deploy(directory, channel, budget), verify_published, report, budget)
+                    verify_with_recovery(lambda: deploy(directory, channel, budget), verify_published, report, budget,
+                        settle_delays=(5, 15, 30))
                 except DeliveryError as e:
                     report['stages'].append(dict(target='cf-metadata', status='failed', reason=str(e)))
                     if channel == 'test':

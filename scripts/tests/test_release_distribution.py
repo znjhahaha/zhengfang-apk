@@ -97,6 +97,33 @@ class DeliveryTests(unittest.TestCase):
         action=Mock(side_effect=d.DeliveryError('provider codes 10000')); verify=Mock(side_effect=d.DeliveryError('not published'))
         with self.assertRaises(d.DeliveryError): d.verify_with_recovery(action,verify,{'stages':[]},d.Budget())
         self.assertEqual(action.call_count,1)
+    def test_deployment_propagation_rechecks_before_repeating_a_successful_upload(self):
+        action=Mock(); report={'stages':[]}
+        reason='Published manifest differs; GitHub metadata not advanced'
+        verify=Mock(side_effect=[d.DeliveryError(reason),d.DeliveryError(reason),None])
+        with patch.object(d.time,'sleep') as sleep:
+            d.verify_with_recovery(action,verify,report,d.Budget(),settle_delays=(5,15,30))
+        action.assert_called_once()
+        self.assertEqual(verify.call_count,3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],[5,15])
+        self.assertTrue(all(stage['status']=='waiting' for stage in report['stages']))
+    def test_exhausted_public_checks_preserve_the_specific_failure_reason(self):
+        action=Mock(); verify=Mock(side_effect=d.DeliveryError('Public download returned HTTP 404'))
+        with patch.object(d.time,'sleep') as sleep, self.assertRaisesRegex(d.DeliveryError,'HTTP 404'):
+            d.verify_with_recovery(action,verify,{'stages':[]},d.Budget(),settle_delays=(5,))
+        self.assertEqual(action.call_count,2)
+        self.assertEqual(verify.call_count,4)
+        self.assertEqual(sleep.call_count,2)
+    def test_propagation_wait_never_ignores_an_apk_digest_failure(self):
+        action=Mock(); verify=Mock(side_effect=d.DeliveryError('Public APK digest or size mismatch'))
+        with patch.object(d.time,'sleep') as sleep, self.assertRaisesRegex(d.DeliveryError,'digest or size mismatch'):
+            d.verify_with_recovery(action,verify,{'stages':[]},d.Budget(),settle_delays=(5,15,30))
+        action.assert_called_once(); verify.assert_called_once(); sleep.assert_not_called()
+    def test_propagation_wait_cannot_exceed_the_task_deadline(self):
+        action=Mock(); verify=Mock(side_effect=d.DeliveryError('Public download returned HTTP 404'))
+        with patch.object(d.time,'sleep') as sleep, self.assertRaisesRegex(d.DeliveryError,'HTTP 404'):
+            d.verify_with_recovery(action,verify,{'stages':[]},d.Budget(2),settle_delays=(5,))
+        action.assert_called_once(); sleep.assert_not_called()
     def test_public_digest_mismatch_rejected(self):
         with tempfile.TemporaryDirectory() as root:
             file=Path(root)/'apk'; file.write_bytes(b'bad')
