@@ -99,6 +99,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleRelease --no-parallel --max-workers=2 --console=plain
+          python3 scripts/check_onnx_jni.py app/build/outputs/mapping/release/mapping.txt
       - name: Bind artifact to source and check reports
         if: inputs.reuse_run_id == ''
         env:
