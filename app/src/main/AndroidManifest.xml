@@ -113,7 +113,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         
-        <!-- Scheduled grab alarm receiver -->
+        <!-- 桌面小组件 provider：宿主桌面要能解析组件，exported 必须为 true（ColorOS 等 ROM 的
+             组件库里不列出的原因就是之前这里是 false）。除 APPWIDGET_UPDATE 外，下面过滤的
+             BOOT_COMPLETED / MY_PACKAGE_REPLACED / TIME_SET / TIMEZONE_CHANGED / DATE_CHANGED
+             都是系统发布的受保护广播，第三方应用无法伪造；即使被外部显式点名，效果也只是一次
+             无害的小组件刷新。 -->
         <receiver android:name=".schedule.ScheduleWidgetProvider" android:exported="true" android:label="@string/schedule_widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
