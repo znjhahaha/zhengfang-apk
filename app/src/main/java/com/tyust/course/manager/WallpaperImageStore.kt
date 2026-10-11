@@ -200,7 +200,7 @@ object WallpaperImageStore {
     }
 
     private fun buildToneMap(sharp: Bitmap, soft: Bitmap): WallpaperToneMap {
-        fun withAnalysisPixels(bitmap: Bitmap, block: (IntArray, Int, Int) -> IntArray): IntArray {
+        fun grid(bitmap: Bitmap): IntArray {
             val analysis = Bitmap.createScaledBitmap(
                 bitmap,
                 minOf(bitmap.width, WallpaperToneGridWidth * 4),
@@ -210,13 +210,14 @@ object WallpaperImageStore {
             return try {
                 val pixels = IntArray(analysis.width * analysis.height)
                 analysis.getPixels(pixels, 0, analysis.width, 0, 0, analysis.width, analysis.height)
-                block(pixels, analysis.width, analysis.height)
+                buildWallpaperToneGrid(
+                    pixels = pixels,
+                    sourceWidth = analysis.width,
+                    sourceHeight = analysis.height
+                )
             } finally {
                 if (analysis !== bitmap && !analysis.isRecycled) analysis.recycle()
             }
-        }
-        fun grid(bitmap: Bitmap): IntArray = withAnalysisPixels(bitmap) { pixels, width, height ->
-            buildWallpaperToneGrid(pixels = pixels, sourceWidth = width, sourceHeight = height)
         }
         return WallpaperToneMap(
             sourceWidth = sharp.width,
@@ -224,11 +225,7 @@ object WallpaperImageStore {
             gridWidth = WallpaperToneGridWidth,
             gridHeight = WallpaperToneGridHeight,
             sharpArgb = grid(sharp),
-            softArgb = grid(soft),
-            // 照片的局部明暗靠这一份极值才判断得准，图片不重导也要能升级：见 AppearanceSettingsManager 的版本迁移。
-            sharpRangeArgb = withAnalysisPixels(sharp) { pixels, width, height ->
-                buildWallpaperToneRange(pixels = pixels, sourceWidth = width, sourceHeight = height)
-            }
+            softArgb = grid(soft)
         )
     }
 

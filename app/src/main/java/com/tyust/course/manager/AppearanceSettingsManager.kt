@@ -178,13 +178,7 @@ object AppearanceSettingsManager {
     private const val KEY_IMAGE_COLOR = "wallpaper_image_color"
     private const val KEY_TONE_MAP = "wallpaper_tone_map"
     private const val KEY_TONE_MAP_VERSION = "wallpaper_tone_map_version"
-
-    /**
-     * 色调图版本。v1 每格只有均值，照片里一格既有高光又有暗部时会把反差判得过于乐观；
-     * v2 追加每格最暗/最亮像素（见 [WallpaperToneMap.sharpRangeArgb]）。必须按版本重建，
-     * 否则老用户不重导图片就永远拿不到修正。
-     */
-    private const val TONE_MAP_VERSION = 2
+    private const val TONE_MAP_VERSION = 1
 
     /**
      * 壁纸图片存储管道版本。v2 = soft 层由 72px 裸缩略图换为 540px 3-pass box blur（≈高斯）。
@@ -308,16 +302,15 @@ object AppearanceSettingsManager {
             ?.getInt(KEY_IMAGE_COLOR, 0)
             ?.let { imageColor = Color(it) }
         imageToneMap = prefs
-            ?.takeIf { it.getInt(KEY_TONE_MAP_VERSION, 0) in 1..TONE_MAP_VERSION }
+            ?.takeIf { it.getInt(KEY_TONE_MAP_VERSION, 0) == TONE_MAP_VERSION }
             ?.getString(KEY_TONE_MAP, null)
             ?.let(WallpaperToneMap::decode)
         hasImageWallpaper = WallpaperImageStore.exists(app)
         mode = resolveMode()
         recomputeStyle()
         if (mode == WallpaperMode.Image) loadImageAsync()
-        val storeVersion = prefs?.getInt(KEY_STORE_VERSION, 1) ?: 1
         // 存量升级：旧版模糊层是 72px 裸缩略图（上采样像压缩画质），按高斯管道重生成一次
-        if (hasImageWallpaper && storeVersion < STORE_VERSION) {
+        if (hasImageWallpaper && (prefs?.getInt(KEY_STORE_VERSION, 1) ?: 1) < STORE_VERSION) {
             ioScope.launch {
                 if (WallpaperImageStore.regenerateSoft(app)) {
                     prefs?.edit()?.putInt(KEY_STORE_VERSION, STORE_VERSION)?.apply()
@@ -327,22 +320,6 @@ object AppearanceSettingsManager {
                             imageToneMap = migratedToneMap
                             persistToneMap(migratedToneMap)
                         }
-                        if (mode == WallpaperMode.Image) loadImageAsync()
-                    }
-                }
-            }
-        } else if (hasImageWallpaper &&
-            (prefs?.getInt(KEY_TONE_MAP_VERSION, 0) ?: 0) < TONE_MAP_VERSION
-        ) {
-            // v1 色调图缺每格极值，照片上的局部反差会被低估；后台按当前管道重建一份。
-            // 重建完成前仍用旧图兜底（解码同时接受 v1/v2），失败则下次启动再试。
-            ioScope.launch {
-                val rebuilt = WallpaperImageStore.analyze(app)
-                if (rebuilt != null) {
-                    withContext(Dispatchers.Main) {
-                        imageToneMap = rebuilt
-                        persistToneMap(rebuilt)
-                        recomputeStyle()
                         if (mode == WallpaperMode.Image) loadImageAsync()
                     }
                 }
