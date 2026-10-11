@@ -27,7 +27,9 @@ class ScheduleRepository(private val context: Context,
 
     fun timeBase(account: String, term: String, currentTerm: String): ScheduleTimeBase {
         val periods = settings.getPeriodTimes(account)
-        val store = ScheduleCalendarStore(context.getSharedPreferences("course_reminders", Context.MODE_PRIVATE))
+        val store = ScheduleCalendarStore(context.getSharedPreferences("course_reminders", Context.MODE_PRIVATE)) {
+            settings.getWeekStart(account)
+        }
         if (account.isNotBlank() && term == currentTerm) {
             store.migrateLegacy(account, currentTerm, ScheduleTimeBase(
                 ScheduleTimeBase.dateFromMillis(settings.getSemesterStartDate(account)),

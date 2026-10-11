@@ -50,7 +50,7 @@ object CourseReminderPlanner {
             course.startPeriod < 1 || course.endPeriod < course.startPeriod || reminder.leadMinutes !in 0..1440) {
             return ReminderStatus(ReminderAvailability.NeedsTime)
         }
-        if (ScheduleDates.firstMonday(timeBase.firstWeekDate, zone) == null)
+        if (ScheduleDates.firstWeekDate(timeBase.firstWeekDate, zone) == null)
             return ReminderStatus(ReminderAvailability.NeedsTime)
         for (occurrence in ScheduleOccurrenceResolver.resolve(listOf(course), timeBase, zone, requireEnd = false)) {
             val startsAt = occurrence.startsAt

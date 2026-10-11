@@ -15,7 +15,7 @@ class ScheduleDomainTest {
                     set(date.first, date.second, date.third, 19, 45)
                 }
                 val monday = ScheduleDates.mondayOfWeek(chosen.timeInMillis, zone)
-                assertEquals(ScheduleDates.firstMonday(expected, zone)?.timeInMillis, monday.timeInMillis)
+                assertEquals(ScheduleDates.firstWeekDate(expected, zone)?.timeInMillis, monday.timeInMillis)
                 assertEquals(java.util.Calendar.MONDAY, monday.get(java.util.Calendar.DAY_OF_WEEK))
                 assertEquals(0, monday.get(java.util.Calendar.HOUR_OF_DAY))
                 assertEquals(0, monday.get(java.util.Calendar.MINUTE))
@@ -65,7 +65,38 @@ class ScheduleDomainTest {
         val zone = java.util.TimeZone.getTimeZone("Europe/Berlin")
         val later = com.tyust.course.schedule.ScheduleDates.date("2026-10-19", 2, zone = zone)!!
         assertEquals(2, ScheduleDates.weekAt("2026-10-19", later.timeInMillis, zone))
-        assertNull(ScheduleDates.firstMonday("2026-02-30"))
-        assertNull(ScheduleDates.firstMonday("2026-09-08"))
+        assertNull(ScheduleDates.firstWeekDate("2026-02-30"))
+        // Any weekday is a valid first-week anchor now; only a malformed date is rejected.
+        assertEquals(
+            "2026-09-08",
+            ScheduleTimeBase.dateFromMillis(requireNotNull(ScheduleDates.firstWeekDate("2026-09-08")).timeInMillis)
+        )
+    }
+
+    @Test fun sundayWeekStartShiftsTheAnchorAndTheColumnOrder() {
+        val zone = java.util.TimeZone.getTimeZone("Asia/Shanghai")
+        val monday = requireNotNull(ScheduleDates.firstWeekDate("2026-09-07", zone))
+        val sunday = ScheduleDates.alignFirstWeekDate(monday.timeInMillis, ScheduleWeekStart.Sunday, zone)
+        assertEquals("2026-09-06", ScheduleTimeBase.dateFromMillis(sunday.timeInMillis, zone))
+
+        val sundayDate = requireNotNull(ScheduleDates.firstWeekDate("2026-09-06", zone))
+        assertEquals(
+            "2026-09-07",
+            ScheduleTimeBase.dateFromMillis(ScheduleDates.alignFirstWeekDate(sundayDate.timeInMillis, ScheduleWeekStart.Monday, zone).timeInMillis, zone)
+        )
+
+        // Day numbers stay ISO (1 = Monday .. 7 = Sunday) whichever weekday starts the week.
+        assertEquals("2026-09-07", ScheduleTimeBase.dateFromMillis(requireNotNull(ScheduleDates.date("2026-09-06", 1, 1, zone)).timeInMillis, zone))
+        assertEquals("2026-09-06", ScheduleTimeBase.dateFromMillis(requireNotNull(ScheduleDates.date("2026-09-06", 1, 7, zone)).timeInMillis, zone))
+        assertEquals("2026-10-18", ScheduleTimeBase.dateFromMillis(requireNotNull(ScheduleDates.date("2026-09-06", 7, 7, zone)).timeInMillis, zone))
+
+        assertEquals(listOf(7, 1, 2, 3, 4, 5, 6), ScheduleDates.weekDayOrder("2026-09-06", zone = zone))
+        assertEquals(listOf(1, 2, 3, 4, 5), ScheduleDates.weekDayOrder("2026-09-06", showWeekend = false, zone = zone))
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7), ScheduleDates.weekDayOrder("2026-09-07", zone = zone))
+        assertEquals(ScheduleWeekStart.Sunday, ScheduleDates.weekStartOf("2026-09-06", zone))
+        assertEquals(ScheduleWeekStart.Monday, ScheduleDates.weekStartOf("2026-09-07", zone))
+        // A legacy anchor on any weekday still snaps to the week the user was looking at.
+        assertEquals("2026-09-07", ScheduleDates.normalizeFirstWeekDate("2026-09-09", ScheduleWeekStart.Monday))
+        assertEquals("2026-09-06", ScheduleDates.normalizeFirstWeekDate("2026-09-09", ScheduleWeekStart.Sunday))
     }
 }

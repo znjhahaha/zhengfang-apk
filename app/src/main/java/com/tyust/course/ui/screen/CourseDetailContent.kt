@@ -43,10 +43,17 @@ data class CourseDetailUiState(
     val needsPermission: Boolean = false,
     val needsTime: Boolean = false,
     val invalidWeeks: Boolean = false,
+    /** Effective lead time of this course: its own override, otherwise the account default. */
+    val reminderLeadMinutes: Int = 15,
+    val reminderCustomLead: Boolean = false,
     val sourceCenterX: Float? = null,
     val timeRange: String = "",
     val currentWeek: Int = 0
 )
+
+/** 0 means "ring when the class starts"; anything else is the lead time in minutes. */
+private fun reminderLeadLabel(minutes: Int): String =
+    if (minutes <= 0) "上课时通知" else "提前 $minutes 分钟"
 
 /** Content-sized sheet with a bounded scroll body and a persistent, single primary action. */
 @Composable
@@ -159,7 +166,8 @@ fun CourseDetailContent(
                                     state = if (ui.reminderEnabled) IconVisualState.Selected else IconVisualState.Idle)
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                     Text("课程提醒", style = MaterialTheme.typography.titleSmall)
-                                    Text(if (ui.reminderEnabled) "上课前 15 分钟" else "未开启 · 上课前 15 分钟",
+                                    val leadLabel = reminderLeadLabel(ui.reminderLeadMinutes)
+                                    Text(if (ui.reminderEnabled) "$leadLabel · ${if (ui.reminderCustomLead) "此课程" else "跟随默认"}" else "未开启 · $leadLabel",
                                         style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                                 }
                                 LiquidSwitch(ui.reminderEnabled, onReminderChanged, enabled = ui.reminderAvailable)

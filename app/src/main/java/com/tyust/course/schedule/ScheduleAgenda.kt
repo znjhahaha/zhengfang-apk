@@ -21,7 +21,7 @@ data class ScheduleAgenda(
                 timeInMillis = now; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
             val tomorrow = (day.clone() as Calendar).apply { add(Calendar.DATE, 1) }.timeInMillis
-            if (base == null || ScheduleDates.firstMonday(base.firstWeekDate, zone) == null)
+            if (base == null || ScheduleDates.firstWeekDate(base.firstWeekDate, zone) == null)
                 return ScheduleAgenda(null, emptyList(), emptyList(), null, tomorrow, true)
             val occurrences = ScheduleOccurrenceResolver.resolve(courses, base, zone).filter { it.endsAt >= day.timeInMillis }
             val today = occurrences.filter { it.startsAt in day.timeInMillis until tomorrow }

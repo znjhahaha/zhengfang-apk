@@ -1,5 +1,7 @@
 # UI104：M3E 与 Liquid Glass 设计评估
 
+> **历史文档。** 本文是 1.0.104 / SDK 3.2.8 时期的设计评估，其后的界面结构见 [UI105 验收报告](UI105-ACCEPTANCE.md)、[UI106 验收报告](UI106-ACCEPTANCE.md)、[UI107 文字透镜与通用网页](UI107-COMPONENTS.md)。当前正式版为 1.0.116、宿主 SDK 为 3.6.0。原文保留，仅作变更历史。
+
 评估基线：App main `bbfa3d1803baa0a7be7015b43ec0fda719269519`（1.0.103）。
 实施分支：`uipreview`，开发版本 1.0.104 / 104。SDK 3.2.8、API 3 不变。
 这是源码和局部布局验证，不是 Google/Apple 官方认证或全 App 视觉改版。

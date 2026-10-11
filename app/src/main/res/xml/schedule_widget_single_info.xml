@@ -3,6 +3,7 @@
     android:minResizeWidth="56dp" android:minResizeHeight="56dp"
     android:targetCellWidth="1" android:targetCellHeight="1"
     android:initialLayout="@layout/schedule_widget_single" android:previewLayout="@layout/schedule_widget_single"
+    android:previewImage="@drawable/schedule_widget_preview_single"
     android:description="@string/schedule_widget_single_description"
     android:configure="com.tyust.course.schedule.ScheduleWidgetAppearanceActivity"
     android:widgetFeatures="reconfigurable|configuration_optional"

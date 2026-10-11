@@ -18,7 +18,7 @@ class ScheduleCalendarRegressionTest {
         assertEquals(oldCalendar.periodStarts, restored.periodStarts)
         assertEquals(oldCalendar.periodEnds, restored.periodEnds)
         val zone = TimeZone.getTimeZone("Asia/Shanghai")
-        val now = requireNotNull(ScheduleDates.firstMonday("2026-09-14", zone)).timeInMillis
+        val now = requireNotNull(ScheduleDates.firstWeekDate("2026-09-14", zone)).timeInMillis
         assertEquals(2, ScheduleDates.weekAt(restored.firstWeekDate, now, zone))
     }
 

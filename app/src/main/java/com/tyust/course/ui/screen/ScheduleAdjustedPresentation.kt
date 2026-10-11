@@ -4,7 +4,7 @@ import com.tyust.course.schedule.*
 
 /** Keep the source course id for actions; occurrences carry their own displayed date and week. */
 internal fun resolvedScheduleUi(courses: List<ScheduleCourseUi>, base: ScheduleTimeBase): List<ScheduleCourseUi> {
-    if (base.adjustments.isEmpty || ScheduleDates.firstMonday(base.firstWeekDate) == null) return courses
+    if (base.adjustments.isEmpty || ScheduleDates.firstWeekDate(base.firstWeekDate) == null) return courses
     val sources = courses.associateBy { it.id }
     return ScheduleOccurrenceResolver.resolve(courses.map { it.record() }, base).mapNotNull { occurrence ->
         val source = sources[occurrence.course.id] ?: return@mapNotNull null

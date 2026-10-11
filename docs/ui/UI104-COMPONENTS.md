@@ -1,5 +1,7 @@
 # 收起浏览页面与搜索/筛选面板
 
+> **历史文档。** 本文描述 1.0.104（uipreview / SDK 3.2.8）的插件中心收起浏览页面与搜索筛选面板，后续结构已被 [UI105 组件说明](UI105-COMPONENTS.md)、[UI106 组件说明](UI106-COMPONENTS.md)、[UI107 文字透镜与通用网页](UI107-COMPONENTS.md) 取代。当前正式版为 1.0.116、宿主 SDK 为 3.6.0。原文保留。
+
 App 内部组件试点，入口：插件中心 → 更多 → 导入、回滚与开发工具 → 玻璃与收起页面预览。也可在开发构建中启动非导出 Activity `GlassBrowserPreviewActivity`。预览只使用本地模拟数据；不创建插件会话、不安装包、不查询学校。
 
 ## CollapsingGlassBrowser

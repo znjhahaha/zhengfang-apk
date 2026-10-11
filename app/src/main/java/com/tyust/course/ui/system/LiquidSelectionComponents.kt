@@ -433,6 +433,8 @@ fun LiquidSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /** Keep selection taps but let the caller own drags (the indicator still follows `selectedIndex`). */
+    gestures: Boolean = true,
     backdrop: Backdrop? = LocalControlBackdrop.current,
     height: Dp = 52.dp,
     edgePadding: Dp? = null,
@@ -667,8 +669,8 @@ fun LiquidSegmentedControl(
                 .drawWithContent(textMask)
                 .selectableGroup()
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
-                .pointerInput(enabled, optionCount, segmentWidthPx) {
-                    if (!enabled) return@pointerInput
+                .pointerInput(enabled, gestures, optionCount, segmentWidthPx) {
+                    if (!enabled || !gestures) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         down.consume()

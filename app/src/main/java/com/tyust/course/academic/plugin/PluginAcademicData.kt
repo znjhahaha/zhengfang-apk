@@ -3,6 +3,7 @@ package com.tyust.course.academic.plugin
 import android.content.Context
 import com.tyust.course.academic.*
 import com.tyust.course.manager.UserManager
+import com.tyust.course.manager.ScheduleSettingsManager
 import com.tyust.course.schedule.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,7 +59,9 @@ class PluginAcademicData(private val app: Context, private val caller: PluginPac
         val key = "plugin_import_calendar:$scope/${term.id}"
         val calendar = cachePrefs.getString(key, null)?.let(::JSONObject) ?: return
         val periods = PluginJson.objects(calendar.getJSONArray("periods"))
-        ScheduleCalendarStore(app.getSharedPreferences("course_reminders", Context.MODE_PRIVATE)).write(account, term.id,
+        ScheduleCalendarStore(app.getSharedPreferences("course_reminders", Context.MODE_PRIVATE)) {
+            ScheduleSettingsManager.getInstance().apply { init(app) }.getWeekStart(account)
+        }.write(account, term.id,
             ScheduleTimeBase(calendar.optString("startDate"), periods.associate { it.getInt("number") to it.getString("start") }, periods.associate { it.getInt("number") to it.getString("end") }))
         check(cachePrefs.edit().remove(key).commit())
     }

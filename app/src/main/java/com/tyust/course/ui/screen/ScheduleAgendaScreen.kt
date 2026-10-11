@@ -85,6 +85,7 @@ fun ScheduleScreen(
     val agenda = remember(courses, base, clock) { ScheduleAgenda.calculate(courses.map { it.record() }, base, clock) }
     val actualWeek = ScheduleDates.weekIndexAt(firstWeekDate, clock) ?: 1
     val actualDay = ScheduleDates.dayAt(clock)
+    val weekDayOrder = ScheduleDates.weekDayOrder(firstWeekDate)
     val dayView = displayPreferences.dayView
     var dateRequest by remember { mutableIntStateOf(0) }
     var weekOffset by rememberSaveable(positionKey) {
@@ -126,6 +127,7 @@ fun ScheduleScreen(
                 onSettingsClick, onExportClick, isNextSemester, onToggleSemester,
                 collapseFraction = headerLift, sampleBackdrop = sample, firstWeekDate = firstWeekDate,
                 actualWeek = actualWeek, showWeekend = dayView || displayPreferences.showWeekend, selectedDay = shownDay,
+                stripSwipesWeeks = displayPreferences.stripSwipesWeeks,
                 onDayClick = {
                     onWeekChange(shownWeek); onDayChange(it); dateRequest++
                     onDisplayPreferences(displayPreferences.copy(dayView = true))
@@ -161,7 +163,7 @@ fun ScheduleScreen(
                             .using(null)
                     }, label = "schedule-view") { mode ->
                     SchedulePages(mode, mode == dayView, currentWeek, selectedDay,
-                        "$weekRequestKey|$dateRequest", firstWeekDate, actualWeek, isNextSemester,
+                        "$weekRequestKey|$dateRequest", firstWeekDate, weekDayOrder, actualWeek, isNextSemester,
                         effectiveCourses, periodTimes, periodCount, displayPreferences, agenda, clock, topInset,
                         pageScrolls, restoredScrolls, if (mode) dayOffset else weekOffset, reduced,
                         onWeekChange, onDayChange, onCourseClick, onCourseLongClick, onSettingsClick,
@@ -202,7 +204,7 @@ fun ScheduleScreen(
 @Composable
 private fun SchedulePages(
     dayView: Boolean, active: Boolean, requestedWeek: Int, requestedDay: Int, requestKey: String,
-    firstWeekDate: String?, actualWeek: Int, nextSemester: Boolean,
+    firstWeekDate: String?, dayOrder: List<Int>, actualWeek: Int, nextSemester: Boolean,
     courses: List<ScheduleCourseUi>, times: List<PeriodTimeUi>, periodCount: Int,
     preferences: ScheduleDisplayPreferences, agenda: ScheduleAgenda, now: Long, topInset: androidx.compose.ui.unit.Dp,
     scrolls: MutableMap<Pair<Boolean, Int>, ScrollState>, restored: MutableSet<ScrollState>, initialOffset: Int,
@@ -214,7 +216,8 @@ private fun SchedulePages(
     val lastWeek = maxOf(ScheduleMaxWeeks, actualWeek, requestedWeek)
     val firstUnit = if (dayView) (firstWeek - 1) * 7 + 1 else firstWeek
     val lastUnit = if (dayView) lastWeek * 7 else lastWeek
-    val requestedUnit = if (dayView) (requestedWeek - 1) * 7 + requestedDay else requestedWeek
+    val requestedOrdinal = dayOrder.indexOf(requestedDay).coerceAtLeast(0)
+    val requestedUnit = if (dayView) (requestedWeek - 1) * 7 + requestedOrdinal + 1 else requestedWeek
     val pager = key(firstUnit, lastUnit, firstWeekDate) {
         rememberPagerState(initialPage = (requestedUnit - firstUnit).coerceIn(0, lastUnit - firstUnit),
             pageCount = { lastUnit - firstUnit + 1 })
@@ -253,14 +256,14 @@ private fun SchedulePages(
                 val unit = page + firstUnit
                 if (dayView) {
                     latestWeek(Math.floorDiv(unit - 1, 7) + 1)
-                    latestDay(Math.floorMod(unit - 1, 7) + 1)
+                    latestDay(dayOrder[Math.floorMod(unit - 1, 7)])
                 } else latestWeek(unit)
             }
         }
     }
     val shownUnit = pager.currentPage + firstUnit
     val shownWeek = if (dayView) Math.floorDiv(shownUnit - 1, 7) + 1 else shownUnit
-    val shownDay = if (dayView) Math.floorMod(shownUnit - 1, 7) + 1 else requestedDay
+    val shownDay = if (dayView) dayOrder[Math.floorMod(shownUnit - 1, 7)] else requestedDay
     val activeScroll = pageScroll(pager.settledPage + firstUnit)
     LaunchedEffect(active, activeScroll, shownWeek, shownDay) {
         if (active) latestShown(shownWeek, shownDay, activeScroll)
@@ -274,7 +277,7 @@ private fun SchedulePages(
         beyondViewportPageCount = 0) { page ->
         val unit = page + firstUnit
         val week = if (dayView) Math.floorDiv(unit - 1, 7) + 1 else unit
-        val day = if (dayView) Math.floorMod(unit - 1, 7) + 1 else requestedDay
+        val day = if (dayView) dayOrder[Math.floorMod(unit - 1, 7)] else requestedDay
         val scroll = pageScroll(unit)
         RestoreScheduleScroll(scroll, restored)
         val visible = remember(courses, week) { courses.filter { isInWeek(it.weeks, week) } }
@@ -291,8 +294,8 @@ private fun SchedulePages(
             preferences.compact, scroll, topInset, onCourse, onCourseLongClick = onLongClick,
             agenda = agenda, now = now, isToday = !nextSemester && week == actualWeek && day == ScheduleDates.dayAt(now), onCalendar = onCalendar)
         else ScheduleGrid(displayed, week, times, periodCount, onCourse, scrollState = scroll,
-            topInset = topInset, showWeekend = preferences.showWeekend, compact = preferences.compact,
-            onCourseLongClick = onLongClick)
+            topInset = topInset, showWeekend = preferences.showWeekend, dayOrder = dayOrder,
+            compact = preferences.compact, onCourseLongClick = onLongClick)
     }
 }
 

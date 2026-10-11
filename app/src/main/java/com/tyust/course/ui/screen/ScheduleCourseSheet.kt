@@ -84,7 +84,10 @@ private fun ScheduleCourseSheetContent(course: ScheduleCourseUi, account: String
     CourseDetailContent(
         CourseDetailUiState(course, conflicts, record?.enabled == true, term.isNotBlank(), description,
             record?.enabled == true && status.availability == ReminderAvailability.NeedsPermission,
-            status.availability == ReminderAvailability.NeedsTime, !ScheduleWeeks.parse(course.weeks).valid, sourceCenterX, timeRange, currentWeek),
+            status.availability == ReminderAvailability.NeedsTime, !ScheduleWeeks.parse(course.weeks).valid,
+            reminderLeadMinutes = record?.leadMinutes ?: scheduler.defaultLead(account),
+            reminderCustomLead = record?.customLead == true,
+            sourceCenterX = sourceCenterX, timeRange = timeRange, currentWeek = currentWeek),
         state, close, onReminderChanged = { scheduler.setEnabled(key, originalCourse.record(), it) },
         onPermission = {
             val permissions = scheduler.permissions()

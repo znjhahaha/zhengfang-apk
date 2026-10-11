@@ -12,6 +12,8 @@ Service page refresh can now apply multiple approved read-state updates and then
 
 Academic data readers receive a persistent plugin-wide data label, propagated through service calls. Network disclosure requires a separately declared/approved recipient; redirects, uploads, browser handoff and remote-page bridge responses use the same guard. Shared cookies/tokens remain host-managed, authentication extraction endpoints are unavailable to consumers, and known secret reflections are blocked. Revoking disclosure preserves the data label. Server-side behavior after authorized disclosure remains outside App control.
 
+> **已过时（2026-10 补记）：** 下面这段「隔离 Android UID」已不再成立。1.0.96 因部分设备在服务发布前杀死隔离进程而**移除了隔离 UID**，插件服务 `:academic_plugin` 与主 App 共用同一 UID，并明确记录为安全取舍（`CHANGELOG.md` 1.0.96 条目、`docs/ISSUES-50-51.md`）。当前 `app/src/main/AndroidManifest.xml` 中该服务仍是 `android:process=":academic_plugin"`；`app/src/test/java/com/tyust/course/academic/plugin/PluginSandboxBindingTest.kt` 断言 `FLAG_ISOLATED_PROCESS` 位为 0。以下原文保留，仅作变更历史。
+
 The JS service now uses an isolated Android UID; the Application skips private initialization for that UID. Binder calls remain operation-bound. Actual isolated-process/WebView behavior remains a device acceptance item.
 
 Navigation animation snapshots are observable, rapid reversals retain at most two pages, and module entry uses normal alpha composition instead of ModulateAlpha. This addresses stale transparent text layers without using scroll or timer workarounds. Grade view models are cached by report/session; aggregate statistics run on Dispatchers.Default. Glass capture records timing and rejects stale completion callbacks. Full real-time optical effects remain enabled; no reduced-rate/static fallback was introduced.

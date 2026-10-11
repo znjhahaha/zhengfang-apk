@@ -31,7 +31,9 @@ internal data class ScheduleWidgetState(
     val snapshot: ScheduleSnapshot?, val agenda: ScheduleAgenda?, val now: Long,
     val heading: String, val date: String,
     val primary: ScheduleWidgetCourse?, val secondary: ScheduleWidgetCourse?,
-    val message: String?, val actionLabel: String, val action: ScheduleWidgetAction, val summary: String
+    val message: String?, val actionLabel: String, val action: ScheduleWidgetAction, val summary: String,
+    /** Base instant for the countdown style: the next boundary (class start or class end). */
+    val countdownAt: Long? = null, val countdownLabel: String = ""
 ) {
     val title get() = primary?.name ?: message.orEmpty()
     companion object {
@@ -77,7 +79,9 @@ internal data class ScheduleWidgetState(
                 row(primary, if (current != null) "正在上课" else "下一节"),
                 secondary?.let { row(it, if (current != null) "下一节" else "随后") },
                 null, "查看课表", ScheduleWidgetAction.Today,
-                "今日 ${agenda.today.size} 堂 · 还剩 ${agenda.remaining(now)} 堂")
+                "今日 ${agenda.today.size} 堂 · 还剩 ${agenda.remaining(now)} 堂",
+                countdownAt = current?.endsAt ?: primary.startsAt,
+                countdownLabel = if (current != null) "距下课" else "距上课")
         }
     }
 }
@@ -114,6 +118,8 @@ internal object ScheduleWidgetRenderer {
         val scale = config.fontScale.coerceAtLeast(1f)
         if (style == ScheduleWidgetStyle.Timeline)
             return timeline(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor).also { applyAppearance(context, it, appearance, dark) }
+        if (style == ScheduleWidgetStyle.Countdown)
+            return countdown(context, state, width, height, scale, dark, primaryColor, secondaryColor, accentColor).also { applyAppearance(context, it, appearance, dark) }
         val views = RemoteViews(context.packageName, if (style == ScheduleWidgetStyle.Single) R.layout.schedule_widget_single else R.layout.schedule_widget)
         val two = style == ScheduleWidgetStyle.Double
         val padding = if (height < 100 || width < 100) 6 else 10
@@ -217,6 +223,118 @@ internal object ScheduleWidgetRenderer {
         // The entire empty panel performs the same action as its label.
         views.setContentDescription(R.id.widget_empty, "${state.message}，${state.actionLabel}")
         applyAppearance(context, views, appearance, dark)
+        return views
+    }
+
+    /**
+     * Countdown style: a Chronometer walks the remaining time locally, so the card stays second-accurate
+     * between the app's inexact boundary refreshes. Only local cache reads happen here.
+     */
+    private fun countdown(context: Context, state: ScheduleWidgetState, width: Int, height: Int, scale: Float,
+                          dark: Boolean, primary: Int, secondary: Int, accent: Int): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.schedule_widget_countdown)
+        val density = context.resources.displayMetrics.density
+        val padding = if (height < 100 || width < 100) 6 else 10
+        val px = (padding * density).toInt()
+        views.setViewPadding(R.id.widget_root, px, px, px, px)
+        views.setInt(R.id.widget_root, "setBackgroundResource", if (dark) R.drawable.schedule_widget_dark else R.drawable.schedule_widget_light)
+        val cardPadding = if (height < 80) 2 else 5
+        val cardPx = (cardPadding * density).toInt()
+        views.setInt(R.id.widget_course, "setBackgroundResource", if (dark) R.drawable.schedule_widget_card_dark else R.drawable.schedule_widget_card_light)
+        views.setViewPadding(R.id.widget_course, cardPx, cardPx, cardPx, cardPx)
+        val columnWidth = (width - padding * 2 - cardPadding * 2).toFloat()
+        val showTeacher = height >= 120 && columnWidth >= 100
+        val fitter = ScheduleWidgetTextFitter(context, (columnWidth - 14).coerceAtLeast(1f) * density)
+        val headerHeight = fitter.height(listOf(ScheduleWidgetText(state.heading, 12f, bold = true))) + fitter.dp(2f)
+        val footerHeight = fitter.height(listOf(ScheduleWidgetText(state.summary, 12f))) + fitter.dp(6f)
+        val item = state.primary
+        val compactTime = columnWidth + cardPadding * 2 < 116 * scale
+        val time = when {
+            item == null -> "查看课表"
+            compactTime -> listOf(item.dateLabel, item.time.substringBefore('–')).filter(String::isNotBlank).joinToString(" ")
+            else -> listOf(item.dateLabel, item.time).filter(String::isNotBlank).joinToString(" ")
+        }
+        // The host renders the Chronometer text itself; measure its widest shape so scaling stays valid.
+        val timerShape = "00:00:00"
+        val timerText = state.countdownLabel.ifBlank { "距上课" }
+        var showHeader = height >= 154 * scale && width >= 150 * scale
+        var showFooter = item != null && height >= 232 * scale && width >= 160 * scale
+        fun bodyPixels() = fitter.dp((height - padding * 2 - cardPadding * 2).toFloat()) -
+            (if (showHeader) headerHeight else 0) - (if (showFooter) footerHeight else 0)
+        fun showActionNow() = bodyPixels() >= fitter.dp(44f)
+        fun courseFields() = listOf(
+            ScheduleWidgetText(timerText, 11f, singleLine = true),
+            ScheduleWidgetText(timerShape, 20f, bold = true, margin = 2f, singleLine = true),
+            ScheduleWidgetText(item?.name.orEmpty(), 14f, bold = true),
+            ScheduleWidgetText(if (showTeacher) item?.course?.teacher?.ifBlank { "教师待定" }.orEmpty() else "", 11f, margin = 2f),
+            ScheduleWidgetText(time, 11f, margin = 3f, singleLine = true),
+            ScheduleWidgetText(item?.location.orEmpty(), 11f, margin = 2f)
+        )
+        fun emptyFields() = listOf(ScheduleWidgetText(state.message.orEmpty(), 14f, bold = true),
+            ScheduleWidgetText(if (showActionNow()) state.actionLabel else "", 12f, margin = 4f))
+        fun required() = if (item != null) courseFields() else emptyFields()
+        // Optional labels yield their space before any required text is made smaller.
+        if (!fitter.fits(required(), bodyPixels())) showFooter = false
+        if (!fitter.fits(required(), bodyPixels())) showHeader = false
+        val bodyHeight = bodyPixels()
+        val showAction = item == null && showActionNow()
+        val fit = fitter.scale(required(), bodyHeight)
+        views.setTextViewText(R.id.widget_heading, state.heading)
+        views.setTextViewText(R.id.widget_date, state.date)
+        views.visible(R.id.widget_header, showHeader)
+        views.visible(R.id.widget_date, width >= 260 * scale)
+        views.visible(R.id.widget_courses, item != null)
+        views.visible(R.id.widget_countdown_box, item != null && state.countdownAt != null)
+        views.visible(R.id.widget_empty, item == null)
+        views.visible(R.id.widget_footer, showFooter)
+        views.setTextViewText(R.id.widget_footer, state.summary)
+        views.setTextViewText(R.id.widget_message, state.message)
+        views.setTextViewText(R.id.widget_action, state.actionLabel)
+        views.visible(R.id.widget_action, showAction)
+        if (item == null) {
+            views.setInt(R.id.widget_message, "setMaxLines", Int.MAX_VALUE)
+            views.setTextViewTextSize(R.id.widget_message, android.util.TypedValue.COMPLEX_UNIT_SP, 14f * fit)
+            views.setTextViewTextSize(R.id.widget_action, android.util.TypedValue.COMPLEX_UNIT_SP, 12f * fit)
+        } else {
+            views.setTextViewText(R.id.widget_countdown_label, timerText)
+            views.setTextViewTextSize(R.id.widget_countdown_label, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
+            views.setTextViewTextSize(R.id.widget_countdown, android.util.TypedValue.COMPLEX_UNIT_SP, 20f * fit)
+            views.setTextViewText(R.id.widget_name, item.name)
+            views.setTextViewTextSize(R.id.widget_name, android.util.TypedValue.COMPLEX_UNIT_SP, 14f * fit)
+            views.setTextViewText(R.id.widget_teacher, item.course.teacher.ifBlank { "教师待定" })
+            views.setTextViewTextSize(R.id.widget_teacher, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
+            views.visible(R.id.widget_teacher, showTeacher)
+            views.setTextViewText(R.id.widget_time, item.time)
+            views.setTextViewTextSize(R.id.widget_time, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
+            views.visible(R.id.widget_time, true)
+            views.setTextViewText(R.id.widget_location, item.location)
+            views.setTextViewTextSize(R.id.widget_location, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
+            views.visible(R.id.widget_location, true)
+            state.countdownAt?.let { target ->
+                // Chronometer 的 base 走 SystemClock.elapsedRealtime() 时间轴（开机起算），
+                // 直接塞墙上时钟毫秒会变成几十万小时。这里换算到开机时间轴，之后由宿主自己走秒。
+                // 边界、开机、改时间/时区时都会重新渲染，所以只需在渲染时换算一次。
+                val uptimeBase = target - System.currentTimeMillis() + android.os.SystemClock.elapsedRealtime()
+                views.setChronometer(R.id.widget_countdown, uptimeBase, "%s", true)
+                views.setChronometerCountDown(R.id.widget_countdown, true)
+            }
+        }
+        views.setTextColor(R.id.widget_heading, primary)
+        views.setTextColor(R.id.widget_message, primary)
+        views.setTextColor(R.id.widget_name, primary)
+        listOf(R.id.widget_date, R.id.widget_location, R.id.widget_footer, R.id.widget_countdown_label, R.id.widget_teacher)
+            .forEach { views.setTextColor(it, secondary) }
+        listOf(R.id.widget_action, R.id.widget_time, R.id.widget_countdown).forEach { views.setTextColor(it, accent) }
+        val rootIntent = pending(context, state, item?.occurrence)
+        views.setOnClickPendingIntent(R.id.widget_root, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_header, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_course, rootIntent)
+        views.setOnClickPendingIntent(R.id.widget_empty, pending(context, state, action = state.action))
+        views.setOnClickPendingIntent(R.id.widget_action, pending(context, state, action = state.action))
+        views.setContentDescription(R.id.widget_course, item?.let {
+            "$timerText，${it.name}，${it.course.teacher.ifBlank { "教师待定" }}，${it.time}，${it.location}"
+        } ?: "暂无课程，查看完整课表")
+        views.setContentDescription(R.id.widget_empty, "${state.message}，${state.actionLabel}")
         return views
     }
 

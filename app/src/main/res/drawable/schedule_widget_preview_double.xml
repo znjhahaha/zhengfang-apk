@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy widget-picker preview: some vendor launchers still read previewImage instead of previewLayout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="160dp"
+    android:viewportWidth="320" android:viewportHeight="160">
+    <path android:fillColor="#F4F4F7" android:pathData="M0,0 L320,0 L320,160 L0,160 Z" />
+    <path android:fillColor="#3B82F6" android:pathData="M14,18 L20,18 L20,142 L14,142 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M32,26 L186,26 L186,44 L32,44 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M32,56 L160,56 L160,68 L32,68 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M32,80 L140,80 L140,92 L32,92 Z" />
+    <path android:fillColor="#3B82F6" android:pathData="M206,18 L212,18 L212,142 L206,142 Z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M224,26 L300,26 L300,44 L224,44 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M224,56 L296,56 L296,68 L224,68 Z" />
+    <path android:fillColor="#8A8A8E" android:pathData="M224,80 L280,80 L280,92 L224,92 Z" />
+</vector>

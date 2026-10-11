@@ -64,7 +64,7 @@ object ScheduleOccurrenceResolver {
     }
 
     fun resolve(courses: List<ScheduleCourseRecord>, base: ScheduleTimeBase?, zone: TimeZone = TimeZone.getDefault(), requireEnd: Boolean = true): List<ScheduleOccurrence> {
-        if (base == null || ScheduleDates.firstMonday(base.firstWeekDate, zone) == null) return emptyList()
+        if (base == null || ScheduleDates.firstWeekDate(base.firstWeekDate, zone) == null) return emptyList()
         fun occurrence(course: ScheduleCourseRecord, day: String, origin: String = day): ScheduleOccurrence? {
             if (course.day !in 1..7 || course.startPeriod < 1 || course.endPeriod < course.startPeriod) return null
             val start = at(day, base.periodStarts[course.startPeriod], zone) ?: return null

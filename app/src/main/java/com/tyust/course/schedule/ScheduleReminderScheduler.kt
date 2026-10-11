@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import com.tyust.course.MainActivity
 import com.tyust.course.R
 import com.tyust.course.manager.UserManager
+import com.tyust.course.manager.ScheduleSettingsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,7 +34,9 @@ import org.json.JSONObject
 
 class ScheduleReminderScheduler private constructor(private val context: Context) : Application.ActivityLifecycleCallbacks {
     private val preferences = context.getSharedPreferences("course_reminders", Context.MODE_PRIVATE)
-    private val calendars = ScheduleCalendarStore(preferences)
+    private val calendars = ScheduleCalendarStore(preferences) {
+        ScheduleSettingsManager.getInstance().apply { init(context) }.getWeekStart()
+    }
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var started = false

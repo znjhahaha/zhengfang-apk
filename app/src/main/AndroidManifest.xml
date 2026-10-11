@@ -113,8 +113,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         
-        <!-- Scheduled grab alarm receiver -->
-        <receiver android:name=".schedule.ScheduleWidgetProvider" android:exported="false" android:label="@string/schedule_widget_name">
+        <!-- 桌面小组件 provider：宿主桌面要能解析组件，exported 必须为 true（ColorOS 等 ROM 的
+             组件库里不列出的原因就是之前这里是 false）。除 APPWIDGET_UPDATE 外，下面过滤的
+             BOOT_COMPLETED / MY_PACKAGE_REPLACED / TIME_SET / TIMEZONE_CHANGED / DATE_CHANGED
+             都是系统发布的受保护广播，第三方应用无法伪造；即使被外部显式点名，效果也只是一次
+             无害的小组件刷新。 -->
+        <receiver android:name=".schedule.ScheduleWidgetProvider" android:exported="true" android:label="@string/schedule_widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -125,13 +129,17 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_info" />
         </receiver>
-        <receiver android:name=".schedule.ScheduleSingleWidgetProvider" android:label="@string/schedule_widget_single_name" android:exported="false">
+        <receiver android:name=".schedule.ScheduleSingleWidgetProvider" android:label="@string/schedule_widget_single_name" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_single_info" />
         </receiver>
-        <receiver android:name=".schedule.ScheduleTimelineWidgetProvider" android:label="@string/schedule_widget_timeline_name" android:exported="false">
+        <receiver android:name=".schedule.ScheduleTimelineWidgetProvider" android:label="@string/schedule_widget_timeline_name" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_timeline_info" />
+        </receiver>
+        <receiver android:name=".schedule.ScheduleCountdownWidgetProvider" android:label="@string/schedule_widget_countdown_name" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_countdown_info" />
         </receiver>
         <receiver android:name=".schedule.CourseReminderReceiver" android:exported="false">
             <intent-filter>
