@@ -115,7 +115,12 @@ class ScheduleSettingsManager internal constructor(private var prefs: SharedPref
     var weekStart: ScheduleWeekStart
         get() = getWeekStart()
         set(value) {
-            if (weekStart == value) return
+            if (weekStart == value) {
+                // 取值没变也不能直接返回：无前缀旧键要和其他 setter 一样顺手清掉，
+                // 否则别的账号首次读取时会把它迁移过去，变成那个账号错误的首日。
+                prefs?.edit()?.remove(KEY_WEEK_START)?.apply()
+                return
+            }
             prefs?.edit()?.putString(scopedKey(KEY_WEEK_START), value.storageValue)?.remove(KEY_WEEK_START)?.apply()
             revision++
         }
