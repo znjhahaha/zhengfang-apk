@@ -306,10 +306,10 @@ internal object ScheduleWidgetRenderer {
             views.visible(R.id.widget_teacher, showTeacher)
             views.setTextViewText(R.id.widget_time, item.time)
             views.setTextViewTextSize(R.id.widget_time, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
-            views.visible(R.id.widget_time, item != null)
+            views.visible(R.id.widget_time, true)
             views.setTextViewText(R.id.widget_location, item.location)
             views.setTextViewTextSize(R.id.widget_location, android.util.TypedValue.COMPLEX_UNIT_SP, 11f * fit)
-            views.visible(R.id.widget_location, item != null)
+            views.visible(R.id.widget_location, true)
             state.countdownAt?.let { target ->
                 // Chronometer 的 base 走 SystemClock.elapsedRealtime() 时间轴（开机起算），
                 // 直接塞墙上时钟毫秒会变成几十万小时。这里换算到开机时间轴，之后由宿主自己走秒。
