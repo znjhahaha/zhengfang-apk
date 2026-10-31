@@ -153,7 +153,8 @@ object PluginWidgets {
             runCatching { manager.isRequestPinAppWidgetSupported }.getOrDefault(false)
         val callback = if (supported) PluginWidgetPinRequests.callback(context, family) else null
         val pinned = runCatching {
-            callback != null && manager.requestPinAppWidget(provider, null, callback)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null &&
+                manager.requestPinAppWidget(provider, null, callback)
         }.getOrDefault(false)
         if (!pinned && callback != null) PluginWidgetPinRequests.discard(callback)
         if (!pinned) GlassToaster.show("长按桌面，从「小组件」中添加 ${family.label}")
