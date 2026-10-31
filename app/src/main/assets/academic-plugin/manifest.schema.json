@@ -30,7 +30,8 @@
         "extension",
         "independent",
         "service",
-        "native"
+        "native",
+        "widget"
       ]
     },
     "extends": {
@@ -284,6 +285,7 @@
           "ui.reduce",
           "task.run",
           "data.query",
+          "widget.publish",
           "command.run",
           "services.invoke",
           "workflow.prepare",
@@ -959,7 +961,8 @@
           "userscripts",
           "device.scan",
           "device.location",
-          "device.camera"
+          "device.camera",
+          "widget"
         ]
       },
       "maxItems": 32,
@@ -1027,6 +1030,175 @@
     "contributes": {
       "type": "object",
       "properties": {
+        "widgets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "sizes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "1x1",
+                    "2x1",
+                    "2x2",
+                    "4x1",
+                    "4x2"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "template": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "lines",
+                  "grid",
+                  "countdown"
+                ]
+              },
+              "defaultView": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+              },
+              "views": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 96,
+                      "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "title"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 6
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 96,
+                      "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "boolean",
+                        "number"
+                      ]
+                    },
+                    "default": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "instance",
+                        "account",
+                        "plugin"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "type"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 8
+              },
+              "refresh": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "push",
+                      "pull"
+                    ]
+                  },
+                  "staleAfterSeconds": {
+                    "type": "integer",
+                    "minimum": 300,
+                    "maximum": 2592000
+                  },
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$",
+                    "description": "Pull widgets: the contributes.dataProviders entry the host queries."
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "sizes",
+              "template"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
         "pages": {
           "type": "array",
           "items": {

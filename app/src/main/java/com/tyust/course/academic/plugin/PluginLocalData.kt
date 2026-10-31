@@ -2,6 +2,7 @@ package com.tyust.course.academic.plugin
 
 import android.content.Context
 import android.util.AtomicFile
+import com.tyust.course.academic.plugin.widget.PluginWidgets
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -42,6 +43,8 @@ object PluginLocalData {
             true
         } ?: throw PluginException(PluginErrorCode.CONFLICT, "请关闭此插件页面后再清理本地数据")
         PluginServiceAccounts(app).cleanRetiredProfiles()
+        // Widget bindings/snapshots belong to the plugin's local footprint, so explicit cleanup drops them too.
+        PluginWidgets.clearPlugin(app, id)
         PluginPages.refresh()
     }
 }

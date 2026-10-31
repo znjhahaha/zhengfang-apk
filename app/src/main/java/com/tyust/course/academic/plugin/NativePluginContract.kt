@@ -20,6 +20,9 @@ object NativePluginContract {
         }
         if (c.optBoolean("academic") && !manifest.json.has("school") || !c.optBoolean("academic") && manifest.capabilities.any { it.startsWith("auth.") || it.startsWith("study.") || it.startsWith("selection.") }) invalid("教务接口需要显式声明教务扩展点")
         manifest.json.optJSONArray("matches")?.let { rules -> PluginJson.objects(rules).forEach(PluginSchoolMatcher::validateRule) }
+        // Widget plugins reuse the native contract; their extra contributions are validated separately
+        // so the existing page/entry/capability rules above stay untouched.
+        PluginWidgetContract.validate(manifest)
     }
 
     fun validateResult(result: JSONObject, task: Boolean = false) {

@@ -200,7 +200,7 @@ class PluginAcademicAdapter(
         }
     } else study?.calendar(term)
     override suspend fun exams(term: AcademicTerm): List<AcademicExam> = if (has("study.exams"))
-        pages("study.exams", JSONObject().put("termId", term.id)).map { AcademicExam(it.getString("name"), it.getString("time"), it.optString("location"), it.optString("seat"), it.optString("examName"), it.optString("teacher")) }
+        pages("study.exams", JSONObject().put("termId", term.id)).map(::decodeAcademicExam)
         else study?.exams(term) ?: unsupported("study.exams")
     override val hasCourseFilters: Boolean get() = has("selection.filters") || !has("selection.catalog") && base?.hasCourseFilters == true
     override suspend fun courseFilters(context: CourseContext, roundId: String): CourseFilters? {
@@ -302,3 +302,10 @@ class PluginAcademicAdapter(
         }
     }
 }
+
+/** The bundled parser marks generated UI keys; only server identity may anchor an override. */
+internal fun decodeAcademicExam(value: JSONObject): AcademicExam = AcademicExam(
+    value.getString("name"), value.getString("time"), value.optString("location"), value.optString("seat"),
+    value.optString("examName"), value.optString("teacher"),
+    examSourceIdentity(value.optString("id"), value.getString("name"), value.getString("time"), value.optString("examName")),
+)

@@ -49,6 +49,10 @@ def self_test_files(kit,sdk_version):
         files += ['tests/kingo.test.mjs','tests/kingo-des.test.mjs','tests/lntu.test.mjs']
     if tuple(map(int,sdk_version.split('.'))) >= (3,7,1):
         files.append('tests/auth-scope.test.mjs')
+    if tuple(map(int,sdk_version.split('.'))) >= (3,8,0):
+        files += ['tests/widget-date-host.test.mjs','tests/ui-pickers.test.mjs',
+            'tests/widget-plugin.test.mjs','tests/qz-login-77.test.mjs',
+            'tests/ahut-vpn.test.mjs','tests/exam-identity.test.mjs']
     if any(not (kit/name).is_file() for name in files):raise RuntimeError('SELF_TEST_FILES_MISSING')
     return files
 

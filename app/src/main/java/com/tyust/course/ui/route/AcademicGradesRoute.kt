@@ -8,6 +8,7 @@ import com.tyust.course.ui.system.rememberPageData
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.tyust.course.academic.*
+import com.tyust.course.study.*
 import com.tyust.course.manager.UserManager
 import com.tyust.course.manager.GradeBrowsePreferences
 import com.tyust.course.manager.GradeBrowseScope
@@ -26,19 +27,21 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun AcademicGradesRoute(school: SchoolConfig) {
+fun AcademicGradesRoute(school: SchoolConfig, isActive: Boolean = true) {
     val providerRevision by com.tyust.course.academic.plugin.AcademicProviderRegistry.revision.collectAsState()
-    val provider = remember(school, providerRevision) {
+    val configuration = com.tyust.course.academic.plugin.PluginJson.canonical(school.toJson())
+    val provider = remember(configuration, providerRevision) {
         val registry = com.tyust.course.academic.plugin.AcademicProviderRegistry
         listOf("study.terms", "study.grades", "study.exams", "study.gradeDetails")
             .joinToString(":") { registry.operationProvider(school, it)?.digest.orEmpty() }
     }
     val account = UserManager.getInstance().currentAccountStorageKey
-    key(account, provider) { AcademicGradesContent(school, account, provider) }
+    // Dispose the old coroutine/effect scope even when the installed package is unchanged.
+    key(account, provider, configuration) { AcademicGradesContent(school, account, provider, isActive) }
 }
 
 @Composable
-private fun AcademicGradesContent(school: SchoolConfig, account: String, provider: String) {
+private fun AcademicGradesContent(school: SchoolConfig, account: String, provider: String, isActive: Boolean) {
     val context = LocalContext.current
     val sessions = UserManager.getInstance().sessionState
     val session by sessions.state.collectAsState()
@@ -65,16 +68,44 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
         browse = browse.copy(tab = value)
         preferences.write(preferenceScope, browse)
     }
+    val canQueryExams = com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.exams")
     val supportedTabs = buildSet {
         if (com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.grades")) { add(0); add(1) }
-        if (com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.exams")) add(2)
+        add(2) // Manual exams remain available without an automatic provider.
     }
     LaunchedEffect(supportedTabs) { if (tab !in supportedTabs && supportedTabs.isNotEmpty()) browse = browse.copy(tab = supportedTabs.first()) }
-    val cache = "academic.grades:$account:$provider"
-    var report by rememberPageData("$cache:overall") { AcademicGradeReport(emptyList()) }
-    var reportLoaded by rememberPageData("$cache:overall.loaded") { false }
-    var catalog by rememberPageData<AcademicStudyCatalog?>("$cache:terms") { null }
-    var termReports by rememberPageData<Map<String, AcademicGradeReport>>("$cache:reports") { emptyMap() }
+    val cacheProviders = remember(provider) {
+        listOf("study.terms", "study.grades", "study.exams", "study.gradeDetails").joinToString(":") {
+            val manifest = com.tyust.course.academic.plugin.AcademicProviderRegistry.operationProvider(school, it)?.manifest
+            manifest?.id.orEmpty() + ":" + AcademicDataScope.digest(listOf(
+                com.tyust.course.academic.plugin.PluginJson.canonical(manifest?.json?.optJSONObject("builtinConfig") ?: org.json.JSONObject()),
+                com.tyust.course.academic.plugin.PluginJson.canonical(manifest?.json?.optJSONObject("studyOptions") ?: org.json.JSONObject())))
+        }
+    }
+    val dataScope = remember(account, school, cacheProviders, termFormat) {
+        AcademicDataScope.forSchool(account, school, cacheProviders, termFormat)
+    }
+    val cache = dataScope.pageCacheKey(provider)
+    val store = remember(context, sessions) { AcademicSnapshotStore.from(context, sessions) }
+    fun snapshot(kind: String, term: String = "") = store.read(dataScope, kind, term)
+    val savedCatalog = remember(dataScope) { runCatching { snapshot("terms")?.data?.let(StudyDataJson::catalog) }.getOrNull() }
+    val savedReport = remember(dataScope) { runCatching { snapshot("overall")?.data?.let(StudyDataJson::report) }.getOrNull() }
+    var overallAt by remember(dataScope) { mutableLongStateOf(snapshot("overall")?.syncedAt ?: 0L) }
+    var termAt by remember(dataScope, semester) { mutableLongStateOf(snapshot("grades", semester)?.syncedAt ?: 0L) }
+    var examAt by remember(dataScope) { mutableLongStateOf(0L) }
+    suspend fun saveSnapshot(kind: String, term: String, data: org.json.JSONObject): Long {
+        val requestJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+        val saved = withContext(Dispatchers.IO) { store.save(dataScope, kind, term, data, expectedSession) { requestJob?.isActive != false } }
+        return if (saved) snapshot(kind, term)?.syncedAt ?: 0L else 0L
+    }
+    var report by rememberPageData("$cache:overall") { savedReport ?: AcademicGradeReport(emptyList()) }
+    var reportLoaded by rememberPageData("$cache:overall.loaded") { savedReport != null }
+    var catalog by rememberPageData<AcademicStudyCatalog?>("$cache:terms") { savedCatalog }
+    var termReports by rememberPageData<Map<String, AcademicGradeReport>>("$cache:reports") {
+        ((savedCatalog?.terms?.map { it.id }.orEmpty()) + semester).distinct().mapNotNull { id ->
+            runCatching { snapshot("grades", id)?.data?.let(StudyDataJson::report)?.let { id to it } }.getOrNull()
+        }.toMap()
+    }
     var semesterChosen by rememberSaveable { mutableStateOf(semester.isNotBlank()) }
     var appliedCatalogTerm by rememberSaveable { mutableStateOf<String?>(null) }
     val standardTerms = termFormat == "academic-year-semester"
@@ -88,15 +119,23 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
     var revision by remember { mutableIntStateOf(0) }
     var overallRevision by remember { mutableIntStateOf(0) }
     var termRevision by remember { mutableIntStateOf(0) }
-    var exams by rememberPageData<List<ExamItemUi>>("$cache:exams") { emptyList() }
-    var examsLoaded by rememberPageData("$cache:exams.loaded") { false }
+    val examTerm = semester.ifBlank { catalog?.currentTerm?.id ?: AcademicStudyReader.calendarTerm().id }
+    var exams by rememberPageData<List<ExamItemUi>>("$cache:exams:$examTerm") {
+        runCatching { snapshot("exams", examTerm)?.data?.let(ExamRecords::fromJson)?.map { it.exam.copy(sourceId = it.sourceId) } }.getOrNull().orEmpty()
+    }
+    var examsLoaded by rememberPageData("$cache:exams.loaded:$examTerm") { snapshot("exams", examTerm) != null || !canQueryExams }
     var examLoading by remember { mutableStateOf(false) }
     var examError by remember { mutableStateOf("") }
     var examRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(dataScope, examTerm) { examAt = snapshot("exams", examTerm)?.syncedAt ?: 0L }
+    val examManagement = rememberExamManagement(store, dataScope, examTerm, exams)
     val calendarDate = if (standardTerms) rememberGradeCalendarDate() else null
-    val terms = remember(catalog, report, termReports, standardTerms, calendarDate) {
-        gradeSemesters(catalog, report.grades + termReports.values.flatMap { it.grades }, standardTerms,
+    val localRevision by store.revision.collectAsState()
+    val localExamTerms = remember(dataScope.manualScope(), localRevision) { store.manualTerms(dataScope) }
+    val terms = remember(catalog, report, termReports, standardTerms, calendarDate, localExamTerms) {
+        val remoteTerms = gradeSemesters(catalog, report.grades + termReports.values.flatMap { it.grades }, standardTerms,
             calendarDate?.calendar() ?: java.util.Calendar.getInstance())
+        remoteTerms + localExamTerms.filter { id -> remoteTerms.none { it.id == id } }.map(::AcademicTerm)
     }
     fun loadError(e: Exception): String {
         if ((e as? AcademicException)?.status == AcademicStatus.SESSION_EXPIRED)
@@ -115,6 +154,8 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
                         })
                         report = update(report)
                         termReports = termReports.mapValues { update(it.value) }
+                        saveSnapshot("overall", "", StudyDataJson.report(report))
+                        termReports[grade.term]?.let { saveSnapshot("grades", grade.term, StudyDataJson.report(it)) }
                     }
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { if (sessions.isCurrent(expectedSession)) GlassToaster.show(loadError(e)) }
@@ -124,25 +165,24 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
         }) else null)
 
     // Catalog and overall results are independent: a failed catalog cannot discard grades.
-    LaunchedEffect(revision, session.token) {
-        if (0 !in supportedTabs) { loading = false; return@LaunchedEffect }
-        if (catalog != null && revision == 0) return@LaunchedEffect
+    LaunchedEffect(dataScope, isActive, revision, session.token) {
+        if (!isActive) { loading = false; return@LaunchedEffect }
         catalogError = ""; catalogLoading = true
         try {
             if (com.tyust.course.academic.plugin.AcademicProviderRegistry.hasCapability(school, "study.terms")) {
                 val loaded = withContext(Dispatchers.IO) { AcademicStudyBridge.reader(school, account, expectedSession).catalog() }
-                if (sessions.isCurrent(expectedSession)) catalog = loaded
+                if (sessions.isCurrent(expectedSession)) { saveSnapshot("terms", "", StudyDataJson.catalog(loaded)); catalog = loaded }
             }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { if (sessions.isCurrent(expectedSession)) catalogError = loadError(e) }
         finally { if (sessions.isCurrent(expectedSession) && coroutineContext[kotlinx.coroutines.Job]?.isActive == true) { catalogLoading = false; catalogAttempted = true } }
     }
-    LaunchedEffect(overallRevision, session.token) {
-        if (0 !in supportedTabs || (reportLoaded && overallRevision == 0)) return@LaunchedEffect
+    LaunchedEffect(dataScope, isActive, tab, overallRevision, session.token) {
+        if (!isActive || tab == 2 || 0 !in supportedTabs) return@LaunchedEffect
         overallLoading = true; overallError = ""
         try {
             val loaded = withContext(Dispatchers.IO) { AcademicStudyBridge.reader(school, account, expectedSession).grades() }
-            if (sessions.isCurrent(expectedSession)) { report = loaded; reportLoaded = true }
+            if (sessions.isCurrent(expectedSession)) { overallAt = saveSnapshot("overall", "", StudyDataJson.report(loaded)); report = loaded; reportLoaded = true }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { if (sessions.isCurrent(expectedSession)) overallError = loadError(e) }
         finally { if (sessions.isCurrent(expectedSession)) overallLoading = false }
@@ -166,27 +206,40 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
             (reportLoaded || overallError.isNotBlank()) -> overallError.ifBlank { "学校暂未返回此学期，请刷新学期列表或重新选择" }
         else -> ""
     }
-    LaunchedEffect(semester, selectedTerm != null, termRevision, session.token) {
-        if (semester.isBlank() || 0 !in supportedTabs || selectedTerm == null) { loading = false; return@LaunchedEffect }
+    LaunchedEffect(dataScope, isActive, tab, semester, selectedTerm != null, termRevision, session.token) {
+        if (!isActive || tab != 0 || semester.isBlank() || 0 !in supportedTabs || selectedTerm == null) { loading = false; return@LaunchedEffect }
         val requested = semester
-        if (termReports.containsKey(requested)) { loading = false; return@LaunchedEffect }
+        if (!termReports.containsKey(requested)) runCatching {
+            snapshot("grades", requested)?.data?.let(StudyDataJson::report)?.let { termReports = termReports + (requested to it) }
+        }
         loading = true; error = ""
         try {
             val loaded = withContext(Dispatchers.IO) { AcademicStudyBridge.reader(school, account, expectedSession).grades(selectedTerm).forSemester(requested) }
-            if (sessions.isCurrent(expectedSession) && latestSemester == requested) termReports = termReports + (requested to loaded)
+            if (sessions.isCurrent(expectedSession)) {
+                val at = saveSnapshot("grades", requested, StudyDataJson.report(loaded))
+                if (latestSemester == requested) { termReports = termReports + (requested to loaded); termAt = at }
+            }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { if (sessions.isCurrent(expectedSession) && latestSemester == requested) error = loadError(e) }
         finally { if (sessions.isCurrent(expectedSession) && latestSemester == requested && coroutineContext[kotlinx.coroutines.Job]?.isActive == true) loading = false }
     }
-    LaunchedEffect(tab, examRevision, session.token) {
-        if (tab != 2 || examsLoaded || 2 !in supportedTabs) return@LaunchedEffect
+    LaunchedEffect(dataScope, isActive, tab, examTerm, examRevision, session.token) {
+        if (!isActive || tab != 2 || !canQueryExams) {
+            examLoading = false
+            if (!canQueryExams) { examsLoaded = true; examError = "本校暂未支持自动查询，可手动添加考试" }
+            return@LaunchedEffect
+        }
         examLoading = true; examError = ""
         try {
             val loaded = withContext(Dispatchers.IO) {
                 val reader = AcademicStudyBridge.reader(school, account, expectedSession)
-                reader.exams((catalog ?: reader.catalog()).currentTerm).map(AcademicStudyBridge::exam)
+                val requestedTerm = catalog?.terms?.firstOrNull { it.id == examTerm } ?: AcademicTerm(examTerm)
+                reader.exams(requestedTerm).map(AcademicStudyBridge::exam)
             }
-            if (sessions.isCurrent(expectedSession)) { exams = loaded; examsLoaded = true }
+            if (sessions.isCurrent(expectedSession)) {
+                examAt = saveSnapshot("exams", examTerm, ExamRecords.toJson(ExamRecords.automatic(examTerm, loaded)))
+                exams = loaded; examsLoaded = true
+            }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { if (sessions.isCurrent(expectedSession)) examError = loadError(e) }
         finally { if (sessions.isCurrent(expectedSession) && coroutineContext[kotlinx.coroutines.Job]?.isActive == true) examLoading = false }
@@ -204,10 +257,10 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
     val overallStats by produceState(
         initialValue = com.tyust.course.ui.screen.OverallStatsUi("--", "--", 0, 0, 0, 0, 0), report
     ) { value = withContext(Dispatchers.Default) { AcademicStudyBridge.stats(report) } }
-    com.tyust.course.ui.system.ReportPageContent(report.grades.isNotEmpty() || semesterGrades.isNotEmpty() || exams.isNotEmpty())
+    com.tyust.course.ui.system.ReportPageContent(report.grades.isNotEmpty() || semesterGrades.isNotEmpty() || examManagement.items.isNotEmpty())
     com.tyust.course.ui.system.ReportInitialPageReady(when (tab) {
         1 -> reportLoaded || overallError.isNotBlank()
-        2 -> examsLoaded || examError.isNotBlank()
+        2 -> true // The manual editor is ready even while automatic data is loading.
         else -> termReports.containsKey(semester) || error.isNotBlank() || selectionError.isNotBlank() ||
             (catalogAttempted && !catalogLoading && terms.isEmpty() && (reportLoaded || overallError.isNotBlank())) || supportedTabs.isEmpty()
     })
@@ -216,8 +269,12 @@ private fun AcademicGradesContent(school: SchoolConfig, account: String, provide
         currentSemester = semester, onSemesterChange = { semesterChosen = true; chooseTerm(it, semesterLabels[it].orEmpty()); error = "" },
         semesterIsLoading = loading || (selectedTerm == null && catalogLoading) || (terms.isEmpty() && overallLoading), overallGrades = overallGrades,
         overallStats = overallStats, overallIsLoading = overallLoading,
-        examList = exams, examIsLoading = examLoading,
-        onRefresh = { when (tab) { 2 -> { examsLoaded = false; examRevision++ }; 1 -> overallRevision++; else -> { termReports = termReports - semester; revision++; termRevision++ } } },
+        examList = examManagement.items, examIsLoading = examLoading,
+        onAddExam = examManagement.add, onEditExam = examManagement.edit, onDeleteExam = examManagement.delete,
+        syncStatus = academicSyncStatus(when (tab) { 2 -> examAt; 1 -> overallAt; else -> termAt },
+            when (tab) { 2 -> examLoading; 1 -> overallLoading; else -> loading },
+            when (tab) { 2 -> examError; 1 -> overallError; else -> error }),
+        onRefresh = { when (tab) { 2 -> { examsLoaded = false; examRevision++ }; 1 -> overallRevision++; else -> { revision++; termRevision++ } } },
         semesterError = selectionError.ifBlank { error }.ifBlank { if (terms.isEmpty()) catalogError.ifBlank { overallError } else "" },
         overallError = overallError, examError = examError,
         onExportGrades = { exportAcademicGrades(context, it) }, supportedTabs = supportedTabs,

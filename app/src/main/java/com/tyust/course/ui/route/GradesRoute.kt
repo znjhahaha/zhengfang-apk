@@ -1,6 +1,10 @@
 package com.tyust.course.ui.route
 
 import com.tyust.course.ui.system.GlassToaster
+import com.tyust.course.study.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.*
@@ -32,12 +36,19 @@ import java.util.Calendar
 import java.util.regex.Pattern
 
 @Composable
-fun GradesRoute() {
+fun GradesRoute(isActive: Boolean = true) {
     val academicSchool = UserManager.getInstance().currentSchool
     if (!UserManager.getInstance().isDemoMode && academicSchool != null && com.tyust.course.academic.AcademicGatewayFactory.supports(academicSchool)) {
-        AcademicGradesRoute(academicSchool)
+        AcademicGradesRoute(academicSchool, isActive)
         return
     }
+    val state by UserManager.getInstance().sessionState.state.collectAsState()
+    key(state.token.accountStorageKey, academicSchool?.id) { LegacyGradesContent(isActive) }
+}
+
+@Composable
+private fun LegacyGradesContent(isActive: Boolean) {
+    val academicSchool = UserManager.getInstance().currentSchool
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isDemoMode = remember { UserManager.getInstance().isDemoMode }
@@ -66,22 +77,48 @@ fun GradesRoute() {
     var overallError by remember { mutableStateOf("") }
     var examError by remember { mutableStateOf("") }
     
-    var semesterGrades by rememberPageData<List<GradeItemUi>>("grades.semester.$currentSemester") { emptyList() }
-    var semesterLoaded by rememberPageData("grades.semester.loaded.$currentSemester") { false }
+    val store = remember(context, sessions) { AcademicSnapshotStore.from(context, sessions) }
+    val dataScope = remember(session.token.accountStorageKey, academicSchool, isDemoMode) {
+        academicSchool?.let { AcademicDataScope.forSchool(session.token.accountStorageKey, it, "legacy", "academic-year-semester") }
+            ?: AcademicDataScope(session.token.accountStorageKey, "local", "local", if (isDemoMode) "demo" else "legacy")
+    }
+    fun cached(kind: String, term: String = "") = if (isDemoMode) null else store.read(dataScope, kind, term)
+    fun cachedGrades(kind: String, term: String = "") = runCatching { cached(kind, term)?.data?.let(StudyDataJson::uiGrades) }.getOrNull()
+    var semesterAt by remember(dataScope, currentSemester) { mutableLongStateOf(cached("grades", currentSemester)?.syncedAt ?: 0L) }
+    var overallAt by remember(dataScope) { mutableLongStateOf(cached("overall")?.syncedAt ?: 0L) }
+    val examTerm = currentSemester.ifBlank { com.tyust.course.academic.AcademicStudyReader.calendarTerm().id }
+    var examAt by remember(dataScope, examTerm) { mutableLongStateOf(cached("exams", examTerm)?.syncedAt ?: 0L) }
+    fun persist(kind: String, term: String, payload: JSONObject, ticket: SessionRequestTicket) {
+        if (isDemoMode) return
+        scope.launch {
+            val requestJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+            val saved = withContext(Dispatchers.IO) {
+                if (!requests.isCurrent(ticket)) false else store.save(dataScope, kind, term, payload, ticket.session) { requests.isCurrent(ticket) && requestJob?.isActive != false }
+            }
+            if (saved && requests.isCurrent(ticket)) {
+                val at = cached(kind, term)?.syncedAt ?: 0L
+                when (kind) { "grades" -> if (currentSemester == term) semesterAt = at; "overall" -> overallAt = at; "exams" -> examAt = at }
+            }
+        }
+    }
+    var semesterGrades by rememberPageData<List<GradeItemUi>>("grades.semester.$currentSemester") { cachedGrades("grades", currentSemester).orEmpty() }
+    var semesterLoaded by rememberPageData("grades.semester.loaded.$currentSemester") { cachedGrades("grades", currentSemester) != null }
     var semesters by remember { mutableStateOf<List<String>>(emptyList()) }
     var semesterIsLoading by remember { mutableStateOf(false) }
 
-    var overallGrades by rememberPageData<List<GradeItemUi>>("grades.overall") { emptyList() }
-    var overallStats by rememberPageData("grades.stats") { OverallStatsUi("0.0", "0", 0, 0, 0, 0, 0) }
-    var overallLoaded by rememberPageData("grades.overall.loaded") { false }
+    var overallGrades by rememberPageData<List<GradeItemUi>>("grades.overall") { cachedGrades("overall").orEmpty() }
+    var overallStats by rememberPageData("grades.stats") { runCatching { cached("overall")?.data?.getJSONObject("stats")?.let(StudyDataJson::stats) }.getOrNull()
+        ?: OverallStatsUi("0.0", "0", 0, 0, 0, 0, 0) }
+    var overallLoaded by rememberPageData("grades.overall.loaded") { cachedGrades("overall") != null }
     var overallIsLoading by remember { mutableStateOf(false) }
 
     // 考试安排状态
-    var examList by rememberPageData<List<ExamItemUi>>("grades.exams") { emptyList() }
-    var examsLoaded by rememberPageData("grades.exams.loaded") { false }
+    var examList by rememberPageData<List<ExamItemUi>>("grades.exams:$examTerm") { runCatching { cached("exams", examTerm)?.data?.let(ExamRecords::fromJson)?.map { it.exam.copy(sourceId = it.sourceId) } }.getOrNull().orEmpty() }
+    var examsLoaded by rememberPageData("grades.exams.loaded:$examTerm") { cached("exams", examTerm) != null }
     var examIsLoading by remember { mutableStateOf(false) }
 
     // Init semesters
+    val examManagement = rememberExamManagement(store, dataScope, examTerm, examList)
     LaunchedEffect(Unit) {
         val list = if (isDemoMode) {
             listOf("2025-2026-2", "2025-2026-1", "2024-2025-2", "2024-2025-1")
@@ -163,6 +200,12 @@ fun GradesRoute() {
                         return
                     }
 
+                    if (!response.isSuccessful || !StudyDataJson.validLegacyList(json)) {
+                        runOnUiThreadForAccount(requestAccountKey) {
+                            if (latestSemester == requestSemester) { semesterIsLoading = false; semesterError = "学校返回的数据无法解析，保留本地成绩" }
+                        }
+                        return
+                    }
                     // 先从接口B解析基础成绩（清除接口B返回的不完整分项数据）
                     val items = GradesLogic.parseGradesJson(json).map { it.copy(detail = "") }
 
@@ -171,6 +214,7 @@ fun GradesRoute() {
                             if (latestSemester != requestSemester) return@runOnUiThreadForAccount
                             semesterIsLoading = false
                             semesterGrades = emptyList()
+                            persist("grades", requestSemester, StudyDataJson.uiGrades(emptyList()), requestAccountKey)
                             semesterLoaded = true
                         }
                     } else {
@@ -185,6 +229,7 @@ fun GradesRoute() {
                                     if (latestSemester != requestSemester) return@runOnUiThreadForAccount
                                     semesterIsLoading = false
                                     semesterGrades = fallbackItems
+                                    persist("grades", requestSemester, StudyDataJson.uiGrades(fallbackItems), requestAccountKey)
                                     semesterLoaded = true
                                 }
                             }
@@ -198,6 +243,7 @@ fun GradesRoute() {
                                     if (latestSemester != requestSemester) return@runOnUiThreadForAccount
                                     semesterIsLoading = false
                                     semesterGrades = merged
+                                    persist("grades", requestSemester, StudyDataJson.uiGrades(merged), requestAccountKey)
                                     semesterLoaded = true
                                 }
                             }
@@ -209,10 +255,10 @@ fun GradesRoute() {
     }
     
     // Trigger load on semester change
-    LaunchedEffect(currentSemester, session.token) {
+    LaunchedEffect(isActive, currentTab, currentSemester, session.token) {
         requests.cancel("semester")
         semesterIsLoading = false
-        if (currentSemester.isNotEmpty() && !semesterLoaded) loadSemesterGrades()
+        if (isActive && currentTab == 0 && currentSemester.isNotEmpty()) loadSemesterGrades()
     }
 
     // Logic for Overall Grades
@@ -265,7 +311,10 @@ fun GradesRoute() {
                     val cjlrxq = doc.selectFirst("input[name=cjlrxq]")?.attr("value") ?: ""
 
                     if (xfyqjdIds.isEmpty()) {
-                        runOnUiThreadForAccount(requestAccountKey) { overallIsLoading = false; overallLoaded = true }
+                        runOnUiThreadForAccount(requestAccountKey) {
+                            overallIsLoading = false
+                            overallError = "学校未返回可用的成绩查询参数，保留本地成绩"
+                        }
                         return
                     }
                     
@@ -273,12 +322,14 @@ fun GradesRoute() {
                     GradesLogic.fetchGradesDetailsRecursive(
                         school, xfyqjdIds.toList(), 0, xh_id, cjlrxn, cjlrxq, mutableListOf(),
                         isCurrent = { requests.isCurrent(requestAccountKey) },
+                        onError = { message -> runOnUiThreadForAccount(requestAccountKey) { overallIsLoading = false; overallError = message } },
                         onComplete = { resultGrades ->
                              runOnUiThreadForAccount(requestAccountKey) {
                                  overallIsLoading = false
                                  overallGrades = resultGrades
                                  overallLoaded = true
                                  overallStats = GradesLogic.calculateStats(resultGrades, gpa, credits, count)
+                                 persist("overall", "", StudyDataJson.uiGrades(resultGrades).put("stats", StudyDataJson.stats(overallStats)), requestAccountKey)
                              }
                         }
                     )
@@ -307,8 +358,8 @@ fun GradesRoute() {
             val calendar = Calendar.getInstance()
             val year = calendar.get(Calendar.YEAR)
             val month = calendar.get(Calendar.MONTH)
-            val xnm = if (month >= 7) year.toString() else (year - 1).toString()
-            val xqm = if (month >= 7 || month < 2) "3" else "12" // 3=第一学期, 12=第二学期
+            val xnm = examTerm.substringBefore('-')
+            val xqm = if (examTerm.endsWith("-1")) "3" else "12"
 
             CourseApiClient.getInstance().fetchExamSchedule(school, xnm, xqm, object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -329,10 +380,15 @@ fun GradesRoute() {
                         return
                     }
 
+                    if (!response.isSuccessful || !StudyDataJson.validLegacyList(json)) {
+                        runOnUiThreadForAccount(requestAccountKey) { examIsLoading = false; examError = "学校返回的数据无法解析，保留本地考试" }
+                        return
+                    }
                     val items = GradesLogic.parseExamJson(json)
                     runOnUiThreadForAccount(requestAccountKey) {
                         examIsLoading = false
                         examList = items
+                        persist("exams", examTerm, ExamRecords.toJson(ExamRecords.automatic(examTerm, items)), requestAccountKey)
                         examsLoaded = true
                     }
                 }
@@ -346,15 +402,15 @@ fun GradesRoute() {
         overallIsLoading = false
         examIsLoading = false
     }
-    LaunchedEffect(currentTab, session.token) {
-        if (currentTab == 1 && !overallLoaded) loadOverallGrades()
-        if (currentTab == 2 && !examsLoaded) loadExamSchedule()
+    LaunchedEffect(isActive, currentTab, examTerm, session.token) {
+        if (isActive && currentTab == 1) loadOverallGrades()
+        if (isActive && currentTab == 2) loadExamSchedule()
     }
 
-    com.tyust.course.ui.system.ReportPageContent(semesterGrades.isNotEmpty() || overallGrades.isNotEmpty() || examList.isNotEmpty())
+    com.tyust.course.ui.system.ReportPageContent(semesterGrades.isNotEmpty() || overallGrades.isNotEmpty() || examManagement.items.isNotEmpty())
     com.tyust.course.ui.system.ReportInitialPageReady(when (currentTab) {
         1 -> overallLoaded || overallError.isNotBlank()
-        2 -> examsLoaded || examError.isNotBlank()
+        2 -> true
         else -> semesterLoaded || semesterError.isNotBlank()
     } || (!isDemoMode && academicSchool == null))
     GradesScreen(
@@ -369,8 +425,12 @@ fun GradesRoute() {
         overallGrades = overallGrades,
         overallStats = overallStats,
         overallIsLoading = overallIsLoading,
-        examList = examList,
+        examList = examManagement.items,
         examIsLoading = examIsLoading,
+        onAddExam = examManagement.add, onEditExam = examManagement.edit, onDeleteExam = examManagement.delete,
+        syncStatus = academicSyncStatus(when (currentTab) { 2 -> examAt; 1 -> overallAt; else -> semesterAt },
+            when (currentTab) { 2 -> examIsLoading; 1 -> overallIsLoading; else -> semesterIsLoading },
+            when (currentTab) { 2 -> examError; 1 -> overallError; else -> semesterError }),
         onRefresh = {
             when (currentTab) {
                 0 -> loadSemesterGrades()
@@ -687,6 +747,7 @@ private object GradesLogic {
         ids: List<String>, index: Int, xh_id: String, cjlrxn: String, cjlrxq: String,
         accumulatedGrades: MutableList<GradeItemUi>,
         isCurrent: () -> Boolean = { true },
+        onError: (String) -> Unit,
         onComplete: (List<GradeItemUi>) -> Unit
     ) {
         if (!isCurrent()) return
@@ -700,18 +761,23 @@ private object GradesLogic {
 
         CourseApiClient.getInstance().fetchOverallGradesData(school, postBody, object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                fetchGradesDetailsRecursive(school, ids, index + 1, xh_id, cjlrxn, cjlrxq, accumulatedGrades, isCurrent, onComplete)
+                if (isCurrent()) onError("成绩同步失败，保留本地成绩")
             }
 
             override fun onResponse(call: Call, response: Response) {
                 val json = response.body?.string() ?: ""
+                if (!isCurrent()) return
+                if (!response.isSuccessful || !StudyDataJson.validLegacyList(json)) {
+                    onError("成绩同步返回无效数据，保留本地成绩")
+                    return
+                }
                 val items = parseGradesJson(json)
                 items.forEach { newItem ->
-                    if (accumulatedGrades.none { it.courseName == newItem.courseName }) {
+                    if (accumulatedGrades.none { it.courseName == newItem.courseName && it.year == newItem.year && it.term == newItem.term && it.courseCode == newItem.courseCode && it.jxbId == newItem.jxbId }) {
                         accumulatedGrades.add(newItem)
                     }
                 }
-                fetchGradesDetailsRecursive(school, ids, index + 1, xh_id, cjlrxn, cjlrxq, accumulatedGrades, isCurrent, onComplete)
+                fetchGradesDetailsRecursive(school, ids, index + 1, xh_id, cjlrxn, cjlrxq, accumulatedGrades, isCurrent, onError, onComplete)
             }
         })
     }

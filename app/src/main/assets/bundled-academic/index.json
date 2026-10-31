@@ -29,13 +29,13 @@
       "id": "org.zf.protocol.qz",
       "type": "qz",
       "asset": "qz.eduplugin",
-      "sha256": "c1a8ede748b007abb2f61174828e61e037b8c1cd26fd38baa5528d5ab45fca68"
+      "sha256": "29655bdcbcaf8da8e02bf7e87b1ad2412328f1a12437b3c80f3e8e53c32858a7"
     },
     {
       "id": "org.zf.protocol.qz-old",
       "type": "qz_old",
       "asset": "qz_old.eduplugin",
-      "sha256": "af51cbf14eb94e57744d9ef68a09c115366c7cb789653f18709823268176e0e4"
+      "sha256": "69f4145d0efe36703a349c5da12bc955246b5f7b13dcdae41db187aabe6ad5ab"
     },
     {
       "id": "org.zf.protocol.eams",

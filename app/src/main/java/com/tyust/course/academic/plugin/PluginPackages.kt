@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import com.tyust.course.academic.AcademicSessionStore
 import com.tyust.course.academic.plugin.runtime.PluginSandboxClient
+import com.tyust.course.academic.plugin.widget.PluginWidgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -93,6 +94,8 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
     // Registry reconfiguration can replace the store while a prior install is finishing.
     // All stores in the host process must serialize the shared AtomicFile transaction.
     private val lock get() = storeLock
+
+    init { PluginSettings.observeWidgetAvailability(context) }
 
     suspend fun install(bytes: ByteArray, allowDevelopment: Boolean = false, stageOnly: Boolean = false): PluginPackage = withContext(Dispatchers.IO) {
         val candidate = PluginPackageVerifier.read(bytes, schema, trustedKeys, allowDevelopment)
@@ -206,6 +209,8 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         removed?.let { PluginServiceAccounts(context).clearPlugin(it) }
         NativePluginTasks.stopPlugin(context, id)
         PluginPages.registry.clearPlugin(id)
+        // Launcher widgets of a removed plugin cannot render anymore: drop bindings + snapshots and paint the empty state.
+        PluginWidgets.clearPlugin(context, id)
         val grants = context.getSharedPreferences("native-plugin-permissions", Context.MODE_PRIVATE)
         val edit = grants.edit(); grants.all.keys.filter { it.startsWith("$id:") && !it.endsWith(":revocation") }.forEach(edit::remove); edit.commit()
         PluginServiceAccounts(context).cleanRetiredProfiles()

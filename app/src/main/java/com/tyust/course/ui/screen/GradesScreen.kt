@@ -110,7 +110,11 @@ data class ExamItemUi(
     val location: String,
     val seatNumber: String,
     val examName: String,
-    val teacher: String
+    val teacher: String,
+    val sourceId: String = "",
+    val recordId: String = "",
+    val manual: Boolean = false,
+    val needsRelink: Boolean = false
 )
 
 internal fun semesterAverageGpa(grades: List<GradeItemUi>): String {
@@ -172,16 +176,20 @@ fun GradesScreen(
     semesterLabels: Map<String, String> = emptyMap(),
     semestersLoading: Boolean = false,
     semestersError: String = "",
-    onRefreshSemesters: (() -> Unit)? = null
+    onRefreshSemesters: (() -> Unit)? = null,
+    syncStatus: String = "",
+    onAddExam: (() -> Unit)? = null,
+    onEditExam: ((ExamItemUi) -> Unit)? = null,
+    onDeleteExam: ((ExamItemUi) -> Unit)? = null
 ) {
     val availableTabs = listOf(0, 1, 2).filter { it in supportedTabs }.ifEmpty { listOf(0, 1, 2) }
     val tabTitles = availableTabs.map { listOf("学期", "总体", "考试")[it] + if (it in supportedTabs) "" else " · 未适配" }
     val isRefreshing = semesterIsLoading || overallIsLoading || examIsLoading
-    val subtitle = when (currentTab) {
+    val subtitle = (when (currentTab) {
         0 -> "${semesterGrades.size} 门课程"
         1 -> "累计成绩与分布概览"
         else -> "近期考试安排"
-    }
+    }) + if (syncStatus.isBlank()) "" else " · $syncStatus"
 
     // 每个 tab 一份滚动位置：共用一份会让切 tab 时另一页的位置被顶掉，
     // 折叠进度也跟着跳。顶栏读当前 tab 那一份。
@@ -229,6 +237,12 @@ fun GradesScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
+        floatingActionButton = {
+            if (currentTab == 2 && onAddExam != null) {
+                com.tyust.course.ui.system.SystemDialogButton(onClick = onAddExam, primary = true,
+                    modifier = Modifier.padding(bottom = LocalAppOverlayBottomInset.current)) { Text("添加考试") }
+            }
+        },
         topBar = {
             // topBar slot 只测量单个子项，内联通知必须与顶栏在同一个 Column 里
             Column(modifier = Modifier.moduleEntrance(0).reportNoticeAnchor()) {
@@ -307,7 +321,13 @@ fun GradesScreen(
                         error = examError,
                         listState = examListState,
                         topInset = contentTopInset,
-                        bottomInset = contentBottomInset
+                        bottomInset = contentBottomInset,
+                        syncStatus = syncStatus,
+                        onEdit = onEditExam,
+                        onDelete = onDeleteExam,
+                        semesters = semesters,
+                        currentSemester = currentSemester,
+                        onSemesterChange = onSemesterChange
                     )
                 }
             }
@@ -813,66 +833,39 @@ private fun GradeComponentBar(
 
 @Composable
 private fun ExamScheduleContent(
-    exams: List<ExamItemUi>,
-    isLoading: Boolean,
-    error: String,
-    listState: LazyListState,
-    topInset: Dp,
-    bottomInset: Dp
+    exams: List<ExamItemUi>, isLoading: Boolean, error: String,
+    listState: LazyListState, topInset: Dp, bottomInset: Dp,
+    syncStatus: String, onEdit: ((ExamItemUi) -> Unit)?, onDelete: ((ExamItemUi) -> Unit)?,
+    semesters: List<String>, currentSemester: String, onSemesterChange: (String) -> Unit
 ) {
-    when {
-        isLoading && exams.isEmpty() -> {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(top = topInset),
-                contentAlignment = Alignment.Center
-            ) {
-                SystemLoadingState(text = "正在加载考试安排…")
+    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState,
+        contentPadding = PaddingValues(start = PagePadding, end = PagePadding, top = topInset, bottom = bottomInset + 64.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (semesters.isNotEmpty()) SystemPicker(semesters,
+                    semesters.indexOf(currentSemester).coerceAtLeast(0),
+                    { onSemesterChange(semesters[it]) }, modifier = Modifier.fillMaxWidth())
+                SystemStatStrip(items = listOf("考试数" to exams.size.toString(),
+                    "手动考试" to exams.count { it.manual }.toString(), "查看方式" to "列表"))
+                SystemSectionHeader(title = "考试列表", subtitle = syncStatus.ifBlank { "手动与教务考试共同显示" })
+                if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-
-        exams.isEmpty() -> {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(top = topInset),
-                contentAlignment = Alignment.Center
-            ) {
-                SystemEmptyState(
-                    title = if (error.isNotBlank()) "考试安排加载失败" else "暂无考试安排",
-                    message = error.ifBlank { "点击刷新获取最新考试信息" }
-                )
-            }
+        if (exams.isEmpty()) item {
+            SystemEmptyState(title = if (isLoading) "正在同步考试安排" else "暂无考试安排",
+                message = "可点击添加考试，手动安排会保存在本地")
         }
-
-        else -> {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = listState,
-                contentPadding = PaddingValues(
-                    start = PagePadding,
-                    end = PagePadding,
-                    top = topInset,
-                    bottom = bottomInset
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Column(Modifier.moduleEntrance(1), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SystemStatStrip(
-                            items = listOf(
-                                "考试数" to exams.size.toString(),
-                                "最近状态" to "已同步",
-                                "查看方式" to "列表"
-                            )
-                        )
-                        SystemSectionHeader(
-                            title = "考试列表",
-                            subtitle = "按时间顺序展示"
-                        )
-                    }
+        items(exams, key = { it.recordId.ifBlank { it.courseName + it.examTime + it.examName } }) { exam ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ExamItemRow(exam = exam)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (exam.manual) Text("手动", style = MaterialTheme.typography.labelSmall)
+                    if (onEdit != null) androidx.compose.material3.TextButton(onClick = { onEdit(exam) }) { Text("编辑") }
+                    if (exam.manual && onDelete != null) androidx.compose.material3.TextButton(onClick = { onDelete(exam) }) { Text("删除") }
                 }
-
-                items(exams) { exam ->
-                    Box(Modifier.moduleEntrance(2)) { ExamItemRow(exam = exam) }
-                }
+                if (exam.needsRelink) Text("对应的教务考试有多个候选，请编辑并重新关联", color = MaterialTheme.colorScheme.error)
             }
         }
     }

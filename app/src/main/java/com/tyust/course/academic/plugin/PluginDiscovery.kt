@@ -15,12 +15,15 @@ internal object PluginDiscovery {
     fun hasCampusServices(entry: JSONObject): Boolean = entry.optString("kind") == "service" ||
         listOf(entry.optJSONArray("services"), entry.optJSONArray("servers"),
             entry.optJSONObject("contributes")?.optJSONArray("services")).any { (it?.length() ?: 0) > 0 }
-    fun typeLabel(entry: JSONObject): String = type(entry).label +
-        if (type(entry) == Type.ACADEMIC && hasCampusServices(entry)) " · 含校园服务" else ""
+    fun typeLabel(entry: JSONObject): String {
+        // Widget plugins are surfaced as "小组件" regardless of the academic/campus classification beneath.
+        if (entry.optString("kind") == "widget") return "小组件" + if (hasCampusServices(entry)) " · 含校园服务" else ""
+        return type(entry).label + if (type(entry) == Type.ACADEMIC && hasCampusServices(entry)) " · 含校园服务" else ""
+    }
     private fun rules(entry: JSONObject) = listOf("matches", "aliases").flatMap {
         entry.optJSONArray(it)?.let(PluginJson::objects).orEmpty()
     }
-    fun universal(entry: JSONObject) = entry.optString("kind") == "native" &&
+    fun universal(entry: JSONObject) = entry.optString("kind") in setOf("native", "widget") &&
         entry.optJSONObject("school") == null && rules(entry).isEmpty()
 
     fun matches(entry: JSONObject, school: SchoolConfig): Boolean {

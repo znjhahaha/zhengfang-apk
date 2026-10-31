@@ -676,7 +676,7 @@ fun MainScreen(fragmentActivity: FragmentActivity) {
                                     "app.courses" -> com.tyust.course.ui.route.CourseListRoute(isActive = selectedPage == route)
                                     "app.schedule" -> com.tyust.course.ui.route.ScheduleRoute(isActive = selectedPage == route)
                                     "app.grab" -> com.tyust.course.ui.route.GrabProRoute()
-                                    "app.grades" -> com.tyust.course.ui.route.GradesRoute()
+                                    "app.grades" -> com.tyust.course.ui.route.GradesRoute(isActive = selectedPage == route)
                                     "app.settings" -> com.tyust.course.ui.route.SettingsRoute(
                                         onSurveyCenter = { initialSurveyId = null; showSurveyCenter = true },
                                         surveyUnreadCount = surveyFeed.unreadCount(System.currentTimeMillis()),

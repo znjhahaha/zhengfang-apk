@@ -14,6 +14,7 @@ class PluginServiceAccounts(private val app: Context) {
     private fun generation(pluginId: String) = prefs.getLong("generation:$pluginId", 0)
     private fun advance(pluginId: String) {
         check(prefs.edit().putLong("generation:$pluginId", generation(pluginId) + 1).commit())
+        com.tyust.course.academic.plugin.widget.WidgetSnapshotStore.clearPlugin(app, pluginId)
         PluginForegroundWork.stopPlugin(pluginId, "interrupted")
         PluginLegacyWebSessions.revoke(pluginId)
         PluginEmbeddedBrowser.revoke(pluginId)
@@ -37,7 +38,9 @@ class PluginServiceAccounts(private val app: Context) {
         }
         check(prefs.edit().putString("accounts:${key(pkg.manifest.id, serverId)}", JSONArray(items).toString()).putString("selected:${key(pkg.manifest.id, serverId)}", id).commit())
         advance(pkg.manifest.id)
-        revision.value++; id
+        revision.value++
+        com.tyust.course.academic.plugin.widget.PluginWidgets.availabilityChanged(app, pkg.manifest.id)
+        id
     }
     fun namespace(pluginId: String, serverId: String, accountId: String, development: Boolean) = "service\u0000$pluginId\u0000$serverId\u0000$accountId\u0000$development"
     fun profile(pkg: PluginPackage, serverId: String, accountId: String = selected(pkg.manifest.id, serverId)): String = synchronized(lock) {
@@ -79,6 +82,7 @@ class PluginServiceAccounts(private val app: Context) {
         PluginLegacyWebSessions.retire(app, profiles)
         PluginEmbeddedBrowser.retire(app, profiles)
         revision.value++
+        com.tyust.course.academic.plugin.widget.PluginWidgets.availabilityChanged(app, pkg.manifest.id)
     }
     /** Recheck after confirmation; never clear a newly selected account from a stale page. */
     fun clearCurrent(pkg: PluginPackage, serverId: String, expectedAccount: String) = synchronized(lock) {
@@ -111,6 +115,7 @@ class PluginServiceAccounts(private val app: Context) {
         PluginLegacyWebSessions.retire(app, profiles)
         PluginEmbeddedBrowser.retire(app, profiles)
         revision.value++
+        com.tyust.course.academic.plugin.widget.PluginWidgets.availabilityChanged(app, pkg.manifest.id)
     }
     fun cleanRetiredProfiles() {
         if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {

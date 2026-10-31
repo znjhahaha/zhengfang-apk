@@ -99,6 +99,7 @@
         
         <activity android:name=".ui.system.GlassBrowserPreviewActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".academic.plugin.PluginCenterActivity" android:exported="false" android:configChanges="uiMode" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".academic.plugin.widget.PluginWidgetConfigActivity" android:exported="true" android:configChanges="uiMode" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".academic.plugin.PluginMapSettingsActivity" android:exported="false" android:configChanges="uiMode" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".academic.plugin.PluginDeveloperActivity" android:exported="false" android:configChanges="uiMode" />
         <activity android:name=".academic.plugin.CampusServiceCenterActivity" android:exported="false" android:configChanges="uiMode" />
@@ -149,6 +150,34 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_grid_info" />
         </receiver>
+        <!-- 插件小组件：宿主只内置三个按尺寸族划分的静态 provider，插件提供的模板/尺寸在
+             widget.render 能力里声明。exported 同样必须为 true（ColorOS 等 ROM 才会列出组件）。
+             BOOT/TIME 过滤只挂在 Small 上：三个 provider 共用同一套刷新逻辑，系统广播只需送达一次。 -->
+        <receiver android:name=".academic.plugin.widget.PluginWidgetSmallProvider" android:exported="true" android:label="@string/plugin_widget_small_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/plugin_widget_small_info" />
+        </receiver>
+        <receiver android:name=".academic.plugin.widget.PluginWidgetMediumProvider" android:exported="true" android:label="@string/plugin_widget_medium_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/plugin_widget_medium_info" />
+        </receiver>
+        <receiver android:name=".academic.plugin.widget.PluginWidgetLargeProvider" android:exported="true" android:label="@string/plugin_widget_large_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/plugin_widget_large_info" />
+        </receiver>
+        <!-- 拉取式（pull）小组件的后台刷新：每插件一个周期 job + 按需的一次性 job。
+             只做 data.query 拉取，不接触页面；不允许其它应用绑定。 -->
+        <service
+            android:name=".academic.plugin.widget.PluginWidgetPullService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
         <receiver android:name=".schedule.CourseReminderReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

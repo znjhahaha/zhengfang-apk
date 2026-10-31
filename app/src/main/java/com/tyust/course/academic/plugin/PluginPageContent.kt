@@ -122,6 +122,7 @@ internal data class PagePrompt(val title: String, val message: String, val chall
 @Composable private fun rememberPageInteraction(state: PageInteraction, pluginName: String, onNavigate: (String, JSONObject) -> Unit, onBack: () -> Unit): NativePluginInteraction {
     NativePluginDeviceLaunchers(state)
     NativePluginVisualPrompts(state)
+    NativePluginPickerPrompts(state)
     val view = LocalView.current
     var prompt by state::prompt
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { state.picker?.complete(it); state.picker = null }

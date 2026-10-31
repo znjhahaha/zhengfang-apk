@@ -6,6 +6,7 @@ import java.net.URI
 
 object PluginPlatformContract {
     val methods = setOf("command.run", "services.invoke", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel")
+    private val PICKERS = setOf("ui.date.pick", "ui.time.pick", "ui.datetime.pick", "ui.time.range.pick")
     fun requirements(value: JSONObject, available: Map<String, Int>): List<String> =
         value.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().filter { (available[it.getString("name")] ?: 0) < it.getInt("version") }.map { it.getString("name") }
 
@@ -21,6 +22,7 @@ object PluginPlatformContract {
             PluginJson.objects(manifest.contributes.optJSONArray("pages") ?: JSONArray()).flatMap { PluginJson.objects(it.optJSONArray("requires") ?: JSONArray()) }
         if (viewportRequirements.any { it.optString("name") == "ui.viewport" } && m.optInt("minAppVersionCode", 0) < 96) invalid("视口能力需要 minAppVersionCode 96")
         if (viewportRequirements.any { it.optString("name") == "ui.navigation" } && m.optInt("minAppVersionCode", 0) < 114) invalid("页面导航需要 minAppVersionCode 114")
+        if (viewportRequirements.any { it.optString("name") in PICKERS } && m.optInt("minAppVersionCode", 0) < 130) invalid("宿主日期/时间选择器需要 minAppVersionCode 130")
         PluginAcademicTokenRule.validate(manifest)
         if (manifest.network.any { it.has("authHeader") } &&
             (manifest.apiVersion != 3 || manifest.network.any { it.has("authHeader") && it.optString("authHeader") != "X-Token" } ||

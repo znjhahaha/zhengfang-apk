@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/plugin_widget_surface"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/schedule_widget_outline"
+    android:clipToOutline="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:id="@+id/plugin_widget_header"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/plugin_widget_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="9sp"
+                android:includeFontPadding="false"
+                android:background="@drawable/plugin_widget_badge"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp" />
+
+            <TextView
+                android:id="@+id/plugin_widget_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/plugin_widget_action"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textSize="11sp"
+                android:includeFontPadding="false"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/plugin_widget_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_main"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone"
+            android:gravity="center_vertical"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="18sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_row_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_row_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_row_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_row_4"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:includeFontPadding="false" />
+
+        <LinearLayout
+            android:id="@+id/plugin_widget_grid_row_1"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/plugin_widget_grid_row_2"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/plugin_widget_cell_6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/plugin_widget_timer_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:visibility="gone"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="11sp"
+                android:includeFontPadding="false" />
+
+            <Chronometer
+                android:id="@+id/plugin_widget_chronometer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="22sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+
+        <ProgressBar
+            android:id="@+id/plugin_widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_marginTop="4dp"
+            android:max="1000"
+            android:progress="0"
+            android:progressDrawable="@drawable/plugin_widget_progress_track"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/plugin_widget_empty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/plugin_widget_footer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="10sp"
+            android:includeFontPadding="false" />
+    </LinearLayout>
+</FrameLayout>

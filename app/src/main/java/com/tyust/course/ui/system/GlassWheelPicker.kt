@@ -1,4 +1,4 @@
-﻿package com.tyust.course.ui.system
+package com.tyust.course.ui.system
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -169,13 +170,19 @@ fun GlassDatePickerDialog(
     onConfirm: (timeInMillis: Long) -> Unit,
     onDismiss: () -> Unit,
     initialMillis: Long = System.currentTimeMillis(),
-    title: String = "选择日期"
+    title: String = "选择日期",
+    preserveInitial: Boolean = false
 ) {
     val initialCal = remember(initialMillis) {
         Calendar.getInstance().apply { timeInMillis = initialMillis }
     }
     val thisYear = remember { Calendar.getInstance().get(Calendar.YEAR) }
-    val years = remember(thisYear) { (thisYear - 2..thisYear + 1).toList() }
+    val years = remember(thisYear, initialMillis, preserveInitial) {
+        val initialYear = initialCal.get(Calendar.YEAR)
+        val first = if (preserveInitial) minOf(thisYear - 2, initialYear) else thisYear - 2
+        val last = if (preserveInitial) maxOf(thisYear + 1, initialYear) else thisYear + 1
+        (first..last).toList()
+    }
 
     var yearIndex by remember {
         mutableIntStateOf(years.indexOf(initialCal.get(Calendar.YEAR)).coerceAtLeast(0))
@@ -277,26 +284,29 @@ fun GlassDateTimePickerDialog(
     onConfirm: (timeInMillis: Long) -> Unit,
     onDismiss: () -> Unit,
     initialMillis: Long = System.currentTimeMillis(),
-    title: String = "选择时间"
+    title: String = "选择时间",
+    preserveInitial: Boolean = false
 ) {
     val dayCount = 60
-    val baseCalendar = remember {
+    val baseCalendar = remember(initialMillis, preserveInitial) {
         Calendar.getInstance().apply {
-            timeInMillis = System.currentTimeMillis()
+            timeInMillis = if (preserveInitial) initialMillis else System.currentTimeMillis()
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            if (preserveInitial) add(Calendar.DAY_OF_YEAR, -dayCount / 2)
         }
     }
     val dayLabels = remember(baseCalendar) {
         val fmt = SimpleDateFormat("M月d日 E", Locale.CHINA)
         (0 until dayCount).map { offset ->
-            if (offset == 0) {
+            val cal = baseCalendar.clone() as Calendar
+            cal.add(Calendar.DAY_OF_YEAR, offset)
+            val today = Calendar.getInstance()
+            if (cal.get(Calendar.YEAR) == today.get(Calendar.YEAR) && cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)) {
                 "今天"
             } else {
-                val cal = baseCalendar.clone() as Calendar
-                cal.add(Calendar.DAY_OF_YEAR, offset)
                 fmt.format(cal.time)
             }
         }
@@ -308,8 +318,8 @@ fun GlassDateTimePickerDialog(
         Calendar.getInstance().apply { timeInMillis = initialMillis }
     }
     val initialDayOffset = remember(initialCal) {
-        val diff = ((initialCal.timeInMillis - baseCalendar.timeInMillis) /
-            (24L * 60L * 60L * 1000L)).toInt()
+        // Calendar days are not always 24 hours across daylight-saving transitions.
+        val diff = calendarDayOffset(baseCalendar, initialCal)
         diff.coerceIn(0, dayCount - 1)
     }
 
@@ -397,6 +407,100 @@ fun GlassDateTimePickerDialog(
 }
 
 /**
+ * 玻璃滚轮时间选择弹窗：时 : 分 两列，与「节次时间」共用同一套滚轮和弹窗样式。
+ * 分钟按 [minuteStep] 步进（默认 5），与 [GlassTimeRangePickerDialog] 一致。
+ *
+ * @param initialTime "HH:mm" 形式的初始时间，格式不对时回落到 08:00
+ * @param onConfirm 回调 "HH:mm" 形式的时间
+ */
+@Composable
+fun GlassTimePickerDialog(
+    initialTime: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "选择时间",
+    minuteStep: Int = 5,
+    preserveInitial: Boolean = false
+) {
+    val step = minuteStep.coerceIn(1, 30)
+    val hourLabels = remember { (0..23).map { "%02d".format(it) } }
+    val minuteValues = remember(step, initialTime, preserveInitial) {
+        val values = (0 until 60 step step).toList()
+        if (preserveInitial) (values + parseMinute(initialTime, 0)).distinct().sorted() else values
+    }
+    val minuteLabels = remember(minuteValues) { minuteValues.map { "%02d".format(it) } }
+
+    var hour by remember { mutableIntStateOf(parseHour(initialTime, 8)) }
+    var minute by remember {
+        mutableIntStateOf(nearestMinuteIndex(parseMinute(initialTime, 0), minuteValues))
+    }
+
+    SystemDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        dismissButton = {
+            SystemSecondaryButton(
+                text = "取消",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            SystemPrimaryButton(
+                text = "确定",
+                onClick = { onConfirm("%02d:%02d".format(hour, minuteValues[minute])) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // 中心行 systemFill 胶囊指示条
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF787880).copy(alpha = 0.12f))
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GlassWheelColumn(
+                    items = hourLabels,
+                    selectedIndex = hour,
+                    onSelect = { hour = it },
+                    modifier = Modifier.weight(1f),
+                    visibleCount = 3
+                )
+                Text(
+                    text = ":",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                GlassWheelColumn(
+                    items = minuteLabels,
+                    selectedIndex = minute,
+                    onSelect = { minute = it },
+                    modifier = Modifier.weight(1f),
+                    visibleCount = 3
+                )
+            }
+        }
+    }
+}
+
+/**
  * 玻璃滚轮时间段选择弹窗：开始 时:分 / 结束 时:分 四列。
  *
  * 存在的理由是课表节次时间原本让用户手打 "HH:MM" 到 OutlinedTextField 里——
@@ -412,10 +516,15 @@ fun GlassTimeRangePickerDialog(
     onConfirm: (start: String, end: String) -> Unit,
     onDismiss: () -> Unit,
     title: String = "编辑节次时间",
-    minuteStep: Int = 5
+    minuteStep: Int = 5,
+    preserveInitial: Boolean = false
 ) {
     val hourLabels = remember { (0..23).map { "%02d".format(it) } }
-    val minuteValues = remember(minuteStep) { (0 until 60 step minuteStep).toList() }
+    val step = minuteStep.coerceIn(1, 30)
+    val minuteValues = remember(step, initialStart, initialEnd, preserveInitial) {
+        val values = (0 until 60 step step).toList()
+        if (preserveInitial) (values + parseMinute(initialStart, 0) + parseMinute(initialEnd, 45)).distinct().sorted() else values
+    }
     val minuteLabels = remember(minuteValues) { minuteValues.map { "%02d".format(it) } }
 
     var startHour by remember { mutableIntStateOf(parseHour(initialStart, 8)) }
@@ -576,6 +685,16 @@ fun GlassOptionWheelDialog(
             )
         }
     }
+}
+
+private fun calendarDayOffset(base: Calendar, selected: Calendar): Int {
+    // Compare date fields at UTC midnight, keeping API 24 compatibility and avoiding DST fractions.
+    fun midnight(calendar: Calendar): Long = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(Calendar.ERA, calendar.get(Calendar.ERA))
+        set(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH))
+    }.timeInMillis
+    return ((midnight(selected) - midnight(base)) / (24L * 60 * 60 * 1000)).toInt()
 }
 
 private fun parseHour(value: String, fallback: Int): Int =    value.substringBefore(':').trim().toIntOrNull()?.coerceIn(0, 23) ?: fallback

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Debug-only harness: renders every contributed widget at every declared launcher size
+             so rendering can be checked without pinning real widgets to the launcher. -->
+        <activity
+            android:name=".academic.plugin.widget.PluginWidgetPreviewActivity"
+            android:exported="true"
+            android:label="Plugin widget preview"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+
+</manifest>

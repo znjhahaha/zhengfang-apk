@@ -26,8 +26,15 @@ def check_archive(data, sdk_version, rule_version=None):
         if rule_version is not None:
             policy=z.read('cli/security-policy.mjs').decode()
             for key,expected in [('SECURITY_CONTRACT',sdk_version),('SECURITY_RULE_VERSION',rule_version)]:
-                match=re.search(key+r"\s*=\s*['\"]([^'\"]+)['\"]",policy)
-                if not match or match[1]!=expected:raise DeliveryError('Plugin audit policy mismatch')
+                match=re.search(r'\bexport\s+const\s+'+key+r"\s*=\s*(['\"])([^'\"]+)\1\s*;",policy)
+                actual=match[2] if match else None
+                if key=='SECURITY_CONTRACT' and actual is None:
+                    # SDK 3.8 derives this constant from the package validated above.
+                    # Accept that exact static reference without executing downloaded code.
+                    sdk_import=re.search(r"(?:^|\n)\s*import\s+sdkPackage\s+from\s+(['\"])\.\./sdk/package\.json\1\s+with\s*\{\s*type\s*:\s*(['\"])json\2\s*\}\s*;",policy)
+                    sdk_reference=re.search(r'(?:^|[;\n])\s*export\s+const\s+SECURITY_CONTRACT\s*=\s*sdkPackage\.version\s*;',policy)
+                    if sdk_import and sdk_reference:actual=strict_json(z.read('sdk/package.json'))['version']
+                if actual!=expected:raise DeliveryError('Plugin audit policy mismatch')
         return lock
 
 def check_descriptor(metadata, app_root=ROOT):

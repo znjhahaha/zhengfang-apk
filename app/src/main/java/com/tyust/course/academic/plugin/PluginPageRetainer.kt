@@ -61,6 +61,7 @@ internal class PluginPageLifetime(private val app: Context, private val pkg: Plu
 internal class PageInteraction : NativePluginInteraction {
     var prompt by mutableStateOf<PagePrompt?>(null)
     var visualPrompt by mutableStateOf<PluginVisualPrompt?>(null)
+    var pickerPrompt by mutableStateOf<PluginPickerPrompt?>(null)
     var picker: CompletableDeferred<Uri?>? = null
     var permission: CompletableDeferred<Boolean>? = null
     var pluginName = ""
@@ -108,5 +109,11 @@ internal class PageInteraction : NativePluginInteraction {
     }
     override fun back() { goBack?.invoke() }
     override fun haptic() { hapticAction?.invoke() }
-    fun close() { closed = true; prompt?.result?.cancel(); visualPrompt?.result?.cancel(); visualPrompt = null; picker?.cancel(); permission?.cancel(); deviceResult?.cancel(); prompt = null }
+    override suspend fun picker(kind: String, input: JSONObject): JSONObject? = gate.withLock {
+        if (closed) throw CancellationException("Page closed")
+        val request = PluginPickerPrompt(kind, input)
+        pickerPrompt = request
+        try { request.result.await() } finally { request.result.cancel(); if (pickerPrompt === request) pickerPrompt = null }
+    }
+    fun close() { closed = true; prompt?.result?.cancel(); visualPrompt?.result?.cancel(); visualPrompt = null; pickerPrompt?.result?.cancel(); pickerPrompt = null; picker?.cancel(); permission?.cancel(); deviceResult?.cancel(); prompt = null }
 }

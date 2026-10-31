@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小组件进度条：轨道直接复用内置课表小件的色条素材（schedule_widget_grid_bar，2dp 圆角），
+  进度部分沿用内置时间轴预览里的蓝色（#3B82F6），保证与内置小件同一套视觉语言。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@android:id/background"
+        android:drawable="@drawable/schedule_widget_grid_bar" />
+
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <solid android:color="#3B82F6" />
+                <corners android:radius="2dp" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

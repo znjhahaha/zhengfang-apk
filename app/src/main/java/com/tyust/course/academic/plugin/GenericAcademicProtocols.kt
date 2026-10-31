@@ -1,6 +1,7 @@
 package com.tyust.course.academic.plugin
 
 import com.tyust.course.model.SchoolConfig
+import com.tyust.course.academic.AcademicSchoolProfiles
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,8 +21,19 @@ object GenericAcademicProtocols {
     val providers = mapOf("zf" to "org.zf.protocol.zf", "legacy_zf" to "org.zf.protocol.zf",
         "zf_old" to "org.zf.protocol.zf-old", "qz" to "org.zf.protocol.qz", "qz_old" to "org.zf.protocol.qz-old",
         "kingo" to "org.zf.protocol.kingo", "eams" to "org.zf.protocol.eams", "chaoxing_academic" to "org.zf.protocol.chaoxing-academic")
+    private fun webLoginProfile(school: SchoolConfig): AcademicSchoolProfiles.Profile? {
+        val endpoint = school.fullBasePath.trimEnd('/').toHttpUrlOrNull() ?: return null
+        return AcademicSchoolProfiles.profiles.firstOrNull { profile ->
+            profile.webLoginUrl != null && profile.system.id == school.academicSystem &&
+                endpoint == "${profile.address.protocol}://${profile.address.domain}${profile.address.basePath}".toHttpUrlOrNull()
+        }
+    }
     fun configuration(school: SchoolConfig, options: JSONObject? = null): JSONObject = JSONObject(school.toJson().toString()).put("baseUrl", school.fullBasePath.trimEnd('/')).apply {
         val url = school.fullBasePath.toHttpUrlOrNull() ?: error("Invalid school URL")
+        webLoginProfile(school)?.let { profile ->
+            put("webLoginUrl", profile.webLoginUrl)
+            profile.webVpnTargetBaseUrl?.let { put("webVpnTargetBaseUrl", it) }
+        }
         if (url.host == "jwxt.hut.edu.cn" && url.port in setOf(80, 443) && url.encodedPath.trimEnd('/') == "/jsxsd") {
             put("casLoginUrl", "https://mycas.hut.edu.cn/cas/login")
             put("casServiceUrl", "http://jwxt.hut.edu.cn/jsxsd/sso.jsp")
@@ -39,6 +51,13 @@ object GenericAcademicProtocols {
             PluginNetworkPolicy.validateRule(rule); result.put(rule)
         }
         add(base.toString(), base.encodedPath.trimEnd('/'), listOf("auth", "query", "mutation"))
+        webLoginProfile(school)?.let { profile ->
+            profile.authPrefixes.forEach { prefix ->
+                val auth = prefix.toHttpUrlOrNull() ?: error("Invalid profile auth URL")
+                add(prefix, auth.encodedPath.trimEnd('/'), listOf("auth"))
+            }
+            return result
+        }
         // The user's saved academic allowlist may contain a separate CAS host. It receives auth only.
         school.allowedAcademicHosts.filter { it != base.host && it != school.domain }.forEach { host ->
             if (!host.contains('/') && !host.contains('@')) add("${base.scheme}://$host/", "/", listOf("auth"))

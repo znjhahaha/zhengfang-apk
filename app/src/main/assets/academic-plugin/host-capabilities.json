@@ -1778,6 +1778,498 @@
     "web": false
   },
   {
+    "name": "ui.date.pick",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "initial": {
+          "type": "string",
+          "maxLength": 10,
+          "minLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "maxLength": 10,
+          "minLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "millis": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "date",
+        "millis"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    },
+    "web": false
+  },
+  {
+    "name": "ui.time.pick",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "initial": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "minuteStep": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        }
+      },
+      "required": [
+        "time"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    },
+    "web": false
+  },
+  {
+    "name": "ui.datetime.pick",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "initial": {
+          "type": "string",
+          "maxLength": 16,
+          "minLength": 16,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "datetime": {
+          "type": "string",
+          "maxLength": 16,
+          "minLength": 16,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$"
+        },
+        "millis": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "datetime",
+        "millis"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    },
+    "web": false
+  },
+  {
+    "name": "ui.time.range.pick",
+    "version": 1,
+    "permission": "pages",
+    "input": {
+      "type": "object",
+      "properties": {
+        "initialStart": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        },
+        "initialEnd": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "minuteStep": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        },
+        "end": {
+          "type": "string",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": true,
+    "limits": {
+      "maxPerFlow": 32
+    },
+    "web": false
+  },
+  {
+    "name": "widget.render",
+    "version": 1,
+    "permission": "widget",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "maxItems": 8
+        },
+        "sizes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "templates",
+        "sizes"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32
+    },
+    "web": false
+  },
+  {
+    "name": "widget.publish",
+    "version": 1,
+    "permission": "widget",
+    "input": {
+      "type": "object",
+      "properties": {
+        "widgetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "viewKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+        },
+        "snapshot": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": 1
+            },
+            "updatedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "header": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "subtitle": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "date": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "time": {
+                    "type": "string",
+                    "maxLength": 24
+                  },
+                  "badge": {
+                    "type": "string",
+                    "maxLength": 8
+                  },
+                  "tone": {
+                    "enum": [
+                      "default",
+                      "primary",
+                      "positive",
+                      "warning",
+                      "error"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "title"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 6
+            },
+            "empty": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "actionLabel": {
+                  "type": "string",
+                  "maxLength": 24
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 24
+                  },
+                  "kind": {
+                    "enum": [
+                      "openPage",
+                      "refresh",
+                      "cycle"
+                    ]
+                  },
+                  "pageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 3
+            },
+            "timer": {
+              "type": "object",
+              "properties": {
+                "startAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "endAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 24
+                },
+                "countdown": {
+                  "type": "boolean"
+                },
+                "showProgress": {
+                  "type": "boolean"
+                },
+                "direction": {
+                  "enum": [
+                    "forward",
+                    "backward"
+                  ]
+                },
+                "progress": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "fullText": {
+                  "type": "string",
+                  "maxLength": 24
+                },
+                "emptyText": {
+                  "type": "string",
+                  "maxLength": 24
+                },
+                "boundary": {
+                  "enum": [
+                    "refresh",
+                    "openPage",
+                    "none"
+                  ]
+                }
+              },
+              "required": [
+                "startAt",
+                "endAt"
+              ],
+              "additionalProperties": false
+            },
+            "footer": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "schema"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "widgetId",
+        "snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "published": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "published",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "cancellable": true,
+    "userGesture": false,
+    "limits": {
+      "maxPerFlow": 32,
+      "bytes": 65536
+    },
+    "web": false
+  },
+  {
     "name": "privacy.status",
     "version": 1,
     "permission": "academic.read",

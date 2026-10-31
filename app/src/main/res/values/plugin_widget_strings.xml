@@ -1,0 +1,10 @@
+<resources>
+    <string name="plugin_widget_name">插件小组件</string>
+    <string name="plugin_widget_small_name">插件小组件 · 小</string>
+    <string name="plugin_widget_medium_name">插件小组件 · 中</string>
+    <string name="plugin_widget_large_name">插件小组件 · 大</string>
+    <string name="plugin_widget_small_description">1×1 / 2×1 / 4×1 单行信息小组件，显示插件快照里的一行或两行文字。</string>
+    <string name="plugin_widget_medium_description">2×2 卡片小组件，适合显示几条列表或四个网格单元。</string>
+    <string name="plugin_widget_large_description">4×2 大卡片小组件，适合显示日期、标题与多列网格。</string>
+    <string name="plugin_widget_configure_title">小组件设置</string>
+</resources>

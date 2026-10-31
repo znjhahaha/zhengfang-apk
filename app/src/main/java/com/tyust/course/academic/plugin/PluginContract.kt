@@ -165,7 +165,9 @@ data class PluginManifest(val json: JSONObject) {
     val name: String get() = json.getString("name")
     val kind: String get() = json.getString("kind")
     val isService: Boolean get() = kind == "service"
-    val isNative: Boolean get() = kind == "native"
+    /** A widget plugin is a native plugin that always contributes launcher widgets (see design doc). */
+    val isWidget: Boolean get() = kind == "widget"
+    val isNative: Boolean get() = kind == "native" || isWidget
     val isAcademic: Boolean get() = !isService && (!isNative || contributes.optBoolean("academic"))
     val apiVersion: Int get() = json.getInt("apiVersion")
     val contributes: JSONObject get() = json.optJSONObject("contributes") ?: JSONObject()
@@ -183,7 +185,8 @@ data class PluginManifest(val json: JSONObject) {
         PluginSecurityContract.validate(this)
         BuiltinAcademicInheritance.configuration(this)
         PluginPlatformContract.validate(this)
-        if (kind in setOf("independent", "service", "native") && baseProvider != null || kind !in setOf("independent", "service", "native") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
+        if (kind in setOf("independent", "service", "native", "widget") && baseProvider != null ||
+            kind !in setOf("independent", "service", "native", "widget") && baseProvider == null) invalid("适配类型与内置继承关系不一致")
         if (!isNative && !json.has("school")) invalid("教务适配和旧版服务需要学校信息")
         if (isNative) NativePluginContract.validateManifest(this)
         else if (json.has("contributes") || json.has("permissions") || capabilities.any { it.startsWith("ui.") || it.startsWith("task.") || it.startsWith("data.") }) invalid("通用组件需要 API v3 原生插件")

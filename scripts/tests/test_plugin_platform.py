@@ -3,7 +3,7 @@ sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
 from check_plugin_platform import check_archive,check_descriptor,DeliveryError
 
 class PluginPlatformTests(unittest.TestCase):
-    def archive(self,version='3.2.8',policy='3.2.8',corrupt=False):
+    def archive(self,version='3.2.8',policy='3.2.8',corrupt=False,policy_source=None):
         files={'index.d.ts':b'public type','assets/academic-plugin/contract.schema.json':b'{}','assets/academic-plugin/gecko/background.js':b'void 0'}
         lock={'version':version,'apiVersion':3,'sha256':{n:hashlib.sha256(b).hexdigest() for n,b in files.items()}}
         data=io.BytesIO()
@@ -14,7 +14,7 @@ class PluginPlatformTests(unittest.TestCase):
             for name,value in files.items():
                 z.writestr('host-api/'+name,value)
                 z.writestr('sdk/'+name.removeprefix('assets/academic-plugin/'),b'bad' if corrupt else value)
-            z.writestr('cli/security-policy.mjs',f"export const SECURITY_CONTRACT='{policy}'; export const SECURITY_RULE_VERSION='rules-1';")
+            z.writestr('cli/security-policy.mjs',policy_source if policy_source is not None else f"export const SECURITY_CONTRACT='{policy}'; export const SECURITY_RULE_VERSION='rules-1';")
         return data.getvalue()
     def test_old_toolchain_is_rejected_even_with_a_correct_zip_digest(self):
         with self.assertRaises(DeliveryError):check_archive(self.archive(version='3.2.7'),'3.2.8','rules-1')
@@ -24,6 +24,19 @@ class PluginPlatformTests(unittest.TestCase):
         with self.assertRaises(DeliveryError):check_archive(self.archive(),'3.2.8','rules-2')
     def test_generated_contract_corruption_is_rejected(self):
         with self.assertRaises(DeliveryError):check_archive(self.archive(corrupt=True),'3.2.8')
+    def test_policy_contract_can_reference_the_verified_sdk_package(self):
+        source="import sdkPackage from '../sdk/package.json' with {type:'json'};\nexport const SECURITY_CONTRACT=sdkPackage.version;\nexport const SECURITY_RULE_VERSION='rules-1';"
+        self.assertEqual(check_archive(self.archive(policy_source=source),'3.2.8','rules-1')['version'],'3.2.8')
+        with self.assertRaises(DeliveryError):check_archive(self.archive(policy_source=source),'3.2.8','rules-2')
+        with self.assertRaises(DeliveryError):check_archive(self.archive(version='3.2.7',policy_source=source),'3.2.8','rules-1')
+    def test_policy_contract_rejects_unknown_imports_and_expressions(self):
+        source="import sdkPackage from '../sdk/package.json' with {type:'json'};\nexport const SECURITY_CONTRACT=sdkPackage.version;\nexport const SECURITY_RULE_VERSION='rules-1';"
+        for invalid in [source.replace('../sdk/package.json','../host-api/package.json'),
+                        source.replace('sdkPackage.version','sdkPackage.other'),
+                        source.replace('sdkPackage.version',"sdkPackage.version + '-modified'"),
+                        source.replace("import sdkPackage from '../sdk/package.json' with {type:'json'};",'')]:
+            with self.subTest(source=invalid),self.assertRaises(DeliveryError):
+                check_archive(self.archive(policy_source=invalid),'3.2.8','rules-1')
     def test_app_asset_drift_blocks_promotion(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder=pathlib.Path(tmp)/'app/src/main/assets/academic-plugin';folder.mkdir(parents=True)

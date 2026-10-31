@@ -1,10 +1,30 @@
 package com.tyust.course.academic.plugin
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.tyust.course.academic.plugin.widget.PluginWidgets
 import com.tyust.course.manager.UserManager
 import org.json.JSONObject
 
 object PluginSettings {
+    private var availabilityPreferences: SharedPreferences? = null
+    private var availabilityListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    /** The registry's global and school enable switches share these persisted keys. */
+    @Synchronized
+    internal fun observeWidgetAvailability(context: Context) {
+        val app = context.applicationContext
+        val prefs = app.getSharedPreferences("plugin-school-bindings", Context.MODE_PRIVATE)
+        if (availabilityPreferences === prefs) return
+        availabilityListener?.let { availabilityPreferences?.unregisterOnSharedPreferenceChangeListener(it) }
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key?.startsWith("disabled:") == true) PluginWidgets.availabilityChanged(app, key.substringAfterLast(':'))
+        }
+        availabilityPreferences = prefs
+        availabilityListener = listener // SharedPreferences retains listeners weakly.
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
     fun legacyServiceValues(app: Context, pkg: PluginPackage): Map<String, String> {
         if (!pkg.official) return emptyMap()
         val prefs = app.getSharedPreferences("plugin-settings", Context.MODE_PRIVATE)

@@ -26,6 +26,7 @@
     "ui.reduce": "UiResult",
     "task.run": "TaskResult",
     "data.query": "DataResult",
+    "widget.publish": "WidgetPublishReceipt",
     "command.run": "CommandResult",
     "services.invoke": "ServiceResult",
     "workflow.prepare": "WorkflowPlan",
@@ -1815,6 +1816,23 @@
       "required": [
         "actionId",
         "confirmed"
+      ],
+      "additionalProperties": false
+    },
+    "WidgetPublishReceipt": {
+      "type": "object",
+      "properties": {
+        "published": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "published",
+        "at"
       ],
       "additionalProperties": false
     },
@@ -4489,6 +4507,42 @@
             },
             "data": {
               "$ref": "#/$defs/DataResult"
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "widget.publish": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "$ref": "#/$defs/WidgetPublishReceipt"
             }
           },
           "required": [

@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.tyust.course.academic.plugin.widget.PluginWidgets
 import com.tyust.course.manager.UserManager
 import com.tyust.course.model.SchoolConfig
 import com.tyust.course.ui.system.*
@@ -532,6 +533,26 @@ class PluginCenterActivity : ComponentActivity() {
                     if (pkg.manifest.isAcademic && school != null && AcademicProviderRegistry.matches(pkg, school)) {
                         SystemDialogButton(onClick = { bind(pkg, false) }) { Text("用作本校教务适配") }
                     }
+                    if (enabled) {
+                        val families = remember(pkg.digest, generation) {
+                            PluginWidgetContract.declarations(pkg.manifest)
+                                .flatMap { it.sizes }
+                                .mapNotNull { PluginWidgetContract.Family.of(it) }
+                                .distinct()
+                        }
+                        if (families.isNotEmpty()) {
+                            Text("桌面小组件", style = MaterialTheme.typography.labelLarge)
+                            Text("插件推送快照，小组件只读渲染，不会在桌面上运行插件代码。",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                families.forEach { family ->
+                                    SystemDialogButton(onClick = { PluginWidgets.requestPin(this@PluginCenterActivity, family) }) {
+                                        Text("添加到桌面 · ${family.label}")
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (pkg.manifest.isAcademic && UserManager.getInstance().getSchoolById(pkg.manifest.school.getString("id")) == null) {
                         SystemDialogButton(onClick = {
                             try {
@@ -617,9 +638,10 @@ class PluginCenterActivity : ComponentActivity() {
         "files" to "文件", "device.clipboard" to "剪贴板", "device.haptics" to "触感", "tasks" to "后台任务", "notifications" to "通知",
         "userscripts" to "原版脚本订阅与运行", "device.scan" to "扫码", "device.location" to "实际位置", "device.camera" to "拍照",
         "navigation" to "导航", "auth" to "认证", "runtime" to "运行控制", "academic.session" to "使用本校教务登录",
-        "academic.read" to "读取学业数据", "academic.write" to "导入课表")[name] ?: name
+        "academic.read" to "读取学业数据", "academic.write" to "导入课表", "widget" to "桌面小组件", "pages" to "页面与宿主选择器")[name] ?: name
     private fun capabilityName(name: String) = mapOf("ui.init" to "原生页面", "ui.reduce" to "交互与状态", "task.run" to "后台流程", "data.query" to "数据提供者",
         "auth.start" to "登录", "auth.resume" to "继续认证", "auth.validate" to "会话校验", "auth.refreshCaptcha" to "验证码",
         "study.terms" to "学期", "study.schedule" to "课表", "study.grades" to "成绩", "study.gradeDetails" to "成绩明细", "study.exams" to "考试",
-        "study.calendar" to "校历与作息", "selection.select" to "选课", "selection.drop" to "退课", "service.page" to "服务页面", "service.action" to "服务操作")[name] ?: name
+        "study.calendar" to "校历与作息", "selection.select" to "选课", "selection.drop" to "退课", "service.page" to "服务页面", "service.action" to "服务操作",
+        "widget.render" to "小组件模板", "widget.publish" to "推送小组件快照")[name] ?: name
 }

@@ -56,6 +56,15 @@ class PublicAuditCoverageTests(unittest.TestCase):
         self.add_file('tests/auth-scope.test.mjs')
         self.assertIn('tests/auth-scope.test.mjs', self_test_files(self.kit, '3.7.1'))
         self.assertNotIn('tests/auth-scope.test.mjs', self_test_files(self.kit, '3.7.0'))
+        with self.assertRaisesRegex(RuntimeError, 'SELF_TEST_FILES_MISSING'):
+            self_test_files(self.kit, '3.8.0')
+        for name in ['widget-date-host', 'ui-pickers', 'widget-plugin', 'qz-login-77', 'ahut-vpn', 'exam-identity']:
+            self.add_file('tests/'+name+'.test.mjs')
+        files = self_test_files(self.kit, '3.8.0')
+        self.assertTrue({'tests/widget-date-host.test.mjs', 'tests/ui-pickers.test.mjs',
+                         'tests/widget-plugin.test.mjs', 'tests/qz-login-77.test.mjs',
+                         'tests/ahut-vpn.test.mjs', 'tests/exam-identity.test.mjs'}.issubset(files))
+        self.assertEqual(len(files),len(set(files)))
         (self.kit/'tests/kingo-des.test.mjs').unlink()
         with self.assertRaisesRegex(RuntimeError, 'SELF_TEST_FILES_MISSING'):
             self_test_files(self.kit, '3.7.1')
