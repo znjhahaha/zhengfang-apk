@@ -126,7 +126,7 @@ internal object PluginEmbeddedBrowser {
             withTimeout(10_000) { owner.died.await() }
         }
         withContext(Dispatchers.Main) { runCatching { owner.app.unbindService(owner) } }
-        owner.session.retire()
+        PluginServiceAccounts.releaseConsumerSession(owner.session)
         if (connection === owner) connection = null
     }
     private suspend fun connect(app: Context, pkg: PluginPackage, owner: AcademicSession): Connection = mutex.withLock {
@@ -139,7 +139,7 @@ internal object PluginEmbeddedBrowser {
         connection?.takeIf { it.profile == profile && it.pkg.digest == pkg.digest && it.binder?.isBinderAlive == true && it.valid() }?.let { return@withLock it }
         connection?.let { disconnect(it) }
         val session = accounts.session(pkg, serverId)
-        if (session.key.accountKey != owner.key.accountKey) { session.retire(); throw PluginException(PluginErrorCode.STALE_CONTEXT, "服务账号已切换") }
+        if (session.key.accountKey != owner.key.accountKey) { PluginServiceAccounts.releaseConsumerSession(session); throw PluginException(PluginErrorCode.STALE_CONTEXT, "服务账号已切换") }
         val next = Connection(app.applicationContext, pkg, session, profile, accounts.server(pkg, serverId))
         try {
             withContext(Dispatchers.Main) {

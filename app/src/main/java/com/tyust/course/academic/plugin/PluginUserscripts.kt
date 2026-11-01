@@ -78,7 +78,7 @@ internal object PluginUserscripts {
         if (!metadata.optBoolean("subscribed") || System.currentTimeMillis() - metadata.optLong("checkedAt") > 24 * 60 * 60 * 1000L) ownerStore.update(true)
         val (selected, source) = ownerStore.activate()
         val session = PluginServiceAccounts(app).session(pkg, ownerStore.policy.serverId)
-        if (session.key.accountKey != owner.key.accountKey) { session.retire(); throw PluginException(PluginErrorCode.STALE_CONTEXT, "服务账号已切换") }
+        if (session.key.accountKey != owner.key.accountKey) { PluginServiceAccounts.releaseConsumerSession(session); throw PluginException(PluginErrorCode.STALE_CONTEXT, "服务账号已切换") }
         val handle = "s" + UUID.randomUUID().toString().replace("-", "")
         val live = UserscriptSession(app.applicationContext, pkg, session, namespace, handle, ownerStore.policy, selected, source) { sessions.remove(handle) }
         sessions[handle] = live
@@ -368,7 +368,7 @@ internal class UserscriptSession(
         // A removed account must never be recreated by a late WebView callback.
         runCatching { save() }; closed = true; operations.forEach(PluginOperation::close); scope.cancel(); documents.clear(); requests.clear(); pendingDialog = null
         views.toList().forEach { view -> (view.parent as? android.view.ViewGroup)?.removeView(view); view.stopLoading(); view.destroy() }
-        views.clear(); visible.value = null; session.retire(); lease.close(); onStopped(); PluginForegroundWork.remove(app, handle)
+        views.clear(); visible.value = null; PluginServiceAccounts.releaseConsumerSession(session); lease.close(); onStopped(); PluginForegroundWork.remove(app, handle)
         app.getSystemService(NotificationManager::class.java).cancel(handle.hashCode())
         accounts.cleanRetiredProfiles(); changed()
     }

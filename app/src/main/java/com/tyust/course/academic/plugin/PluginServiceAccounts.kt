@@ -13,6 +13,11 @@ class PluginServiceAccounts(private val app: Context) {
     private val prefs = app.getSharedPreferences("plugin-service-accounts", Context.MODE_PRIVATE)
     private fun generation(pluginId: String) = prefs.getLong("generation:$pluginId", 0)
     private fun advance(pluginId: String) {
+        stableSessions.entries.filter { it.key.startsWith("$pluginId\u0000") }.forEach { (key, session) ->
+            NativePluginVault(app, PluginStorageScope.session(session, pluginId, key.endsWith("\u0000true"))).clearEphemeral()
+            PluginHost.clearTemporaryState(session); session.retire(); stableSessions.remove(key)
+        }
+        PluginNetworkScopes.revokePlugin(pluginId)
         check(prefs.edit().putLong("generation:$pluginId", generation(pluginId) + 1).commit())
         com.tyust.course.academic.plugin.widget.WidgetSnapshotStore.clearPlugin(app, pluginId)
         PluginForegroundWork.stopPlugin(pluginId, "interrupted")
@@ -53,8 +58,11 @@ class PluginServiceAccounts(private val app: Context) {
     fun session(pkg: PluginPackage, serverId: String): AcademicSession = synchronized(lock) {
         val base = server(pkg, serverId).getString("origin")
         val account = selected(pkg.manifest.id, serverId)
+        val stableKey = listOf(pkg.manifest.id, pkg.digest, serverId, account, !pkg.official).joinToString("\u0000")
+        if (pkg.manifest.usesProtectedServices) stableSessions[stableKey]?.takeIf { current(pkg, it) }?.let { return@synchronized it }
         AcademicSession(AcademicSessionKey("service:${pkg.manifest.id}:$serverId", account), base).also {
             sessions[it] = generation(pkg.manifest.id)
+            if (pkg.manifest.usesProtectedServices) stableSessions[stableKey] = it
             val scope = PluginStorageScope.session(it, pkg.manifest.id, !pkg.official)
             check(prefs.edit().putStringSet("scopes:${pkg.manifest.id}", prefs.getStringSet("scopes:${pkg.manifest.id}", emptySet()).orEmpty() + scope).commit())
             PluginSessionCookies.restore(app, pkg, it)
@@ -132,5 +140,14 @@ class PluginServiceAccounts(private val app: Context) {
             check(prefs.edit().putStringSet("retiredProfiles", remaining).commit())
         }
     }
-    companion object { internal val lock = Any(); private val sessions = java.util.WeakHashMap<AcademicSession, Long>(); val revision = MutableStateFlow(0L) }
+    companion object {
+        internal val lock = Any()
+        private val sessions = java.util.WeakHashMap<AcademicSession, Long>()
+        private val stableSessions = mutableMapOf<String, AcademicSession>()
+        val revision = MutableStateFlow(0L)
+        /** Consumers release only their own sessions. Stable service identities belong to this registry. */
+        internal fun releaseConsumerSession(session: AcademicSession) = synchronized(lock) {
+            if (stableSessions.values.none { it === session }) session.retire()
+        }
+    }
 }

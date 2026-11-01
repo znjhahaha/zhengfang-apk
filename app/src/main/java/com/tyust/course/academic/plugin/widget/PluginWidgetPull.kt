@@ -123,7 +123,7 @@ internal object PluginWidgetPull {
                 }
             }
         } finally {
-            session.retire()
+            PluginServiceAccounts.releaseConsumerSession(session)
         }
     }
 

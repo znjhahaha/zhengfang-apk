@@ -44,7 +44,7 @@ class PluginOperation(
         if (!scopeStillActive()) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "账号或插件状态已改变")
         if (session.retired || session.epoch != epoch) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "会话已失效")
     }
-    fun markMutation() {
+    internal fun requireMutationAllowed() {
         requireActive()
         val serviceMutation = manifest.isService && method == "service.action" && actionId != null &&
             ServicePluginContract.action(manifest, actionId).getString("kind") == "mutation"
@@ -52,6 +52,10 @@ class PluginOperation(
         val workflowMutation = manifest.isNative && method == "workflow.step" && manifest.json.optJSONArray("services")?.let(PluginJson::objects).orEmpty().any { it.getString("name") == actionId && it.getString("kind") == "write" }
         if (!confirmed || method !in setOf("selection.select", "selection.drop") && !serviceMutation && !nativeMutation && !workflowMutation)
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "写入操作需要用户确认")
+        if (businessMutation.get()) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "单次调用不能重放写入请求")
+    }
+    fun markMutation() {
+        requireMutationAllowed()
         if (!businessMutation.compareAndSet(false, true))
             throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "单次调用不能重放写入请求")
         mutation.set(true)

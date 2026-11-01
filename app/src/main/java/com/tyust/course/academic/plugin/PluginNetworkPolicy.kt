@@ -5,9 +5,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 /** Exact origins, bounded paths and explicit request purposes; rechecked on every redirect. */
-class PluginNetworkPolicy(private val rules: List<JSONObject>) {
+class PluginNetworkPolicy(private val rules: List<JSONObject>, private val strictPaths: Boolean = false) {
     fun requireAllowed(url: HttpUrl, method: String, purpose: String, form: JSONObject?, authHeader: String? = null): JSONObject {
         if (url.username.isNotEmpty() || url.password.isNotEmpty() || url.fragment != null ||
+            strictPaths && ('%' in url.encodedPath || "//" in url.encodedPath) ||
             Regex("(?i)%2f|%5c|%00").containsMatchIn(url.encodedPath)) denied()
         val matching = rules.filter { rule ->
             val origin = rule.getString("origin").toHttpUrlOrNull() ?: return@filter false

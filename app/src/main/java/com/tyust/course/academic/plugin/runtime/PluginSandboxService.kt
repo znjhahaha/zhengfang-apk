@@ -60,7 +60,7 @@ class PluginSandboxService : Service() {
             stage("engine_ready")
             engine.memoryLimit = PluginLimits.MEMORY_BYTES
             engine.maxStackSize = PluginLimits.STACK_BYTES
-            engine.evaluationTimeoutMillis = if (request.getString("operation").startsWith("auth."))
+            engine.evaluationTimeoutMillis = if (request.getString("operation").substringBefore('.') in setOf("auth", "serviceAuth"))
                 PluginLimits.AUTH_JS_MILLIS else PluginLimits.JS_MILLIS
             val operationId = request.getJSONObject("context").getString("operationId")
             val completion = CompletableDeferred<String>()

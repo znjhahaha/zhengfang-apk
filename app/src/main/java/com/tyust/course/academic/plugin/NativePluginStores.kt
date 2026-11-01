@@ -90,9 +90,9 @@ class NativePluginFiles(private val app: Context, namespace: String, private val
 }
 
 /** Secrets never enter plugin state: only opaque credential handles cross the JS boundary. */
-class NativePluginVault(app: Context, namespace: String, private val legacyNamespaces: List<String> = emptyList(), private val keyProvider: (() -> SecretKey)? = null, private val guard: () -> Unit = {}) {
+class NativePluginVault(app: Context, namespace: String, private val legacyNamespaces: List<String> = emptyList(), private val keyProvider: (() -> SecretKey)? = null, sharedEphemeral: Boolean = false, private val guard: () -> Unit = {}) {
     private val root = File(app.noBackupFilesDir, "native-plugin-vault/${PluginJson.sha256(namespace.toByteArray())}")
-    private val ephemeral = mutableMapOf<String, JSONObject>()
+    private val ephemeral = if (sharedEphemeral) synchronized(vaultLock) { ephemeralScopes.getOrPut(root.absolutePath) { mutableMapOf() } } else mutableMapOf()
     private fun key(): SecretKey = synchronized(keyLock) {
         keyProvider?.let { return@synchronized it() }
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -155,7 +155,8 @@ class NativePluginVault(app: Context, namespace: String, private val legacyNames
         guard(); ephemeral.remove(name); path(name).delete()
         legacyNamespaces.forEach { namespace -> AtomicFile(File(File(root.parentFile, PluginStorageScope.hash(namespace)), PluginJson.sha256(name.toByteArray()) + ".json")).delete() }
     }
-    fun clear(): Unit = synchronized(vaultLock) { ephemeral.clear(); root.listFiles()?.forEach { it.delete() }; root.delete(); Unit }
+    fun clear(): Unit = synchronized(vaultLock) { clearEphemeral(); root.listFiles()?.forEach { it.delete() }; root.delete(); Unit }
+    internal fun clearEphemeral(): Unit = synchronized(vaultLock) { ephemeral.clear(); ephemeralScopes[root.absolutePath]?.clear(); Unit }
     fun findCredential(name: String): String? = synchronized(vaultLock) {
         val reference = "credential-key:$name"
         val handle = get(reference)?.optString("handle")?.takeIf { it.isNotBlank() } ?: return@synchronized null
@@ -167,13 +168,25 @@ class NativePluginVault(app: Context, namespace: String, private val legacyNames
         if (value.length > 4096) throw PluginException(PluginErrorCode.VALIDATION_FAILED, "输入内容过长")
         return value
     }
-    fun saveCredential(name: String, values: JSONObject, remember: Boolean): String = synchronized(vaultLock) {
+    fun saveCredential(name: String, values: JSONObject, remember: Boolean, oneTime: Boolean = false): String = synchronized(vaultLock) {
         val old = get("credential-key:$name")?.optString("handle")
-        if (!old.isNullOrBlank()) remove("credential:$old")
+        if (!old.isNullOrBlank()) { remove("credential:$old"); remove("otp-expiry:$old") }
         val handle = UUID.randomUUID().toString()
-        put("credential:$handle", values, remember)
-        put("credential-key:$name", JSONObject().put("handle", handle), remember)
+        val singleUse = oneTime || values.has("otp")
+        put("credential:$handle", values, remember && !singleUse)
+        put("credential-key:$name", JSONObject().put("handle", handle), remember && !singleUse)
+        if (singleUse) put("otp-expiry:$handle", JSONObject().put("expiresAt", System.currentTimeMillis() + 120_000), false)
         handle
     }
-    companion object { private val keyLock = Any(); private val vaultLock = PluginServiceAccounts.lock; private const val ALIAS = "native-plugin-v3-vault" }
+    internal fun consumeCredential(handle: String): JSONObject = synchronized(vaultLock) {
+        val values = get("credential:$handle") ?: throw PluginException(PluginErrorCode.SESSION_EXPIRED, "凭据已失效，请重新输入")
+        val marker = get("otp-expiry:$handle")
+        if (values.has("otp") || marker != null) {
+            val expiry = marker?.optLong("expiresAt") ?: 0L
+            remove("credential:$handle"); remove("otp-expiry:$handle")
+            if (expiry < System.currentTimeMillis()) throw PluginException(PluginErrorCode.SESSION_EXPIRED, "验证码已过期，请重新输入")
+        }
+        values
+    }
+    companion object { private val keyLock = Any(); private val vaultLock = PluginServiceAccounts.lock; private val ephemeralScopes = mutableMapOf<String, MutableMap<String, JSONObject>>(); private const val ALIAS = "native-plugin-v3-vault" }
 }

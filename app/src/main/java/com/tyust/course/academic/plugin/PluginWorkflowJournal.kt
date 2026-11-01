@@ -22,6 +22,9 @@ class PluginWorkflowJournal(private val store: PluginWorkflowStore) {
         val steps = PluginJson.objects(plan.getJSONArray("steps"))
         if (steps.size !in 1..200 || steps.map { it.getString("id") }.distinct().size != steps.size || steps.map { it.getString("target") }.distinct().size != steps.size)
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "工作流目标或步骤重复、为空或超过限制")
+        if (identity.optBoolean("singleTarget")) {
+            requireResolvedTargets(identity, steps.map { it.getString("target") }.toSet())
+        }
         if (store.list().count { !terminal(it) } >= 200) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "未完成工作流过多")
         val id = "wf_" + UUID.randomUUID().toString()
         val record = JSONObject(identity.toString()).put("workflowId", id).put("input", input ?: JSONObject.NULL)
@@ -48,7 +51,12 @@ class PluginWorkflowJournal(private val store: PluginWorkflowStore) {
             if (record.getBoolean("cancelled") || !active()) break
             val step = record.getJSONArray("steps").getJSONObject(index)
             if (step.getString("status") != "ready") continue
-            mutate(id) { current -> current.getJSONArray("steps").getJSONObject(index).put("status", "sending").put("attempts", step.getInt("attempts") + 1) }
+            mutate(id) { current ->
+                // The competing-target check and write-ahead transition share the store lock.
+                // A workflow prepared earlier, or by another caller, cannot race this send.
+                requireResolvedTargets(current, setOf(step.getString("target")), id)
+                current.getJSONArray("steps").getJSONObject(index).put("status", "sending").put("attempts", step.getInt("attempts") + 1)
+            }
             val receipt = try { invoke(read(id), JSONObject(step.toString())) }
             catch (e: Exception) {
                 // Even cancellation can arrive after the server commits. Leave a durable
@@ -86,5 +94,13 @@ class PluginWorkflowJournal(private val store: PluginWorkflowStore) {
         .put("approved", record.getBoolean("approved")).put("cancelled", record.getBoolean("cancelled"))
         .put("steps", JSONArray(PluginJson.objects(record.getJSONArray("steps")).map { step -> JSONObject().put("id", step.getString("id")).put("target", step.getString("target")).put("label", step.getString("label")).put("status", step.getString("status")).put("message", step.optString("message")) }))
     private fun mutex(id: String) = executions.getOrPut(id) { Mutex() }
+    private fun requireResolvedTargets(identity: JSONObject, targets: Set<String>, excluding: String? = null) {
+        if (!identity.optBoolean("singleTarget")) return
+        if (store.list().any { previous ->
+                previous.optString("workflowId") != excluding && previous.optBoolean("singleTarget") &&
+                    listOf("providerId", "providerAccount", "serverId").all { previous.optString(it) == identity.optString(it) } &&
+                    PluginJson.objects(previous.getJSONArray("steps")).any { it.optString("target") in targets && it.optString("status") in setOf("sending", "unknown") }
+            }) throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "同一任务的上次提交结果待核对，不能重放")
+    }
     companion object { private val storeLock = Any(); private val executions = ConcurrentHashMap<String, Mutex>() }
 }

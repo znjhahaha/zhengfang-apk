@@ -92,9 +92,10 @@ class PluginServices(
                             .put("name", service.contract.getString("name")).put("version", service.contract.getInt("version"))
                             .put("serverId", serverId).put("providerAccount", providerAccount)
                             .put("providerSchool", session.key.schoolId).put("baseUrl", session.baseUrl)
+                        if (service.pkg.manifest.usesProtectedServices) identity.put("singleTarget", true)
                         journal.prepare(identity, input.get("input"), result)
                     }
-                } finally { if (valid()) PluginSessionCookies.save(app, service.pkg, session); session.retire() }
+                } finally { if (valid()) PluginSessionCookies.save(app, service.pkg, session); PluginServiceAccounts.releaseConsumerSession(session) }
             }
             "workflow.list" -> journal.list(caller.manifest.id, scope)
             else -> {
@@ -137,7 +138,7 @@ class PluginServices(
             else AcademicSession(AcademicSessionKey(record.getString("providerSchool"), providerAccount), record.getString("baseUrl"))
         fun valid() = active() && PluginPages.available(pkg) && accounts.current(pkg, session) &&
             session.baseUrl == record.getString("baseUrl") && session.key.accountKey == providerAccount
-        if (!valid()) { session.retire(); throw PluginException(PluginErrorCode.STALE_CONTEXT, "工作流使用的服务或账号已改变") }
+        if (!valid()) { PluginServiceAccounts.releaseConsumerSession(session); throw PluginException(PluginErrorCode.STALE_CONTEXT, "工作流使用的服务或账号已改变") }
         return try {
             val args = JSONObject().put("workflowId", record.getString("workflowId")).put("name", record.getString("name")).put("version", record.getInt("version"))
             if (method != "workflow.cancel") args.put("input", record.get("input")).put("step", step)
@@ -149,6 +150,6 @@ class PluginServices(
                 PluginServiceDirectory.validateReceipt(PluginService(pkg, contract), result)
             }
             result
-        } finally { if (valid()) PluginSessionCookies.save(app, pkg, session); session.retire() }
+        } finally { if (valid()) PluginSessionCookies.save(app, pkg, session); PluginServiceAccounts.releaseConsumerSession(session) }
     }
 }

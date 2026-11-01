@@ -15,8 +15,42 @@ import javax.crypto.spec.SecretKeySpec
 
 /** Credential-derived values stay within the host request; never returned to the reducer. */
 object PluginCredentialBindings {
-    fun structured(request: JSONObject): Boolean = listOf("form", "headers").any { area ->
+    fun structured(request: JSONObject): Boolean = listOf("form", "headers", "body").any { area ->
         request.optJSONObject("bindings")?.optJSONObject(area)?.let { map -> map.keys().asSequence().any { map.opt(it) is JSONObject } } == true
+    }
+    /** Materialize a non-secret preview so the complete request can be checked before vault access. */
+    fun validateAliases(request: JSONObject): JSONObject {
+        if (request.has("credentials") && request.optJSONObject("credentials") == null) invalid()
+        val aliases = request.optJSONObject("credentials") ?: JSONObject()
+        aliases.keys().forEach { alias ->
+            if (!alias.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,31}")) || aliases.opt(alias) !is String || aliases.getString(alias).length !in 1..128) invalid()
+        }
+        val single = aliases.length() == 0 && request.optString("credential").isNotBlank()
+        val fake = JSONObject()
+        val bindings = request.optJSONObject("bindings") ?: invalid()
+        if (bindings.keys().asSequence().any { it !in setOf("body", "form", "headers") }) invalid()
+        fun reference(from: String) {
+            val parts = from.split('.', limit = 2)
+            if (single) { if (parts.size != 1 || !from.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}"))) invalid() }
+            else if (parts.size != 2 || !aliases.has(parts[0]) || !parts[1].matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}"))) invalid()
+            fake.put(from, "validation")
+        }
+        for (area in listOf("body", "form", "headers")) bindings.optJSONObject(area)?.let { map ->
+            map.keys().forEach { key ->
+                when(val descriptor = map.get(key)) {
+                    is String -> reference(descriptor)
+                    is JSONObject -> {
+                        if (descriptor.has("from")) reference(descriptor.getString("from"))
+                        descriptor.optJSONArray("fields")?.let { fields -> (0 until fields.length()).forEach { index ->
+                            val field = fields.optJSONObject(index) ?: invalid()
+                            if (field.has("from")) reference(field.getString("from"))
+                        } }
+                    }
+                    else -> invalid()
+                }
+            }
+        }
+        return apply(request, fake)
     }
     fun apply(request: JSONObject, values: JSONObject?): JSONObject {
         val result = JSONObject(request.toString())
@@ -35,8 +69,55 @@ object PluginCredentialBindings {
             }
             result.put(area, target)
         }
-        result.remove("credential"); result.remove("bindings")
+        bindings.optJSONObject("body")?.let { mapping ->
+            if (mapping.length() !in 1..24 || result.has("form") || result.opt("body") !is String) invalid()
+            val body = try { JSONObject(result.getString("body")) } catch (_: Exception) { invalid() }
+            mapping.keys().forEach { key ->
+                val descriptor = mapping.optJSONObject(key) ?: invalid()
+                if (descriptor.keys().asSequence().any { it !in setOf("from", "fields", "transform", "encoding") } || descriptor.has("from") == descriptor.has("fields")) invalid()
+                val text = if (descriptor.has("from")) resolve(values, descriptor.getString("from")) else {
+                    val fields = descriptor.optJSONArray("fields") ?: invalid()
+                    if (fields.length() !in 1..24) invalid()
+                    val seen = mutableSetOf<String>()
+                    // JSONObject's iteration order differs between JVM and Android. Serialize the
+                    // protocol's ordered fields explicitly before encrypting inside the host.
+                    (0 until fields.length()).joinToString(",", "{", "}") { index ->
+                        val item = fields.optJSONObject(index) ?: invalid()
+                        val name = item.optString("key")
+                        if (name.isBlank() || name.length > 128 || !seen.add(name) || item.has("from") == item.has("value") ||
+                            item.keys().asSequence().any { it !in setOf("key", "from", "value") }) invalid()
+                        val value = if (item.has("from")) resolve(values, item.getString("from")) else item.get("value")
+                        val literal = JSONObject().put("v", value).toString().let { it.substring(it.indexOf(':') + 1, it.length - 1) }
+                        JSONObject.quote(name) + ":" + literal
+                    }
+                }
+                val spec = descriptor.optJSONObject("transform")
+                val transformed = spec?.let { transform(text, it) } ?: text
+                val encoded = when (descriptor.optString("encoding")) {
+                    "" -> transformed
+                    "base64", "tc2" -> {
+                        val b64 = if (spec == null) text.toByteArray(Charsets.UTF_8).toByteString().base64() else {
+                            if (spec.optString("type") !in setOf("aes-cbc", "aes-ecb", "rsa-pkcs1", "base64")) invalid()
+                            transformed
+                        }
+                        if (descriptor.optString("encoding") == "tc2") {
+                            val bytes = b64.decodeBase64()?.size ?: invalid()
+                            val complete = bytes / 45 * 60
+                            b64.take(complete).chunked(60).joinToString("") { "$it " } + b64.drop(complete)
+                        } else b64
+                    }
+                    else -> invalid()
+                }
+                body.put(key, encoded)
+            }
+            result.put("body", body.toString())
+        }
+        result.remove("credential"); result.remove("credentials"); result.remove("bindings")
         return result
+    }
+    private fun resolve(values: JSONObject?, from: String): String {
+        if (from.isBlank() || values?.opt(from) !is String) invalid()
+        return values.getString(from)
     }
     private fun transform(value: String, spec: JSONObject): String {
         fun decode(name: String) = spec.getString(name).decodeBase64()?.toByteArray() ?: invalid()

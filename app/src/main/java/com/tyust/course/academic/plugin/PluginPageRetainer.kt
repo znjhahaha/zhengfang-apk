@@ -53,7 +53,7 @@ internal class PluginPageLifetime(private val app: Context, private val pkg: Plu
     }
     fun close() {
         if (closed) return
-        closed = true; scope.cancel(); native?.close(); host.close(); session.retire(); interaction.close()
+        closed = true; scope.cancel(); native?.close(); host.close(); PluginServiceAccounts.releaseConsumerSession(session); interaction.close()
     }
 }
 

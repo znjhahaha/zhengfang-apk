@@ -174,7 +174,7 @@ internal object NativeForegroundTasks {
                         }
                     }
                 }
-                ownedHost?.close(); ownedSession?.retire(); lease?.close(); running.remove(handle)
+                ownedHost?.close(); ownedSession?.let(PluginServiceAccounts::releaseConsumerSession); lease?.close(); running.remove(handle)
                 updateIfPresent(app, handle) { if (it.optString("status") == "running") it.put("status", "interrupted") }
                 discarded.remove(handle)
                 withContext(NonCancellable + Dispatchers.Main) { PluginForegroundWork.remove(app, handle) }

@@ -114,7 +114,7 @@ class PluginSandboxClient(context: Context, private val startupTimeoutMillis: Lo
                     if (code == PluginErrorCode.PAGE_CHANGED &&
                         detail.trim() in setOf("interrupted", "InternalError: interrupted")) code = PluginErrorCode.TIMEOUT
                     val message = if (code == PluginErrorCode.TIMEOUT) {
-                        if (operation.method.startsWith("auth.")) "登录处理超时，请重试或使用网页登录"
+                        if (operation.method.substringBefore('.') in setOf("auth", "serviceAuth")) "登录处理超时，请重试或使用网页登录"
                         else "教务处理超时，请重试"
                     } else detail
                     throw operation.failure(code, message)

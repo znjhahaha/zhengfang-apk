@@ -25,7 +25,10 @@ object NativePluginRunner {
         val operation = PluginOperation(session, pkg.manifest, method, development = !pkg.official, confirmed = confirmed, actionId = args.optString("name"), pageContext = pageContext, packageDigest = pkg.digest, scopeStillActive = active)
         try {
         operation.requireActive()
-        val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"), PluginWebSessionCookies.jar(app, pkg, session, active), dataGuard = PluginDataGuard(app, pkg))
+        val credentials = if (method.substringBefore('.') in setOf("serviceAuth", "services", "workflow")) NativePluginVault(app,
+            PluginStorageScope.session(session, pkg.manifest.id, !pkg.official), sharedEphemeral = pkg.manifest.usesProtectedServices, guard = { operation.requireActive() }) else null
+        val host = PluginHost(operation, File(app.filesDir, "academic-plugin-storage"), PluginWebSessionCookies.jar(app, pkg, session, active), dataGuard = PluginDataGuard(app, pkg),
+            credentialResolver = credentials?.let { vault -> { handle -> vault.consumeCredential(handle) } })
         val result = PluginSandboxClient(app).execute(pkg.source, args, operation, host)
         operation.requireActive()
         val schema = PluginContractCache.schema(app)
@@ -187,5 +190,5 @@ class NativeUiSession(
         mutableSnapshot.value = mutableSnapshot.value.copy(busy = false, error = error.message ?: "插件暂时不可用", errorCode = (error as? PluginException)?.code?.name ?: "RUNTIME_EXITED")
     }
     private fun isCurrent(instance: String): Boolean = !closed && active() && !session.retired && mutableSnapshot.value.instance == instance
-    fun close() { sandboxConnection.close(); closed = true; events.close(); effects.values.toList().forEach(Job::cancel); scope.cancel(); host.close(); session.retire() }
+    fun close() { sandboxConnection.close(); closed = true; events.close(); effects.values.toList().forEach(Job::cancel); scope.cancel(); host.close(); PluginServiceAccounts.releaseConsumerSession(session) }
 }

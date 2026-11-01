@@ -35,6 +35,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     private val sharedApproval: ((JSONObject) -> Boolean)? = null,
     private val userscriptHeaders: Boolean = false,
     private val requestGuard: ((HttpUrl, String, String, JSONObject?) -> Unit)? = null,
+    private val credentialResolver: ((String) -> JSONObject)? = null,
     private val sharedRequest: ((HttpUrl, String, String, JSONObject?) -> Unit)? = null) {
     private val cookiesForResponse: (HttpUrl) -> List<String> = { url -> cookies.loadForRequest(url).map { it.value } }
     private val policy = PluginNetworkPolicy(operation.manifest.network)
@@ -55,7 +56,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "原生插件须通过效果调用宿主能力")
         if (operation.method == "__inspect" && !method.startsWith("crypto."))
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "包加载检查不允许网络或存储副作用")
-        if (operation.manifest.isNative && operation.method.substringBefore('.') in setOf("services", "workflow")) {
+        if (operation.manifest.isNative && operation.method.substringBefore('.') in setOf("services", "workflow", "serviceAuth")) {
             val permission = when { method == "http" -> "network"; method.startsWith("storage.") -> "storage"; else -> null }
             if (permission != null && permission !in operation.manifest.permissions)
                 throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务提供方未声明 $permission 权限")
@@ -63,6 +64,13 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (++calls > 2000) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "宿主调用次数超过上限")
         val value: Any? = when {
             method == "http" -> http(payload)
+            method == "sessionCookies.set" -> {
+                if (!operation.method.startsWith("serviceAuth.") || "auth" !in operation.manifest.permissions) invalid("学校 Cookie 同步仅供受保护的服务认证处理器")
+                val url = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效 Cookie 来源")
+                val scope = PluginNetworkScopes.requireGrant(operation, payload.getString("scopeGrant"))
+                scope.setCookies(url, payload.getJSONArray("cookies"))
+                JSONObject.NULL
+            }
             method == "capabilities.list" -> operation.pageContext.optJSONArray("capabilities") ?: org.json.JSONArray()
             method.startsWith("crypto.") -> crypto(method.substringAfter('.'), payload)
             method.startsWith("state.") -> store(false, method.substringAfter('.'), payload)
@@ -85,11 +93,38 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         if (!operation.manifest.isNative || operation.method != "host.effect") invalid("文件传输仅供原生宿主效果")
         return http(payload, upload, field)
     }
-    private fun http(payload: JSONObject, upload: PluginUpload? = null, field: String = "file"): JSONObject {
+    // OkHttp 4.12 trims every public header setter, including tc2's significant trailing
+    // space. After public validation, preserve only these bounded protocol values verbatim.
+    // The raw-wire regression pins this behavior when the OkHttp dependency changes.
+    @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+    private fun installHeaders(builder: Request.Builder, supplied: JSONObject) {
+        val headers = builder.build().headers.newBuilder()
+        supplied.keys().forEach { name ->
+            val value = supplied.getString(name)
+            headers.set(name, value)
+            if (name.lowercase() in PROTOCOL_HEADERS) headers.namesAndValues[headers.namesAndValues.lastIndex] = value
+        }
+        builder.headers(headers.build())
+    }
+    private fun http(input: JSONObject, upload: PluginUpload? = null, field: String = "file"): JSONObject {
+        var payload = JSONObject(input.toString())
+        val dynamicScope = payload.optString("scopeGrant").takeIf(String::isNotBlank)?.let { PluginNetworkScopes.requireGrant(operation, it) }
+        fun allowed(url: HttpUrl, method: String, purpose: String, form: JSONObject?, authHeader: String? = null): JSONObject =
+            dynamicScope?.policy?.requireAllowed(url, method, purpose, form, authHeader) ?: requestRule(url, method, purpose, form, authHeader)
         if (++requests > 100) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "网络请求次数超过上限")
         val purpose = payload.getString("purpose")
         if (purpose !in setOf("query", "auth", "mutation")) invalid("未知请求用途")
-        if (purpose == "auth" && !operation.method.startsWith("auth.") && !(operation.manifest.isNative && operation.method == "host.effect" && "auth" in operation.manifest.permissions)) invalid("查询不能执行认证请求")
+        if (purpose == "auth" && operation.manifest.usesProtectedServices && !operation.method.startsWith("serviceAuth."))
+            invalid("此服务的认证请求必须通过受保护的认证处理器")
+        if (payload.has("omitCookies") && (payload.opt("omitCookies") !is Boolean || operation.method.substringBefore('.') !in setOf("serviceAuth", "services", "workflow") || purpose != "query" ||
+                operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().none { it.optString("name") == "network.request" && it.optInt("version") >= 5 })) invalid("不携带 Cookie 的请求仅供新版私有只读处理器")
+        val omitCookies = payload.optBoolean("omitCookies")
+        if (omitCookies && (payload.has("credentials") || payload.has("credential") || payload.has("bindings") || payload.has("cookieHeader") ||
+                payload.optJSONObject("headers")?.keys()?.asSequence()?.any { it.lowercase() in setOf("authorization", "x-token", "sessiontoken", "sessiontokenkey", "ampcookies", "caspcookies", "tgc") } == true)) invalid("匿名读取不能绑定认证材料")
+        if (payload.has("followRedirects") && (payload.opt("followRedirects") !is Boolean || !operation.method.startsWith("serviceAuth.") || purpose == "mutation" ||
+                operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().none { it.optString("name") == "network.request" && it.optInt("version") >= 5 })) invalid("手动跳转仅供新版受保护服务认证")
+        if (purpose == "auth" && !operation.method.startsWith("auth.") && !operation.method.startsWith("serviceAuth.") &&
+            !(operation.manifest.isNative && !operation.manifest.usesProtectedServices && operation.method == "host.effect" && "auth" in operation.manifest.permissions)) invalid("查询不能执行认证请求")
         var method = payload.optString("method", "GET")
         val scriptRequest = userscriptHeaders && operation.manifest.isNative && "userscripts" in operation.manifest.permissions && operation.method == "host.effect"
         if (method !in setOf("GET", "POST") && !(method in setOf("PUT", "HEAD") && scriptRequest)) invalid("不支持的请求方法")
@@ -101,8 +136,21 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         val charsetName = payload.optString("charset", "UTF-8")
         if (charsetName !in setOf("UTF-8", "GBK", "GB2312", "GB18030")) invalid("不支持的编码")
         val charset = Charset.forName(charsetName)
+        if (payload.optString("responseType", "text") !in setOf("text", "base64")) invalid("不支持的响应格式")
         // Reject invalid destinations before asking the user anything.
-        requestRule(url, method, purpose, form)
+        allowed(url, method, purpose, form)
+        val secretValues = JSONObject()
+        val bindingRequest = if (payload.has("credentials") || payload.optJSONObject("bindings")?.has("body") == true) {
+            if (!operation.manifest.isNative || operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().none { it.optString("name") == "network.request" && it.optInt("version") >= 5 }) invalid("组合凭据需要 network.request 版本 5")
+            val aliases = payload.optJSONObject("credentials") ?: JSONObject()
+            val single = aliases.length() == 0 && payload.optString("credential").isNotBlank()
+            if (!single && aliases.length() !in 1..8 || "auth" !in operation.manifest.permissions && "credentials" !in operation.manifest.permissions) invalid("凭据权限或数量无效")
+            val original = payload
+            payload = PluginCredentialBindings.validateAliases(original)
+            form = payload.optJSONObject("form")
+            allowed(url, method, purpose, form)
+            original
+        } else null
         if (!sharedSite()) sharedRequest?.invoke(url, method, purpose, form)
         val approvedSharedWrite = sharedApproval?.invoke(JSONObject(payload.toString())) == true
         val supplied = JSONObject((payload.optJSONObject("headers") ?: JSONObject()).toString())
@@ -125,7 +173,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 policy.requireAllowed(it.service, "GET", "auth", null)
             }
         } else null
-        val requestCookies = if (academicToken && sharedRequest == null) PluginAcademicCookies(operation.session, operation.manifest.id, authScope) { operation.requireActive() } else cookies
+        val requestCookies = if (omitCookies) CookieJar.NO_COOKIES else dynamicScope?.cookies ?: if (academicToken && sharedRequest == null) PluginAcademicCookies(operation.session, operation.manifest.id, authScope) { operation.requireActive() } else cookies
         if (payload.has("sameOriginReferer") &&
             (payload.opt("sameOriginReferer") !is Boolean || !academicToken)) invalid("同源 Referer 仅支持 API 3 教务插件")
         val sameOriginReferer = payload.optBoolean("sameOriginReferer", false)
@@ -146,16 +194,18 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             catch (_: IllegalArgumentException) { invalid("网页登录凭据编码无效") }
         }
         val boundToken = if (cookieBinding != null) {
-            requestRule(url, method, purpose, form)
+            allowed(url, method, purpose, form)
             sharedRequest?.invoke(url, method, purpose, form)
             val header = cookieBinding.optString("header")
             if (supplied.keys().asSequence().any { it.equals(header, true) }) invalid("认证请求头不可重复")
             cookieToken(url).also { supplied.put(header, it) }
         } else null
         val nativeReferer = !userscriptHeaders && operation.manifest.apiVersion == 3 && operation.manifest.isNative &&
-            operation.method == "host.effect" && operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty()
+            operation.method.substringBefore('.') in setOf("host", "serviceAuth", "services", "workflow") && operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty()
                 .any { it.optString("name") == "network.request" && it.optInt("version") >= 4 }
         val allowedHeaders = setOf("accept", "content-type", "x-requested-with") +
+            (if (operation.method.substringBefore('.') in setOf("serviceAuth", "services", "workflow") && operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty()
+                .any { it.optString("name") == "network.request" && it.optInt("version") >= 5 }) setOf("sessiontoken", "sessiontokenkey", "cpdailyclienttype", "tenantid", "ampcookies", "caspcookies", "tgc") else emptySet()) +
             (if (nativeReferer) setOf("referer") else emptySet()) +
             (if (scriptRequest) setOf("referer", "origin", "user-agent", "range", "accept-language", "dnt", "upgrade-insecure-requests",
                 "sec-ch-ua", "sec-ch-ua-arch", "sec-ch-ua-bitness", "sec-ch-ua-full-version", "sec-ch-ua-full-version-list",
@@ -163,35 +213,70 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user") else emptySet()) +
             (if (operation.manifest.isService || operation.manifest.isNative || academicToken) setOf("authorization") else emptySet()) +
             (if (academicToken || scopedToken) setOf("x-token") else emptySet())
-        val headerNames = supplied.keys().asSequence().map { it.lowercase() }.toList()
-        if (headerNames.distinct().size != headerNames.size) invalid("请求头不可重复")
-        supplied.keys().forEach { if (it.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理") }
         val referer = supplied.keys().asSequence().firstOrNull { it.equals("referer", true) }
-        if (nativeReferer && referer != null) {
-            val value = supplied.getString(referer)
-            if (value.length !in 1..2048 || value.any { it.code !in 33..126 }) invalid("无效 Referer")
-            val source = value.toHttpUrlOrNull() ?: invalid("无效 Referer")
-            // A reference page must itself be declared readable. Never bypass site consent.
-            policy.requireAllowed(source, "GET", "query", null)
-        }
         val authorization = supplied.keys().asSequence().firstOrNull { it.equals("authorization", true) }
-        if (authorization != null) {
-            val value = supplied.getString(authorization)
-            if (academicToken) {
-                val secret = value.removePrefix("Bearer ")
-                if (value.length !in 1..8192 || secret.isEmpty() || secret.any { it.code !in 33..126 }) invalid("无效教务认证令牌")
-            } else if (!value.startsWith("Bearer ") || value.length !in 8..8192 || value.removePrefix("Bearer ").any { it.code !in 33..126 }) invalid("服务认证需要有效的 Bearer 请求头")
-        }
         val token = supplied.keys().asSequence().firstOrNull { it.equals("x-token", true) }
-        if (token != null && (supplied.getString(token).length !in 1..8192 || supplied.getString(token).any { it.code !in 33..126 })) invalid("无效 X-Token")
+        val protocolToken = supplied.keys().asSequence().any { it.lowercase() in setOf("sessiontoken", "sessiontokenkey", "ampcookies", "caspcookies", "tgc") }
+        fun validateHeaders() {
+            val headerNames = supplied.keys().asSequence().map { it.lowercase() }.toList()
+            if (headerNames.distinct().size != headerNames.size) invalid("请求头不可重复")
+            supplied.keys().forEach { key ->
+                if (key.lowercase() !in allowedHeaders) invalid("该请求头由宿主管理")
+                val value = supplied.opt(key) as? String ?: invalid("无效请求头值")
+                if (key.lowercase() in PROTOCOL_HEADERS) {
+                    if (value.length !in 1..8192 || value.any { it.code !in 32..126 }) invalid("无效服务协议请求头")
+                } else if (value.length > 16384 || value.any { it == '\r' || it == '\n' || it.code < 32 && it != '\t' }) invalid("无效请求头值")
+            }
+            if (nativeReferer && referer != null) {
+                val value = supplied.getString(referer)
+                if (value.length !in 1..2048 || value.any { it.code !in 33..126 }) invalid("无效 Referer")
+                val source = value.toHttpUrlOrNull() ?: invalid("无效 Referer")
+                allowed(source, "GET", "query", null)
+            }
+            if (authorization != null) {
+                val value = supplied.getString(authorization)
+                if (academicToken) {
+                    val secret = value.removePrefix("Bearer ")
+                    if (value.length !in 1..8192 || secret.isEmpty() || secret.any { it.code !in 33..126 }) invalid("无效教务认证令牌")
+                } else if (!value.startsWith("Bearer ") || value.length !in 8..8192 || value.removePrefix("Bearer ").any { it.code !in 33..126 }) invalid("服务认证需要有效的 Bearer 请求头")
+            }
+            if (token != null && (supplied.getString(token).length !in 1..8192 || supplied.getString(token).any { it.code !in 33..126 })) invalid("无效 X-Token")
+            // Validate media types now, before a rejected request could consume an OTP.
+            if (method in setOf("POST", "PUT") && upload == null && form == null)
+                try { supplied.optString("Content-Type", "application/x-www-form-urlencoded; charset=$charsetName").toMediaType() }
+                catch (_: IllegalArgumentException) { invalid("无效 Content-Type") }
+        }
+        validateHeaders()
+        authScope?.requireAllowed(url, method)
+        allowed(url, method, purpose, form, if (token != null && !academicToken) "X-Token" else null)
+        if (sharedRequest == null && dynamicScope == null) dataGuard?.requireNetwork(url)
+        if (purpose == "mutation" && !(approvedSharedWrite && sharedRequest != null)) operation.requireMutationAllowed()
+        if (bindingRequest != null) {
+            operation.requireActive()
+            if (credentialResolver == null) invalid("当前调用不能访问凭据")
+            val aliases = bindingRequest.optJSONObject("credentials") ?: JSONObject()
+            aliases.keys().forEach { alias ->
+                val values = credentialResolver.invoke(aliases.getString(alias))
+                values.keys().forEach { key -> if (values.opt(key) is String) secretValues.put("$alias.$key", values.getString(key)) }
+            }
+            if (aliases.length() == 0) {
+                val values = credentialResolver.invoke(bindingRequest.getString("credential"))
+                values.keys().forEach { key -> if (values.opt(key) is String) secretValues.put(key, values.getString(key)) }
+            }
+            payload = PluginCredentialBindings.apply(bindingRequest, secretValues)
+            form = payload.optJSONObject("form")
+            payload.optJSONObject("headers")?.let { headers -> headers.keys().forEach { supplied.put(it, headers.get(it)) } }
+            validateHeaders()
+            allowed(url, method, purpose, form, if (token != null && !academicToken) "X-Token" else null)
+        }
         var redirected = 0
         var callbackFragment: String? = null
         while (true) {
             operation.requireActive()
             authScope?.requireAllowed(url, method)
-            val rule = requestRule(url, method, purpose, form, if (token != null && !academicToken) "X-Token" else null)
+            val rule = allowed(url, method, purpose, form, if (token != null && !academicToken) "X-Token" else null)
             if (!sharedSite()) sharedRequest?.invoke(url, method, purpose, form)
-            if (sharedRequest == null) dataGuard?.requireNetwork(url)
+            if (sharedRequest == null && dynamicScope == null) dataGuard?.requireNetwork(url)
             if (sessionToken != null && sharedToken?.invoke(url) != sessionToken)
                 throw PluginException(PluginErrorCode.SESSION_EXPIRED, "教务令牌已改变，请重新发起请求")
             val userAgent = rule.optString("userAgent").ifBlank {
@@ -200,7 +285,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
             val requestSecrets = if (sharedRequest != null) cookiesForResponse(url) + listOfNotNull(sessionToken?.second) else emptyList()
             val builder = Request.Builder().url(url).header("User-Agent", userAgent)
             if (sameOriginReferer) builder.header("Referer", url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString())
-            supplied.keys().forEach { builder.header(it, supplied.getString(it)) }
+            installHeaders(builder, supplied)
             if (method in setOf("POST", "PUT")) {
                 val body = if (upload != null) MultipartBody.Builder().setType(MultipartBody.FORM).apply {
                     form?.keys()?.forEach { addFormDataPart(it, form!!.getString(it)) }
@@ -234,6 +319,12 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         .put("method", method).put("purpose", purpose).put("status", response.code)
                     if (response.code in 300..399) {
                         if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
+                        if (payload.has("followRedirects") && !payload.getBoolean("followRedirects")) {
+                            val headers = JSONObject()
+                            response.header("Location")?.let { headers.put("Location", it) }
+                            response.headers.values("Set-Cookie").takeIf { it.isNotEmpty() }?.let { headers.put("Set-Cookie", it.joinToString("\n")) }
+                            return JSONObject().put("status", response.code).put("url", url.toString()).put("headers", headers).put("body", "")
+                        }
                         if (++redirected > com.tyust.course.academic.AcademicRedirects.MAX_REDIRECTS) invalid("跳转次数超过上限")
                         if (method !in setOf("GET", "HEAD") && response.code in setOf(307, 308)) invalid("不能自动重放写入请求跳转")
                         val resolved = url.resolve(response.header("Location").orEmpty()) ?: invalid("无效跳转")
@@ -242,7 +333,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                             supplied.remove(referer)
                         val redirectedMethod = if (method == "HEAD") "HEAD" else "GET"
                         authScope?.requireAllowed(next, redirectedMethod)
-                        if ((authorization != null || token != null) && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
+                        if ((authorization != null || token != null || protocolToken) && (next.scheme != url.scheme || next.host != url.host || next.port != url.port))
                             throw PluginException(PluginErrorCode.UNTRUSTED_URL, "认证令牌不能随跳转发送到其他站点")
                         if (boundToken != null && cookieToken(next) != boundToken)
                             throw PluginException(PluginErrorCode.UNTRUSTED_URL, "Cookie 认证范围不能随跳转变化")
@@ -273,7 +364,10 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                             PluginSecretResponse.requireSafe(bytes, responseUrl = url.toString(), secrets = secrets)
                             dataGuard?.mark()
                         }
+                        if (operation.method == "host.effect" && secretValues.length() > 0) PluginSecretResponse.requireSafe(bytes, responseUrl = url.toString(),
+                            secrets = secretValues.keys().asSequence().map { secretValues.getString(it) }.toList())
                         val headers = JSONObject()
+                        if (operation.method.startsWith("serviceAuth.")) response.headers.values("Set-Cookie").takeIf { it.isNotEmpty() }?.let { headers.put("Set-Cookie", it.joinToString("\n")) }
                         captureToken?.invoke(url, method, purpose, response.code, bytes.toString(charset))
                         listOf("Content-Type", "Date", "Retry-After").forEach { name -> response.header(name)?.let { headers.put(name, it) } }
                         val responseUrl = url.newBuilder().encodedFragment(callbackFragment).build()
@@ -349,6 +443,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
 
     private fun crypto(method: String, p: JSONObject): String {
+        if (method in setOf("symmetric", "rsaPkcs1Decrypt")) return PluginCrypto.execute(method, p)
         fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it.toInt() and 255) }
         fun decode(key: String) = p.getString(key).decodeBase64()?.toByteArray() ?: invalid("无效 Base64")
         val bytes = p.getString("text").toByteArray(Charsets.UTF_8)
@@ -374,6 +469,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
     private fun invalid(message: String): Nothing = throw PluginException(PluginErrorCode.VALIDATION_FAILED, message)
     companion object {
+        private val PROTOCOL_HEADERS = setOf("sessiontoken", "sessiontokenkey", "cpdailyclienttype", "tenantid", "ampcookies", "caspcookies", "tgc")
         private val storeLock = PluginServiceAccounts.lock
         private val sessionStates = java.util.WeakHashMap<com.tyust.course.academic.AcademicSession, MutableMap<String, JSONObject>>()
         internal fun clearTemporaryState(session: com.tyust.course.academic.AcademicSession) = synchronized(storeLock) { sessionStates.remove(session); Unit }

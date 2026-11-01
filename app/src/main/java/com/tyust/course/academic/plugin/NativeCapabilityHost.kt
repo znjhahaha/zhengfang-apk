@@ -59,7 +59,7 @@ class NativeCapabilityHost internal constructor(
     private val legacyNamespaces = PluginLegacyData.namespaces(app, pkg, session)
     init { (legacyNamespaces + namespace).forEach { PluginServiceAccounts(app).trackScope(pkg.manifest.id, it) } }
     val files = NativePluginFiles(app, namespace, legacyNamespaces) { ensureActive() }
-    private val vault = NativePluginVault(app, namespace, legacyNamespaces) { ensureActive() }
+    private val vault = NativePluginVault(app, namespace, legacyNamespaces, sharedEphemeral = pkg.manifest.usesProtectedServices) { ensureActive() }
     private val records by lazy { NativePluginRecords(app, namespace, guard = ::ensureActive) }
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val operations = ConcurrentHashMap.newKeySet<PluginOperation>()
@@ -115,6 +115,11 @@ class NativeCapabilityHost internal constructor(
         val input = effect.getJSONObject("input")
         schema.validate(input, descriptor.getJSONObject("input"))
         val request = when (name) { "network.request" -> input; "files.download", "files.upload" -> input.getJSONObject("request"); else -> null }
+        if (request?.optString("purpose") == "auth" && pkg.manifest.usesProtectedServices)
+            throw PluginException(PluginErrorCode.VALIDATION_FAILED, "此服务的认证请求必须通过受保护的认证处理器")
+        if (request != null && (request.has("scopeGrant") || request.has("credentials") || request.optJSONObject("bindings")?.has("body") == true) &&
+            (name == "network.request" && effect.getInt("version") < 5 || name != "network.request" && effect.getInt("version") < 3))
+            throw PluginException(PluginErrorCode.UNSUPPORTED, "学校范围或组合凭据需要新版请求能力")
         if (name == "device.location.pick" && input.has("query") &&
             (effect.getInt("version") < 2 || PluginJson.objects(pkg.manifest.json.optJSONArray("requires") ?: JSONArray())
                 .none { it.optString("name") == "device.location.pick" && it.optInt("version") >= 2 }))
@@ -128,6 +133,29 @@ class NativeCapabilityHost internal constructor(
             throw PluginException(PluginErrorCode.UNSUPPORTED, "加密凭据绑定需要声明并调用 $name 版本 2")
         val result = PluginExecutionBudget.run(effect.optLong("timeoutMs", 120_000).coerceIn(1000, 600_000)) {
             when (name) {
+                "auth.service" -> {
+                    if (input.getString("action") in setOf("start", "resume", "logout") && (!flow.userGesture || interaction == null)) denied("服务登录与退出需要你主动发起")
+                    PluginServiceAuthentication.execute(app, pkg, session, input) { active() && PluginServiceAccounts(app).current(pkg, session) }
+                }
+                "network.scope.authorize" -> {
+                    if (!pkg.manifest.json.optBoolean("dynamicNetworkScopes") || input.getString("serverId") != session.key.schoolId.removePrefix("service:${pkg.manifest.id}:")) denied("此插件或账号不能授权学校网络")
+                    val rules = PluginJson.objects(input.getJSONArray("rules"))
+                    if (rules.size !in 1..32) denied("学校网络范围数量无效")
+                    rules.forEach(PluginNetworkPolicy::validateRule)
+                    val message = "学校：${input.getString("tenantId")}\n" + rules.joinToString("\n") { rule ->
+                        "${rule.getString("origin")}${rule.getString("pathPrefix")}\n${PluginJson.strings(rule.getJSONArray("methods")).joinToString("、")} · ${PluginJson.strings(rule.getJSONArray("purposes")).joinToString("、") { purpose -> when (purpose) { "auth" -> "登录认证"; "query" -> "读取任务与要求"; else -> "提交业务数据" } }}" }
+                    confirm(flow, "授权学校网络", message)
+                    val operation = PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, packageDigest = pkg.digest, scopeStillActive = active)
+                    try { JSONObject().put("grant", PluginNetworkScopes.authorize(operation, input.getString("tenantId"), rules)) } finally { operation.close() }
+                }
+                "device.profile" -> {
+                    val key = pkg.manifest.id + ":installationId"
+                    val installation = synchronized(PluginServiceAccounts.lock) {
+                        prefs.getString(key, null) ?: java.util.UUID.randomUUID().toString().also { check(prefs.edit().putString(key, it).commit()) }
+                    }
+                    JSONObject().put("systemName", "android").put("systemVersion", Build.VERSION.RELEASE).put("model", Build.MODEL)
+                        .put("manufacturer", Build.MANUFACTURER).put("installationId", installation).put("appVersion", com.tyust.course.BuildConfig.VERSION_NAME)
+                }
                 "ui.viewport" -> viewport?.invoke() ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "视口只在前台原生页面可用")
                 "ui.components" -> NativePluginContract.components()
                 "ui.navigation" -> JSONObject().put("maxDepth", 8)
@@ -138,7 +166,7 @@ class NativeCapabilityHost internal constructor(
                 }
                 "academic.session.authorize" -> authorizeAcademic(flow)
                 "privacy.status" -> dataGuard.status()
-                "privacy.revoke" -> { dataGuard.revoke(); JSONObject.NULL }
+                "privacy.revoke" -> { dataGuard.revoke(); PluginNetworkScopes.revokePlugin(pkg.manifest.id); PluginHost.clearTemporaryState(session); vault.clearEphemeral(); if (pkg.manifest.usesProtectedServices) session.invalidate(); JSONObject.NULL }
                 "academic.session.revoke" -> { PluginAcademicSession.revoke(app, pkg.manifest.id); JSONObject.NULL }
                 "academic.session.request" -> {
                     requireNetworkPermission()
@@ -238,7 +266,8 @@ class NativeCapabilityHost internal constructor(
                     val values = PluginExecutionBudget.userInput { withContext(Dispatchers.Main) { interaction!!.authenticate(input, input.optString("imageHandle").takeIf { it.isNotBlank() }?.let(files::file)) } }
                         ?: throw PluginException(PluginErrorCode.CANCELLED, "已取消认证")
                     ensureActive()
-                    withContext(Dispatchers.IO) { JSONObject().put("credential", vault.saveCredential(input.getString("key"), values.getJSONObject("values"), values.optBoolean("remember"))) }
+                    val oneTime = PluginJson.objects(input.getJSONArray("fields")).any { it.optString("type") == "otp" }
+                    withContext(Dispatchers.IO) { JSONObject().put("credential", vault.saveCredential(input.getString("key"), values.getJSONObject("values"), values.optBoolean("remember"), oneTime)) }
                 }
                 "credentials.find" -> withContext(Dispatchers.IO) { vault.findCredential(input.getString("key")) ?: JSONObject.NULL }
                 "credentials.remove" -> withContext(Dispatchers.IO) { vault.remove("credential:" + input.getString("handle")); JSONObject.NULL }
@@ -273,11 +302,16 @@ class NativeCapabilityHost internal constructor(
                 }
                 "files.upload" -> {
                     requireNetworkPermission()
+                    if (input.has("filename") && (effect.getInt("version") < 3 || PluginJson.objects(pkg.manifest.json.optJSONArray("requires") ?: JSONArray()).none { it.optString("name") == "files.upload" && it.optInt("version") >= 3 }))
+                        throw PluginException(PluginErrorCode.UNSUPPORTED, "策略文件名需要 files.upload 版本 3")
                     val request = input.getJSONObject("request")
                     if (request.optString("method") != "POST" || request.optString("purpose") != "mutation") throw PluginException(PluginErrorCode.VALIDATION_FAILED, "文件上传须声明 POST 写入")
                     val info = files.info(input.getString("handle"))
-                    authorizeAction(request, flow, "上传文件", "文件：${info.getString("name")}")
-                    val upload = PluginUpload(files.file(input.getString("handle")), info.getString("name"), info.getString("mime"))
+                    val filename = input.optString("filename", info.getString("name"))
+                    if (input.has("filename") && (input.opt("filename") !is String || filename.length !in 1..255 || filename in setOf(".", "..") || filename.any { it.code < 32 || it.code == 127 || it in "/\\\";" }))
+                        throw PluginException(PluginErrorCode.VALIDATION_FAILED, "上传文件名必须是有效的文件基本名")
+                    authorizeAction(request, flow, "上传文件", "文件：${info.getString("name")}\n上传名称：$filename")
+                    val upload = PluginUpload(files.file(input.getString("handle")), filename, info.getString("mime"))
                     callHost("http", credentialRequest(request), true, upload, input.getString("field"), flow) as JSONObject
                 }
                 "files.open", "files.share" -> {
@@ -379,6 +413,11 @@ class NativeCapabilityHost internal constructor(
     }
     private suspend fun authorizeAction(request: JSONObject, flow: NativeFlow, title: String, summary: String) {
         val destination = request.getString("url").toHttpUrlOrNull() ?: denied("地址无效")
+        if (request.has("scopeGrant")) {
+            requireScopedDestination(request)
+            confirm(flow, title, "$summary\n接收网站：${PluginAuthScope.origin(destination)}\n请求：${request.optString("method", "GET")} ${destination.encodedPath}")
+            return
+        }
         PluginNetworkPolicy(pkg.manifest.network).requireAllowed(destination, request.optString("method", "GET"), request.getString("purpose"), request.optJSONObject("form"))
         if (foregroundGrant != null) {
             foregroundGrant.requireRequest(destination, request.optString("method", "GET"), request.getString("purpose"), request.optJSONObject("form"))
@@ -403,10 +442,20 @@ class NativeCapabilityHost internal constructor(
     }
     private suspend fun network(request: JSONObject, flow: NativeFlow): JSONObject {
         if (request.optString("purpose") == "mutation") authorizeAction(request, flow, "确认提交", "${pkg.manifest.name} 请求提交数据")
-        else authorizeDisclosure(request.getString("url"), flow)
+        else if (request.has("scopeGrant")) requireScopedDestination(request) else authorizeDisclosure(request.getString("url"), flow)
         return callHost("http", credentialRequest(request), request.optString("purpose") == "mutation", flow = flow) as JSONObject
     }
+    private fun requireScopedDestination(request: JSONObject) {
+        val operation = PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, packageDigest = pkg.digest, scopeStillActive = active)
+        try {
+            val scope = PluginNetworkScopes.requireGrant(operation, request.getString("scopeGrant"))
+            val url = request.getString("url").toHttpUrlOrNull() ?: denied("地址无效")
+            scope.policy.requireAllowed(url, request.optString("method", "GET"), request.getString("purpose"), request.optJSONObject("form"))
+        } finally { operation.close() }
+    }
     private fun credentialRequest(request: JSONObject): JSONObject {
+        // New bindings must stay intact until PluginHost completes preflight and consumes OTP.
+        if (request.has("credentials") || request.optJSONObject("bindings")?.has("body") == true) return request
         val handle = request.optString("credential")
         var values: JSONObject? = null
         if (handle.isNotBlank()) {
@@ -435,7 +484,8 @@ class NativeCapabilityHost internal constructor(
                     } },
                     sharedToken = if (shareToken) shared?.let { access -> { url -> access.tokenHeader(grant, url) } } else null,
                     sharedRequest = shared?.let { access -> { url, verb, purpose, form -> access.requireRequest(grant, url, verb, purpose, form) } }, dataGuard = dataGuard,
-                    requestGuard = foregroundGrant?.let { taskGrant -> { url, verb, purpose, form -> taskGrant.requireRequest(url, verb, purpose, form) } })
+                    requestGuard = foregroundGrant?.let { taskGrant -> { url, verb, purpose, form -> taskGrant.requireRequest(url, verb, purpose, form) } },
+                    credentialResolver = { handle -> operation.requireActive(); vault.consumeCredential(handle) })
                 val value = if (upload != null) host.upload(input, upload, field) else {
                     val response = host.call(method, input)
                     if (!response.getBoolean("ok")) { val error = response.getJSONObject("error"); throw PluginException(PluginErrorCode.valueOf(error.getString("code")), error.getString("message")) }
@@ -454,6 +504,6 @@ class NativeCapabilityHost internal constructor(
     fun close() { operations.forEach(PluginOperation::close); operations.clear(); ioScope.cancel(); if (active()) PluginSessionCookies.save(app, pkg, session) }
     companion object {
         val PLATFORM = setOf("privacy.status", "privacy.revoke", "pages.register", "pages.open", "pages.close", "pages.unregister", "accounts.select", "accounts.remove", "services.discover", "services.call", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel", "workflow.list", "academic.study.snapshot", "academic.study.refresh", "academic.schedule.preview", "academic.schedule.confirm", "academic.session.authorize", "academic.session.request", "academic.session.revoke")
-        val IMPLEMENTED = setOf("userscript.interact", "userscript.action", "device.location.pick", "images.match", "images.puzzle", "browser.session.open", "browser.session.status", "browser.session.close", "userscript.configure", "records.upsert", "records.query", "ui.viewport", "ui.components", "ui.navigation", "ui.date.pick", "ui.time.pick", "ui.datetime.pick", "ui.time.range.pick", "network.request", "storage.get", "storage.set", "storage.remove", "auth.prompt", "credentials.find", "credentials.remove", "session.save", "session.restore", "session.clear", "files.pick", "files.create", "files.read", "files.write", "files.remove", "files.download", "files.upload", "files.open", "files.share", "device.clipboard.read", "device.clipboard.write", "device.haptic", "tasks.schedule", "tasks.cancel", "tasks.list", "notifications.post", "navigation.page", "navigation.back", "navigation.url", "runtime.cancel", "data.query", "widget.render", "widget.publish", "userscript.status", "userscript.update", "userscript.rollback", "userscript.start", "userscript.control", "tasks.foreground.start", "tasks.foreground.stop", "tasks.foreground.list", "device.scan", "device.location", "device.photo")
+        val IMPLEMENTED = setOf("auth.service", "network.scope.authorize", "device.profile", "userscript.interact", "userscript.action", "device.location.pick", "images.match", "images.puzzle", "browser.session.open", "browser.session.status", "browser.session.close", "userscript.configure", "records.upsert", "records.query", "ui.viewport", "ui.components", "ui.navigation", "ui.date.pick", "ui.time.pick", "ui.datetime.pick", "ui.time.range.pick", "network.request", "storage.get", "storage.set", "storage.remove", "auth.prompt", "credentials.find", "credentials.remove", "session.save", "session.restore", "session.clear", "files.pick", "files.create", "files.read", "files.write", "files.remove", "files.download", "files.upload", "files.open", "files.share", "device.clipboard.read", "device.clipboard.write", "device.haptic", "tasks.schedule", "tasks.cancel", "tasks.list", "notifications.post", "navigation.page", "navigation.back", "navigation.url", "runtime.cancel", "data.query", "widget.render", "widget.publish", "userscript.status", "userscript.update", "userscript.rollback", "userscript.start", "userscript.control", "tasks.foreground.start", "tasks.foreground.stop", "tasks.foreground.list", "device.scan", "device.location", "device.photo")
     }
 }

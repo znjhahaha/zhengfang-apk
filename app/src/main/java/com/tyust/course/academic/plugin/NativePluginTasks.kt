@@ -98,7 +98,7 @@ class NativePluginJobService : JobService() {
                     PluginPages.available(pkg) && AcademicProviderRegistry.isCurrentPackage(pkg.manifest.id, pkg.digest) &&
                     session.key.accountKey == record.getString("accountKey") && accounts.current(pkg, session) &&
                     NativePluginTasks.load(this@NativePluginJobService, handle).getString("status") == "running"
-                if (!active()) { session.retire(); throw PluginException(PluginErrorCode.STALE_CONTEXT, "后台任务的账号或插件已改变") }
+                if (!active()) { PluginServiceAccounts.releaseConsumerSession(session); throw PluginException(PluginErrorCode.STALE_CONTEXT, "后台任务的账号或插件已改变") }
                 host = NativeCapabilityHost(this@NativePluginJobService, pkg, session, null, active = ::active)
                 var state: Any = record.get("state")
                 val pending = ArrayDeque<JSONObject?>().apply { add(null) }
@@ -116,7 +116,7 @@ class NativePluginJobService : JobService() {
                     }
                 }
                 // Save the final service session while the running context is still valid.
-                host.close(); host = null; session.retire()
+                host.close(); host = null; PluginServiceAccounts.releaseConsumerSession(session)
                 NativePluginTasks.status(this@NativePluginJobService, handle, if (flow.failureCode(PluginErrorCode.CANCELLED) == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "completed")
             } catch (e: CancellationException) { runCatching { NativePluginTasks.status(this@NativePluginJobService, handle, if (flow.failureCode(PluginErrorCode.CANCELLED) == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "cancelled") } }
             catch (e: Exception) { runCatching { NativePluginTasks.status(this@NativePluginJobService, handle, if (e is PluginException && e.code == PluginErrorCode.RESULT_UNKNOWN) "result_unknown" else "failed") } }

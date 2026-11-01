@@ -5,7 +5,7 @@ import org.json.JSONObject
 import java.net.URI
 
 object PluginPlatformContract {
-    val methods = setOf("command.run", "services.invoke", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel")
+    val methods = setOf("command.run", "services.invoke", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel", "serviceAuth.start", "serviceAuth.resume", "serviceAuth.validate", "serviceAuth.logout")
     private val PICKERS = setOf("ui.date.pick", "ui.time.pick", "ui.datetime.pick", "ui.time.range.pick")
     fun requirements(value: JSONObject, available: Map<String, Int>): List<String> =
         value.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().filter { (available[it.getString("name")] ?: 0) < it.getInt("version") }.map { it.getString("name") }
@@ -17,6 +17,12 @@ object PluginPlatformContract {
     fun validate(manifest: PluginManifest) {
         PluginUserscriptPolicy.validate(manifest)
         val m = manifest.json
+        val authMethods = manifest.capabilities.filter { it.startsWith("serviceAuth.") }.toSet()
+        val requiredAuth = setOf("serviceAuth.start", "serviceAuth.resume", "serviceAuth.validate", "serviceAuth.logout")
+        if (authMethods.isNotEmpty() && (!manifest.isNative || authMethods != requiredAuth || "auth" !in manifest.permissions || m.optInt("minAppVersionCode") < 131 ||
+            PluginJson.objects(m.optJSONArray("requires") ?: JSONArray()).none { it.optString("name") == "auth.service" && it.optInt("version") >= 1 })) invalid("独立服务认证需要完整处理器与 App 131")
+        if (m.optBoolean("dynamicNetworkScopes") && (!manifest.isNative || "network" !in manifest.permissions || m.optInt("minAppVersionCode") < 131 ||
+            PluginJson.objects(m.optJSONArray("requires") ?: JSONArray()).none { it.optString("name") == "network.scope.authorize" && it.optInt("version") >= 1 })) invalid("学校网络授权需要原生插件、network.scope.authorize 与 App 131")
         unique(m.optJSONArray("requires"), "name")
         val viewportRequirements = PluginJson.objects(m.optJSONArray("requires") ?: JSONArray()) +
             PluginJson.objects(manifest.contributes.optJSONArray("pages") ?: JSONArray()).flatMap { PluginJson.objects(it.optJSONArray("requires") ?: JSONArray()) }

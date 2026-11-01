@@ -291,7 +291,11 @@
           "workflow.prepare",
           "workflow.step",
           "workflow.reconcile",
-          "workflow.cancel"
+          "workflow.cancel",
+          "serviceAuth.start",
+          "serviceAuth.resume",
+          "serviceAuth.validate",
+          "serviceAuth.logout"
         ]
       },
       "maxItems": 48,
@@ -571,6 +575,9 @@
         "additionalProperties": false
       },
       "maxItems": 40
+    },
+    "dynamicNetworkScopes": {
+      "type": "boolean"
     },
     "userscripts": {
       "type": "array",
@@ -962,6 +969,7 @@
           "device.scan",
           "device.location",
           "device.camera",
+          "device.profile",
           "widget"
         ]
       },
