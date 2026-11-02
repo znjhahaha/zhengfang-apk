@@ -26,7 +26,9 @@ class NativePluginUiDeviceTest {
         try {
             ActivityScenario.launch<NativePluginActivity>(Intent(app, NativePluginActivity::class.java).putExtra("pluginId", pkg.manifest.id)).use {
                 awaitText("可以开始组合页面")
-                compose.onNodeWithTag("native-node-label").performScrollTo().performTextReplacement("设备验证页面")
+                compose.onNodeWithTag("native-node-label").performScrollTo()
+                compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("native-node-label")), useUnmergedTree = true)
+                    .performTextReplacement("设备验证页面")
                 compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("native-node-heading") and hasText("设备验证页面")).fetchSemanticsNodes().isNotEmpty() }
                 androidx.test.uiautomator.UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()).pressBack()
                 compose.onNodeWithTag("native-node-increment").performScrollTo().performClick()

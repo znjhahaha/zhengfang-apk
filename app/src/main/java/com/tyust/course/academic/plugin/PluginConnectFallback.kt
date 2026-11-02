@@ -118,10 +118,12 @@ internal class PluginConnectFallbackCall(
 
     private fun requireTimeRemaining(deadline: Long?) {
         if (canceled) throw IOException("Canceled")
-        callTimeout.throwIfReached()
         if (deadline != null && deadline - System.nanoTime() <= 0) {
+            // No native watchdog is active between attempts; preserve timeout cancellation here.
+            cancel()
             throw InterruptedIOException("timeout")
         }
+        callTimeout.throwIfReached()
     }
 
     private fun release(call: Call) {

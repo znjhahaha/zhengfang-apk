@@ -25,7 +25,8 @@ class PluginLocationPickerDeviceTest {
         org.junit.Assume.assumeTrue(androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("chaoxingLiveLocationSearch") == "true")
         val prompt = PluginVisualPrompt("device.location.pick", JSONObject().put("query", "太原市万柏林区和平街道南社街"), emptyList())
         compose.setContent { CourseSelectorTheme { LocationPrompt(prompt) } }
-        compose.onNodeWithTag("location-search-input").assertTextContains("太原市万柏林区和平街道南社街")
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("location-search-input")), useUnmergedTree = true)
+            .assertTextContains("太原市万柏林区和平街道南社街")
         compose.onNodeWithText("搜索", useUnmergedTree = true).performClick()
         compose.waitUntil(20_000) { compose.onAllNodesWithTag("location-search-result-0").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("南社街", useUnmergedTree = true).assertExists()

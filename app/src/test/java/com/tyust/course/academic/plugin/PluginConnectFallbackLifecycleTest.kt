@@ -64,6 +64,42 @@ class PluginConnectFallbackLifecycleTest {
     }
 
     @Test
+    fun `timeout between connection attempts reports cancellation`() {
+        val sockets = DelayedFailureSocketFactory(0)
+        val client = failingClient(sockets, callTimeoutMillis = 5_000)
+        val nativeCall = AtomicReference<Call>()
+        val listener = object : EventListener() {
+            override fun callStart(call: Call) {
+                nativeCall.set(call)
+            }
+
+            override fun callFailed(call: Call, ioe: IOException) {
+                // The native timeout has exited before callFailed. Exhaust the shared budget
+                // here so the wrapper, rather than the native watchdog, detects the timeout.
+                val deadline = call.timeout().deadlineNanoTime()
+                val wait = CountDownLatch(1)
+                while (true) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0) break
+                    wait.await(remaining, TimeUnit.NANOSECONDS)
+                }
+            }
+        }
+        try {
+            val call = fallbackCall(client, listener)
+            call.timeout().timeout(500, TimeUnit.MILLISECONDS)
+
+            assertThrows(InterruptedIOException::class.java) { call.execute() }
+
+            assertFalse("The completed native call must not supply cancellation", nativeCall.get().isCanceled())
+            assertEquals("An expired budget must prevent the next connection", 1, sockets.connects.get())
+            assertTrue("A call timeout must report cancellation", call.isCanceled())
+        } finally {
+            closeClient(client)
+        }
+    }
+
+    @Test
     fun `timeout returns the persistent configuration object`() {
         val sockets = DelayedFailureSocketFactory(0)
         val client = failingClient(sockets, callTimeoutMillis = 5_000)

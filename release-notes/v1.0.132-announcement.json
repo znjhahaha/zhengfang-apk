@@ -1,0 +1,16 @@
+{
+  "id": "20261102_v1_0_132_release",
+  "title": "App 1.0.132 与今日校园 0.1.1 更新",
+  "summary": "更新 App 后独立安装插件，固定任务启动时确认一次。",
+  "content": "App 1.0.132 已发布，今日校园 CPDaily 0.1.1 需要 App 132 或更新版本。学习通和今日校园为两款独立插件，请加入 QQ 群 **1074017033** 下载，并在插件中心分别导入。\n\n今日校园支持搜索、选取并保存地点，照片可使用相机拍摄或选择真实文件。选定查寝、课堂签到或销假固定任务后，启动时确认一次，即可自动处理。请按设备实时定位及学校要求办理；结果未知时只核对状态，不重复提交。",
+  "type": "info",
+  "audience": "app",
+  "contentType": "markdown",
+  "showOnce": true,
+  "category": "update",
+  "display": "center",
+  "minVersionCode": 132,
+  "channels": [
+    "stable"
+  ]
+}
