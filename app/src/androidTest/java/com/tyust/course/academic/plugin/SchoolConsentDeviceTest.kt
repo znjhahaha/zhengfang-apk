@@ -58,6 +58,6 @@ class SchoolConsentDeviceTest {
             assertFalse(PluginSchoolNetworkConsent.remembered(app, id))
             open(true)
             assertEquals(2, prompts); assertEquals(3, grants.size)
-        } finally { accounts.clear(id); PluginSchoolNetworkConsent.revoke(app, id) }
+        } finally { accounts.clearPlugin(pkg); PluginSchoolNetworkConsent.revoke(app, id) }
     }
 }
