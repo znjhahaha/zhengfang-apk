@@ -83,7 +83,7 @@ internal object PluginUserscripts {
         val live = UserscriptSession(app.applicationContext, pkg, session, namespace, handle, ownerStore.policy, selected, source) { sessions.remove(handle) }
         sessions[handle] = live
         try {
-            PluginForegroundWork.add(app, handle, PluginForegroundWork.Entry(pkg.manifest.id, ownerStore.policy.declaration.getString("title"), live::stop))
+            PluginForegroundWork.add(app, handle, PluginForegroundWork.Entry(pkg.manifest.id, ownerStore.policy.declaration.getString("title"), stop = live::stop))
             live.open(url, true)
         } catch (e: Exception) { live.stop("failed"); throw e }
         live.describe(ownerStore.publicStatus())

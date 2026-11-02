@@ -1646,6 +1646,33 @@
                       "prompts"
                     ],
                     "additionalProperties": false
+                  },
+                  "workflow": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 96,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_.:-]{0,95}$"
+                      },
+                      "version": {
+                        "const": 1
+                      },
+                      "inputList": {
+                        "const": "items"
+                      },
+                      "tenantInputKey": {
+                        "const": "tenantId"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "version",
+                      "inputList",
+                      "tenantInputKey"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [

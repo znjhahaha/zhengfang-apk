@@ -15,6 +15,7 @@
     <!-- 后台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
     <!-- 定时任务权限 -->
@@ -50,7 +51,7 @@
         <service android:name=".academic.plugin.PluginEmbeddedBrowserService" android:exported="false" android:process=":plugin_embedded_browser" />
         <activity android:name=".academic.plugin.PluginLegacyWebActivity" android:exported="false" android:process=":plugin_legacy_web" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize" />
         <service android:name=".academic.plugin.PluginLegacyWebService" android:exported="false" android:process=":plugin_legacy_web" />
-        <service android:name=".academic.plugin.PluginForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".academic.plugin.PluginForegroundService" android:exported="false" android:foregroundServiceType="dataSync|location" />
         <service android:name=".academic.plugin.NativePluginJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
         <service android:name=".academic.plugin.PluginUpdateJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
 

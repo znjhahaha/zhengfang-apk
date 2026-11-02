@@ -12,7 +12,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** A grant is immutable, local to one running task and never handed to plugin JavaScript. */
-internal class NativeForegroundGrant(declaration: JSONObject, input: JSONObject, private val active: () -> Boolean) {
+internal class NativeForegroundGrant(declaration: JSONObject, input: JSONObject, val workflow: PluginForegroundWorkflowGrant? = null, private val active: () -> Boolean) {
     private val rules = PluginJson.objects(JSONObject(declaration.toString()).getJSONArray("mutations"))
     private val selection = JSONObject(input.toString())
     val script = declaration.optJSONObject("script")?.let { NativeForegroundScriptGrant(it, selection, active) }
@@ -79,12 +79,17 @@ internal object NativeForegroundTasks {
             JSONObject(it.toString()).apply { remove("namespace"); remove("digest"); remove("accountId") }
         })
     }
-    suspend fun start(app: Context, pkg: PluginPackage, owner: AcademicSession, namespace: String, input: JSONObject): JSONObject {
+    suspend fun start(app: Context, pkg: PluginPackage, owner: AcademicSession, namespace: String, request: JSONObject): JSONObject {
+        val input = JSONObject(request.toString())
         initialize(app)
         val task = NativePluginContract.contribution(pkg.manifest, "tasks", input.getString("taskId"))
         val declaration = task.optJSONObject("foreground") ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "此任务未声明持续运行")
         val accounts = PluginServiceAccounts(app)
         val serverId = declaration.getString("serverId")
+        if (declaration.has("workflow")) {
+            PluginForegroundWorkflowGrant.validate(pkg.manifest, declaration)
+            PluginForegroundWorkflowGrant(declaration, input.getJSONObject("input"), pkg.manifest.id, pkg.digest, owner.key.accountKey) { true }
+        }
         if (owner.key.schoolId != "service:${pkg.manifest.id}:$serverId" || !accounts.current(pkg, owner)) throw PluginException(PluginErrorCode.STALE_CONTEXT, "请从对应服务账号启动任务")
         if (PluginJson.canonical(input.get("state")).toByteArray().size > PluginLimits.STATE_BYTES || input.getJSONObject("input").toString().toByteArray().size > 65536) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "持续任务状态过大")
         val batchKey = declaration.optString("batchInputKey")
@@ -100,7 +105,7 @@ internal object NativeForegroundTasks {
                 .put("status", "running").put("startedAt", System.currentTimeMillis()).put("updatedAt", System.currentTimeMillis()))
         }
         try {
-            withContext(Dispatchers.Main) { PluginForegroundWork.add(app, handle, PluginForegroundWork.Entry(pkg.manifest.id, task.getString("title")) { reason -> stop(app, namespace, handle, reason) }) }
+            withContext(Dispatchers.Main) { PluginForegroundWork.add(app, handle, PluginForegroundWork.Entry(pkg.manifest.id, task.getString("title"), needsLocation = declaration.has("workflow") && "device.location" in pkg.manifest.permissions) { reason -> stop(app, namespace, handle, reason) }) }
         } catch (e: Exception) { updateIfPresent(app, handle) { it.put("status", "failed") }; throw e }
         val job = scope.launch(start = CoroutineStart.LAZY) {
             var ownedSession: AcademicSession? = null
@@ -114,7 +119,8 @@ internal object NativeForegroundTasks {
                 fun active() = currentCoroutineContextSafe(handle) && handle !in discarded && !session.retired && accounts.current(pkg, session) && owner.key.accountKey == session.key.accountKey &&
                     AcademicProviderRegistry.isCurrentPackage(pkg.manifest.id, pkg.digest) && AcademicProviderRegistry.isEnabled(pkg.manifest.id) &&
                     runCatching { load(app, handle).optString("status") == "running" }.getOrDefault(false)
-                val grant = NativeForegroundGrant(declaration, input.getJSONObject("input"), ::active)
+                val workflowGrant = declaration.optJSONObject("workflow")?.let { PluginForegroundWorkflowGrant(declaration, input.getJSONObject("input"), pkg.manifest.id, pkg.digest, session.key.accountKey, ::active) }
+                val grant = NativeForegroundGrant(declaration, input.getJSONObject("input"), workflowGrant, ::active)
                 scriptGrant = grant.script
                 val host = NativeCapabilityHost(app, pkg, session, null, foregroundGrant = grant, active = ::active).also { ownedHost = it }
                 while (active()) {

@@ -6,21 +6,29 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.ConcurrentHashMap
 
 /** A single visible foreground service owns all explicitly started continuous work. */
 internal object PluginForegroundWork {
-    data class Entry(val pluginId: String, val title: String, val stop: (String) -> Unit)
+    data class Entry(val pluginId: String, val title: String, val needsLocation: Boolean = false, val stop: (String) -> Unit)
     private val entries = ConcurrentHashMap<String, Entry>()
     val revision = MutableStateFlow(0L)
     fun items() = entries.values.toList()
+    internal fun foregroundTypes(items: List<Entry> = items()) = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+        if (items.any { it.needsLocation }) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
     @Synchronized fun changed() { revision.value++ }
     fun add(app: Context, handle: String, entry: Entry) {
+        if (entry.needsLocation && ContextCompat.checkSelfPermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(app, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+            throw PluginException(PluginErrorCode.PERMISSION_DENIED, "请先在插件页面取得定位，再启动自动任务")
         entries[handle] = entry
         try { ContextCompat.startForegroundService(app, Intent(app, PluginForegroundService::class.java)) }
         catch (e: Exception) { entries.remove(handle); throw PluginException(PluginErrorCode.PERMISSION_DENIED, "系统未允许持续任务，请回到插件页面重试") }
@@ -62,7 +70,8 @@ class PluginForegroundService : Service() {
             .setContentTitle("${entries.size} 个插件任务正在运行").setContentText(entries.joinToString(" · ") { it.title }.take(160))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(0, "停止全部", stop).build()
-        startForeground(9100, notification)
+        try { ServiceCompat.startForeground(this, 9100, notification, PluginForegroundWork.foregroundTypes(entries)) }
+        catch (_: Exception) { PluginForegroundWork.stopAll("interrupted"); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return }
         if (wakeLock?.isHeld != true) {
             wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:plugin-continuous").apply {
                 setReferenceCounted(false); acquire(6 * 60 * 60 * 1000L)

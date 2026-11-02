@@ -15,7 +15,8 @@ class PluginServices(
     private val caller: PluginPackage,
     private val callerSession: AcademicSession,
     private val interaction: NativePluginInteraction?,
-    private val active: () -> Boolean
+    private val active: () -> Boolean,
+    private val foregroundGrant: PluginForegroundWorkflowGrant? = null
 ) {
     private val accounts = PluginServiceAccounts(app)
     private val journal = PluginWorkflowJournal(PluginWorkflowFiles(app))
@@ -31,6 +32,16 @@ class PluginServices(
     private suspend fun resolve(input: JSONObject, flow: NativeFlow): PluginService {
         val name = input.getString("name")
         val version = input.getInt("version")
+        if (foregroundGrant != null) {
+            val contract = PluginJson.objects(caller.manifest.json.optJSONArray("services") ?: JSONArray()).singleOrNull {
+                it.optString("name") == name && it.optInt("version") == version
+            } ?: throw PluginException(PluginErrorCode.PERMISSION_DENIED, "持续任务只能使用本插件声明的服务")
+            if (contract.optString("serverId").isBlank() || callerSession.key.schoolId != "service:${caller.manifest.id}:${contract.getString("serverId")}")
+                throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务不属于本次任务账号")
+            if (contract.optString("kind") == "write") foregroundGrant.requirePrepare(input) else foregroundGrant.requireRead(input)
+            requireActive()
+            return PluginService(caller, contract).also { PluginServiceDirectory.validateInput(it, input.get("input")) }
+        }
         val matches = PluginServiceDirectory.discover(caller.manifest, available(), name, version)
         if (matches.isEmpty()) throw PluginException(PluginErrorCode.UNSUPPORTED, "需要安装提供 $name v$version 的插件")
         val key = PluginJson.sha256("${caller.manifest.id}\u0000$scope\u0000$name\u0000$version".toByteArray())
@@ -93,14 +104,22 @@ class PluginServices(
                             .put("serverId", serverId).put("providerAccount", providerAccount)
                             .put("providerSchool", session.key.schoolId).put("baseUrl", session.baseUrl)
                         if (service.pkg.manifest.usesProtectedServices) identity.put("singleTarget", true)
-                        journal.prepare(identity, input.get("input"), result)
+                        journal.prepare(identity, input.get("input"), result).also { snapshot ->
+                            foregroundGrant?.remember(journal.owned(snapshot.getString("workflowId"), caller.manifest.id, scope))
+                        }
                     }
                 } finally { if (valid()) PluginSessionCookies.save(app, service.pkg, session); PluginServiceAccounts.releaseConsumerSession(session) }
             }
-            "workflow.list" -> journal.list(caller.manifest.id, scope)
+            "workflow.list" -> {
+                val listed = journal.list(caller.manifest.id, scope)
+                if (foregroundGrant == null) listed else JSONArray(PluginJson.objects(listed).filter { it.getString("workflowId") in foregroundGrant.handles() }.onEach {
+                    requireForegroundRecord(journal.owned(it.getString("workflowId"), caller.manifest.id, scope))
+                })
+            }
             else -> {
                 val id = input.getString("workflowId")
                 val record = journal.owned(id, caller.manifest.id, scope)
+                requireForegroundRecord(record)
                 if (name == "workflow.cancel") {
                     // The durable cancellation takes precedence over optional provider cleanup.
                     val result = journal.cancel(id)
@@ -108,10 +127,12 @@ class PluginServices(
                     result
                 } else {
                     if (name == "workflow.step" && !record.getBoolean("approved")) {
-                        if (!flow.userGesture || interaction == null) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "请先确认提交范围")
-                        val preview = record.getString("summary") + "\n\n" + PluginJson.objects(record.getJSONArray("steps")).joinToString("\n") { "• ${it.getString("label")}" }
-                        if (!withContext(Dispatchers.Main) { interaction.confirm(record.getString("title"), preview) })
-                            throw PluginException(PluginErrorCode.CANCELLED, "已取消确认")
+                        if (foregroundGrant == null) {
+                            if (!flow.userGesture || interaction == null) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "请先确认提交范围")
+                            val preview = record.getString("summary") + "\n\n" + PluginJson.objects(record.getJSONArray("steps")).joinToString("\n") { "• ${it.getString("label")}" }
+                            if (!withContext(Dispatchers.Main) { interaction.confirm(record.getString("title"), preview) })
+                                throw PluginException(PluginErrorCode.CANCELLED, "已取消确认")
+                        } else requireForegroundRecord(record)
                         requireActive()
                         journal.approve(id)
                     }
@@ -125,8 +146,18 @@ class PluginServices(
         }
     }
 
+    private fun requireForegroundRecord(record: JSONObject) {
+        val grant = foregroundGrant ?: return
+        requireActive(); grant.requireRecord(record)
+        if (!AcademicProviderRegistry.isEnabled(caller.manifest.id) || !AcademicProviderRegistry.isCurrentPackage(caller.manifest.id, caller.digest) ||
+            !accounts.current(caller, callerSession) || record.getString("providerAccount") != callerSession.key.accountKey ||
+            callerSession.key.schoolId != "service:${caller.manifest.id}:${record.getString("serverId")}")
+            throw PluginException(PluginErrorCode.STALE_CONTEXT, "工作流使用的服务账号或插件版本已改变")
+    }
+
     private suspend fun invoke(record: JSONObject, method: String, step: JSONObject?): JSONObject {
         requireActive()
+        requireForegroundRecord(record)
         if (record.getString("callerDigest") != caller.digest) throw PluginException(PluginErrorCode.STALE_CONTEXT, "此工作流需要原调用方版本，请在插件管理中恢复该版本")
         val pkg = AcademicProviderRegistry.packages().readDigest(record.getString("providerDigest"))
         if (!AcademicProviderRegistry.isEnabled(pkg.manifest.id)) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务提供方已停用")

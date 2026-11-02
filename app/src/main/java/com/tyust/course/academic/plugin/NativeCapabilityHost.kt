@@ -67,16 +67,19 @@ class NativeCapabilityHost internal constructor(
     private val schema = PluginSchema(JSONObject())
     private val prefs = app.getSharedPreferences("native-plugin-permissions", Context.MODE_PRIVATE)
     var cancelEffects: (List<String>) -> Unit = {}
-    private val services by lazy { PluginServices(app, pkg, session, interaction, active) }
+    private val services by lazy { PluginServices(app, pkg, session, interaction, active, foregroundGrant?.workflow) }
     private val academic by lazy { PluginAcademicData(app, pkg, active) }
     private val academicSession by lazy { PluginAcademicSession(app, pkg, active) }
     fun capabilities(): JSONArray = JSONArray(descriptors.filter { descriptor ->
         descriptor.getString("name") in (IMPLEMENTED + PLATFORM) &&
             (android.os.Build.VERSION.SDK_INT >= 26 || !descriptor.getString("name").startsWith("browser.session.")) &&
-            (interaction != null || foregroundGrant?.script?.supports(descriptor.getString("name")) == true || !descriptor.getBoolean("userGesture") && !descriptor.getString("name").startsWith("navigation."))
+            (interaction != null || foregroundGrant?.script?.supports(descriptor.getString("name")) == true || foregroundGrant?.workflow?.supports(descriptor.getString("name")) == true || !descriptor.getBoolean("userGesture") && !descriptor.getString("name").startsWith("navigation.")) &&
+            (foregroundGrant?.workflow == null || descriptor.getString("name") !in setOf("auth.service", "auth.prompt", "device.photo", "device.scan", "files.pick", "device.location.pick"))
     })
     fun requireCompatible() {
-        val available = PluginJson.objects(capabilities()).associate { it.getString("name") to it.getInt("version") }
+        // UI requirements describe the installed host, not the effects authorized for a task.
+        val supported = if (foregroundGrant?.workflow != null) JSONArray(descriptors.filter { it.getString("name") in (IMPLEMENTED + PLATFORM) }) else capabilities()
+        val available = PluginJson.objects(supported).associate { it.getString("name") to it.getInt("version") }
         PluginPlatformContract.requireCompatible(pkg.manifest, com.tyust.course.BuildConfig.VERSION_CODE, available)
         pkg.manifest.json.optJSONArray("requires")?.let { list -> PluginJson.objects(list).forEach { requirement ->
             if ((available[requirement.getString("name")] ?: 0) < requirement.getInt("version")) throw PluginException(PluginErrorCode.UNSUPPORTED, "当前 App 不支持插件要求的能力：${requirement.getString("name")}")
@@ -111,7 +114,8 @@ class NativeCapabilityHost internal constructor(
             ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "宿主未提供此版本的能力：$name")
         if (descriptor.getString("permission") !in pkg.manifest.permissions) denied("插件未声明 ${descriptor.getString("permission")} 权限")
         val scriptGrant = foregroundGrant?.script?.takeIf { it.supports(name) }
-        if (descriptor.getBoolean("userGesture") && !flow.userGesture && scriptGrant == null && !(name == "academic.session.authorize" && academicSession.siteAuthorized())) denied("此设备交互必须由你发起")
+        val workflowGrant = foregroundGrant?.workflow?.takeIf { it.supports(name) }
+        if (descriptor.getBoolean("userGesture") && !flow.userGesture && scriptGrant == null && workflowGrant == null && !(name == "academic.session.authorize" && academicSession.siteAuthorized())) denied("此设备交互必须由你发起")
         val input = effect.getJSONObject("input")
         schema.validate(input, descriptor.getJSONObject("input"))
         val request = when (name) { "network.request" -> input; "files.download", "files.upload" -> input.getJSONObject("request"); else -> null }
@@ -155,6 +159,7 @@ class NativeCapabilityHost internal constructor(
                     }
                     JSONObject().put("systemName", "android").put("systemVersion", Build.VERSION.RELEASE).put("model", Build.MODEL)
                         .put("manufacturer", Build.MANUFACTURER).put("installationId", installation).put("appVersion", com.tyust.course.BuildConfig.VERSION_NAME)
+                        .also { workflowGrant?.rememberProfile(it) }
                 }
                 "ui.viewport" -> viewport?.invoke() ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "视口只在前台原生页面可用")
                 "ui.components" -> NativePluginContract.components()
@@ -238,6 +243,10 @@ class NativeCapabilityHost internal constructor(
                     val declaration = task.optJSONObject("foreground") ?: throw PluginException(PluginErrorCode.UNSUPPORTED, "任务没有声明持续运行")
                     val automatic = declaration.optJSONObject("script")
                     if (automatic != null && effect.getInt("version") < 2) denied("脚本队列需要 tasks.foreground.start 版本 2")
+                    if (declaration.has("workflow")) {
+                        PluginForegroundWorkflowGrant.validate(pkg.manifest, declaration, effect.getInt("version"))
+                        PluginForegroundWorkflowGrant(declaration, input.getJSONObject("input"), pkg.manifest.id, pkg.digest, session.key.accountKey) { active() }
+                    }
                     val batch = input.getJSONObject("input").optJSONArray(declaration.optString("batchInputKey"))
                     val names = PluginJson.objects(batch ?: JSONArray()).map { it.optString("name", it.optString("id", "所选项目")) }.joinToString("、").take(600)
                     val queueDescription = automatic?.let { plan ->
@@ -245,13 +254,15 @@ class NativeCapabilityHost internal constructor(
                         val labels = PluginJson.objects(script.getJSONObject("adapter").optJSONArray("actions") ?: JSONArray()).associate { it.getString("id") to it.getString("label") }
                         NativeForegroundScriptGrant(plan, input.getJSONObject("input")) { runCatching { ensureActive() }.isSuccess }.description(labels)
                     }
-                    continuousPermission(flow, task.getString("title"), queueDescription ?: "每 ${declaration.getInt("intervalSeconds")} 秒错峰检查${if (names.isBlank()) "所选范围" else "：$names"}。仅对本次范围自动尝试声明的操作，需验证时通知你继续。可随时从常驻通知停止。")
+                    val workflowDescription = declaration.optJSONObject("workflow")?.let { "按当前服务账号、学校及已确认的 ${input.getJSONObject("input").getJSONArray("items").length()} 项任务与材料持续检查并提交。每项使用设备当前真实位置，需补充照片、扫码或验证时暂停。仅本次运行有效，可从常驻通知停止。" }
+                    continuousPermission(flow, task.getString("title"), workflowDescription ?: queueDescription ?: "每 ${declaration.getInt("intervalSeconds")} 秒错峰检查${if (names.isBlank()) "所选范围" else "：$names"}。仅对本次范围自动尝试声明的操作，需验证时通知你继续。可随时从常驻通知停止。")
                     NativeForegroundTasks.start(app, pkg, session, namespace, input)
                 }
                 "tasks.foreground.stop" -> { NativeForegroundTasks.stop(app, namespace, input.getString("handle")); JSONObject.NULL }
                 "tasks.foreground.list" -> withContext(Dispatchers.IO) { NativeForegroundTasks.list(app, namespace) }
                 "device.scan", "device.location", "device.photo" -> {
-                    val result = withContext(Dispatchers.Main) { interaction!!.device(name.substringAfter('.')) }
+                    val result = if (name == "device.location" && workflowGrant != null) foregroundLocation(app).also { workflowGrant.rememberLocation(it) }
+                        else withContext(Dispatchers.Main) { interaction!!.device(name.substringAfter('.')) }
                         ?: throw PluginException(PluginErrorCode.CANCELLED, "已取消设备操作")
                     ensureActive()
                     if (name == "device.photo") withContext(Dispatchers.IO) {
@@ -341,18 +352,23 @@ class NativeCapabilityHost internal constructor(
                 "tasks.list" -> withContext(Dispatchers.IO) { NativePluginTasks.list(app, namespace) }
                 "notifications.post" -> {
                     val grant = pkg.manifest.id + ":" + PluginJson.sha256((namespace + "notifications").toByteArray())
-                    if (!prefs.getBoolean(grant, false)) {
+                    val foreground = foregroundGrant?.workflow != null
+                    if (!foreground && !prefs.getBoolean(grant, false)) {
                         confirm(flow, "允许通知", "允许 ${pkg.manifest.name} 在任务完成时发送通知？")
                         if (!withContext(Dispatchers.Main) { interaction!!.notificationPermission() }) denied("通知权限未获允许")
                         prefs.edit().putBoolean(grant, true).apply()
                     }
-                    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) denied("系统通知权限未获允许")
                     val manager = app.getSystemService(NotificationManager::class.java)
-                    if (!manager.areNotificationsEnabled()) denied("系统已关闭通知")
-                    val channel = "plugin_${PluginJson.sha256(pkg.manifest.id.toByteArray()).take(16)}"
-                    if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(channel, pkg.manifest.name, NotificationManager.IMPORTANCE_DEFAULT))
-                    val notification = NotificationCompat.Builder(app, channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(input.getString("title")).setContentText(input.getString("body")).setSubText(pkg.manifest.name).setAutoCancel(true).build()
-                    manager.notify(namespace, input.getInt("id"), notification); JSONObject.NULL
+                    val permitted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                    if (!permitted || !manager.areNotificationsEnabled()) {
+                        if (!foreground) denied("系统通知权限未获允许或已关闭")
+                    } else {
+                        val channel = "plugin_${PluginJson.sha256(pkg.manifest.id.toByteArray()).take(16)}"
+                        if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(channel, pkg.manifest.name, NotificationManager.IMPORTANCE_DEFAULT))
+                        val notification = NotificationCompat.Builder(app, channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(input.getString("title")).setContentText(input.getString("body")).setSubText(pkg.manifest.name).setAutoCancel(true).build()
+                        try { manager.notify(namespace, input.getInt("id"), notification) } catch (e: SecurityException) { if (!foreground) throw e }
+                    }
+                    JSONObject.NULL
                 }
                 "pages.register" -> {
                     val page = PluginPages.registry.register(pkg.manifest.id, input.getString("templateId"), input.getString("instanceId"), input.optString("title").takeIf { it.isNotBlank() }, input.optJSONObject("params") ?: JSONObject())
@@ -503,6 +519,19 @@ class NativeCapabilityHost internal constructor(
     }
     fun close() { operations.forEach(PluginOperation::close); operations.clear(); ioScope.cancel(); if (active()) PluginSessionCookies.save(app, pkg, session) }
     companion object {
+        internal suspend fun foregroundLocation(app: Context): JSONObject {
+            if (listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION).none { ContextCompat.checkSelfPermission(app, it) == PackageManager.PERMISSION_GRANTED })
+                throw PluginException(PluginErrorCode.PERMISSION_DENIED, "定位权限未获允许，请打开任务授权定位后重试")
+            return try {
+                val location = withTimeout(20_000) { withContext(Dispatchers.Main) { currentPluginLocation(app) } }
+                JSONObject().put("latitude", location.latitude).put("longitude", location.longitude).put("accuracy", location.accuracy.toDouble()).put("timestamp", location.time)
+            } catch (e: TimeoutCancellationException) { throw PluginException(PluginErrorCode.NOT_OPEN, "定位超时，请开启定位后重试") }
+            catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                throw PluginException(PluginErrorCode.NOT_OPEN, "定位不可用，请开启定位后重试")
+            } catch (e: SecurityException) { throw PluginException(PluginErrorCode.PERMISSION_DENIED, "定位权限已失效，请重新授权") }
+            catch (e: Exception) { throw PluginException(PluginErrorCode.NOT_OPEN, "定位未完成，请开启定位后重试") }
+        }
         val PLATFORM = setOf("privacy.status", "privacy.revoke", "pages.register", "pages.open", "pages.close", "pages.unregister", "accounts.select", "accounts.remove", "services.discover", "services.call", "workflow.prepare", "workflow.step", "workflow.reconcile", "workflow.cancel", "workflow.list", "academic.study.snapshot", "academic.study.refresh", "academic.schedule.preview", "academic.schedule.confirm", "academic.session.authorize", "academic.session.request", "academic.session.revoke")
         val IMPLEMENTED = setOf("auth.service", "network.scope.authorize", "device.profile", "userscript.interact", "userscript.action", "device.location.pick", "images.match", "images.puzzle", "browser.session.open", "browser.session.status", "browser.session.close", "userscript.configure", "records.upsert", "records.query", "ui.viewport", "ui.components", "ui.navigation", "ui.date.pick", "ui.time.pick", "ui.datetime.pick", "ui.time.range.pick", "network.request", "storage.get", "storage.set", "storage.remove", "auth.prompt", "credentials.find", "credentials.remove", "session.save", "session.restore", "session.clear", "files.pick", "files.create", "files.read", "files.write", "files.remove", "files.download", "files.upload", "files.open", "files.share", "device.clipboard.read", "device.clipboard.write", "device.haptic", "tasks.schedule", "tasks.cancel", "tasks.list", "notifications.post", "navigation.page", "navigation.back", "navigation.url", "runtime.cancel", "data.query", "widget.render", "widget.publish", "userscript.status", "userscript.update", "userscript.rollback", "userscript.start", "userscript.control", "tasks.foreground.start", "tasks.foreground.stop", "tasks.foreground.list", "device.scan", "device.location", "device.photo")
     }
