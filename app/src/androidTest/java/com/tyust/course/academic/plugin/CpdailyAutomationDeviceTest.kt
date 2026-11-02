@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -174,7 +175,8 @@ class CpdailyAutomationDeviceTest {
         } finally {
             compose.runOnIdle { shown.value = null }
             compose.waitForIdle()
-            if (previous == null) { store.deactivate(ID); AcademicProviderRegistry.reload() }
+            val keepInstalled = InstrumentationRegistry.getArguments().getString("cpdailyKeepInstalled") == "true"
+            if (previous == null && !keepInstalled) { store.deactivate(ID); AcademicProviderRegistry.reload() }
         }
     }
 
@@ -193,7 +195,9 @@ class CpdailyAutomationDeviceTest {
         val image = File(app.getExternalFilesDir(null), "cpdaily-ui/$name.png")
         image.parentFile!!.mkdirs()
         compose.waitForIdle()
-        assertTrue(androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(image))
+        compose.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
+            image.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        }
     }
 
     @Test fun deliveryInstallsAndSelectedPointPersistsOnlyForItsAccount() = withPackage { pkg ->
