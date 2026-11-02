@@ -34,7 +34,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal data class PagePrompt(val title: String, val message: String, val challenge: JSONObject?, val result: CompletableDeferred<JSONObject?>, val choices: List<Pair<String, String>> = emptyList(), val image: File? = null, val directChoices: Boolean = false, val values: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String> = mutableStateMapOf())
+internal data class PagePrompt(val title: String, val message: String, val challenge: JSONObject?, val result: CompletableDeferred<JSONObject?>, val choices: List<Pair<String, String>> = emptyList(), val image: File? = null, val directChoices: Boolean = false, val values: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String> = mutableStateMapOf(), val scopeConsent: Boolean = false)
 
 /** Shared by a pinned main page and the standalone plugin page activity. */
 @Composable fun PluginPageContent(route: String, onNavigate: (String, JSONObject) -> Unit, onBack: () -> Unit, commandId: String? = null, pluginId: String? = null, params: JSONObject = JSONObject(), standalone: Boolean = false) {
@@ -136,6 +136,10 @@ internal data class PagePrompt(val title: String, val message: String, val chall
     }
     DisposableEffect(state) { onDispose { state.launchFile = null; state.launchPermission = null; state.navigateTo = null; state.goBack = null; state.hapticAction = null } }
     prompt?.let { p ->
+        if (p.scopeConsent) {
+            PluginScopeConsentDialog(p)
+            return@let
+        }
         val fields = remember(p) { p.challenge?.optJSONArray("fields")?.let(PluginJson::objects).orEmpty() }
         val values = p.values
         var choice by androidx.compose.runtime.saveable.rememberSaveable(p.title) { mutableStateOf<String?>(null) }

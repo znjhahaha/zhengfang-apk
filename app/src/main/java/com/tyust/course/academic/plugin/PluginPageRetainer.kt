@@ -83,6 +83,7 @@ internal class PageInteraction : NativePluginInteraction {
     override suspend fun consent(title: String, message: String): String? = ask(PagePrompt(title, message, null, CompletableDeferred(), NativePluginInteraction.CONSENT_CHOICES, directChoices = true))?.optString("choice")
     override suspend fun choose(title: String, choices: List<Pair<String, String>>): String? = ask(PagePrompt(title, "请选择此功能使用的服务。", null, CompletableDeferred(), choices))?.optString("choice")
     override suspend fun confirm(title: String, message: String) = ask(PagePrompt(title, message, null, CompletableDeferred())) != null
+    override suspend fun scopeConsent(title: String, message: String) = ask(PagePrompt(title, message, null, CompletableDeferred(), scopeConsent = true)) != null
     override suspend fun authenticate(challenge: JSONObject, image: File?) = ask(PagePrompt(challenge.getString("title"), "由 $pluginName 发起，凭据仅用于该插件的服务。", challenge, CompletableDeferred(), image = image))
     override suspend fun pick(types: Array<String>): Uri? = gate.withLock {
         val launch = launchFile ?: throw PluginException(PluginErrorCode.CANCELLED, "页面暂不可交互，请重试")

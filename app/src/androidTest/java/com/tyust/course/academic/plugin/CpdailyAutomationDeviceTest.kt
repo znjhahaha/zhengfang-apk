@@ -4,10 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -18,7 +18,7 @@ import com.tyust.course.academic.AcademicSession
 import com.tyust.course.academic.AcademicSessionKey
 import com.tyust.course.ui.system.GlassWindowHost
 import com.tyust.course.ui.theme.CourseSelectorTheme
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -33,14 +33,16 @@ import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * App134 / SDK3.11.1 / CPDaily0.1.3 UI_PREVIEW draft. Pass -e cpdailyPackage <absolute target external-files path>.
+ * App135 / SDK3.11.1 / CPDaily0.1.4 UI_PREVIEW draft. Pass -e cpdailyPackage <absolute target external-files path>.
  * Pins the packed delivery via DELIVERY_SHA256 and uses the normal developer importer.
  * Replacing the old local development delivery additionally requires
  * -e cpdailyReplaceSha <PREVIOUS_DELIVERY_SHA256>; accounts are never removed.
  * Real: Android QuickJS ui.init/ui.reduce, contract validation, Compose renderer, scoped
  * storage, file handles and denied foreground-start confirmation. Synthetic: school,
  * auth, requirements, map/GPS/profile, picker result and workflow/foreground results.
- * No service/network/upload/workflow write or foreground worker is ever dispatched.
+ * Restoration also dispatches auth.service.validate through the real host to a
+ * test-only QuickJS handler using an isolated legal service session. No school
+ * network/upload/workflow write or foreground worker is ever dispatched.
  * This deliberately does not claim school acceptance or automatic task.run coverage.
  */
 @RunWith(AndroidJUnit4::class)
@@ -49,8 +51,14 @@ class CpdailyAutomationDeviceTest {
     private val app = ApplicationProvider.getApplicationContext<Context>()
     private val shown = mutableStateOf<JSONObject?>(null)
     private val emitted = LinkedBlockingQueue<JSONObject>()
+    private val scopeInteraction = PageInteraction()
+    private val activePage = mutableStateOf<Page?>(null)
+    private var exits = 0
 
-    @Before fun previewOnly() { assumeTrue("Requires UI_PREVIEW", BuildConfig.UI_PREVIEW) }
+    @Before fun previewOnly() {
+        assumeTrue("Requires UI_PREVIEW", BuildConfig.UI_PREVIEW)
+        assertEquals("This test delivery targets App135", 135, BuildConfig.VERSION_CODE)
+    }
 
     private class Interaction : NativePluginInteraction {
         var confirmations = 0
@@ -67,32 +75,56 @@ class CpdailyAutomationDeviceTest {
         override fun back() {}
     }
 
-    private inner class Page(val pkg: PluginPackage, val session: AcademicSession) : AutoCloseable {
+    private inner class Page(val pkg: PluginPackage, val session: AcademicSession, scopeUi: Boolean = false) : AutoCloseable {
         val interaction = Interaction()
-        val host = NativeCapabilityHost(app, pkg, session, interaction) { true }
+        val host = NativeCapabilityHost(app, pkg, session, if (scopeUi) scopeInteraction else interaction) { true }
         var result = JSONObject()
-        val effects get() = PluginJson.objects(result.getJSONArray("effects"))
+        private val outstanding = linkedMapOf<String, JSONObject>()
+        var autoLocalWrites = true
+        private var settlingLocal = false
+        init { host.cancelEffects = { ids -> ids.forEach(outstanding::remove) } }
+        val effects get() = outstanding.values.toList()
         val state get() = result.getJSONObject("state")
         fun invoke(method: String, args: JSONObject) {
+            if (method == "ui.init") outstanding.clear()
+            args.optJSONObject("event")?.takeIf { it.optString("type") == "effect.result" }
+                ?.let { outstanding.remove(it.getString("effectId")) }
             result = runBlocking {
                 NativePluginRunner.invoke(app, pkg, session, method, args,
                     JSONObject().put("capabilities", host.capabilities())) { true }
             }
+            PluginJson.objects(result.getJSONArray("effects")).forEach { outstanding[it.getString("id")] = it }
             compose.runOnIdle { shown.value = result.getJSONObject("view") }
+            // Preference/catalog writes may accompany a UI or business result. Dispatch only
+            // local writes and keep all other outstanding effects for explicit test replies.
+            settleLocal()
         }
-        fun init() {
-            invoke("ui.init", JSONObject().put("pageId", "dorm"))
-            assertEquals("cpdaily.schools", effect("services.call").getJSONObject("input").getString("name"))
-            // Every seed consumes the one automatic directory effect before sending UI events.
-            reply(JSONObject().put("schools", JSONArray().put(JSONObject()
-                .put("id", SYNTHETIC_TENANT).put("name", "合成测试学校"))), "services.call")
-            assertTrue("Directory initialization must settle without another effect", effects.isEmpty())
-            assertEquals("", state.getString("pending"))
+        fun settleLocal() {
+            if (!autoLocalWrites || settlingLocal) return
+            settlingLocal = true
+            try {
+                while (true) {
+                    val next = effects.firstOrNull { it.getString("capability") in setOf("storage.set", "runtime.cancel") } ?: break
+                    local(next.getString("capability"))
+                }
+            } finally { settlingLocal = false }
+        }
+        fun init(pageId: String = "dorm") {
+            invoke("ui.init", JSONObject().put("pageId", pageId))
+            assertEquals("cpdaily.ui.preferences.v1", effect("storage.get").getJSONObject("input").getString("key"))
+            local()
+            assertEquals("cpdaily.ui.catalog.v1", effect("storage.get").getJSONObject("input").getString("key"))
+            local()
+            if (effects.any { it.getString("capability") == "services.call" }) {
+                assertEquals("cpdaily.schools", effect("services.call").getJSONObject("input").getString("name"))
+                reply(JSONObject().put("schools", JSONArray().put(JSONObject()
+                    .put("id", SYNTHETIC_TENANT).put("name", "合成测试学校"))), "services.call")
+            }
         }
         fun event(name: String, value: Any? = null) = reduce(JSONObject().put("type", "click").put("name", name)
             .apply { if (value != null) put("value", value) })
         fun reduce(event: JSONObject) = invoke("ui.reduce", JSONObject().put("pageId", "dorm").put("state", state).put("event", event))
-        fun effect(capability: String): JSONObject = effects.single().also { effect ->
+        fun effect(capability: String): JSONObject = effects.single { it.getString("capability") == capability }.also { effect ->
             assertEquals(capability, effect.getString("capability"))
             val descriptor = PluginJson.objects(host.capabilities()).single {
                 it.getString("name") == capability && effect.getInt("version") in 1..it.getInt("version")
@@ -114,9 +146,9 @@ class CpdailyAutomationDeviceTest {
             reduce(JSONObject().put("type", "effect.result").put("effectId", effect.getString("id"))
                 .put("result", JSONObject().put("ok", true).put("data", receipt)))
         }
-        fun local() {
-            val effect = effects.single()
-            check(effect.getString("capability") in setOf("storage.get", "storage.set")) { "Only local storage may be dispatched" }
+        fun local(capability: String = "storage.get") {
+            val effect = effect(capability)
+            check(effect.getString("capability") in setOf("storage.get", "storage.set", "runtime.cancel")) { "Only local storage/cancellation may be dispatched" }
             reply(runBlocking { host.execute(effect, NativeFlow(true)) }, effect.getString("capability"))
         }
         fun cancel(capability: String) {
@@ -130,8 +162,33 @@ class CpdailyAutomationDeviceTest {
             compose.waitUntil(5_000) { emitted.isNotEmpty() }
             reduce(emitted.remove())
         }
+        fun tab(value: String) {
+            val options = PluginJson.objects(node("service-tabs").getJSONArray("options"))
+            val label = options.single { it.getString("value") == value }.getString("label")
+            // Glass tabs also draw a noninteractive label layer for refraction. Select
+            // the merged actionable tab, not either copy of its unmerged label text.
+            compose.onNode(hasText(label) and hasClickAction() and isSelectable() and
+                hasAnyAncestor(hasTestTag("native-node-service-tabs")))
+                .assertIsEnabled().performClick()
+            compose.waitUntil(5_000) { emitted.isNotEmpty() }
+            val event = emitted.remove()
+            assertEquals("page", event.getString("name"))
+            assertEquals("input", event.getString("type"))
+            assertEquals(value, event.getString("value"))
+            reduce(event)
+            assertEquals(value, state.getString("page"))
+        }
+        fun back() {
+            compose.onNodeWithContentDescription("返回").performClick()
+            consumeUiEvent()
+        }
+        fun consumeUiEvent() {
+            compose.waitUntil(5_000) { emitted.isNotEmpty() }
+            reduce(emitted.remove())
+        }
         fun scroll(id: String): SemanticsNodeInteraction {
-            compose.onNodeWithTag("native-node-root").performScrollToNode(hasTestTag("native-node-$id"))
+            if (id != "service-tabs") compose.onNodeWithTag("native-node-page-content")
+                .performScrollToNode(hasTestTag("native-node-$id"))
             return compose.onNodeWithTag("native-node-$id", useUnmergedTree = true)
         }
         fun input(id: String, value: String) {
@@ -151,30 +208,15 @@ class CpdailyAutomationDeviceTest {
             else -> "login"
         })
         fun selectMethod(method: String) {
-            val select = nodes().single { node -> node.optString("type") == "select" &&
-                PluginJson.objects(node.getJSONArray("options")).map { it.getString("value") }.toSet() ==
-                    setOf("mobile", "password", "sso") }
-            val label = PluginJson.objects(select.getJSONArray("options")).single {
-                it.getString("value") == method
-            }.getString("label")
-            assertTrue("Unexpected queued Compose event", emitted.isEmpty())
-            scroll(select.getString("id"))
-            compose.onNode(hasContentDescription(select.getString("label")) and
-                hasAnyAncestor(hasTestTag("native-node-${select.getString("id")}")), useUnmergedTree = true)
-                .assertIsEnabled().performClick()
-            compose.onNode(hasText(label) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
-                .assertIsEnabled().performClick()
-            compose.waitUntil(5_000) { emitted.isNotEmpty() }
-            val event = emitted.remove()
-            assertEquals(select.getString("event"), event.getString("name"))
-            assertEquals(method, event.getString("value"))
-            reduce(event)
+            val id = if (state.optString("loginMethod") == method) "login" else "login-$method"
+            assertEquals("listItem", node(id).getString("type"))
+            click(id)
+            auth("start", method)
+            cancel("auth.service")
             assertEquals(method, state.getString("loginMethod"))
-            assertEquals("signed_out", state.getString("authState"))
             assertEquals("", state.getString("continuationId"))
-            assertEquals("", state.getString("grant"))
             assertEquals("", state.optString("officialUrl"))
-            assertTrue("Selecting a method must not start authentication", effects.isEmpty())
+            assertTrue("Cancelled login operation must settle", effects.isEmpty())
         }
         fun auth(action: String, method: String = "mobile"): JSONObject {
             val effect = effect("auth.service")
@@ -192,12 +234,13 @@ class CpdailyAutomationDeviceTest {
         }.minByOrNull { nodes(it).size } ?: error("Login button must belong to its own card")
         fun account() {
             init()
+            if (effects.any { it.getString("capability") == "auth.service" }) cancel("auth.service")
             event("school", SYNTHETIC_TENANT)
             assertTrue("School selection must not start authentication", effects.isEmpty())
         }
         fun restartLogin() {
-            assertEquals("重新开始登录", node("logout").getString("label"))
-            assertEquals("plain", node("logout").getString("variant"))
+            assertEquals("退出当前账号", node("logout").getString("title"))
+            assertEquals("listItem", node("logout").getString("type"))
             val method = state.getString("loginMethod")
             click("logout")
             auth("logout", method)
@@ -206,7 +249,7 @@ class CpdailyAutomationDeviceTest {
             assertTrue("Logout must not emit redundant session.clear or other effects", effects.isEmpty())
             assertEquals("", state.getString("pending"))
             assertEquals("signed_out", state.getString("authState"))
-            assertEquals("", state.getString("tenantId"))
+            assertEquals(SYNTHETIC_TENANT, state.getString("tenantId"))
             assertEquals("", state.getString("grant"))
             assertEquals("", state.getString("continuationId"))
             assertEquals("", state.optString("officialUrl"))
@@ -260,10 +303,11 @@ class CpdailyAutomationDeviceTest {
         }
         fun ready() {
             init()
-            event("school", "synthetic-campus.invalid")
-            event("validate")
+            if (state.getString("tenantId").isBlank()) event("school", SYNTHETIC_TENANT)
+            if (effects.none { it.getString("capability") == "auth.service" }) event("validate")
+            auth("validate", state.getString("loginMethod"))
             reply(JSONObject().put("state", "ready").put("message", "合成学校会话"), "auth.service")
-            event("tasks")
+            if (effects.isEmpty()) event("tasks")
             assertEquals("cpdaily.source", effect("services.call").getJSONObject("input").getString("name"))
             reply(JSONObject().put("state", "observed"), "services.call")
             assertEquals("cpdaily.tasks", effect("services.call").getJSONObject("input").getString("name"))
@@ -286,9 +330,13 @@ class CpdailyAutomationDeviceTest {
             event("addressConfirm", true)
         }
         override fun close() {
+            dispose(clearStorage = true)
+        }
+        fun dispose(clearStorage: Boolean) {
             runBlocking {
-                host.execute(JSONObject().put("id", "cleanup").put("capability", "storage.remove").put("version", 1)
-                    .put("input", JSONObject().put("key", "cpdaily.locations.v1")), NativeFlow(false))
+                if (clearStorage) for (key in listOf("cpdaily.locations.v1", "cpdaily.ui.preferences.v1", "cpdaily.ui.catalog.v1"))
+                    host.execute(JSONObject().put("id", "cleanup").put("capability", "storage.remove").put("version", 1)
+                        .put("input", JSONObject().put("key", key)), NativeFlow(false))
             }
             host.files.clear()
             host.close()
@@ -320,8 +368,27 @@ class CpdailyAutomationDeviceTest {
         }
         val pkg = runBlocking { store.install(bytes, true) }
         try {
+            if (store.activeDigest(ID) != pkg.digest &&
+                InstrumentationRegistry.getArguments().getString("cpdailyApproveRuntimeUpdate") == DELIVERY_SHA256) {
+                // Explicit approval is limited to this reviewed local delivery's missing
+                // cancellation declaration. Keep the normal staged-update transaction.
+                check(previous?.digest == PREVIOUS_DELIVERY_SHA256 && replacement == PREVIOUS_DELIVERY_SHA256)
+                check(previous != null && !previous.official && !previous.bundled)
+                check(pkg.source == previous.source) { "Runtime approval cannot approve a source change" }
+                check(pkg.manifest.permissions - previous.manifest.permissions == setOf("runtime"))
+                check(previous.manifest.permissions - pkg.manifest.permissions == emptySet<String>())
+                val declared = JSONObject(pkg.manifest.json.toString())
+                declared.put("permissions", JSONArray(pkg.manifest.permissions.filter { it != "runtime" }))
+                declared.put("requires", JSONArray(PluginJson.objects(declared.getJSONArray("requires"))
+                    .filterNot { it.optString("name") == "runtime.cancel" }))
+                assertEquals("Only the declared runtime cancellation update was approved",
+                    PluginJson.canonical(previous.manifest.json), PluginJson.canonical(declared))
+                assertEquals(DELIVERY_SHA256, store.activateStaged(ID, allowExpanded = true,
+                    expectedDigest = DELIVERY_SHA256)?.digest)
+            }
             assertEquals(ID, pkg.manifest.id)
-            assertTrue("Packed plugin must declare its version", pkg.manifest.version.isNotBlank())
+            assertEquals("0.1.4", pkg.manifest.version)
+            assertEquals(135, pkg.manifest.json.getInt("minAppVersionCode"))
             assertFalse(pkg.official)
             assertEquals("Developer import is staged or blocked; close the old page/check update permissions without clearing accounts",
                 pkg.digest, store.activeDigest(ID))
@@ -343,11 +410,22 @@ class CpdailyAutomationDeviceTest {
         AcademicSession(AcademicSessionKey("synthetic-school.invalid", "device-test-$account"), "https://school.invalid/"))
 
     private fun render(page: Page) {
+        activePage.value = page
         compose.setContent {
             CourseSelectorTheme { GlassWindowHost {
-                shown.value?.let { NativePluginNode(it, page.host.files) { event, _ -> emitted.add(event) } }
+                activePage.value?.let { current -> shown.value?.let {
+                    NativePluginPageSurface(NativeUiSnapshot(pageId = "dorm", instance = "synthetic-${current.session.instanceId}",
+                        view = it, navigation = NativePageNavigation.from(current.result)), current.host.files,
+                        "合成今日校园验收", true, Modifier, onExit = { exits++ }, onRetry = {},
+                        emit = { event, _ -> emitted.add(event) })
+                } }
+                ScopePrompt()
             } }
         }
+    }
+
+    @Composable private fun ScopePrompt() {
+        scopeInteraction.prompt?.let { PluginScopeConsentDialog(it) }
     }
 
     private fun capture(name: String) {
@@ -359,7 +437,7 @@ class CpdailyAutomationDeviceTest {
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
             putString("cpdailyCapture", image.absolutePath)
-            putString("cpdailyTestTarget", "App134 / SDK3.11.1 / CPDaily0.1.3")
+            putString("cpdailyTestTarget", "App135 / SDK3.11.1 / CPDaily0.1.4")
             putString("cpdailyRuntimeVersionCode", BuildConfig.VERSION_CODE.toString())
         })
     }
@@ -382,7 +460,8 @@ class CpdailyAutomationDeviceTest {
             one.scroll(school.getString("id")).assertIsEnabled()
             capture("account-school-card")
             one.scroll(sms.getString("id")).assertIsEnabled()
-            assertTrue(sms.getString("label").contains("验证码"))
+            assertEquals("listItem", sms.getString("type"))
+            assertTrue(sms.getString("title").contains("验证码"))
             capture("account-sms-card")
             assertTrue(one.effects.isEmpty())
 
@@ -423,9 +502,8 @@ class CpdailyAutomationDeviceTest {
             assertEquals("https://school.invalid/cas/login", one.effect("navigation.url").getJSONObject("input").getString("url"))
             one.reply(null, "navigation.url")
             assertEquals("official_required", one.state.getString("authState"))
-            assertEquals("primary", one.node("official").getString("variant"))
-            assertNull("SSO official entry must replace the duplicate login action",
-                NativePluginContract.findNode(one.result.getJSONObject("view"), "login"))
+            assertEquals("listItem", one.node("official").getString("type"))
+            assertEquals("login-card", one.loginCard(one.node("official")).getString("id"))
             one.assertNoSignedOutBusinessControls()
             assertTrue("Opening official entry must not imply SSO completion", one.effects.isEmpty())
             one.scroll("official").assertIsEnabled()
@@ -468,7 +546,8 @@ class CpdailyAutomationDeviceTest {
                     one.state.getString("continuationId"))
                 one.effect("auth.prompt")
                 one.cancel("auth.prompt")
-                // The method picker remains usable while awaiting OTP, including after cancellation.
+                // OTP is its own operation row; exit the continuation before another login method.
+                one.restartLogin()
                 one.selectMethod("password")
                 assertNull(NativePluginContract.findNode(one.result.getJSONObject("view"), "otp"))
                 one.scroll("login").assertIsEnabled()
@@ -501,6 +580,284 @@ class CpdailyAutomationDeviceTest {
     @Test fun syntheticMobilePromptCancellationLeavesSmsRetryEnabled() = cancelledMobileLogin(LoginStage.MOBILE, "auth.prompt")
     @Test fun syntheticOtpPromptCancellationPreservesContinuationAndInputRetry() = cancelledMobileLogin(LoginStage.OTP, "auth.prompt")
 
+    @Test fun fixedTabsAndIndependentSchoolPickerNavigateBackThroughEveryInternalLevel() = withPackage { pkg ->
+        page(pkg).use { one ->
+            render(one); one.ready()
+            assertEquals("column", one.result.getJSONObject("view").getString("type"))
+            assertEquals("scroll", one.node("page-content").getString("type"))
+            assertNull(NativePluginContract.findNode(one.node("page-content"), "service-tabs"))
+            val tabs = compose.onNodeWithTag("native-node-service-tabs").fetchSemanticsNode().boundsInRoot
+            one.scroll("preview")
+            assertEquals(tabs, compose.onNodeWithTag("native-node-service-tabs").fetchSemanticsNode().boundsInRoot)
+            one.event("stage", "results")
+            for ((stage, depth) in listOf("materials" to 3, "details" to 2, "tasks" to 1)) {
+                one.back()
+                assertEquals(stage, one.state.getString("stage"))
+                assertEquals(depth, NativePageNavigation.from(one.result)!!.depth)
+                assertEquals(0, exits)
+            }
+            one.back()
+            assertEquals("account", one.state.getString("page"))
+            assertEquals(0, NativePageNavigation.from(one.result)!!.depth)
+            // Saved-school editing now uses a listItem and an independent picker page.
+            assertEquals("listItem", one.node("school.edit").getString("type"))
+            assertEquals("合成测试学校", one.node("school.edit").getString("title"))
+            one.click("school.edit")
+            assertTrue(one.state.getBoolean("schoolEditing"))
+            assertNull(NativePluginContract.findNode(one.result.getJSONObject("view"), "service-tabs"))
+            assertNull(NativePluginContract.findNode(one.result.getJSONObject("view"), "login-card"))
+            assertEquals("listItem", one.node("recent-school-0").getString("type"))
+            one.input("search", "合成")
+            one.back()
+            assertFalse(one.state.getBoolean("schoolEditing"))
+            assertEquals(SYNTHETIC_TENANT, one.state.getString("tenantId"))
+            assertEquals("", one.state.getString("search"))
+            one.tab("classroom"); one.back()
+            assertEquals("account", one.state.getString("page"))
+            assertEquals(0, exits)
+            capture("internal-back-and-saved-school")
+            compose.onNodeWithContentDescription("返回").performClick()
+            compose.runOnIdle { assertEquals(1, exits) }
+        }
+    }
+
+    @Test fun leavingAndReopeningRestoresSchoolMethodAndPageButVerifiesAuthAgain() = withPackage { pkg ->
+        val account = UUID.randomUUID().toString()
+        val first = page(pkg, account)
+        try {
+            render(first); first.account(); first.selectMethod("password"); first.tab("classroom")
+            first.event("validate")
+            first.reply(JSONObject().put("state", "ready").put("message", "合成会话；不是学校登录验收"), "auth.service")
+            first.event("reason", "不应保存的合成材料")
+            compose.runOnIdle { shown.value = null; activePage.value = null }
+            compose.waitForIdle()
+        } finally { first.dispose(clearStorage = false) }
+        page(pkg, account).use { reopened ->
+            compose.runOnIdle { activePage.value = reopened }
+            reopened.init("account")
+            assertEquals(SYNTHETIC_TENANT, reopened.state.getString("tenantId"))
+            assertEquals("合成测试学校", reopened.state.getString("schoolName"))
+            assertEquals("password", reopened.state.getString("loginMethod"))
+            assertEquals("classroom", reopened.state.getString("page"))
+            assertEquals("signed_out", reopened.state.getString("authState"))
+            assertEquals("", reopened.state.getString("grant"))
+            assertEquals("", reopened.state.getString("reason"))
+            assertTrue(reopened.state.isNull("photo")); assertTrue(reopened.state.isNull("workflow"))
+            val restore = reopened.auth("validate", "password")
+            assertFalse(restore.has("credential")); assertFalse(restore.has("scopeGrant"))
+            reopened.reply(JSONObject().put("state", "signed_out").put("message", "合成过期会话"), "auth.service")
+            assertTrue("Reopening cannot request a password or send SMS automatically", reopened.effects.isEmpty())
+            assertEquals("合成测试学校", reopened.node("school.edit").getString("title"))
+            reopened.click("school.edit")
+            assertEquals("listItem", reopened.node("recent-school-0").getString("type"))
+            reopened.click("recent-school-0")
+            assertFalse(reopened.state.getBoolean("schoolEditing"))
+            capture("reopened-public-preferences")
+        }
+    }
+
+    @Test fun restoredValidateReachesProtectedQuickJsWithoutGestureButLoginStillRequiresGesture() = withPackage { delivered ->
+        val id = "device.test.cpdaily.restore." + UUID.randomUUID().toString().replace("-", "")
+        // Keep the delivered reducer intact; replace only protected school handlers.
+        // The real host, service-account validation and Binder/QuickJS dispatch all run.
+        val source = delivered.source + """
+            ;globalThis.plugin.serviceAuth = {
+                validate: (args) => {
+                    if (args.serverId !== 'cpdaily' || args.tenantId !== '$SYNTHETIC_TENANT' ||
+                        args.method !== 'password' || 'action' in args || 'credential' in args || 'scopeGrant' in args)
+                        throw new Error('Unexpected restoration input');
+                    return {ok:true,data:{state:'ready',tenantId:args.tenantId,message:'synthetic host validate only'}};
+                },
+                start: () => { throw new Error('Ungestured start reached handler'); },
+                resume: () => { throw new Error('Ungestured resume reached handler'); },
+                logout: () => { throw new Error('Ungestured logout reached handler'); }
+            };
+        """.trimIndent()
+        val pkg = delivered.copy(manifest = PluginManifest(JSONObject(delivered.manifest.json.toString()).put("id", id)),
+            source = source, digest = PluginJson.sha256(source.toByteArray(Charsets.UTF_8)))
+        val accounts = PluginServiceAccounts(app)
+        var first: Page? = null
+        try {
+            val one = Page(pkg, accounts.session(pkg, "cpdaily")).also { first = it }
+            render(one); one.account(); one.selectMethod("password"); one.tab("account")
+            compose.runOnIdle { shown.value = null; activePage.value = null }
+            compose.waitForIdle()
+            one.dispose(clearStorage = false); first = null
+            Page(pkg, accounts.session(pkg, "cpdaily")).use { reopened ->
+                compose.runOnIdle { activePage.value = reopened }
+                reopened.init("account")
+                val input = reopened.auth("validate", "password")
+                assertEquals("account", reopened.state.getString("page"))
+                assertEquals("signed_out", reopened.state.getString("authState"))
+                assertTrue(reopened.state.getBoolean("restoreSession"))
+                val restore = reopened.effect("auth.service")
+                assertTrue(restore.getString("id").startsWith("restoreAuth."))
+                assertEquals("service:$id:cpdaily", reopened.session.key.schoolId)
+                assertTrue(accounts.current(pkg, reopened.session))
+                assertFalse(input.has("credential")); assertFalse(input.has("scopeGrant"))
+                for (action in listOf("start", "resume", "logout")) {
+                    val forbidden = JSONObject(restore.toString())
+                    forbidden.getJSONObject("input").put("action", action)
+                    try {
+                        runBlocking { reopened.host.execute(forbidden, NativeFlow(false)) }
+                        fail("Ungestured $action must be denied before dispatch")
+                    } catch (error: PluginException) { assertEquals(PluginErrorCode.PERMISSION_DENIED, error.code) }
+                }
+                val receipt = runBlocking { reopened.host.execute(restore, NativeFlow(false)) } as JSONObject
+                assertEquals("ready", receipt.getString("state"))
+                assertEquals("synthetic host validate only", receipt.getString("message"))
+                reopened.reply(receipt, "auth.service")
+                assertEquals("ready", reopened.state.getString("authState"))
+                assertFalse(reopened.state.getBoolean("restoreSession"))
+                assertEquals("", reopened.state.getString("pending"))
+                assertTrue("Read-only restoration must not prompt, log in or start school work", reopened.effects.isEmpty())
+                assertEquals(0, reopened.interaction.confirmations)
+                assertNull(scopeInteraction.prompt)
+                capture("restored-validate-without-gesture")
+            }
+        } finally {
+            first?.close()
+            accounts.clearPlugin(pkg)
+        }
+    }
+
+    @Test fun quickJsScopeEffectShowsExpandableDetailsAndReusesOnlyRememberedScopeAfterReopen() = withPackage { delivered ->
+        // Reuse the packed production reducer with an isolated synthetic plugin identity.
+        // This keeps consent/account cleanup away from the user's actual CPDaily accounts.
+        val id = "device.test.cpdaily.scope." + UUID.randomUUID().toString().replace("-", "")
+        val pkg = delivered.copy(manifest = PluginManifest(JSONObject(delivered.manifest.json.toString()).put("id", id)))
+        val accounts = PluginServiceAccounts(app)
+        val jobs = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val rules = JSONArray().put(JSONObject().put("origin", "https://school.example.invalid")
+            .put("pathPrefix", "/api/login").put("methods", JSONArray(listOf("GET", "POST")))
+            .put("purposes", JSONArray(listOf("auth"))))
+            .put(JSONObject().put("origin", "https://school.example.invalid")
+                .put("pathPrefix", "/api/tasks").put("methods", JSONArray(listOf("GET")))
+                .put("purposes", JSONArray(listOf("query"))))
+        fun scopeReply(one: Page) = one.reply(JSONObject().put("state", "scope_required").put("tenantId", SYNTHETIC_TENANT)
+            .put("scopes", rules), "auth.service")
+        var first: Page? = null
+        try {
+            val one = Page(pkg, accounts.session(pkg, "cpdaily"), scopeUi = true).also { first = it }
+            render(one); one.account(); one.click("login"); scopeReply(one)
+            val pending = one.effect("network.scope.authorize")
+            val decision = jobs.async { one.host.execute(pending, NativeFlow(true)) as JSONObject }
+            compose.waitUntil(10_000) { scopeInteraction.prompt != null || decision.isCompleted }
+            assertFalse("New scope must await visible consent", decision.isCompleted)
+            val disclosure = scopeInteraction.prompt!!.message
+            compose.onNodeWithText(disclosure).assertDoesNotExist()
+            compose.onNodeWithText("本次申请 1 个站点、2 项网络范围。").assertIsDisplayed()
+            compose.onNodeWithText("查看完整授权详情（站点、路径、方法与用途）").performScrollTo().performClick()
+            compose.onNodeWithText(disclosure).assertExists()
+            assertTrue(disclosure.contains("https://school.example.invalid/api/login"))
+            assertTrue(disclosure.contains("GET、POST")); assertTrue(disclosure.contains("登录认证"))
+            assertTrue(disclosure.contains("/api/tasks")); assertTrue(disclosure.contains("读取任务与要求"))
+            assertTrue(disclosure.contains("撤销学校网络授权"))
+            assertFalse(decision.isCompleted)
+            capture("school-scope-expanded")
+            compose.onNodeWithText("允许并记住").performClick()
+            compose.waitUntil(10_000) { decision.isCompleted }
+            val grant = runBlocking { decision.await() }
+            assertTrue(PluginSchoolNetworkConsent.remembered(app, id))
+            one.reply(grant, "network.scope.authorize")
+            assertEquals(grant.getString("grant"), one.auth("start").getString("scopeGrant"))
+            one.cancel("auth.service")
+            compose.runOnIdle { shown.value = null; activePage.value = null }
+            compose.waitForIdle()
+            one.dispose(clearStorage = false); first = null
+            Page(pkg, accounts.session(pkg, "cpdaily"), scopeUi = true).use { reopened ->
+                compose.runOnIdle { activePage.value = reopened }
+                reopened.init("account")
+                reopened.auth("validate")
+                reopened.reply(JSONObject().put("state", "signed_out"), "auth.service")
+                assertTrue("Restore must not start login or request scope automatically", reopened.effects.isEmpty())
+                reopened.click("login"); reopened.auth("start"); scopeReply(reopened)
+                val reuse = jobs.async { reopened.host.execute(reopened.effect("network.scope.authorize"), NativeFlow(false)) as JSONObject }
+                compose.waitUntil(10_000) { reuse.isCompleted }
+                val next = runBlocking { reuse.await() }
+                assertNotEquals(grant.getString("grant"), next.getString("grant"))
+                assertNull(scopeInteraction.prompt)
+                reopened.reply(next, "network.scope.authorize"); reopened.cancel("auth.service")
+                val unknown = JSONObject(pending.toString())
+                unknown.getJSONObject("input").put("rules", JSONArray().put(JSONObject(rules.getJSONObject(0).toString())
+                    .put("origin", "https://unapproved.example.invalid")))
+                try { runBlocking { reopened.host.execute(unknown, NativeFlow(false)) }; fail("Unknown origin silently approved") }
+                catch (error: PluginException) { assertEquals(PluginErrorCode.PERMISSION_DENIED, error.code) }
+                assertNull(scopeInteraction.prompt)
+                capture("school-scope-reused")
+            }
+        } finally {
+            jobs.cancel(); scopeInteraction.prompt?.result?.cancel()
+            first?.close()
+            accounts.clearPlugin(pkg); PluginSchoolNetworkConsent.revoke(app, id)
+        }
+    }
+
+    @Test fun switchingTabsAndGoingBackDuringStartupKeepPreferenceReadAndAuthRestorationAlive() = withPackage { pkg ->
+        val account = UUID.randomUUID().toString()
+        val first = page(pkg, account)
+        try {
+            render(first); first.account(); first.tab("dorm")
+            compose.runOnIdle { shown.value = null; activePage.value = null }
+            compose.waitForIdle()
+        } finally { first.dispose(clearStorage = false) }
+        page(pkg, account).use { reopened ->
+            compose.runOnIdle { activePage.value = reopened }
+            reopened.invoke("ui.init", JSONObject().put("pageId", "account"))
+            val preferencesRead = reopened.state.getString("pending")
+            reopened.tab("classroom")
+            assertEquals(preferencesRead, reopened.state.getString("pending"))
+            assertEquals("storage.get", reopened.effects.single().getString("capability"))
+            reopened.local()
+            val catalogRead = reopened.state.getString("pending")
+            reopened.back()
+            assertEquals(catalogRead, reopened.state.getString("pending"))
+            assertEquals("account", reopened.state.getString("page"))
+            reopened.local()
+            val restoreAuth = reopened.state.getString("pending")
+            reopened.auth("validate")
+            reopened.tab("classroom")
+            assertEquals(restoreAuth, reopened.state.getString("pending"))
+            assertTrue(reopened.state.getBoolean("restoreSession"))
+            reopened.reply(JSONObject().put("state", "ready"), "auth.service")
+            assertEquals("classroom", reopened.state.getString("page"))
+            assertEquals("cpdaily.source", reopened.effect("services.call").getJSONObject("input").getString("name"))
+            reopened.reply(JSONObject().put("state", "observed"), "services.call")
+            reopened.reply(JSONObject().put("rows", JSONArray()), "services.call")
+            assertTrue(reopened.state.getBoolean("tasksLoaded"))
+            assertTrue(reopened.effects.isEmpty())
+            assertEquals(0, exits)
+            capture("startup-navigation-restores-latest-tab")
+        }
+    }
+
+    @Test fun sameAccountEpochChangeCannotSwallowAnOutstandingPreferenceWrite() = withPackage { pkg ->
+        page(pkg).use { one ->
+            render(one); one.account()
+            one.autoLocalWrites = false
+            one.tab("classroom")
+            val stale = one.effect("storage.set").getString("id")
+            one.session.invalidate()
+            // The stale acknowledgement reaches the real reducer in the new session epoch.
+            one.reply(JSONObject.NULL, "storage.set")
+            assertNotEquals(stale, one.state.optJSONObject("preferencesWrite")?.optString("id"))
+            assertEquals("cpdaily.ui.preferences.v1", one.effect("storage.set").getJSONObject("input").getString("key"))
+            assertTrue(one.state.getBoolean("restoreSession"))
+            one.auth("validate")
+            one.autoLocalWrites = true; one.settleLocal()
+            one.reply(JSONObject().put("state", "signed_out"), "auth.service")
+            one.tab("leave-new")
+            val saved = runBlocking { one.host.execute(JSONObject().put("id", "read-saved-preferences")
+                .put("capability", "storage.get").put("version", 1)
+                .put("input", JSONObject().put("key", "cpdaily.ui.preferences.v1")), NativeFlow(false)) } as JSONObject
+            assertEquals("leave-new", saved.getString("page"))
+            assertEquals(SYNTHETIC_TENANT, saved.getString("tenantId"))
+            assertFalse(saved.has("authState")); assertFalse(saved.has("grant"))
+            assertTrue(one.state.isNull("preferencesWrite"))
+            capture("epoch-change-still-saves-preferences")
+        }
+    }
+
     @Test fun deliveryInstallsAndSelectedPointPersistsOnlyForItsAccount() = withPackage { pkg ->
         page(pkg).use { one ->
             render(one)
@@ -512,7 +869,7 @@ class CpdailyAutomationDeviceTest {
                 .put("address", "合成地图地点"), "device.location.pick")
             one.input("address", "合成地图地点（设备输入）")
             assertFalse(one.state.getBoolean("addressConfirmed"))
-            one.click("placeSave"); one.local(); one.local()
+            one.click("placeSave"); one.local()
             assertEquals(1, one.state.getJSONArray("savedPositions").length())
             one.ready(); one.event("placesLoad"); one.local()
             assertEquals("合成地图地点", one.state.getJSONArray("savedPositions").getJSONObject(0).getString("label"))
@@ -531,7 +888,7 @@ class CpdailyAutomationDeviceTest {
                 assertEquals("signed_out", other.state.getString("authState"))
                 assertTrue(other.state.isNull("selectedPosition"))
                 assertEquals(0, other.state.getJSONArray("savedPositions").length())
-                assertTrue(other.effects.isEmpty())
+                assertEquals("cpdaily.ui.preferences.v1", other.effect("storage.get").getJSONObject("input").getString("key"))
             }
         }
     }
@@ -618,9 +975,9 @@ class CpdailyAutomationDeviceTest {
 
     companion object {
         private const val ID = "dev.znjhahaha.cpdaily"
-        private const val PREVIOUS_DELIVERY_SHA256 = "b5ac3fd78a31d7a1d0113ee124e02925722276978c09904867fadd2f3109140a"
+        private const val PREVIOUS_DELIVERY_SHA256 = "227588f7fbe95f883a0a12d01439dfb31a36cab6297084dbd5f51e5fe3fd9817"
         // Main agent must replace this after packing; never accept a caller-selected new digest.
-        private const val DELIVERY_SHA256 = "a7546dbdb3f542d08f03fcb0a58638dc906eafdb43b1562dbe25c14d9a3bcccc"
+        private const val DELIVERY_SHA256 = "955fa0764ae446b97474c991369d9a5fb0c05632f62c1e9fa883994639e6ecb0"
         private const val SYNTHETIC_TENANT = "synthetic-campus.invalid"
         private const val SYNTHETIC_SCOPE = "synthetic-school-scope"
         private const val SYNTHETIC_CONTINUATION = "synthetic-otp-continuation"

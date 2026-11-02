@@ -10,6 +10,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.tyust.course.ui.system.GlassWindowHost
+import com.tyust.course.ui.theme.CourseSelectorTheme
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -65,5 +67,31 @@ class NativePluginInteractionTest {
         val tabs = compose.onNodeWithTag("native-node-tabs").fetchSemanticsNode().boundsInRoot
         val list = compose.onNodeWithTag("native-node-list0").fetchSemanticsNode().boundsInRoot
         assertTrue(list.top >= tabs.bottom)
+    }
+
+    @Config(sdk = [33])
+    @Test fun serviceTabsWithGlassBackdropCanBeClickedWithoutSelectingDecorativeLabels() {
+        val labels = listOf("查寝", "课堂", "销假", "账号")
+        val events = mutableListOf<JSONObject>()
+        compose.setContent { CourseSelectorTheme { GlassWindowHost {
+            var selected by remember { mutableStateOf(labels[0]) }
+            val tabs = JSONObject().put("id", "service-tabs").put("type", "segmented")
+                .put("value", selected).put("event", "page")
+                .put("options", JSONArray(labels.map { JSONObject().put("value", it).put("label", it) }))
+            NativePluginNode(tabs, null, Modifier.fillMaxWidth()) { event, _ ->
+                events += event; selected = event.getString("value")
+            }
+        } } }
+        for (label in labels.drop(1) + labels[0]) {
+            compose.onNode(hasText(label) and hasClickAction() and isSelectable() and
+                hasAnyAncestor(hasTestTag("native-node-service-tabs")))
+                .assertIsEnabled().performClick()
+            compose.runOnIdle {
+                assertEquals(label, events.last().getString("value"))
+                assertEquals("page", events.last().getString("name"))
+                assertEquals("input", events.last().getString("type"))
+            }
+        }
+        assertEquals(4, events.size)
     }
 }

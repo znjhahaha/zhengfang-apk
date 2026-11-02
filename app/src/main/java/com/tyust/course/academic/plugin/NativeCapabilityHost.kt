@@ -33,6 +33,8 @@ interface NativePluginInteraction {
         return null
     }
     suspend fun confirm(title: String, message: String): Boolean
+    /** Full validated scope disclosure; older interactions retain their explicit confirmation. */
+    suspend fun scopeConsent(title: String, message: String): Boolean = confirm(title, message)
     suspend fun authenticate(challenge: JSONObject, image: File?): JSONObject?
     suspend fun pick(types: Array<String>): Uri?
     suspend fun notificationPermission(): Boolean
@@ -90,9 +92,11 @@ class NativeCapabilityHost internal constructor(
         if (!active() || session.retired || !PluginServiceAccounts(app).current(pkg, session)) throw PluginException(PluginErrorCode.STALE_CONTEXT, "插件上下文已改变")
     }
     private fun denied(message: String): Nothing = throw PluginException(PluginErrorCode.PERMISSION_DENIED, message)
-    private suspend fun confirm(flow: NativeFlow, title: String, message: String) {
+    private suspend fun confirm(flow: NativeFlow, title: String, message: String, scopeConsent: Boolean = false) {
         if (!flow.userGesture || interaction == null) denied("此操作需要你主动确认")
-        if (!PluginExecutionBudget.userInput { withContext(Dispatchers.Main) { interaction.confirm(title, message) } }) throw PluginException(PluginErrorCode.CANCELLED, "你已取消此操作")
+        if (!PluginExecutionBudget.userInput { withContext(Dispatchers.Main) {
+            if (scopeConsent) interaction.scopeConsent(title, message) else interaction.confirm(title, message)
+        } }) throw PluginException(PluginErrorCode.CANCELLED, "你已取消此操作")
         ensureActive()
     }
     private suspend fun authorizeAcademic(flow: NativeFlow): JSONObject = PluginExecutionBudget.userInput {
@@ -157,7 +161,7 @@ class NativeCapabilityHost internal constructor(
                     operations.add(operation)
                     try {
                         JSONObject().put("grant", schoolNetworkConsent.authorize(operation, input.getString("serverId"), input.getString("tenantId"), input.getJSONArray("rules"),
-                            active = { ensureActive(); dataGuard.requireCurrent() }) { message -> confirm(flow, "授权学校网络", message) })
+                            active = { ensureActive(); dataGuard.requireCurrent() }) { message -> confirm(flow, "授权学校网络", message, scopeConsent = true) })
                     } finally { operation.close(); operations.remove(operation) }
                 }
                 "device.profile" -> {
