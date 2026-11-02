@@ -63,7 +63,10 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         }
         if (++calls > 2000) throw PluginException(PluginErrorCode.RESOURCE_LIMIT, "宿主调用次数超过上限")
         val value: Any? = when {
-            method == "http" -> http(payload)
+            method == "http" -> try { http(payload) } catch (error: Exception) {
+                if (PluginCredentialBindings.v6(payload)) throw PluginException((error as? PluginException)?.code ?: PluginErrorCode.VALIDATION_FAILED, "凭据绑定请求失败，敏感详情已隐藏")
+                throw error
+            }
             method == "sessionCookies.set" -> {
                 if (!operation.method.startsWith("serviceAuth.") || "auth" !in operation.manifest.permissions) invalid("学校 Cookie 同步仅供受保护的服务认证处理器")
                 val url = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效 Cookie 来源")
@@ -108,6 +111,9 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
     }
     private fun http(input: JSONObject, upload: PluginUpload? = null, field: String = "file"): JSONObject {
         var payload = JSONObject(input.toString())
+        PluginCredentialBindings.requireV6(payload, operation.manifest, operation.method)
+        val queryBound = payload.optJSONObject("bindings")?.has("query") == true
+        val v6Bound = PluginCredentialBindings.v6(payload)
         val dynamicScope = payload.optString("scopeGrant").takeIf(String::isNotBlank)?.let { PluginNetworkScopes.requireGrant(operation, it) }
         fun allowed(url: HttpUrl, method: String, purpose: String, form: JSONObject?, authHeader: String? = null): JSONObject =
             dynamicScope?.policy?.requireAllowed(url, method, purpose, form, authHeader) ?: requestRule(url, method, purpose, form, authHeader)
@@ -140,13 +146,14 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
         // Reject invalid destinations before asking the user anything.
         allowed(url, method, purpose, form)
         val secretValues = JSONObject()
-        val bindingRequest = if (payload.has("credentials") || payload.optJSONObject("bindings")?.has("body") == true) {
+        val bindingRequest = if (v6Bound || payload.has("credentials") || payload.optJSONObject("bindings")?.has("body") == true) {
             if (!operation.manifest.isNative || operation.manifest.json.optJSONArray("requires")?.let(PluginJson::objects).orEmpty().none { it.optString("name") == "network.request" && it.optInt("version") >= 5 }) invalid("组合凭据需要 network.request 版本 5")
             val aliases = payload.optJSONObject("credentials") ?: JSONObject()
             val single = aliases.length() == 0 && payload.optString("credential").isNotBlank()
             if (!single && aliases.length() !in 1..8 || "auth" !in operation.manifest.permissions && "credentials" !in operation.manifest.permissions) invalid("凭据权限或数量无效")
             val original = payload
             payload = PluginCredentialBindings.validateAliases(original)
+            url = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效凭据预览")
             form = payload.optJSONObject("form")
             allowed(url, method, purpose, form)
             original
@@ -264,6 +271,9 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                 values.keys().forEach { key -> if (values.opt(key) is String) secretValues.put(key, values.getString(key)) }
             }
             payload = PluginCredentialBindings.apply(bindingRequest, secretValues)
+            val boundUrl = payload.getString("url").toHttpUrlOrNull() ?: invalid("无效凭据目标")
+            if (boundUrl.scheme != url.scheme || boundUrl.host != url.host || boundUrl.port != url.port || boundUrl.encodedPath != url.encodedPath) invalid("凭据不能改变请求来源或路径")
+            url = boundUrl
             form = payload.optJSONObject("form")
             payload.optJSONObject("headers")?.let { headers -> headers.keys().forEach { supplied.put(it, headers.get(it)) } }
             validateHeaders()
@@ -318,6 +328,7 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                     if (log.size < 200) log += JSONObject().put("event", "http").put("origin", "${url.scheme}://${url.host}:${url.port}")
                         .put("method", method).put("purpose", purpose).put("status", response.code)
                     if (response.code in 300..399) {
+                        if (queryBound) invalid("凭据查询请求不允许跳转")
                         if (purpose == "mutation") throw PluginException(PluginErrorCode.RESULT_UNKNOWN, "写入请求发生跳转，请先核实结果")
                         if (payload.has("followRedirects") && !payload.getBoolean("followRedirects")) {
                             val headers = JSONObject()
@@ -370,7 +381,18 @@ class PluginHost(private val operation: PluginOperation, private val storageRoot
                         if (operation.method.startsWith("serviceAuth.")) response.headers.values("Set-Cookie").takeIf { it.isNotEmpty() }?.let { headers.put("Set-Cookie", it.joinToString("\n")) }
                         captureToken?.invoke(url, method, purpose, response.code, bytes.toString(charset))
                         listOf("Content-Type", "Date", "Retry-After").forEach { name -> response.header(name)?.let { headers.put(name, it) } }
-                        val responseUrl = url.newBuilder().encodedFragment(callbackFragment).build()
+                        if (v6Bound) {
+                            val secrets = secretValues.keys().asSequence().map { secretValues.getString(it) }.toMutableList()
+                            input.optJSONObject("bindings")?.let { bindings ->
+                                for (area in listOf("query", "form", "headers", "body")) bindings.optJSONObject(area)?.keys()?.forEach { key ->
+                                    val value = when (area) { "query" -> url.queryParameter(key); "body" -> payload.optString("body").let { runCatching { JSONObject(it).optString(key) }.getOrNull() }; else -> payload.optJSONObject(area)?.optString(key) }
+                                    value?.takeIf(String::isNotEmpty)?.let(secrets::add)
+                                }
+                            }
+                            PluginSecretResponse.requireSafe(bytes, "", secrets)
+                            PluginSecretResponse.requireSafe(headers.toString().toByteArray(), "", secrets)
+                        }
+                        val responseUrl = url.newBuilder().encodedFragment(callbackFragment).build().toString()
                         return JSONObject().put("status", response.code).put("url", responseUrl.toString()).put("headers", headers).put("body", body)
                     }
                 }

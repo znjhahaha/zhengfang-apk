@@ -1,7 +1,7 @@
 [
   {
     "name": "auth.service",
-    "version": 1,
+    "version": 2,
     "permission": "auth",
     "input": {
       "type": "object",
@@ -30,6 +30,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         },
         "action": {
           "enum": [
@@ -2867,7 +2872,7 @@
   },
   {
     "name": "network.request",
-    "version": 5,
+    "version": 6,
     "permission": "network",
     "input": {
       "type": "object",
@@ -3030,6 +3035,13 @@
                               "ivBase64": {
                                 "type": "string",
                                 "maxLength": 32
+                              },
+                              "prefix": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3080,6 +3092,21 @@
                             "properties": {
                               "type": {
                                 "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3177,6 +3204,13 @@
                               "ivBase64": {
                                 "type": "string",
                                 "maxLength": 32
+                              },
+                              "prefix": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3227,6 +3261,21 @@
                             "properties": {
                               "type": {
                                 "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3319,6 +3368,13 @@
                               "ivBase64": {
                                 "type": "string",
                                 "maxLength": 32
+                              },
+                              "prefix": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3369,6 +3425,21 @@
                             "properties": {
                               "type": {
                                 "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3499,6 +3570,13 @@
                               "ivBase64": {
                                 "type": "string",
                                 "maxLength": 32
+                              },
+                              "prefix": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "trim": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3555,6 +3633,21 @@
                               "type"
                             ],
                             "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "trim": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       },
@@ -3567,6 +3660,175 @@
                     },
                     "required": [
                       "fields"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "query": {
+              "type": "object",
+              "maxProperties": 24,
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "transform": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "publicKeySpkiBase64": {
+                                "type": "string",
+                                "maxLength": 16384
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "publicKeySpkiBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "rsa-pkcs1"
+                              },
+                              "modulus": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "exponent": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "encoding": {
+                                "enum": [
+                                  "base64",
+                                  "hex"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "modulus",
+                              "exponent",
+                              "encoding"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-cbc"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "ivBase64": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "prefix": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "trim": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64",
+                              "ivBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "aes-ecb"
+                              },
+                              "keyBase64": {
+                                "type": "string",
+                                "maxLength": 64
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "keyBase64"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "digest"
+                              },
+                              "algorithm": {
+                                "enum": [
+                                  "SHA-256",
+                                  "MD5"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "algorithm"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "base64"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "const": "text"
+                              },
+                              "trim": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "from"
                     ],
                     "additionalProperties": false
                   }

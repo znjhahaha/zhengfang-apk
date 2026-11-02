@@ -17,6 +17,11 @@ object PluginPlatformContract {
     fun validate(manifest: PluginManifest) {
         PluginUserscriptPolicy.validate(manifest)
         val m = manifest.json
+        val credentialRequirements = PluginJson.objects(m.optJSONArray("requires") ?: JSONArray()) +
+            PluginJson.objects(manifest.contributes.optJSONArray("pages") ?: JSONArray()).flatMap { PluginJson.objects(it.optJSONArray("requires") ?: JSONArray()) } +
+            PluginJson.objects(manifest.contributes.optJSONArray("commands") ?: JSONArray()).flatMap { PluginJson.objects(it.optJSONArray("requires") ?: JSONArray()) }
+        if (credentialRequirements.any { it.optString("name") == "network.request" && it.optInt("version") >= 6 || it.optString("name") == "auth.service" && it.optInt("version") >= 2 } &&
+            (!manifest.isNative || manifest.apiVersion != 3 || m.optInt("minAppVersionCode") < 133)) invalid("新版凭据能力需要 API 3 原生插件与 App 133")
         val authMethods = manifest.capabilities.filter { it.startsWith("serviceAuth.") }.toSet()
         val requiredAuth = setOf("serviceAuth.start", "serviceAuth.resume", "serviceAuth.validate", "serviceAuth.logout")
         if (authMethods.isNotEmpty() && (!manifest.isNative || authMethods != requiredAuth || "auth" !in manifest.permissions || m.optInt("minAppVersionCode") < 131 ||

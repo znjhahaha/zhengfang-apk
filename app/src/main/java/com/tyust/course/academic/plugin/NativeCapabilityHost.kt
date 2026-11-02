@@ -119,6 +119,13 @@ class NativeCapabilityHost internal constructor(
         val input = effect.getJSONObject("input")
         schema.validate(input, descriptor.getJSONObject("input"))
         val request = when (name) { "network.request" -> input; "files.download", "files.upload" -> input.getJSONObject("request"); else -> null }
+        if (name == "auth.service" && input.has("method") && (effect.getInt("version") < 2 || pkg.manifest.json.optInt("minAppVersionCode") < 133 ||
+                PluginJson.objects(pkg.manifest.json.optJSONArray("requires") ?: JSONArray()).none { it.optString("name") == "auth.service" && it.optInt("version") >= 2 }))
+            throw PluginException(PluginErrorCode.UNSUPPORTED, "认证方式需要声明并调用 auth.service 版本 2 与 App 133")
+        if (request != null && PluginCredentialBindings.v6(request)) {
+            if (name != "network.request" || effect.getInt("version") < 6) throw PluginException(PluginErrorCode.UNSUPPORTED, "新凭据绑定需要 network.request 版本 6")
+            PluginCredentialBindings.requireV6(request, pkg.manifest, "host.effect")
+        }
         if (request?.optString("purpose") == "auth" && pkg.manifest.usesProtectedServices)
             throw PluginException(PluginErrorCode.VALIDATION_FAILED, "此服务的认证请求必须通过受保护的认证处理器")
         if (request != null && (request.has("scopeGrant") || request.has("credentials") || request.optJSONObject("bindings")?.has("body") == true) &&
@@ -471,7 +478,7 @@ class NativeCapabilityHost internal constructor(
     }
     private fun credentialRequest(request: JSONObject): JSONObject {
         // New bindings must stay intact until PluginHost completes preflight and consumes OTP.
-        if (request.has("credentials") || request.optJSONObject("bindings")?.has("body") == true) return request
+        if (PluginCredentialBindings.v6(request) || request.has("credentials") || request.optJSONObject("bindings")?.has("body") == true) return request
         val handle = request.optString("credential")
         var values: JSONObject? = null
         if (handle.isNotBlank()) {
