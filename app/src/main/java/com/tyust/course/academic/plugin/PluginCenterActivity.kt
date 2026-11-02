@@ -497,6 +497,14 @@ class PluginCenterActivity : ComponentActivity() {
                             Detail(destination.getString("origin"), if (destination.getBoolean("authorized")) "已授权 · ${destination.getString("purpose")}" else "未授权")
                         }
                         SystemDialogButton(onClick = { security.revoke(); message = "已撤销个人数据外传授权"; generation++; selected = null }) { Text("撤销外传授权") }
+                        if (pkg.manifest.json.optBoolean("dynamicNetworkScopes")) {
+                            Detail("学校网络", if (PluginSchoolNetworkConsent.remembered(this@PluginCenterActivity, pkg.manifest.id))
+                                "已记住学校网络范围；按安装包、服务账号和学校隔离" else "尚未记住授权；首次使用时确认")
+                            SystemDialogButton(onClick = {
+                                PluginSchoolNetworkConsent.revoke(this@PluginCenterActivity, pkg.manifest.id)
+                                message = "已撤销此插件的学校网络授权"; generation++; selected = null
+                            }) { Text("撤销学校网络授权") }
+                        }
                     if ("academic.session" in pkg.manifest.permissions || pkg.manifest.sharesAcademicSession) {
                         val shared = runCatching { PluginAcademicSession(this@PluginCenterActivity, pkg, { true }).authorized() }.getOrDefault(false)
                         Detail("教务登录共享", if (shared) "已授权使用当前教务登录" else "尚未授权；首次使用时确认")

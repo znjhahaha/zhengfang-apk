@@ -33,7 +33,7 @@ import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * App133 / SDK3.11.0 / CPDaily0.1.2 UI_PREVIEW draft. Pass -e cpdailyPackage <absolute target external-files path>.
+ * App134 / SDK3.11.1 / CPDaily0.1.3 UI_PREVIEW draft. Pass -e cpdailyPackage <absolute target external-files path>.
  * Pins the packed delivery via DELIVERY_SHA256 and uses the normal developer importer.
  * Replacing the old local development delivery additionally requires
  * -e cpdailyReplaceSha <PREVIOUS_DELIVERY_SHA256>; accounts are never removed.
@@ -359,7 +359,7 @@ class CpdailyAutomationDeviceTest {
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
             putString("cpdailyCapture", image.absolutePath)
-            putString("cpdailyTestTarget", "App133 / SDK3.11.0 / CPDaily0.1.2")
+            putString("cpdailyTestTarget", "App134 / SDK3.11.1 / CPDaily0.1.3")
             putString("cpdailyRuntimeVersionCode", BuildConfig.VERSION_CODE.toString())
         })
     }
@@ -618,9 +618,9 @@ class CpdailyAutomationDeviceTest {
 
     companion object {
         private const val ID = "dev.znjhahaha.cpdaily"
-        private const val PREVIOUS_DELIVERY_SHA256 = "3b8549c38ec05f5b38da430b9e6e12995b105ebef31a28d512a2cd757fd25fee"
+        private const val PREVIOUS_DELIVERY_SHA256 = "b5ac3fd78a31d7a1d0113ee124e02925722276978c09904867fadd2f3109140a"
         // Main agent must replace this after packing; never accept a caller-selected new digest.
-        private const val DELIVERY_SHA256 = "b5ac3fd78a31d7a1d0113ee124e02925722276978c09904867fadd2f3109140a"
+        private const val DELIVERY_SHA256 = "a7546dbdb3f542d08f03fcb0a58638dc906eafdb43b1562dbe25c14d9a3bcccc"
         private const val SYNTHETIC_TENANT = "synthetic-campus.invalid"
         private const val SYNTHETIC_SCOPE = "synthetic-school-scope"
         private const val SYNTHETIC_CONTINUATION = "synthetic-otp-continuation"

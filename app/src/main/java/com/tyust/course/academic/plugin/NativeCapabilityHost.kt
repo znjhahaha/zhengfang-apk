@@ -54,6 +54,7 @@ class NativeCapabilityHost internal constructor(
     private val foregroundGrant: NativeForegroundGrant? = null, private val active: () -> Boolean
 ) {
     private val dataGuard = PluginDataGuard(app, pkg)
+    private val schoolNetworkConsent = PluginSchoolNetworkConsent(app, pkg)
     private val widgetProvenance = WidgetSnapshotScope.forSession(app, pkg, session)
     val namespace = PluginStorageScope.session(session, pkg.manifest.id, !pkg.official)
     private val legacyNamespaces = PluginLegacyData.namespaces(app, pkg, session)
@@ -73,7 +74,7 @@ class NativeCapabilityHost internal constructor(
     fun capabilities(): JSONArray = JSONArray(descriptors.filter { descriptor ->
         descriptor.getString("name") in (IMPLEMENTED + PLATFORM) &&
             (android.os.Build.VERSION.SDK_INT >= 26 || !descriptor.getString("name").startsWith("browser.session.")) &&
-            (interaction != null || foregroundGrant?.script?.supports(descriptor.getString("name")) == true || foregroundGrant?.workflow?.supports(descriptor.getString("name")) == true || !descriptor.getBoolean("userGesture") && !descriptor.getString("name").startsWith("navigation.")) &&
+            (interaction != null || descriptor.getString("name") == "network.scope.authorize" || foregroundGrant?.script?.supports(descriptor.getString("name")) == true || foregroundGrant?.workflow?.supports(descriptor.getString("name")) == true || !descriptor.getBoolean("userGesture") && !descriptor.getString("name").startsWith("navigation.")) &&
             (foregroundGrant?.workflow == null || descriptor.getString("name") !in setOf("auth.service", "auth.prompt", "device.photo", "device.scan", "files.pick", "device.location.pick"))
     })
     fun requireCompatible() {
@@ -115,7 +116,9 @@ class NativeCapabilityHost internal constructor(
         if (descriptor.getString("permission") !in pkg.manifest.permissions) denied("插件未声明 ${descriptor.getString("permission")} 权限")
         val scriptGrant = foregroundGrant?.script?.takeIf { it.supports(name) }
         val workflowGrant = foregroundGrant?.workflow?.takeIf { it.supports(name) }
-        if (descriptor.getBoolean("userGesture") && !flow.userGesture && scriptGrant == null && workflowGrant == null && !(name == "academic.session.authorize" && academicSession.siteAuthorized())) denied("此设备交互必须由你发起")
+        // School-scope consent checks the exact validated request before allowing silent reuse;
+        // new scopes still reach confirm(), which requires a foreground user gesture.
+        if (descriptor.getBoolean("userGesture") && !flow.userGesture && scriptGrant == null && workflowGrant == null && name != "network.scope.authorize" && !(name == "academic.session.authorize" && academicSession.siteAuthorized())) denied("此设备交互必须由你发起")
         val input = effect.getJSONObject("input")
         schema.validate(input, descriptor.getJSONObject("input"))
         val request = when (name) { "network.request" -> input; "files.download", "files.upload" -> input.getJSONObject("request"); else -> null }
@@ -149,15 +152,13 @@ class NativeCapabilityHost internal constructor(
                     PluginServiceAuthentication.execute(app, pkg, session, input) { active() && PluginServiceAccounts(app).current(pkg, session) }
                 }
                 "network.scope.authorize" -> {
-                    if (!pkg.manifest.json.optBoolean("dynamicNetworkScopes") || input.getString("serverId") != session.key.schoolId.removePrefix("service:${pkg.manifest.id}:")) denied("此插件或账号不能授权学校网络")
-                    val rules = PluginJson.objects(input.getJSONArray("rules"))
-                    if (rules.size !in 1..32) denied("学校网络范围数量无效")
-                    rules.forEach(PluginNetworkPolicy::validateRule)
-                    val message = "学校：${input.getString("tenantId")}\n" + rules.joinToString("\n") { rule ->
-                        "${rule.getString("origin")}${rule.getString("pathPrefix")}\n${PluginJson.strings(rule.getJSONArray("methods")).joinToString("、")} · ${PluginJson.strings(rule.getJSONArray("purposes")).joinToString("、") { purpose -> when (purpose) { "auth" -> "登录认证"; "query" -> "读取任务与要求"; else -> "提交业务数据" } }}" }
-                    confirm(flow, "授权学校网络", message)
-                    val operation = PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, packageDigest = pkg.digest, scopeStillActive = active)
-                    try { JSONObject().put("grant", PluginNetworkScopes.authorize(operation, input.getString("tenantId"), rules)) } finally { operation.close() }
+                    val operation = PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, packageDigest = pkg.digest,
+                        scopeStillActive = { active() && PluginServiceAccounts(app).current(pkg, session) })
+                    operations.add(operation)
+                    try {
+                        JSONObject().put("grant", schoolNetworkConsent.authorize(operation, input.getString("serverId"), input.getString("tenantId"), input.getJSONArray("rules"),
+                            active = { ensureActive(); dataGuard.requireCurrent() }) { message -> confirm(flow, "授权学校网络", message) })
+                    } finally { operation.close(); operations.remove(operation) }
                 }
                 "device.profile" -> {
                     val key = pkg.manifest.id + ":installationId"
@@ -178,7 +179,7 @@ class NativeCapabilityHost internal constructor(
                 }
                 "academic.session.authorize" -> authorizeAcademic(flow)
                 "privacy.status" -> dataGuard.status()
-                "privacy.revoke" -> { dataGuard.revoke(); PluginNetworkScopes.revokePlugin(pkg.manifest.id); PluginHost.clearTemporaryState(session); vault.clearEphemeral(); if (pkg.manifest.usesProtectedServices) session.invalidate(); JSONObject.NULL }
+                "privacy.revoke" -> { dataGuard.revoke(); PluginSchoolNetworkConsent.revoke(app, pkg.manifest.id); PluginHost.clearTemporaryState(session); vault.clearEphemeral(); if (pkg.manifest.usesProtectedServices) session.invalidate(); JSONObject.NULL }
                 "academic.session.revoke" -> { PluginAcademicSession.revoke(app, pkg.manifest.id); JSONObject.NULL }
                 "academic.session.request" -> {
                     requireNetworkPermission()
@@ -398,9 +399,17 @@ class NativeCapabilityHost internal constructor(
                 "navigation.back" -> { withContext(Dispatchers.Main) { interaction!!.back() }; JSONObject.NULL }
                 "navigation.url" -> {
                     val url = input.getString("url").toHttpUrlOrNull() ?: throw PluginException(PluginErrorCode.UNTRUSTED_URL, "无效网址")
-                    PluginNetworkPolicy(pkg.manifest.network).requireAllowed(url, "GET", "query", null)
-                    authorizeAction(JSONObject().put("url", url.toString()).put("purpose", "query"), flow, "打开网页", "${pkg.manifest.name} 请求打开此网站")
-                    withContext(Dispatchers.Main) { ensureActive(); dataGuard.requireNetwork(url); app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }; JSONObject.NULL
+                    val static = try { PluginNetworkPolicy(pkg.manifest.network).requireAllowed(url, "GET", "query", null); true } catch (_: PluginException) { false }
+                    val operation = if (static) null else PluginOperation(session, pkg.manifest, "host.effect", development = !pkg.official, packageDigest = pkg.digest, scopeStillActive = active)
+                    try {
+                        if (operation == null) authorizeAction(JSONObject().put("url", url.toString()).put("purpose", "query"), flow, "打开网页", "${pkg.manifest.name} 请求打开此网站")
+                        else PluginNetworkScopes.requireNavigation(operation, url)
+                        withContext(Dispatchers.Main) {
+                            ensureActive(); if (operation != null) PluginNetworkScopes.requireNavigation(operation, url)
+                            dataGuard.requireNetwork(url)
+                            app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }; JSONObject.NULL
+                    } finally { operation?.close() }
                 }
                 "runtime.cancel" -> { cancelEffects(PluginJson.strings(input.getJSONArray("effectIds"))); JSONObject.NULL }
                 "data.query" -> NativePluginRunner.invoke(app, pkg, session, "data.query", input, JSONObject().put("capabilities", capabilities()), active = active)

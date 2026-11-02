@@ -337,18 +337,26 @@ class PluginConnectFallbackLifecycleTest {
     private fun assertConnectionBudget(callTimeoutMillis: Long, configure: (Call) -> Unit) {
         val sockets = DelayedFailureSocketFactory(300)
         val client = failingClient(sockets, callTimeoutMillis)
+        val deadlines = mutableListOf<Long>()
+        val remainingBudgets = mutableListOf<Long>()
+        val listener = object : EventListener() {
+            override fun callStart(call: Call) {
+                assertTrue("Each native attempt must carry the shared deadline", call.timeout().hasDeadline())
+                deadlines += call.timeout().deadlineNanoTime()
+                remainingBudgets += call.timeout().deadlineNanoTime() - System.nanoTime()
+            }
+        }
         try {
-            val call = fallbackCall(client)
+            val call = fallbackCall(client, listener)
             configure(call)
-            val start = System.nanoTime()
-
-            assertThrows(IOException::class.java) { call.execute() }
-
-            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
-            assertTrue(
-                "A 500ms call budget took ${elapsedMillis}ms across ${sockets.connects.get()} attempts",
-                elapsedMillis < 950,
-            )
+            assertEquals(TimeUnit.MILLISECONDS.toNanos(500), call.timeout().timeoutNanos())
+            assertThrows(InterruptedIOException::class.java) { call.execute() }
+            // Assert the actual deadlines rather than wall time after the CI scheduler
+            // resumes this thread. A new 500ms budget per fallback must still fail.
+            assertTrue("No native attempt was observed", deadlines.isNotEmpty())
+            assertEquals("Fallback attempts reset the call deadline", 1, deadlines.toSet().size)
+            assertTrue("A native attempt received more than the configured budget",
+                remainingBudgets.all { it <= TimeUnit.MILLISECONDS.toNanos(500) })
             assertTrue(
                 "The 500ms budget allowed too many 300ms connections",
                 sockets.connects.get() in 1..2,

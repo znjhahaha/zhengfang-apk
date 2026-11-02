@@ -201,6 +201,7 @@ class PluginPackageStore(private val context: Context, private val trustedKeys: 
         PluginHttpClients.clearPlugin(id)
         PluginAcademicSession.revoke(context, id)
         PluginDataGuard.revoke(context, id)
+        PluginSchoolNetworkConsent.revoke(context, id)
         val removed = synchronized(lock) {
             val previous = active(id)
             val state = state(); state.remove(id); save(state)

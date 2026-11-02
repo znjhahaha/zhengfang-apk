@@ -78,6 +78,7 @@ class PluginServiceAccounts(private val app: Context) {
         server(pkg, serverId)
         if (accountId != "default" && accountId != selected(pkg.manifest.id, serverId) && accounts(pkg.manifest.id, serverId).none { it.getString("id") == accountId }) throw PluginException(PluginErrorCode.PERMISSION_DENIED, "服务账号不存在")
         advance(pkg.manifest.id)
+        PluginSchoolNetworkConsent.removeAccount(app, pkg.manifest.id, serverId, accountId)
         val legacyScope = "service:${pkg.manifest.id}:$serverId\u0000$accountId\u0000${pkg.manifest.id}\u0000${!pkg.official}"
         for (scope in listOf(legacyScope, legacyScope + "\u0000" + server(pkg, serverId).getString("origin"))) {
             NativePluginVault(app, scope).clear(); NativePluginFiles(app, scope).clear(); NativePluginRecords.clear(app, scope)
@@ -99,6 +100,7 @@ class PluginServiceAccounts(private val app: Context) {
     }
     fun clearPlugin(pkg: PluginPackage) = synchronized(lock) {
         advance(pkg.manifest.id)
+        PluginSchoolNetworkConsent.revoke(app, pkg.manifest.id)
         val trackedScopes = prefs.getStringSet("scopes:${pkg.manifest.id}", emptySet()).orEmpty()
         for (scope in trackedScopes) {
             NativePluginVault(app, scope).clear(); NativePluginFiles(app, scope).clear(); NativePluginRecords.clear(app, scope)

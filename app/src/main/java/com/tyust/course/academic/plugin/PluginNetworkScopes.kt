@@ -51,15 +51,24 @@ object PluginNetworkScopes {
     fun authorize(operation: PluginOperation, tenantId: String, rules: JSONArray): String =
         authorize(operation, tenantId, objects(rules))
 
-    fun authorize(operation: PluginOperation, tenantId: String, rules: List<JSONObject>): String {
+    /** Validate and copy the whole request before the host displays or remembers consent. */
+    internal fun validateAuthorization(operation: PluginOperation, tenantId: String, rules: JSONArray): List<JSONObject> =
+        validateAuthorization(operation, tenantId, objects(rules))
+
+    internal fun validateAuthorization(operation: PluginOperation, tenantId: String, rules: List<JSONObject>): List<JSONObject> {
         operation.requireActive()
         requireOptIn(operation)
         if (tenantId.isBlank() || tenantId != tenantId.trim() || tenantId.length > 256 ||
             tenantId.any { it.isISOControl() }) invalid("学校租户标识无效")
         if (rules.size !in 1..32) invalid("动态网络范围需要 1–32 条规则")
         val snapshot = rules.map { validateRule(JSONObject(it.toString())) }
+        if (operation.packageDigest.isBlank()) invalid("插件包摘要缺失")
+        return snapshot
+    }
+
+    fun authorize(operation: PluginOperation, tenantId: String, rules: List<JSONObject>): String {
+        val snapshot = validateAuthorization(operation, tenantId, rules)
         val binding = binding(operation)
-        if (binding.digest.isBlank()) invalid("插件包摘要缺失")
         val token = synchronized(lock) {
             prune()
             // Selecting a school replaces this binding's tenant authority. Same-tenant auth
@@ -136,6 +145,26 @@ object PluginNetworkScopes {
         }
     }
 
+    /** Roll back only this issuance; other grants in the same session keep their authority. */
+    internal fun revokeGrant(operation: PluginOperation, grant: String) = synchronized(lock) {
+        remove { grants[grant] === it && it.key.binding == binding(operation) }
+    }
+
+    /** External public auth navigation may use an already approved current school scope.
+     * This opens a URL only: no service cookies, headers or native bridge are exported. */
+    fun requireNavigation(operation: PluginOperation, url: HttpUrl) {
+        operation.requireActive(); requireOptIn(operation)
+        val candidates = synchronized(lock) { prune(); grants.entries.filter { it.value.key.binding == binding(operation) }.map { it.key to it.value } }
+        for ((token, entry) in candidates) {
+            val policy = PluginNetworkPolicy(entry.rules.map { JSONObject(it.toString()) }, strictPaths = true)
+            val matches = listOf("auth", "query").any { purpose ->
+                try { policy.requireAllowed(url, "GET", purpose, null); true } catch (_: PluginException) { false }
+            }
+            if (matches) { use(operation, token, entry, {}) {}; return }
+        }
+        denied("网页地址不属于当前已授权的学校网络范围")
+    }
+
     fun revoke(operation: PluginOperation) = synchronized(lock) {
         remove { it.key.binding.pluginId == operation.manifest.id &&
             it.key.binding.instanceId == operation.session.instanceId }
@@ -159,7 +188,7 @@ object PluginNetworkScopes {
             denied("插件未声明动态网络授权能力")
     }
 
-    private fun validateRule(rule: JSONObject): JSONObject {
+    internal fun validateRule(rule: JSONObject): JSONObject {
         val fields = setOf("origin", "pathPrefix", "methods", "purposes", "requiredQuery", "requiredForm", "authHeader", "userAgent")
         if (rule.toString().length > 16384 || rule.keys().asSequence().any { it !in fields } ||
             rule.opt("origin") !is String || rule.opt("pathPrefix") !is String) invalid("网络规则字段无效")
